@@ -409,6 +409,106 @@ fn strip_shim_node(node: &yaml_edit::YamlNode) -> Stripped {
     done
 }
 
+/// [`strip_shim_json`] for a TOML config, through `toml_edit`, which keeps every
+/// other byte.
+pub(crate) fn strip_shim_toml(content: &str) -> anyhow::Result<MergeOutcome> {
+    toml_merge_outcome(content, |doc| {
+        strip_shim_table(doc.as_table_mut());
+        Ok(())
+    })
+}
+
+fn toml_shim_entry(command: Option<&toml_edit::Value>) -> bool {
+    command
+        .and_then(toml_edit::Value::as_str)
+        .is_some_and(crate::install::hook_cmd::invokes_shim)
+}
+
+fn toml_emptied(item: &toml_edit::Item) -> bool {
+    match item {
+        toml_edit::Item::Table(t) => t.is_empty(),
+        toml_edit::Item::ArrayOfTables(a) => a.is_empty(),
+        toml_edit::Item::Value(v) => toml_value_emptied(v),
+        toml_edit::Item::None => false,
+    }
+}
+
+fn toml_value_emptied(v: &toml_edit::Value) -> bool {
+    v.as_array().is_some_and(toml_edit::Array::is_empty)
+        || v.as_inline_table()
+            .is_some_and(toml_edit::InlineTable::is_empty)
+}
+
+fn strip_shim_table(t: &mut toml_edit::Table) -> Stripped {
+    let mut done = Stripped::default();
+    t.retain(|_, item| {
+        let inner = strip_shim_item(item);
+        done.removed |= inner.removed;
+        let emptied = inner.removed && toml_emptied(item);
+        done.hollowed |= emptied;
+        !emptied
+    });
+    done
+}
+
+fn strip_shim_item(item: &mut toml_edit::Item) -> Stripped {
+    let mut done = Stripped::default();
+    match item {
+        toml_edit::Item::Table(t) => return strip_shim_table(t),
+        toml_edit::Item::Value(v) => return strip_shim_toml_value(v),
+        toml_edit::Item::ArrayOfTables(tables) => {
+            for i in (0..tables.len()).rev() {
+                let Some(t) = tables.get_mut(i) else { continue };
+                let gone = if toml_shim_entry(t.get("command").and_then(toml_edit::Item::as_value))
+                {
+                    true
+                } else {
+                    let inner = strip_shim_table(t);
+                    done.removed |= inner.removed;
+                    inner.removed && (inner.hollowed || t.is_empty())
+                };
+                if gone {
+                    done.removed = true;
+                    tables.remove(i);
+                }
+            }
+        }
+        toml_edit::Item::None => {}
+    }
+    done
+}
+
+fn strip_shim_toml_value(v: &mut toml_edit::Value) -> Stripped {
+    let mut done = Stripped::default();
+    if let Some(items) = v.as_array_mut() {
+        for i in (0..items.len()).rev() {
+            let Some(item) = items.get_mut(i) else {
+                continue;
+            };
+            let gone = if toml_shim_entry(item.as_inline_table().and_then(|t| t.get("command"))) {
+                true
+            } else {
+                let inner = strip_shim_toml_value(item);
+                done.removed |= inner.removed;
+                inner.removed && (inner.hollowed || toml_value_emptied(item))
+            };
+            if gone {
+                done.removed = true;
+                items.remove(i);
+            }
+        }
+    } else if let Some(members) = v.as_inline_table_mut() {
+        members.retain(|_, child| {
+            let inner = strip_shim_toml_value(child);
+            done.removed |= inner.removed;
+            let emptied = inner.removed && toml_value_emptied(child);
+            done.hollowed |= emptied;
+            !emptied
+        });
+    }
+    done
+}
+
 /// `content` held for edits in place. saphyr's strict parse gates it, as
 /// yaml-edit's parser recovers from syntax errors (its README, "Error recovery").
 pub(crate) fn yaml_file(content: &str, file: &str) -> anyhow::Result<yaml_edit::YamlFile> {
@@ -558,10 +658,10 @@ mod tests {
     /// A hooks value of no shape we wrote is the owner's, whatever it is.
     #[test]
     fn an_uninstall_leaves_a_foreign_hooks_value_alone() {
-        use crate::install::{codewhale, codex, jcode, kimi};
+        use crate::install::{codewhale, jcode, kimi};
         for uninstall in [
             codewhale::merge_uninstall,
-            codex::merge_uninstall,
+            strip_shim_toml,
             jcode::merge_uninstall,
             kimi::merge_uninstall,
         ] {

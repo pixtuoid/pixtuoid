@@ -234,11 +234,8 @@ pub struct HostRegistration {
     pub home: fn() -> Result<PathBuf>,
     /// What brings a rewrite of the plugin's files to the CLI.
     pub refresh: Refresh,
-    /// Set only where what an older pixtuoid merged into the CLI's own config breaks
-    /// the CLI when left: connect and disconnect strip it.
-    pub legacy: Option<CliConfig>,
-    /// The CLI's own hook config, from which a disconnect removes every entry whose
-    /// command runs pixtuoid's shim, whichever release wrote it.
+    /// The CLI's own hook config, from which a connect and a disconnect remove every
+    /// entry whose command runs pixtuoid's shim, whichever release wrote it.
     pub shim_hooks: Option<CliConfig>,
 }
 

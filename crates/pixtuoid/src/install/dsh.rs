@@ -396,7 +396,7 @@ mod tests {
                 );
             },
         );
-        // `.` exists wherever the probe runs, so only the refusal keeps it out.
+        // `.` exists wherever the probe runs, so only the probe's absolute-path check keeps it out.
         temp_env::with_var("DSH_HOME", Some("."), || assert!(!detect_installed()));
     }
 

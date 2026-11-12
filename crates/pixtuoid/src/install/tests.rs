@@ -2424,16 +2424,36 @@ fn a_relative_home_override_refuses_every_file_it_moves() {
     });
 }
 
-/// A disconnect removes every entry whose command runs the shim from each host's
-/// own hook config, in the shape the release that wrote it used, Claude Code's
-/// without the sentinel its own writer drops; the user's hook beside it stays.
+/// A connect and a disconnect each remove every entry whose command runs the shim
+/// from a host's own hook config, in the shape the release that wrote it used,
+/// Claude Code's without the sentinel its own writer drops; a second connect
+/// changes nothing, and the user's hook beside it stays.
 #[test]
-fn a_disconnect_takes_every_shim_entry_out_of_the_clis_own_config() {
+fn connect_and_disconnect_take_every_shim_entry_out_of_the_clis_own_config() {
     with_fake_hosts(|_| {
         let tmp = tempfile::TempDir::new().unwrap();
         let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
-        let user = serde_json::json!({ "command": "notify-send done" });
         let own = |t: &Target| (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+        // Connects twice, then disconnects, checking the file after each against `kept`.
+        let round_trip = |t: &Target, primary: Option<PathBuf>, kept: &dyn Fn(&str)| {
+            let at = own(t);
+            install_target_from(t, primary.clone(), hook()).unwrap();
+            let once = std::fs::read_to_string(&at).unwrap();
+            kept(&once);
+            install_target_from(t, primary.clone(), hook()).unwrap();
+            // Blank lines aside: the fake hermes's reload leaves one per round.
+            let lines = |c: &str| {
+                c.lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            let twice = std::fs::read_to_string(&at).unwrap();
+            assert_eq!(lines(&twice), lines(&once), "{}", t.name);
+            uninstall_target(t, primary).unwrap();
+            kept(&std::fs::read_to_string(&at).unwrap());
+        };
+        let user = serde_json::json!({ "command": "notify-send done" });
         let cc_group = |h| serde_json::json!({ "matcher": ".*", "hooks": [h] });
         for (t, primary, before, after) in [
             (
@@ -2455,45 +2475,41 @@ fn a_disconnect_takes_every_shim_entry_out_of_the_clis_own_config() {
                 serde_json::json!({ "lint": { "Stop": [user.clone()] } }),
             ),
         ] {
-            install_target_from(t, primary.clone(), hook()).unwrap();
             let at = own(t);
-            // Merged into what the host CLI's own commands left there.
-            let mut doc: serde_json::Value = std::fs::read_to_string(&at)
-                .ok()
-                .and_then(|c| serde_json::from_str(&c).ok())
-                .unwrap_or_else(|| serde_json::json!({}));
-            let with = |mut doc: serde_json::Value, add: &serde_json::Value| {
-                for (k, v) in add.as_object().unwrap() {
-                    doc[k] = v.clone();
-                }
-                doc
-            };
             std::fs::create_dir_all(at.parent().unwrap()).unwrap();
-            std::fs::write(&at, with(doc.take(), &before).to_string()).unwrap();
-            uninstall_target(t, primary).unwrap();
-            let left: serde_json::Value =
-                serde_json::from_str(&std::fs::read_to_string(&at).unwrap()).unwrap();
-            for (k, v) in after.as_object().unwrap() {
-                assert_eq!(&left[k], v, "{}", t.name);
-            }
-            assert!(left.get("pixtuoid").is_none(), "{}: {left}", t.name);
+            std::fs::write(&at, before.to_string()).unwrap();
+            round_trip(t, primary, &|content| {
+                let left: serde_json::Value = serde_json::from_str(content).unwrap();
+                for (k, v) in after.as_object().unwrap() {
+                    assert_eq!(&left[k], v, "{}", t.name);
+                }
+                assert!(!content.contains("pixtuoid-hook"), "{}: {content}", t.name);
+            });
         }
 
-        install_target_from(&HERMES, None, hook()).unwrap();
-        let user_yaml = "model: gpt\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh\n";
         let ours =
             "    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      _pixtuoid: true\n";
-        let with = format!(
-            "{}{user_yaml}{ours}",
-            std::fs::read_to_string(hermes_config()).unwrap()
-        );
-        std::fs::write(hermes_config(), with).unwrap();
-        uninstall_target(&HERMES, None).unwrap();
-        let left = std::fs::read_to_string(hermes_config()).unwrap();
-        assert!(
-            left.ends_with(user_yaml) && !left.contains("pixtuoid-hook"),
-            "{left}"
-        );
+        let user_yaml =
+            "model: gpt\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh   # kept\n";
+        std::fs::write(hermes_config(), format!("{user_yaml}{ours}")).unwrap();
+        round_trip(&HERMES, None, &|content| {
+            assert!(
+                content.starts_with(user_yaml) && !content.contains("pixtuoid-hook"),
+                "{content}"
+            );
+        });
+
+        std::fs::write(
+            codex_config(),
+            format!("{CODEX_USER_HOOK}{CODEX_LEGACY_HOOK}"),
+        )
+        .unwrap();
+        round_trip(&CODEX, Some(plugin_hooks_path(tmp.path())), &|content| {
+            assert!(
+                content.starts_with(CODEX_USER_HOOK) && !content.contains("pixtuoid-hook"),
+                "{content}"
+            );
+        });
     });
 }
 

@@ -26,7 +26,6 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     is_registered,
     home: config_dir,
     refresh: Refresh::NextStart,
-    legacy: None,
     shim_hooks: Some(CliConfig {
         path: shared_hooks_path,
         strip: merge::strip_shim_json,

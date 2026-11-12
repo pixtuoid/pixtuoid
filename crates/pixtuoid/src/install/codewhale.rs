@@ -340,7 +340,7 @@ mod tests {
                 assert!(default_config_path().unwrap().is_relative(), "{var}");
             });
         }
-        // `.` exists wherever the probe runs, so only the refusal keeps it out.
+        // `.` exists wherever the probe runs, so only the probe's absolute-path check keeps it out.
         temp_env::with_vars(
             [("CODEWHALE_HOME", Some(".")), ("HOME", Some(home_str))],
             || assert!(!detect_installed()),

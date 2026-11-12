@@ -40,7 +40,6 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     is_registered,
     home,
     refresh: Refresh::NextStart,
-    legacy: None,
     shim_hooks: Some(CliConfig {
         path: settings_path,
         strip: merge::strip_shim_json,

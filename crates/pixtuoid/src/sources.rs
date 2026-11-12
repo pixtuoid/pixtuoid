@@ -1027,7 +1027,6 @@ mod tests {
                 Ok(())
             },
         }),
-        legacy: None,
         shim_hooks: None,
     };
 
@@ -1113,7 +1112,6 @@ mod tests {
             RELOADS.fetch_add(1, SeqCst);
             Ok(())
         }),
-        legacy: None,
         shim_hooks: None,
     };
 

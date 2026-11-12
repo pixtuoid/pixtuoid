@@ -76,8 +76,8 @@ The components that handle untrusted or privileged input, and how they're bounde
    rewritten config keeps every other setting, though not its comments or
    formatting.
    Installs are idempotent and reversible (*disconnect* removes the plugin or the hook entries,
-   and from Claude Code's, Reasonix's, Hermes's and Antigravity's own config every hook whose command
-   runs pixtuoid's shim, whichever release wrote it; Codex's connect or disconnect strips the hooks its pre-plugin release merged). Past an explicit connect/disconnect,
+   and connect and disconnect remove from Claude Code's, Codex's, Reasonix's, Hermes's and Antigravity's
+   own config every hook whose command runs pixtuoid's shim, whichever release wrote it). Past an explicit connect/disconnect,
    a launch only rewrites the plugin files pixtuoid owns and loads them through a
    connected CLI's own subcommand where it has one (`converge_owned`), and an interactive
    one installs the hooks of a source an older release connected by flag (`adopt_flagged_targets`).

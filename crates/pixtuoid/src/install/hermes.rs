@@ -25,7 +25,6 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     is_registered,
     home,
     refresh: Refresh::Reload(reload),
-    legacy: None,
     shim_hooks: Some(CliConfig {
         path: config_path,
         strip: |content| merge::strip_shim_yaml(content, "config.yaml"),

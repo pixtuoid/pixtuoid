@@ -29,9 +29,8 @@ use target::{BinaryStrategy, Primary, Target};
 
 /// The idempotency sentinel stamped on every hook entry pixtuoid merges into a
 /// shared config — those targets key install/uninstall/detect on this, not the
-/// command shape. A plugin's own file is ours whole and carries none; for a host it
-/// names only what an older pixtuoid merged into the CLI's own config
-/// ([`target::HostRegistration::legacy`]).
+/// command shape. A plugin's own file is ours whole and carries none, and a host's
+/// own config is cleaned by command ([`target::HostRegistration::shim_hooks`]).
 pub(crate) const SENTINEL_KEY: &str = "_pixtuoid";
 
 /// Whether `t`'s config currently bears pixtuoid hooks — whether its source is
@@ -639,11 +638,12 @@ fn install_target_from(
     })
 }
 
-/// Strip what an older pixtuoid merged into the CLI's own config, then register. A
-/// registration that fails after the strip leaves neither firing, which is what a
-/// failed connect reads as; a CLI that isn't on PATH failed it before any write.
+/// Remove every hook in the CLI's own config that runs pixtuoid's shim, then
+/// register. A registration that fails after the strip leaves neither firing, which
+/// is what a failed connect reads as; a CLI that isn't on PATH failed it before any
+/// write.
 fn connect_host(host: &target::HostRegistration, primary: &std::path::Path) -> Result<()> {
-    strip_cli_config(host.legacy.as_ref())?;
+    strip_cli_config(host.shim_hooks.as_ref())?;
     (host.register)(primary)
 }
 
@@ -784,7 +784,6 @@ pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<Un
         None => None,
     };
     if let Some(host) = t.host() {
-        removed |= strip_cli_config(host.legacy.as_ref())?;
         removed |= strip_cli_config(host.shim_hooks.as_ref())?;
     }
     Ok(UninstallReport {
