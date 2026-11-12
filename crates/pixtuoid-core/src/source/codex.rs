@@ -480,14 +480,13 @@ pub fn codex_home() -> Option<PathBuf> {
 }
 
 /// Pure precedence core, separated so it's unit-testable without env mutation.
-/// On a set-but-absent `CODEX_HOME` upstream codex returns a FATAL error; we
-/// deliberately fall back to `~/.codex` — benign for a visualizer, since codex
-/// itself won't run (and writes no rollouts) when its home dir is missing.
+/// A set `CODEX_HOME` that is no directory is upstream codex's FATAL error, so
+/// it names no home here either.
 fn resolve_codex_home(codex_home_env: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
-    if let Some(p) = codex_home_env.filter(|p| p.is_dir()) {
-        return Some(p);
+    match codex_home_env {
+        Some(p) => p.is_dir().then_some(p),
+        None => Some(home?.join(".codex")),
     }
-    Some(home?.join(".codex"))
 }
 
 #[cfg(test)]
@@ -505,15 +504,19 @@ mod tests {
     }
 
     #[test]
-    fn codex_home_falls_back_to_dot_codex_when_env_unset_or_missing_dir() {
+    fn codex_home_is_dot_codex_when_env_unset() {
         let home = Some(PathBuf::from("/home/u"));
         let expected = Some(PathBuf::from("/home/u").join(".codex"));
-        assert_eq!(resolve_codex_home(None, home.clone()), expected);
+        assert_eq!(resolve_codex_home(None, home), expected);
+        assert_eq!(resolve_codex_home(None, None), None);
+    }
+
+    #[test]
+    fn a_set_codex_home_that_is_no_dir_names_no_home() {
         let tmp = tempfile::tempdir().unwrap();
         let missing = tmp.path().join("missing");
-        assert_eq!(resolve_codex_home(Some(missing.clone()), home), expected);
-        assert_eq!(resolve_codex_home(Some(missing), None), None);
-        assert_eq!(resolve_codex_home(None, None), None);
+        let home = Some(PathBuf::from("/home/u"));
+        assert_eq!(resolve_codex_home(Some(missing), home), None);
     }
 
     #[cfg(windows)]

@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::json;
 
 use crate::install::host_plugin::{self, NAME};
@@ -69,10 +69,15 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
 /// The SAME codex_home() the watcher uses, so the two can't disagree.
 fn codex_home() -> Result<PathBuf> {
     pixtuoid_core::source::codex::codex_home().ok_or_else(|| {
-        io::home_unset(
-            "Codex's home",
-            &format!("CODEX_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
-        )
+        match pixtuoid_core::platform::path_env("CODEX_HOME") {
+            Some(set) => anyhow!(
+                "CODEX_HOME is {set:?}, which is no directory, so codex itself won't start; create it or unset CODEX_HOME, then reconnect"
+            ),
+            None => io::home_unset(
+                "Codex's home",
+                &format!("CODEX_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
+            ),
+        }
     })
 }
 
@@ -342,14 +347,10 @@ _pixtuoid = true
         temp_env::with_var("CODEX_HOME", Some(tmp.path()), || {
             assert_eq!(config_toml().unwrap(), tmp.path().join("config.toml"));
         });
-        // A non-existent dir falls back, where upstream errors; `resolve_codex_home` says why.
         let missing = tmp.path().join("missing");
         temp_env::with_var("CODEX_HOME", Some(&missing), || {
-            assert!(
-                config_toml()
-                    .unwrap()
-                    .ends_with(PathBuf::from(".codex").join("config.toml"))
-            );
+            let err = format!("{:#}", config_toml().unwrap_err());
+            assert!(err.contains("which is no directory"), "{err}");
         });
     }
 
