@@ -108,12 +108,32 @@ test('tenant board: hw-panel screen, LED dots with shape distinction, sr-only va
   await expect(page.locator('#tools')).toHaveAttribute('data-floor', '2F');
 });
 
-test('the star plaque hangs beside the tenant board', async ({ page }) => {
+// The lobby row wraps (`flex-wrap`), so the plaque sits beside the board only
+// where the row fits both.
+test('the star plaque hangs beside the tenant board when wide and under it on a phone', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./');
   const plaque = page.locator('#tools .tools__plaque');
-  await expect(plaque).toHaveClass(/hw-panel/);
-  await expect(plaque).toContainText('★');
+  const board = page.locator('#tools .tools__board');
+  for (const [width, beside] of [
+    [1280, true],
+    [390, false],
+  ] as const) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto('./');
+    await expect(plaque).toHaveClass(/hw-panel/);
+    await expect(plaque).toContainText('★');
+    const p = (await plaque.boundingBox())!;
+    const b = (await board.boundingBox())!;
+    if (beside) {
+      expect(p.x, `${width}px: right of the board`).toBeGreaterThanOrEqual(b.x + b.width);
+      expect(p.y, `${width}px: on the board's row`).toBeLessThan(b.y + b.height);
+    } else {
+      expect(p.y, `${width}px: under the board`).toBeGreaterThanOrEqual(b.y + b.height);
+    }
+  }
 });
 
 test('pantry FAQ: an indented answer stays inside the chat column', async ({ page }) => {
