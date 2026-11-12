@@ -72,12 +72,12 @@ The components that handle untrusted or privileged input, and how they're bounde
    Reasonix and Antigravity get a local plugin managed through their own plugin
    subcommands, so each CLI writes its own settings — and otherwise edits the CLI's config through a single advisory-locked,
    `fsync` + atomic-rename writer that **preserves the file's permissions,
-   follows stow symlinks, and changes only pixtuoid's own entries**. A
+   follows stow symlinks, and changes only the entries that run pixtuoid's shim**. A
    rewritten config keeps every other setting; a YAML or TOML one is edited in
    place, comments and formatting included, and a JSON one is re-emitted.
    Installs are idempotent and reversible (*disconnect* removes the plugin or the hook entries,
    and connect and disconnect remove from Claude Code's, Codex's, Reasonix's, Hermes's and Antigravity's
-   own config every hook whose command runs pixtuoid's shim, whichever release wrote it). Past an explicit connect/disconnect,
+   own config every hook whose command runs pixtuoid's shim, hand-written ones included). Past an explicit connect/disconnect,
    a launch only rewrites the plugin files pixtuoid owns and loads them through a
    connected CLI's own subcommand where it has one (`converge_owned`), and an interactive
    one installs the hooks of a source an older release connected by flag (`adopt_flagged_targets`).

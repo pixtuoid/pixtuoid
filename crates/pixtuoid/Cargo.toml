@@ -68,8 +68,9 @@ toml_edit          = { workspace = true }
 # before yaml-edit edits it, whose parser recovers from syntax errors
 # (github.com/jelmer/yaml-edit README, "Error recovery").
 saphyr             = "0.3.1"
+shell-words        = "1.1.1"
 # Lossless YAML edits, so a write to a user's file (dsh's patch list, Hermes's
-# `config.yaml`) keeps every byte but pixtuoid's entries; saphyr re-emits it all.
+# `config.yaml`) keeps every byte but the entries it removes; saphyr re-emits it all.
 yaml-edit          = { version = "0.3.6", default-features = false }
 anyhow             = { workspace = true }
 tracing            = { workspace = true }

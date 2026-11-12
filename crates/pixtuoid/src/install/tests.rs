@@ -2168,22 +2168,29 @@ fn a_half_done_hermes_reload_is_finished_by_the_next() {
     });
 }
 
+/// Codex's and Antigravity's own configs, each with content its strip can't parse.
+fn unparsable_cli_configs(
+    tmp: &std::path::Path,
+) -> [(&'static Target, &'static str, Option<PathBuf>, &'static str); 2] {
+    [
+        (
+            &CODEX,
+            "codex",
+            Some(plugin_hooks_path(tmp)),
+            "{ not = = valid [[[",
+        ),
+        (&ANTIGRAVITY, "agy", None, "{ not json"),
+    ]
+}
+
 /// A CLI config the strip can't parse fails the connect before the CLI registers
 /// anything or pixtuoid writes a file, so no registration outlives the rolled-back
 /// hooks.
 #[test]
-fn a_connect_over_an_unparsable_legacy_config_errs_and_rewrites_nothing() {
+fn a_connect_over_an_unparsable_cli_config_errs_and_touches_nothing() {
     with_fake_hosts(|fake| {
         let tmp = tempfile::TempDir::new().unwrap();
-        for (t, cli, primary, garbage) in [
-            (
-                &CODEX,
-                "codex",
-                Some(plugin_hooks_path(tmp.path())),
-                "{ not = = valid [[[",
-            ),
-            (&ANTIGRAVITY, "agy", None, "{ not json"),
-        ] {
+        for (t, cli, primary, garbage) in unparsable_cli_configs(tmp.path()) {
             let own = (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
             std::fs::create_dir_all(own.parent().unwrap()).unwrap();
             std::fs::write(&own, garbage).unwrap();
@@ -2207,6 +2214,38 @@ fn a_connect_over_an_unparsable_legacy_config_errs_and_rewrites_nothing() {
                 at.display()
             );
             assert_eq!(calls_of(fake, cli), Vec::<String>::new(), "{}", t.name);
+        }
+    });
+}
+
+/// A disconnect over one fails before its first write, so the plugin stays both
+/// registered and whole rather than registered with its hooks stripped.
+#[test]
+fn a_disconnect_over_an_unparsable_cli_config_errs_and_touches_nothing() {
+    with_fake_hosts(|fake| {
+        let tmp = tempfile::TempDir::new().unwrap();
+        for (t, cli, primary, garbage) in unparsable_cli_configs(tmp.path()) {
+            install_target_from(
+                t,
+                primary.clone(),
+                Some(PathBuf::from("/fake/pixtuoid-hook")),
+            )
+            .unwrap();
+            let own = (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+            std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+            std::fs::write(&own, garbage).unwrap();
+            let at = primary_path(t, primary.clone()).unwrap();
+            let hooks = std::fs::read_to_string(&at).unwrap();
+            let calls = calls_of(fake, cli);
+            assert!(uninstall_target(t, primary).is_err(), "{}", t.name);
+            assert_eq!(std::fs::read_to_string(&at).unwrap(), hooks, "{}", t.name);
+            assert_eq!(
+                std::fs::read_to_string(&own).unwrap(),
+                garbage,
+                "{}",
+                t.name
+            );
+            assert_eq!(calls_of(fake, cli), calls, "{}", t.name);
         }
     });
 }

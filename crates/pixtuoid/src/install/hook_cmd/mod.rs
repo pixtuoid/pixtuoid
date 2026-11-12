@@ -64,8 +64,9 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     }
 }
 
-/// Whether `command` runs pixtuoid's shim, read in the shape of each form a release
-/// wrote, since one split misreads another's.
+/// Whether `command` runs pixtuoid's shim, hand-written or not; one that only names
+/// the shim, or hands it to another program, does not. Each form a release wrote is
+/// read in its own shape, since one split misreads another's.
 pub(crate) fn invokes_shim(command: &str) -> bool {
     exec_form_runs_shim(command) || bare_form_runs_shim(command) || shell_form_runs_shim(command)
 }
@@ -73,7 +74,8 @@ pub(crate) fn invokes_shim(command: &str) -> bool {
 /// Claude Code's Windows exec form (`claude::hook_command`): the whole `command` is the
 /// shim's absolute path, unquoted and spaces included. A character no file name holds
 /// (learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file, "Naming Conventions")
-/// past the drive means more than one path, so a program handed the shim stays.
+/// past the drive means more than one path, as when another program is handed the
+/// shim, and such a command is not this form.
 fn exec_form_runs_shim(command: &str) -> bool {
     let mut chars = command.chars();
     let drive = chars.next().is_some_and(|c| c.is_ascii_alphabetic())
@@ -103,12 +105,17 @@ fn bare_form_runs_shim(command: &str) -> bool {
 }
 
 /// The Unix forms ([`shell_hook_command`], Claude Code's bare name, Hermes's
-/// `'<path>' --source hermes`) as `/bin/sh` splits them: past any leading `NAME=value`
-/// assignments the program is the shim, or one of them is the [`SOURCE_ENV`] stamp
-/// only the shim reads, which also finds a shim renamed through
-/// [`HOOK_OVERRIDE_ENV`](crate::install::io::HOOK_OVERRIDE_ENV).
+/// `'<path>' --source hermes`) split as `/bin/sh` splits them (POSIX Shell Command
+/// Language 2.2, which `shell_words::split` implements; a command it can't split is no
+/// such form): past any leading `NAME=value` assignments the program is the shim, or
+/// one of them is the [`SOURCE_ENV`] stamp only the shim reads, which also finds a shim
+/// renamed through [`HOOK_OVERRIDE_ENV`](crate::install::io::HOOK_OVERRIDE_ENV) in a
+/// form that carries the stamp.
 fn shell_form_runs_shim(command: &str) -> bool {
-    for word in shell_words(command) {
+    let Ok(words) = shell_words::split(command) else {
+        return false;
+    };
+    for word in words {
         match word.split_once('=') {
             Some((name, _)) if is_env_name(name) => {
                 if name == SOURCE_ENV {
@@ -153,49 +160,6 @@ fn is_env_name(name: &str) -> bool {
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-/// `command` split into words as `/bin/sh` and `cmd.exe` both read the forms
-/// pixtuoid writes: single and double quotes group, and a backslash escapes only a
-/// quote, a backslash or a space, so a Windows path keeps its separators.
-fn shell_words(command: &str) -> Vec<String> {
-    let mut words = Vec::new();
-    let mut word = String::new();
-    let mut started = false;
-    let mut quote = None;
-    let mut chars = command.chars().peekable();
-    while let Some(c) = chars.next() {
-        match (quote, c) {
-            (None, c) if c.is_whitespace() => {
-                if started {
-                    words.push(std::mem::take(&mut word));
-                    started = false;
-                }
-            }
-            (None, '\'' | '"') => {
-                quote = Some(c);
-                started = true;
-            }
-            (Some(q), c) if c == q => quote = None,
-            (Some('\''), c) => word.push(c),
-            (_, '\\')
-                if chars
-                    .peek()
-                    .is_some_and(|n| matches!(n, '\'' | '"' | '\\' | ' ')) =>
-            {
-                word.extend(chars.next());
-                started = true;
-            }
-            (_, c) => {
-                word.push(c);
-                started = true;
-            }
-        }
-    }
-    if started {
-        words.push(word);
-    }
-    words
 }
 
 #[cfg(test)]

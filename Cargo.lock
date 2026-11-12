@@ -3134,6 +3134,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "shell-words",
  "snapbox",
  "syn 3.0.9",
  "temp-env",

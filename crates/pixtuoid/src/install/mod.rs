@@ -779,6 +779,11 @@ pub(crate) struct UninstallReport {
 /// lock scope as `install_target`, and never rewrites on a semantic no-op.
 pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<UninstallReport> {
     let path = write_path(t, config)?;
+    // As a connect does, so a config of the CLI's own the strip can't parse leaves the
+    // plugin both registered and whole.
+    if let Some(host) = t.host() {
+        check_cli_config(host.shim_hooks.as_ref())?;
+    }
     let mut removed = strip_managed(t.primary.uninstall(), &path)?;
     // Before the deregister, as neither strip needs the CLI: a failing deregister
     // leaves a registered plugin whose hooks are gone, or whose copy fires into a

@@ -389,8 +389,8 @@ _pixtuoid = true
         );
     }
 
-    /// The rule keys on the command, so a hand-written entry that runs the shim goes
-    /// as one a release wrote does.
+    /// `hook_cmd::invokes_shim` keys on the command, so a hand-written entry that runs
+    /// the shim goes as one a release wrote does.
     #[test]
     fn uninstall_takes_a_hand_written_shim_entry_too() {
         let cfg = r#"
