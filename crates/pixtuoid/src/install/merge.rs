@@ -282,9 +282,13 @@ pub(crate) fn emit_json(content: &str, value: &Value) -> anyhow::Result<String> 
     ))
 }
 
-/// `content` with every hook entry whose `command` runs pixtuoid's shim removed
-/// ([`crate::install::hook_cmd::invokes_shim`]), and every list item, member or map
-/// that removal emptied, whatever shape the release that wrote it used.
+/// `content` with every hook entry whose command runs pixtuoid's shim removed, whatever
+/// shape the release that wrote it used: one with an `args` array, Claude Code's exec
+/// form, by [`is_shim`](crate::install::hook_cmd::is_shim) over its whole `command`, any
+/// other by [`invokes_shim`](crate::install::hook_cmd::invokes_shim). A list item, member
+/// or map the removal empties goes with it, and so does a list item once it empties one
+/// of the item's members, as Claude Code's `{matcher, hooks}` group does when its `hooks`
+/// held only shim entries.
 pub(crate) fn strip_shim_json(content: &str) -> anyhow::Result<MergeOutcome> {
     flat_json_merge_outcome_uninstall(content, |mut doc| {
         strip_shim_value(&mut doc);
@@ -298,6 +302,24 @@ pub(crate) fn strip_shim_json(content: &str) -> anyhow::Result<MergeOutcome> {
 struct Stripped {
     removed: bool,
     hollowed: bool,
+}
+
+impl Stripped {
+    /// Whether a list item goes, folding in `inner`, what stripping it did: once the
+    /// strip removed entries from it and left it empty or hollowed.
+    fn item_goes(&mut self, inner: Stripped, emptied: impl FnOnce() -> bool) -> bool {
+        self.removed |= inner.removed;
+        inner.removed && (inner.hollowed || emptied())
+    }
+
+    /// Whether a member goes, folding in `inner`: once the strip emptied it, which
+    /// hollows the node that held it.
+    fn member_goes(&mut self, inner: Stripped, emptied: impl FnOnce() -> bool) -> bool {
+        self.removed |= inner.removed;
+        let goes = inner.removed && emptied();
+        self.hollowed |= goes;
+        goes
+    }
 }
 
 fn json_shim_entry(v: &Value) -> bool {
@@ -326,15 +348,11 @@ fn strip_shim_value(v: &mut Value) -> Stripped {
                 return false;
             }
             let inner = strip_shim_value(item);
-            done.removed |= inner.removed;
-            !(inner.removed && (inner.hollowed || json_emptied(item)))
+            !done.item_goes(inner, || json_emptied(item))
         }),
         Value::Object(members) => members.retain(|_, child| {
             let inner = strip_shim_value(child);
-            done.removed |= inner.removed;
-            let emptied = inner.removed && json_emptied(child);
-            done.hollowed |= emptied;
-            !emptied
+            !done.member_goes(inner, || json_emptied(child))
         }),
         _ => {}
     }
@@ -389,9 +407,7 @@ fn strip_shim_node(node: &yaml_edit::YamlNode) -> Stripped {
                 items.remove(i);
                 continue;
             }
-            let inner = strip_shim_node(&item);
-            done.removed |= inner.removed;
-            if inner.removed && (inner.hollowed || yaml_emptied(&item)) {
+            if done.item_goes(strip_shim_node(&item), || yaml_emptied(&item)) {
                 items.remove(i);
             }
         }
@@ -400,11 +416,8 @@ fn strip_shim_node(node: &yaml_edit::YamlNode) -> Stripped {
             let Some(child) = members.get(&key) else {
                 continue;
             };
-            let inner = strip_shim_node(&child);
-            done.removed |= inner.removed;
-            if inner.removed && yaml_emptied(&child) {
+            if done.member_goes(strip_shim_node(&child), || yaml_emptied(&child)) {
                 members.remove(&key);
-                done.hollowed = true;
             }
         }
     }
@@ -420,7 +433,7 @@ pub(crate) fn strip_shim_toml(content: &str) -> anyhow::Result<MergeOutcome> {
     })
 }
 
-fn toml_shim_entry(command: Option<&toml_edit::Value>) -> bool {
+fn toml_runs_shim(command: Option<&toml_edit::Value>) -> bool {
     command
         .and_then(toml_edit::Value::as_str)
         .is_some_and(crate::install::hook_cmd::invokes_shim)
@@ -445,10 +458,7 @@ fn strip_shim_table(t: &mut toml_edit::Table) -> Stripped {
     let mut done = Stripped::default();
     t.retain(|_, item| {
         let inner = strip_shim_item(item);
-        done.removed |= inner.removed;
-        let emptied = inner.removed && toml_emptied(item);
-        done.hollowed |= emptied;
-        !emptied
+        !done.member_goes(inner, || toml_emptied(item))
     });
     done
 }
@@ -461,16 +471,14 @@ fn strip_shim_item(item: &mut toml_edit::Item) -> Stripped {
         toml_edit::Item::ArrayOfTables(tables) => {
             for i in (0..tables.len()).rev() {
                 let Some(t) = tables.get_mut(i) else { continue };
-                let gone = if toml_shim_entry(t.get("command").and_then(toml_edit::Item::as_value))
-                {
+                let gone = if toml_runs_shim(t.get("command").and_then(toml_edit::Item::as_value)) {
+                    done.removed = true;
                     true
                 } else {
                     let inner = strip_shim_table(t);
-                    done.removed |= inner.removed;
-                    inner.removed && (inner.hollowed || t.is_empty())
+                    done.item_goes(inner, || t.is_empty())
                 };
                 if gone {
-                    done.removed = true;
                     tables.remove(i);
                 }
             }
@@ -487,25 +495,21 @@ fn strip_shim_toml_value(v: &mut toml_edit::Value) -> Stripped {
             let Some(item) = items.get_mut(i) else {
                 continue;
             };
-            let gone = if toml_shim_entry(item.as_inline_table().and_then(|t| t.get("command"))) {
+            let gone = if toml_runs_shim(item.as_inline_table().and_then(|t| t.get("command"))) {
+                done.removed = true;
                 true
             } else {
                 let inner = strip_shim_toml_value(item);
-                done.removed |= inner.removed;
-                inner.removed && (inner.hollowed || toml_value_emptied(item))
+                done.item_goes(inner, || toml_value_emptied(item))
             };
             if gone {
-                done.removed = true;
                 items.remove(i);
             }
         }
     } else if let Some(members) = v.as_inline_table_mut() {
         members.retain(|_, child| {
             let inner = strip_shim_toml_value(child);
-            done.removed |= inner.removed;
-            let emptied = inner.removed && toml_value_emptied(child);
-            done.hollowed |= emptied;
-            !emptied
+            !done.member_goes(inner, || toml_value_emptied(child))
         });
     }
     done
