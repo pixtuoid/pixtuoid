@@ -319,23 +319,48 @@ fn warn_broken_installs(connected: &std::collections::HashSet<String>) {
         if !connected.contains(t.core_source) {
             continue;
         }
-        let diag = doctor::diagnose(t.core_source, "", None);
-        if let Some(broken) = diag.broken_install() {
-            let _ = writeln!(
-                std::io::stderr(),
-                "⚠ pixtuoid: {} hooks are installed but BROKEN: {} — \
-                 reconnect in the Sources panel (press {})",
-                t.core_source,
-                broken.issues.join("; "),
-                crate::panels::keys::SOURCES
-            );
+        if let Some(line) =
+            broken_install_warning(t.core_source, &doctor::diagnose(t.core_source, "", None))
+        {
+            let _ = writeln!(std::io::stderr(), "{line}");
         }
     }
+}
+
+/// [`warn_broken_installs`]'s line for `source`, when its install is broken.
+fn broken_install_warning(source: &str, diag: &doctor::SourceDiagnostics) -> Option<String> {
+    diag.broken_summary().map(|broken| {
+        format!(
+            "⚠ pixtuoid: {source} {broken} — reconnect in the Sources panel (press {})",
+            crate::panels::keys::SOURCES
+        )
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_broken_install_warning_names_the_source_and_its_summary() {
+        let broken = doctor::SourceDiagnostics {
+            install: Some(install::verify::SchemaVerifyResult {
+                issues: vec!["shim binary missing: /x".into()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        assert_eq!(
+            broken_install_warning("hermes", &broken).as_deref(),
+            Some(
+                "⚠ pixtuoid: hermes install broken: shim binary missing: /x — reconnect in the Sources panel (press s)"
+            )
+        );
+        assert_eq!(
+            broken_install_warning("hermes", &doctor::SourceDiagnostics::default()),
+            None
+        );
+    }
 
     #[test]
     fn only_an_interactive_launch_adopts() {

@@ -787,8 +787,8 @@ fn conn_state(no_cli: bool, connected: bool) -> ConnState {
 /// A source's worst diagnostic as its Sources row shows it, glyph-prefixed:
 /// install-broken (hooks can't fire) outranks decode drift.
 pub(crate) fn row_health(d: &crate::doctor::SourceDiagnostics) -> Option<String> {
-    if let Some(i) = d.broken_install() {
-        return Some(format!("⚠ install broken: {}", i.issues.join("; ")));
+    if let Some(broken) = d.broken_summary() {
+        return Some(format!("⚠ {broken}"));
     }
     let n = d.drift.total();
     if n > 0 {
