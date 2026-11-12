@@ -69,7 +69,7 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
 /// The SAME codex_home() the watcher uses, so the two can't disagree.
 fn codex_home() -> Result<PathBuf> {
     pixtuoid_core::source::codex::codex_home().ok_or_else(|| {
-        match pixtuoid_core::platform::path_env("CODEX_HOME") {
+        match pixtuoid_core::source::codex::codex_home_env() {
             Some(set) => anyhow!(
                 "CODEX_HOME is {}, which is no directory, so codex itself won't start; create it or unset CODEX_HOME",
                 crate::display_path(&set)

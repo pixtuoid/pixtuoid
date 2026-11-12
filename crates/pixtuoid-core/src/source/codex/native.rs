@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
 
-use super::{SOURCE_NAME, codex_home, codex_id_from_path};
+use super::{SOURCE_NAME, codex_home, codex_home_env, codex_id_from_path};
 use crate::platform::NO_HOME;
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
@@ -98,7 +98,12 @@ fn sessions_root() -> Option<PathBuf> {
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
-    sessions_root().map(|root| vec![root]).ok_or(NO_HOME)
+    let why = if codex_home_env().is_some() {
+        "CODEX_HOME is no directory"
+    } else {
+        NO_HOME
+    };
+    sessions_root().map(|root| vec![root]).ok_or(why)
 }
 
 /// The live session's pid, keyed by the rollout UUID (the slot's
@@ -113,6 +118,28 @@ mod tests {
     use super::*;
 
     const UUID: &str = "019e7762-9ded-7e33-be41-946ecf105bf4";
+
+    #[test]
+    fn a_codex_home_that_is_no_directory_disables_the_probe_by_name() {
+        let probe = crate::source::registry::descriptor_for(SOURCE_NAME)
+            .and_then(|d| d.focus_probe())
+            .expect("codex has a focus probe");
+        let home = tempfile::tempdir().unwrap();
+        let pinned = [
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        temp_env::with_vars(pinned, || {
+            temp_env::with_var("CODEX_HOME", Some(home.path().join("codx")), || {
+                assert_eq!((probe.paths)(), Err("CODEX_HOME is no directory"));
+            });
+            temp_env::with_var_unset("CODEX_HOME", || {
+                let root =
+                    crate::platform::dirs_home_dir().map(|h| h.join(".codex").join("sessions"));
+                assert_eq!((probe.paths)().ok(), root.map(|r| vec![r]));
+            });
+        });
+    }
 
     fn snap_of(root: &Path, paths: Vec<PathBuf>) -> ProbeSnapshot {
         ProbeSnapshot::from_open_fd_pairs(

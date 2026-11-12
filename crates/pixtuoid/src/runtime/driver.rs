@@ -690,7 +690,7 @@ mod tests {
         use pixtuoid_core::source::registry::{self, descriptor_for};
         use std::collections::BTreeSet;
 
-        // A set CODEX_HOME that is no directory, or no home, leaves a source unbuilt.
+        // Pinned so every source's root resolves.
         let home = tempfile::tempdir().unwrap();
         let vars = [
             ("CODEX_HOME", None),
@@ -727,6 +727,29 @@ mod tests {
              transcript-bearing source is registered but not built (it would never \
              spawn), or a built source isn't registered"
         );
+    }
+
+    #[test]
+    fn a_codex_home_that_is_no_directory_builds_no_codex_watcher() {
+        let home = tempfile::tempdir().unwrap();
+        let missing = home.path().join("codx");
+        let vars = [
+            ("CODEX_HOME", Some(missing.as_os_str())),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let built: Vec<String> = temp_env::with_vars(vars, || {
+            build_source_set(
+                PathBuf::from("/tmp/pixtuoid-test.sock"),
+                None,
+                ConnectedSources::default(),
+            )
+            .iter()
+            .map(|s| s.name().to_owned())
+            .collect()
+        });
+        assert!(!built.iter().any(|n| n == "codex"), "{built:?}");
+        assert!(built.iter().any(|n| n == "claude-code"), "{built:?}");
     }
 
     /// A transcript read hands over a call's start and end together: both

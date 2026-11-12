@@ -474,10 +474,14 @@ fn cell_tool(source: &str) -> Option<&str> {
 /// leaves alone) — the inverse scoping of [`super::grok::grok_home`]'s, and
 /// unobservable for the same reason.
 pub fn codex_home() -> Option<PathBuf> {
-    resolve_codex_home(
-        crate::platform::path_env("CODEX_HOME"),
-        crate::platform::dirs_home_dir(),
-    )
+    resolve_codex_home(codex_home_env(), crate::platform::dirs_home_dir())
+}
+
+/// `CODEX_HOME` as [`codex_home`] reads it. Internal cross-crate helper, not a
+/// stable API.
+#[doc(hidden)]
+pub fn codex_home_env() -> Option<PathBuf> {
+    crate::platform::path_env("CODEX_HOME")
 }
 
 /// Pure precedence core, separated so it's unit-testable without env mutation.

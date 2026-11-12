@@ -654,13 +654,11 @@ mod tests {
         );
     }
 
-    /// grok's `model-error` holds a line that decodes to nothing, the
-    /// `agent_error` notification.
     #[test]
     fn the_shim_stamps_survive_the_strip() {
         for (source, scenario) in [
             ("claude-code", "tool-run-hermetic"),
-            ("grok", "model-error-hermetic"),
+            ("grok", "model-error-hermetic"), // its agent_error line decodes to nothing
         ] {
             let (_d, hooks) = stripped_copy(source, scenario, HOOK_PAYLOADS);
             let stamps = |p: &Path| -> Vec<serde_json::Value> {

@@ -784,12 +784,16 @@ fn collect_roots() -> Vec<RootStatus> {
     registry::REGISTRY
         .iter()
         .filter_map(|d| {
-            let root = pixtuoid_core::source::resolved_source_root(d.name)?;
-            let env = d
-                .home_env
-                // The SAME `path_env` the resolvers use, or the two disagree: `env::var` reads
-                // a non-UTF-8 override as UNSET, silencing the ⚠ when the root IS wrong (#172).
-                .map(|v| (v, pixtuoid_core::platform::path_env(v).is_some()));
+            // The SAME `path_env` the resolvers use, or the two disagree: `env::var` reads
+            // a non-UTF-8 override as UNSET, silencing the ⚠ when the root IS wrong (#172).
+            let set = d.home_env.and_then(pixtuoid_core::platform::path_env);
+            let env = d.home_env.map(|v| (v, set.is_some()));
+            let root = match pixtuoid_core::source::resolved_source_root(d.name) {
+                Some(root) => root,
+                // A set override that is no directory resolves no root (`codex_home`),
+                // and is what the row alarms on.
+                None => set.filter(|value| !value.is_dir())?,
+            };
             let exists = root.is_dir();
             Some(RootStatus {
                 source: d.name,
@@ -2246,6 +2250,29 @@ mod tests {
         // A source with no override column at all never grows a `via`.
         let plain = format_root_row(&root(false, None), &ink);
         assert!(!plain.contains('↳') && !plain.contains("via $"), "{plain}");
+    }
+
+    #[test]
+    fn a_set_override_that_resolves_no_root_keeps_its_row_and_alarm() {
+        let home = tempfile::tempdir().unwrap();
+        let missing = home.path().join("codx");
+        let vars = [
+            ("CODEX_HOME", Some(missing.as_os_str())),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let roots = temp_env::with_vars(vars, collect_roots);
+        let codex = roots
+            .iter()
+            .find(|r| r.source == "codex")
+            .expect("a codex row");
+        assert!(!codex.exists);
+        let row = format_root_row(codex, &Ink { on: false });
+        assert!(row.contains(&ShownPath::new(&missing).to_string()), "{row}");
+        assert!(
+            row.contains("$CODEX_HOME is set but that root does not exist"),
+            "{row}"
+        );
     }
 
     #[test]

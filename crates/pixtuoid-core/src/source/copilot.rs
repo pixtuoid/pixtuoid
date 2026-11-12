@@ -73,7 +73,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: native::NATIVE,
 };
 
-/// `$COPILOT_HOME` if set, else `~/.copilot` — mirroring copilot 1.0.78's
+/// `$COPILOT_HOME` if set, else `<home>/.copilot`, and none with neither —
+/// mirroring copilot 1.0.78's
 /// `resolveCopilotHome` (in the `runtime.node` addon, probed directly): empty
 /// is unset, `~` is NOT expanded, `<home>/.copilot` on every platform (the
 /// nearby `%LOCALAPPDATA%` branch is the CACHE dir, not this one).
@@ -83,7 +84,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 #[cfg(feature = "native")]
 pub(crate) fn copilot_home() -> Option<PathBuf> {
     resolve_copilot_home(
-        crate::platform::path_env("COPILOT_HOME"),
+        crate::platform::path_env("COPILOT_HOME")
+            .map(|v| crate::platform::warn_if_relative_override("COPILOT_HOME", v)),
         crate::platform::user_home_opt(),
     )
 }
@@ -95,10 +97,7 @@ fn resolve_copilot_home(
     home: Option<PathBuf>,
 ) -> Option<PathBuf> {
     match copilot_home_env {
-        Some(v) => Some(crate::platform::warn_if_relative_override(
-            "COPILOT_HOME",
-            v,
-        )),
+        Some(v) => Some(v),
         // copilot 1.0.109 cannot launch without a home: its loader lists its
         // package dirs under Node's `os.homedir()`
         // (`@github/copilot-darwin-arm64@1.0.109` `sea-loader.js` `Ki()`), which

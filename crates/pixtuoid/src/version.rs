@@ -3,7 +3,6 @@
 
 use std::collections::HashSet;
 
-use pixtuoid_scene::look::LookKind;
 use semver::Version;
 
 use crate::install::target::{self, Target};
@@ -48,8 +47,8 @@ struct Notice {
     says: fn(&Facts<'_>) -> Option<String>,
 }
 
-/// Every notice, in the order the popup lists them: an action before a tip.
-const NOTICES: [Notice; 4] = [
+/// Every notice, in the order the popup lists them.
+const NOTICES: [Notice; 3] = [
     Notice {
         last_without: Version::new(0, 19, 0),
         says: |facts| reconnect(&REPLUGGED, facts),
@@ -61,10 +60,6 @@ const NOTICES: [Notice; 4] = [
     Notice {
         last_without: Version::new(0, 21, 0),
         says: |facts| reconnect(&[&target::ANTIGRAVITY], facts),
-    },
-    Notice {
-        last_without: Version::new(0, 20, 0),
-        says: cutaway_default,
     },
 ];
 
@@ -93,19 +88,6 @@ fn reconnect(hosts: &[&Target], facts: &Facts<'_>) -> Option<String> {
     ))
 }
 
-/// A TUI that draws the cutaway, which an older pixtuoid drew only when asked,
-/// says how to keep the classic.
-fn cutaway_default(facts: &Facts<'_>) -> Option<String> {
-    let classic = crate::graphics::LookMode::Named(LookKind::Classic);
-    facts.terminal_cutaway.then(|| {
-        format!(
-            "The cutaway office is now the default where this terminal draws it: \
-             `pixtuoid run --look {classic}` (or `look = \"{classic}\"` in the config) keeps the classic \
-             office."
-        )
-    })
-}
-
 /// `a`, `a and b`, `a, b and c`.
 fn english_list(names: &[&str]) -> String {
     match names {
@@ -119,9 +101,6 @@ pub(crate) struct Facts<'a> {
     /// The agent CLIs on this machine, as [`crate::sources::detect`] finds them.
     pub(crate) installed: &'a [&'static str],
     pub(crate) connected: &'a HashSet<String>,
-    /// The TUI paints the cutaway in terminal graphics; the floating window,
-    /// which `look` doesn't govern, passes `false`.
-    pub(crate) terminal_cutaway: bool,
 }
 
 /// From before every notice's change to past all of them: what a test that
@@ -292,14 +271,12 @@ mod tests {
         }
     }
 
-    /// Every notice's state holds: each legacy host installed and disconnected,
-    /// the TUI's cutaway drawn.
+    /// Every notice's state holds: each legacy host installed and disconnected.
     fn all_hold() -> Facts<'static> {
         static NONE: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
         Facts {
             installed: &LEGACY_HOSTS,
             connected: &NONE,
-            terminal_cutaway: true,
         }
     }
 
@@ -366,19 +343,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn an_action_lists_before_a_tip() {
-        assert_eq!(
-            due(Some(&across_every_notice()), &all_hold()),
-            [
-                reconnect(&REPLUGGED, &all_hold()).expect("holds"),
-                reconnect(&[&target::HERMES], &all_hold()).expect("holds"),
-                reconnect(&[&target::ANTIGRAVITY], &all_hold()).expect("holds"),
-                cutaway_default(&all_hold()).expect("holds"),
-            ]
-        );
-    }
-
     /// Only a replugged host that is installed and reads disconnected is named,
     /// by its registry name; with none, the notice is resolved.
     #[test]
@@ -389,7 +353,6 @@ mod tests {
                 &Facts {
                     installed,
                     connected: &set(connected),
-                    ..all_hold()
                 },
             )
         };
@@ -438,7 +401,6 @@ mod tests {
                 &Facts {
                     installed: &["antigravity"],
                     connected: &set(connected),
-                    terminal_cutaway: false,
                 },
             )
         };
@@ -461,7 +423,6 @@ mod tests {
                 &Facts {
                     installed: &["hermes"],
                     connected: &set(connected),
-                    terminal_cutaway: false,
                 },
             )
         };
@@ -475,56 +436,9 @@ mod tests {
     }
 
     #[test]
-    fn the_cutaway_default_is_said_only_where_the_tui_draws_it() {
-        let says = |terminal_cutaway| {
-            cutaway_default(&Facts {
-                terminal_cutaway,
-                ..all_hold()
-            })
-        };
-        assert_eq!(says(false), None);
-        assert_eq!(
-            says(true).as_deref(),
-            Some(
-                "The cutaway office is now the default where this terminal draws it: \
-                 `pixtuoid run --look classic` (or `look = \"classic\"` in the config) keeps the classic \
-                 office."
-            )
-        );
-    }
-
-    #[test]
     fn english_list_joins_the_last_with_and() {
         assert_eq!(english_list(&["a"]), "a");
         assert_eq!(english_list(&["a", "b"]), "a and b");
         assert_eq!(english_list(&["a", "b", "c"]), "a, b and c");
-    }
-
-    /// The notice's command and config line must keep the classic: a renamed
-    /// flag, key or value fails here, not in a user's shell.
-    #[test]
-    fn the_cutaway_default_names_a_command_and_a_line_that_keep_the_classic() {
-        use clap::Parser;
-        let said = cutaway_default(&all_hold()).expect("holds");
-        let quoted: Vec<&str> = said.split('`').skip(1).step_by(2).collect();
-        let [command, line] = quoted[..] else {
-            panic!("a command and a config line: {said}");
-        };
-        use crate::graphics::{LookChoice, LookMode};
-        let classic = LookChoice::new(LookMode::Named(LookKind::Classic), None);
-        let args = command.split(' ');
-        let Some(crate::cli::Cmd::Run { look, .. }) =
-            crate::cli::Cli::try_parse_from(args).expect("parses").cmd
-        else {
-            panic!("{command} runs");
-        };
-        let mut w = Vec::new();
-        let none: crate::config::AppConfig = toml::from_str("").expect("parses");
-        let ran = crate::config::resolve_look(&none, look.look, &mut w);
-        assert_eq!(LookChoice::new(ran, look.protocol), classic);
-        let cfg: crate::config::AppConfig = toml::from_str(line).expect("parses");
-        let configured = crate::config::resolve_look(&cfg, None, &mut w);
-        assert_eq!(LookChoice::new(configured, None), classic);
-        assert!(w.is_empty(), "{w:?}");
     }
 }

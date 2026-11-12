@@ -213,8 +213,18 @@ mod tests {
     /// The one string deciding whether omp ever LOADS what install writes.
     #[test]
     fn default_path_is_the_extension_under_the_agent_dirs_extensions() {
-        let p = default_config_path().expect("resolvable in a dev environment");
-        assert!(p.ends_with("extensions/pixtuoid.ts"), "got {}", p.display());
+        let home = tempfile::tempdir().unwrap();
+        let vars = [
+            ("PI_CODING_AGENT_DIR", None),
+            ("PI_CONFIG_DIR", None),
+            ("OMP_PROFILE", None),
+            ("PI_PROFILE", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let p = temp_env::with_vars(vars, default_config_path).expect("a home resolves");
+        let agent = home.path().join(".omp").join("agent");
+        assert_eq!(p, agent.join("extensions").join("pixtuoid.ts"));
     }
 
     #[test]

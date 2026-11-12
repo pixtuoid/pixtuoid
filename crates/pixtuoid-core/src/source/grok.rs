@@ -587,8 +587,8 @@ fn percent_decode(s: &str) -> Option<String> {
 }
 
 /// The grok home dir, matching grok-build's own `grok_home()` (`xai-dirs`
-/// `src/lib.rs:61-97` @ 2bdd1d6a63): [`user_grok_home`], else the process's cwd
-/// (`default_grok_home`). The watcher and the liveness probe route through here,
+/// `src/lib.rs:61-97` @ 2bdd1d6a63): [`user_grok_home`], else `<cwd>/.grok`
+/// (upstream's `default_grok_home`). The watcher and the liveness probe route through here,
 /// and the installer through [`user_grok_home`], so the watched root, the
 /// installed hooks file and the probed registry can never disagree.
 ///

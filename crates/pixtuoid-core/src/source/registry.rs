@@ -1081,34 +1081,38 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
-    /// Negative control: without an override, no root may land under the temp
-    /// dir — else `starts_with` above could pass for an unrelated reason.
+    /// An override steers its root only while set: pointed at `tmp` the root is
+    /// under `tmp`, and unset it is under the home, not `tmp` — else
+    /// `starts_with` above could pass for an unrelated reason.
     #[cfg(feature = "native")]
     #[test]
     fn a_source_root_does_not_wander_into_an_unset_overrides_directory() {
         let home = tempfile::tempdir().expect("tempdir");
-        let vars = [
-            ("CLAUDE_CONFIG_DIR", None),
-            ("COPILOT_HOME", None),
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pinned = [
             ("HOME", Some(home.path().as_os_str())),
             ("USERPROFILE", Some(home.path().as_os_str())),
         ];
-        temp_env::with_vars(vars, || {
-            let tmp = tempfile::tempdir().expect("tempdir");
-            for (name, root) in [
-                (
-                    "claude-code",
-                    crate::source::resolved_source_root("claude-code").unwrap(),
-                ),
-                (
-                    "copilot",
-                    crate::source::resolved_source_root("copilot").unwrap(),
-                ),
+        temp_env::with_vars(pinned, || {
+            for (name, var) in [
+                ("claude-code", "CLAUDE_CONFIG_DIR"),
+                ("copilot", "COPILOT_HOME"),
             ] {
+                let root = |value: Option<&std::path::Path>| {
+                    temp_env::with_var(var, value, || crate::source::resolved_source_root(name))
+                        .expect("a root")
+                };
+                let steered = root(Some(tmp.path()));
                 assert!(
-                    !root.starts_with(tmp.path()),
-                    "{name}: resolved {} under a directory nothing pointed at",
-                    root.display()
+                    steered.starts_with(tmp.path()),
+                    "{name}: ${var} did not steer the root, got {}",
+                    steered.display()
+                );
+                let unset = root(None);
+                assert!(
+                    !unset.starts_with(tmp.path()) && unset.starts_with(home.path()),
+                    "{name}: with ${var} unset the root is {}, not under the home",
+                    unset.display()
                 );
             }
         });

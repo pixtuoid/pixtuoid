@@ -2516,6 +2516,9 @@ mod tests {
         let home = tempfile::tempdir().unwrap();
         let fallback = Some(home.path().join(".omp").join("agent").join("sessions"));
         let pinned = [
+            ("OMP_PROFILE", None),
+            ("PI_PROFILE", None),
+            ("PI_CONFIG_DIR", None),
             ("XDG_DATA_HOME", None),
             ("HOME", Some(home.path().as_os_str())),
             ("USERPROFILE", Some(home.path().as_os_str())),
