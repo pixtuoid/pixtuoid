@@ -528,36 +528,53 @@ fn overlapping_skill_calls_each_walk_their_child_out_on_return() {
     );
 }
 
+/// Reasonix parent `root`, whose `explore` returned with its child
+/// (`root:subagent:call_a`) done: the instant it returned.
+fn returned_reasonix_dispatch(r: &mut Reducer, scene: &mut SceneState) -> SystemTime {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let at = |ms| t0 + Duration::from_millis(ms);
+    let returned = 1_000;
+    for (hook, ms) in [
+        (("SessionStart", "root", ""), 0),
+        (("PreToolUse", "root", "explore"), 100),
+        (("PreToolUse", "root:subagent:call_a", "read_file"), 200),
+        (("PostToolUse", "root:subagent:call_a", "read_file"), 300),
+        (("PostToolUse", "root", "explore"), returned),
+    ] {
+        feed_reasonix(r, scene, hook, at(ms));
+    }
+    at(returned)
+}
+
 /// A reasonix dispatch carries no call id, so one started inside an earlier
 /// return's grace must defer that cascade as a tracked dispatch does (#151).
 #[test]
 fn an_untracked_dispatch_inside_the_grace_defers_the_pending_cascade() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let at = |ms| t0 + Duration::from_millis(ms);
     let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
     let second_child = AgentId::from_parts("reasonix", "root:subagent:call_b");
-    let first_return = 1_000;
+    let first_return = returned_reasonix_dispatch(&mut r, &mut scene);
 
-    for (hook, ms) in [
-        (("SessionStart", "root", ""), 0),
-        (("PreToolUse", "root", "explore"), 100),
-        (("PreToolUse", "root:subagent:call_a", "read_file"), 200),
-        (("PostToolUse", "root:subagent:call_a", "read_file"), 300),
-        (("PostToolUse", "root", "explore"), first_return),
-        (("PreToolUse", "root", "explore"), 2_000),
-        (("PreToolUse", "root:subagent:call_b", "read_file"), 2_500),
+    for (hook, t) in [
+        (
+            ("PreToolUse", "root", "explore"),
+            first_return + B1_CASCADE_GRACE / 2,
+        ),
+        (
+            ("PreToolUse", "root:subagent:call_b", "read_file"),
+            first_return + B1_CASCADE_GRACE * 3 / 4,
+        ),
     ] {
-        feed_reasonix(&mut r, &mut scene, hook, at(ms));
+        feed_reasonix(&mut r, &mut scene, hook, t);
     }
-    r.tick(&mut scene, at(first_return) + B1_CASCADE_GRACE);
+    r.tick(&mut scene, first_return + B1_CASCADE_GRACE);
     assert!(
         scene.agents[&second_child].exiting_at.is_none(),
         "the first return's cascade walked out the second dispatch's live child"
     );
 
-    let second_return = at(5_000);
+    let second_return = first_return + B1_CASCADE_GRACE * 2;
     feed_reasonix(
         &mut r,
         &mut scene,
@@ -580,33 +597,21 @@ fn an_untracked_dispatch_inside_the_grace_defers_the_pending_cascade() {
 fn an_untracked_dispatch_at_the_grace_boundary_defers_the_pending_cascade() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let at = |ms| t0 + Duration::from_millis(ms);
     let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
-    let first_return = at(1_000);
+    let first_return = returned_reasonix_dispatch(&mut r, &mut scene);
 
-    for (hook, t) in [
-        (("SessionStart", "root", ""), at(0)),
-        (("PreToolUse", "root", "explore"), at(100)),
-        (("PreToolUse", "root:subagent:call_a", "read_file"), at(200)),
-        (
-            ("PostToolUse", "root:subagent:call_a", "read_file"),
-            at(300),
-        ),
-        (("PostToolUse", "root", "explore"), first_return),
-        (
-            ("PreToolUse", "root", "explore"),
-            first_return + B1_CASCADE_GRACE,
-        ),
-    ] {
-        feed_reasonix(&mut r, &mut scene, hook, t);
-    }
+    feed_reasonix(
+        &mut r,
+        &mut scene,
+        ("PreToolUse", "root", "explore"),
+        first_return + B1_CASCADE_GRACE,
+    );
     assert!(
         scene.agents[&first_child].exiting_at.is_none(),
         "the second dispatch's own start fired the first return's cascade"
     );
 
-    let second_return = at(5_000);
+    let second_return = first_return + B1_CASCADE_GRACE * 2;
     feed_reasonix(
         &mut r,
         &mut scene,
@@ -617,6 +622,26 @@ fn an_untracked_dispatch_at_the_grace_boundary_defers_the_pending_cascade() {
     assert!(
         scene.agents[&first_child].exiting_at.is_some(),
         "the second return walks the first child out"
+    );
+}
+
+/// The hold is a dispatch's alone: any other call at the boundary fires it.
+#[test]
+fn a_plain_call_at_the_grace_boundary_fires_the_pending_cascade() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
+    let first_return = returned_reasonix_dispatch(&mut r, &mut scene);
+
+    feed_reasonix(
+        &mut r,
+        &mut scene,
+        ("PreToolUse", "root", "read_file"),
+        first_return + B1_CASCADE_GRACE,
+    );
+    assert!(
+        scene.agents[&first_child].exiting_at.is_some(),
+        "a plain call at the boundary held the first return's cascade"
     );
 }
 
