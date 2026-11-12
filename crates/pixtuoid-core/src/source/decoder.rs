@@ -1745,7 +1745,7 @@ mod tests {
                         "/o/s.jsonl",
                         "omp",
                         json!({"type":"message","message":{"role":"assistant","content":[
-                            {"type":"toolCall","id":"t1","name":"ask","arguments":{"i":raw}}]}}),
+                            {"type":"toolCall","id":"t1","name":"ask","arguments":{},"intent":raw}]}}),
                     )
                 }),
             ),
