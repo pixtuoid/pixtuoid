@@ -1,4 +1,4 @@
-//! reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.44.0`.
+//! reasonix's cites are `esengine/DeepSeek-Reasonix`, at `v2.44.0` unless a cite names its tag.
 
 use super::event_field;
 use crate::harness::hermetic::{
@@ -39,7 +39,7 @@ pub(crate) const PROFILE: Profile = Profile {
     invocation: &[
         "reasonix",
         "--allowed-tools",
-        "spawn_agents,explore",
+        "spawn_agents,explore,run_skill",
         "-p",
         Placeholder::Prompt.as_str(),
     ],
@@ -121,6 +121,36 @@ model = "guardian-model"
         },
         Scenario {
             name: "explore",
+            shape: Shape::Subagent,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            turn: Turn::PROFILE,
+        },
+        // A `[subagent]` skill through each skill entry point, which runs it on
+        // a subagent runner (`internal/assembly/boot/tool_wiring.go:139-140` @ v2.60.0).
+        Scenario {
+            name: "run-skill",
+            shape: Shape::Subagent,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "read-only-skill",
             shape: Shape::Subagent,
             surface: Surface::Headless,
             expects: &[

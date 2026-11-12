@@ -11,14 +11,20 @@ use pixtuoid_core::source::{AgentEvent, Transport};
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 
-/// Past any native watch setup, short of hanging CI.
-const RUN_DEADLINE: Duration = Duration::from_secs(30);
+#[path = "watcher/wait.rs"]
+mod wait;
+use wait::{collect_for, collect_until};
 
-/// An attach rides filesystem events, so it lands well inside this.
-const ATTACH_BOUND: Duration = Duration::from_secs(5);
+/// Past any native watch setup, short of hanging CI: every wait's hang guard,
+/// and the held-open tests' verdict, so it stays under the sources' own poll.
+const DEADLINE: Duration = Duration::from_secs(30);
 
-/// Set far past [`ATTACH_BOUND`], so a test passing within it proves the poll
-/// did not do the attaching.
+/// How long a check listens past its positive event: the same read's events
+/// are queued behind it.
+const TRAIL: Duration = Duration::from_millis(300);
+
+/// Set far past [`DEADLINE`], so a wait that ends proves the poll did not do
+/// the attaching.
 const POLL: Duration = Duration::from_secs(3600);
 
 /// The first-sight recency window: a transcript a test just wrote is inside it.
@@ -47,7 +53,7 @@ async fn omp_source_run_reports_total_watch_failure_instead_of_swallowing_it() {
 
     let (tx, _rx) = mpsc::channel::<(Transport, AgentEvent)>(8);
     let result = tokio::time::timeout(
-        RUN_DEADLINE,
+        DEADLINE,
         Box::new(OmpSource::single_root(sealed.join("sessions"))).run(tx),
     )
     .await;
@@ -73,19 +79,13 @@ async fn a_recreated_root_is_rewatched() {
 
     let first = "aa000000-0000-7000-8000-0000000000a1";
     write_session(&root, first).await;
-    assert!(
-        session_started(&mut rx, first, RUN_DEADLINE).await,
-        "the root present at boot was not watched"
-    );
+    expect_session_start(&mut rx, first, "the root present at boot").await;
 
     tokio::fs::remove_dir_all(&root).await.unwrap();
     tokio::fs::create_dir(&root).await.unwrap();
     let second = "bb000000-0000-7000-8000-0000000000b2";
     write_session(&root, second).await;
-    assert!(
-        session_started(&mut rx, second, ATTACH_BOUND).await,
-        "a session under the recreated root was not seen"
-    );
+    expect_session_start(&mut rx, second, "a session under the recreated root").await;
     assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
     handle.abort();
 }
@@ -114,10 +114,7 @@ async fn a_root_recreated_under_a_removed_empty_anchor_is_watched() {
     tokio::fs::create_dir_all(&root).await.unwrap();
     let uuid = "cc000000-0000-7000-8000-0000000000c3";
     write_session(&root, uuid).await;
-    assert!(
-        session_started(&mut rx, uuid, ATTACH_BOUND).await,
-        "a session under the recreated root was not seen"
-    );
+    expect_session_start(&mut rx, uuid, "a session under the recreated root").await;
     assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
     handle.abort();
 }
@@ -139,24 +136,13 @@ async fn a_file_beside_the_root_is_never_decoded() {
     write_session(dir.path(), beside).await;
     let inside = "ee000000-0000-7000-8000-0000000000e5";
     write_session(&root, inside).await;
-    let mut started = Vec::new();
-    let deadline = tokio::time::Instant::now() + RUN_DEADLINE;
     let inside_id = AgentId::from_parts("codex", inside);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
-            Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) => started.push(agent_id),
-            Ok(Some(_)) => {}
-            // Quiet once the session inside has landed: nothing else is coming.
-            _ if started.contains(&inside_id) => break,
-            _ => {}
-        }
-    }
+    let mut events =
+        collect_until(&mut rx, "the session inside", |e| is_start(e, &inside_id)).await;
+    events.extend(collect_for(&mut rx, TRAIL, "past the session inside").await);
+    let beside_id = AgentId::from_parts("codex", beside);
     assert!(
-        started.contains(&inside_id),
-        "the session inside was not seen"
-    );
-    assert!(
-        !started.contains(&AgentId::from_parts("codex", beside)),
+        !events.iter().any(|(_, e)| is_start(e, &beside_id)),
         "a file beside the root was decoded as a session"
     );
     handle.abort();
@@ -194,15 +180,13 @@ async fn a_relative_root_keys_each_transcript_once() {
     let id = AgentId::from_parts("codex", uuid);
     let canary = "ff000000-0000-7000-8000-0000000000f7";
     let canary_id = AgentId::from_parts("codex", canary);
-    let mut events = Vec::new();
     // The boot scan sees the first transcript; only a live watch sees the
     // canary, written after it, so the append below can't land unwatched.
-    assert!(collect_until(&mut rx, &mut events, |e| is_start(e, &id)).await);
+    let mut events =
+        collect_until(&mut rx, "the boot scan's transcript", |e| is_start(e, &id)).await;
     write_session(&root, canary).await;
-    assert!(
-        collect_until(&mut rx, &mut events, |e| is_start(e, &canary_id)).await,
-        "the watch never went live"
-    );
+    events
+        .extend(collect_until(&mut rx, "the watch going live", |e| is_start(e, &canary_id)).await);
 
     let work = serde_json::json!({
         "type": "response_item",
@@ -219,11 +203,10 @@ async fn a_relative_root_keys_each_transcript_once() {
     .unwrap();
     let is_activity =
         |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { agent_id, .. } if *agent_id == id);
-    assert!(collect_until(&mut rx, &mut events, is_activity).await);
-    // Quiet: a second cursor's replay would land beside the activity.
-    while let Ok(Some((_, e))) = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
-        events.push(e);
-    }
+    events.extend(collect_until(&mut rx, "the append's activity", is_activity).await);
+    // A second cursor's replay would land beside the activity.
+    events.extend(collect_for(&mut rx, TRAIL, "past the activity").await);
+    let events: Vec<AgentEvent> = events.into_iter().map(|(_, e)| e).collect();
     // A first sight, unlike a re-registration, names its session.
     let first_sights = (events.iter())
         .filter(|e| matches!(e, AgentEvent::Rename { agent_id, .. } if *agent_id == id))
@@ -240,7 +223,7 @@ async fn a_relative_root_keys_each_transcript_once() {
 /// codex and omp hold their transcript open for the whole session, and macOS's
 /// FSEvents reports a file's writes only at its close (xnu
 /// `bsd/vfs/vfs_vnops.c:887-893` at `f6217f89`). Each source's own poll is
-/// `DEFAULT_POLL_INTERVAL`, far past [`ATTACH_BOUND`].
+/// `DEFAULT_POLL_INTERVAL`, past [`DEADLINE`].
 ///
 /// Not on Windows: NTFS reports a held-open file's writes "when the last
 /// handle to a file object is closed"
@@ -337,10 +320,7 @@ mod held_open {
             .await
             .unwrap();
         let id = AgentId::from_parts(wire.source, &id);
-        assert!(
-            collect_until(rx, &mut Vec::new(), |e| is_start(e, &id)).await,
-            "the watch never went live"
-        );
+        collect_until(rx, "the watch going live", |e| is_start(e, &id)).await;
     }
 
     fn held(path: &Path) -> std::fs::File {
@@ -360,20 +340,14 @@ mod held_open {
         file.write_all(format!("{}\n", wire.head).as_bytes())
             .unwrap();
         let id = AgentId::from_parts(wire.source, wire.id);
-        assert!(
-            within(&mut rx, ATTACH_BOUND, |e| is_start(e, &id)).await,
-            "{}: the held-open transcript never registered",
-            wire.source
-        );
+        let what = format!("{}: the held-open transcript's registration", wire.source);
+        collect_until(&mut rx, &what, |e| is_start(e, &id)).await;
         file.write_all(format!("{}\n", wire.activity).as_bytes())
             .unwrap();
         file.flush().unwrap();
         let is_activity = |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { agent_id, .. } if *agent_id == id);
-        assert!(
-            within(&mut rx, ATTACH_BOUND, is_activity).await,
-            "{}: an append to the still-open transcript waited for close or the poll",
-            wire.source
-        );
+        let what = format!("{}: an append to the still-open transcript", wire.source);
+        collect_until(&mut rx, &what, is_activity).await;
         assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
         handle.abort();
     }
@@ -420,10 +394,12 @@ mod held_open {
             .unwrap();
         file.flush().unwrap();
         let id = AgentId::from_parts("codex", CODEX_ID);
-        assert!(
-            within(&mut rx, ATTACH_BOUND, |e| is_start(e, &id)).await,
-            "a first line written after the create event waited for close or the poll"
-        );
+        collect_until(
+            &mut rx,
+            "a first line written after the create event",
+            |e| is_start(e, &id),
+        )
+        .await;
         assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
         handle.abort();
     }
@@ -431,27 +407,6 @@ mod held_open {
 
 fn is_start(event: &AgentEvent, id: &AgentId) -> bool {
     matches!(event, AgentEvent::SessionStart { agent_id, .. } if agent_id == id)
-}
-
-/// Collects into `events` until one matches `done`; false at [`RUN_DEADLINE`].
-async fn collect_until(
-    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-    events: &mut Vec<AgentEvent>,
-    done: impl Fn(&AgentEvent) -> bool,
-) -> bool {
-    let deadline = tokio::time::Instant::now() + RUN_DEADLINE;
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, event))) =
-            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-        {
-            let matched = done(&event);
-            events.push(event);
-            if matched {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 async fn write_session(root: &std::path::Path, uuid: &str) {
@@ -464,29 +419,12 @@ async fn write_session(root: &std::path::Path, uuid: &str) {
         .unwrap();
 }
 
-async fn session_started(
+/// Waits for `uuid`'s codex session to register.
+async fn expect_session_start(
     rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
     uuid: &str,
-    bound: Duration,
-) -> bool {
+    what: &str,
+) {
     let want = AgentId::from_parts("codex", uuid);
-    within(rx, bound, |e| is_start(e, &want)).await
-}
-
-/// Whether an event matching `done` arrives within `bound`.
-async fn within(
-    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-    bound: Duration,
-    done: impl Fn(&AgentEvent) -> bool,
-) -> bool {
-    let deadline = tokio::time::Instant::now() + bound;
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, event))) =
-            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-            && done(&event)
-        {
-            return true;
-        }
-    }
-    false
+    collect_until(rx, what, |e| is_start(e, &want)).await;
 }

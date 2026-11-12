@@ -11,14 +11,10 @@ use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::Transport;
 
 use crate::{
-    backdate, cc_session_start_line, cc_subagent_line, cc_tool_use_line, cc_watcher,
-    codex_meta_line, codex_watcher, codex_work_line, copilot_start_line, copilot_tool_line,
-    spawn_copilot, vouch_snapshot, write_lines,
+    TRAIL, backdate, cc_session_start_line, cc_subagent_line, cc_tool_use_line, cc_watcher,
+    codex_meta_line, codex_watcher, codex_work_line, collect_for, collect_until,
+    copilot_start_line, copilot_tool_line, spawn_copilot, start_id, vouch_snapshot, write_lines,
 };
-
-/// An attach rides filesystem events, so it lands well inside this; a test
-/// that sets the poll far past it proves the poll did not do the attaching.
-const ATTACH_BOUND: Duration = Duration::from_secs(5);
 
 #[tokio::test]
 async fn attach_matrix_registers_exactly_the_live_set() {
@@ -51,24 +47,18 @@ async fn attach_matrix_registers_exactly_the_live_set() {
     let id_a = AgentId::from_parts("codex", live_a);
     let id_b = AgentId::from_parts("codex", idle_b);
 
+    let (mut seen_a, mut seen_b) = (false, false);
+    let mut events = collect_until(&mut rx, "the live set's starts", |e| {
+        seen_a |= start_id(e) == Some(id_a);
+        seen_b |= start_id(e) == Some(id_b);
+        seen_a && seen_b
+    })
+    .await;
+    // The seed pass may still queue c's (or a repeat) start behind them.
+    events.extend(collect_for(&mut rx, TRAIL, "past the live set's starts").await);
     let mut starts: std::collections::HashMap<AgentId, usize> = Default::default();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-        {
-            *starts.entry(agent_id).or_default() += 1;
-        }
-        if starts.contains_key(&id_a) && starts.contains_key(&id_b) {
-            break;
-        }
-    }
-    // The seed pass may still queue c's (or a repeat) start behind the break.
-    while let Ok(Some((_, ev))) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-    {
-        if let AgentEvent::SessionStart { agent_id, .. } = ev {
-            *starts.entry(agent_id).or_default() += 1;
-        }
+    for id in events.iter().filter_map(|(_, e)| start_id(e)) {
+        *starts.entry(id).or_default() += 1;
     }
 
     let expected: std::collections::HashMap<AgentId, usize> =
@@ -126,41 +116,33 @@ async fn delegating_parent_attach_registers_parent_and_links_subagent() {
     let mut parent_started = false;
     let mut sub_parent_id: Option<AgentId> = None;
     let mut dispatch_is_task: Option<bool> = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
-            Ok(Some((
-                _,
+    collect_until(
+        &mut rx,
+        "the stale probe-live delegating parent, its subagent and its dispatch at attach",
+        |e| {
+            match e {
                 AgentEvent::SessionStart {
                     agent_id,
                     parent_id,
                     ..
+                } => match parent_id {
+                    Some(pid) => sub_parent_id = Some(*pid),
+                    None => parent_started |= *agent_id == expected_parent,
                 },
-            ))) => match parent_id {
-                Some(pid) => sub_parent_id = Some(pid),
-                None => parent_started |= agent_id == expected_parent,
-            },
-            Ok(Some((
-                _,
                 AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id,
                     detail,
                     ..
-                },
-            ))) if agent_id == expected_parent && tool_use_id.as_deref() == Some("tu_task") => {
-                dispatch_is_task = Some(detail.as_ref().is_some_and(|d| d.is_task()));
+                } if *agent_id == expected_parent && tool_use_id.as_deref() == Some("tu_task") => {
+                    dispatch_is_task = Some(detail.as_ref().is_some_and(|d| d.is_task()));
+                }
+                _ => {}
             }
-            _ => {}
-        }
-        if parent_started && sub_parent_id.is_some() && dispatch_is_task.is_some() {
-            break;
-        }
-    }
-    assert!(
-        parent_started,
-        "the stale probe-live delegating parent must register at attach"
-    );
+            parent_started && sub_parent_id.is_some() && dispatch_is_task.is_some()
+        },
+    )
+    .await;
     assert_eq!(
         sub_parent_id,
         Some(expected_parent),
@@ -211,27 +193,20 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
                 && detail.as_ref().is_some_and(|d| d.is_task()))
     };
 
-    let mut events: Vec<(Transport, AgentEvent)> = Vec::new();
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some(pair)) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
-            events.push(pair);
-        }
-        if events.iter().any(|(_, e)| is_parent_start(e))
-            && events.iter().any(|(_, e)| is_task_start(e))
-        {
-            break;
-        }
-    }
-    // The same pass may still queue a repeat dispatch behind the break.
-    while let Ok(Some(pair)) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
-        events.push(pair);
-    }
+    let (mut started, mut dispatched) = (false, false);
+    let mut events = collect_until(
+        &mut rx,
+        "the oversized delegating session's start at attach (#204 head read) and dispatch",
+        |e| {
+            started |= is_parent_start(e);
+            dispatched |= is_task_start(e);
+            started && dispatched
+        },
+    )
+    .await;
+    // The same pass may still queue a repeat dispatch behind them.
+    events.extend(collect_for(&mut rx, TRAIL, "past the dispatch").await);
 
-    assert!(
-        events.iter().any(|(_, e)| is_parent_start(e)),
-        "the oversized delegating session must register at attach (#204 head read), got {events:?}"
-    );
     let task_starts: Vec<Transport> = events
         .iter()
         .filter(|(_, e)| is_task_start(e))
@@ -293,29 +268,27 @@ async fn cwd_split_attach_links_subagent_to_probe_live_stale_parent() {
 
     let mut parent_agent_id: Option<AgentId> = None;
     let mut sub_parent_id: Option<AgentId> = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            _,
-            AgentEvent::SessionStart {
+    collect_until(
+        &mut rx,
+        "the stale probe-live parent and the fresh subagent at attach",
+        |e| {
+            if let AgentEvent::SessionStart {
                 agent_id,
                 parent_id,
                 ..
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-        {
-            match parent_id {
-                Some(pid) => sub_parent_id = Some(pid),
-                None => parent_agent_id = Some(agent_id),
+            } = e
+            {
+                match parent_id {
+                    Some(pid) => sub_parent_id = Some(*pid),
+                    None => parent_agent_id = Some(*agent_id),
+                }
             }
-        }
-        if parent_agent_id.is_some() && sub_parent_id.is_some() {
-            break;
-        }
-    }
-    let parent_agent_id =
-        parent_agent_id.expect("the stale probe-live parent must register at attach");
-    let sub_parent_id = sub_parent_id.expect("the fresh subagent must register at attach");
+            parent_agent_id.is_some() && sub_parent_id.is_some()
+        },
+    )
+    .await;
+    let parent_agent_id = parent_agent_id.expect("collect_until saw it");
+    let sub_parent_id = sub_parent_id.expect("collect_until saw it");
     assert_eq!(
         parent_agent_id,
         AgentId::from_parts("claude-code", parent_uuid),
@@ -350,20 +323,15 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
     tokio::fs::create_dir_all(&proj).await.unwrap();
     let session = proj.join(format!("{uuid}.jsonl"));
     write_lines(&session, &[codex_meta_line(uuid, "/Users/me/late")]).await;
+    // The poll is set far past `collect_until`'s bound, so only the watch can
+    // attach the root in time.
     let id = AgentId::from_parts("codex", uuid);
-    let deadline = tokio::time::Instant::now() + ATTACH_BOUND;
-    let mut seen = false;
-    while !seen && tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-        {
-            seen = agent_id == id;
-        }
-    }
-    assert!(
-        seen,
-        "a session under a root that appeared mid-run was not seen within {ATTACH_BOUND:?}"
-    );
+    collect_until(
+        &mut rx,
+        "a session under a root that appeared mid-run",
+        |e| start_id(e) == Some(id),
+    )
+    .await;
 
     // The anchor now watches the root's parent, whose own files (CC's
     // `history.jsonl` beside its projects root) are no transcripts.
@@ -384,20 +352,9 @@ async fn an_absent_root_is_never_created_and_is_watched_once_it_appears() {
         .unwrap();
     let is_active =
         |e: &AgentEvent| matches!(e, AgentEvent::ToolUseStart { agent_id, .. } if *agent_id == id);
-    let mut events = Vec::new();
-    let deadline = tokio::time::Instant::now() + ATTACH_BOUND;
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
-            Ok(Some((_, ev))) => events.push(ev),
-            // Quiet once the append has landed: nothing else is coming.
-            _ if events.iter().any(is_active) => break,
-            _ => {}
-        }
-    }
-    assert!(
-        events.iter().any(is_active),
-        "a write under the appeared root was not watched: {events:?}"
-    );
+    let mut events = collect_until(&mut rx, "a write under the appeared root", is_active).await;
+    events.extend(collect_for(&mut rx, TRAIL, "past the watched write").await);
+    let events: Vec<AgentEvent> = events.into_iter().map(|(_, e)| e).collect();
     let beside_id = AgentId::from_parts("codex", beside);
     assert!(
         !events.iter().any(

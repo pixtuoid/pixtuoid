@@ -152,7 +152,7 @@ pub struct Driven {
     pub events: Vec<AgentEvent>,
     /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
-    pub(crate) presence: Vec<PresenceMsg>,
+    pub presence: Vec<PresenceMsg>,
     /// The index in `events` of each SEED, which stands in for the watcher's
     /// registration, not the wire's own output. A census reports
     /// [`Self::wire_events`]: a seed registers a slot unconditionally, so
