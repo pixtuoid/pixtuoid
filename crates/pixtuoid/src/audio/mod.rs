@@ -405,7 +405,7 @@ mod controller_tests {
 
     /// A config the save refuses to rewrite fails each save, which says so.
     #[test]
-    fn a_refused_save_says_it_did_not_land() {
+    fn a_refused_save_says_it_was_not_written() {
         let mut k = Ctl::new(false, 0.50);
         std::fs::write(&k.path, "not = [valid").unwrap();
         let failed = |setting| SaveOutcome {
