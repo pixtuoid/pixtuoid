@@ -89,9 +89,12 @@ const SUBAGENT_TOOLS: &[&str] = &[
 /// a subagent runner, an inline one returns as a tool result
 /// (`internal/ext/skill/tools.go:116-127`, `:217-228`,
 /// `internal/assembly/boot/tool_wiring.go:139-140` @ v2.60.0). Their args
-/// don't say which, so only the return re-states their Task, and it names no
-/// call (`internal/ext/hook/runner.go:177-184` @ v2.60.0): an inline skill
-/// returning beside a live child walks that child out until its next hook.
+/// don't say which, so only the return re-states their Task. The return names
+/// no call (`internal/ext/hook/runner.go:177-184`), and a subagent skill's
+/// result is the child model's own answer
+/// (`internal/runtime/delegation/runner.go:141-148` @ v2.60.0), which REVIEW.md's
+/// Lifecycle authority keeps from gating it: an inline skill returning beside a
+/// live child walks that child out until its next hook.
 const SKILL_RUNNERS: &[&str] = &["run_skill", "read_only_skill"];
 
 /// A role's hooks carry its parent's session id suffixed `:<role>`

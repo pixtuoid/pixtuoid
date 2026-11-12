@@ -1,7 +1,6 @@
 use std::time::{Duration, SystemTime};
 
 use tempfile::TempDir;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
 use pixtuoid_core::AgentId;
@@ -114,15 +113,24 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
         "the child's first life is GC'd after the SubagentStop"
     );
 
-    // The watcher drains the un-claim before the walk this append wakes.
-    let mut f = tokio::fs::OpenOptions::new()
-        .append(true)
-        .open(&rollout)
-        .await
-        .unwrap();
-    f.write_all(format!("{work}\n").as_bytes()).await.unwrap();
-    f.flush().await.unwrap();
-    drop(f);
+    // The un-claim drain walks bytes already written under the still-held
+    // claim, and emits nothing when none are: so a straggler line comes first,
+    // its re-sent start the drain's one sign, and turn N+1 is appended after it.
+    append(&rollout, &format!("{work}\n"));
+    let straggler = collect_until(
+        &mut rx,
+        "the drain walks the straggler under the held claim",
+        |e| start_id(e) == Some(child),
+    )
+    .await;
+    for (transport, ev) in straggler {
+        r.apply(&mut scene, ev, SystemTime::now(), transport);
+    }
+    assert!(
+        !scene.agents.contains_key(&child),
+        "a straggler inside the end gate is the stop's echo (#244)"
+    );
+    append(&rollout, &format!("{work}\n"));
     let revival = collect_until(
         &mut rx,
         "turn N+1 must re-register the child through the released claim",
