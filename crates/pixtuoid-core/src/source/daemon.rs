@@ -36,7 +36,7 @@ pub use native::{PresenceExitWatch, PresenceSender, spawn_presence_exit_watch};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaemonPresenceUpdate {
     /// `gateway_start` — the daemon is up. UP-winning + idempotent; resets the
-    /// session count and rebinds the armed pid.
+    /// session count and adopts its pid as `current_pid`.
     GatewayUp {
         /// The gateway's `process.pid`, armed for the abrupt-down exit watch (`None` if unknown).
         pid: Option<i32>,
@@ -74,7 +74,7 @@ pub enum DaemonPresenceUpdate {
         /// The live gateway pid observed on the event.
         pid: i32,
     },
-    /// The armed gateway pid died (from the `ExitWatch` drain, not a decoder).
+    /// An armed gateway pid died (from the `ExitWatch` drain, not a decoder).
     PidExited {
         /// The gateway pid that exited.
         pid: i32,
@@ -187,7 +187,7 @@ impl PresenceTtl {
 
 impl DaemonPresenceUpdate {
     /// The gateway pid this update arms the abrupt-down `ExitWatch` on, if any.
-    /// `apply_presence` adopts a `PidSeen` pid only onto an unbound, live daemon;
+    /// `apply_presence` adopts a `PidSeen` pid only onto a live daemon with no `current_pid`;
     /// the watch is armed regardless, and its exit acts only if that pid is the
     /// `current_pid` when the exit lands.
     pub fn armable_pid(&self) -> Option<i32> {
@@ -208,7 +208,7 @@ impl DaemonPresence {
         self.in_flight_turns.clear();
     }
 
-    /// Transition to `Down` + clear the live-work pair AND the armed pid, so a
+    /// Transition to `Down` + clear the live-work pair AND `current_pid`, so a
     /// must-clear-on-down field can't be forgotten at one of the four down sites.
     /// `current_pid` is cleared because a Down daemon has no live gateway pid:
     /// leaving it set strands the binding on the dead pid, so a reconnect as a new
@@ -320,7 +320,7 @@ pub fn apply_presence(
                 p.current_pid = Some(pid);
             }
         }
-        // Only the CURRENTLY-armed pid dying takes the daemon down: a stale receipt
+        // Only the adopted pid (`current_pid`) dying takes the daemon down: a stale receipt
         // for an old pid after a restart is a no-op, so the live daemon stays up.
         PidExited { pid } => {
             if p.current_pid == Some(pid) {

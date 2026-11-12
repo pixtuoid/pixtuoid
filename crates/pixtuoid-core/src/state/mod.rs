@@ -583,8 +583,8 @@ pub struct DaemonPresence {
     /// dump can't strand a perpetual Running.
     #[serde(skip)]
     pub in_flight_turns: HashMap<TurnKey, SystemTime>,
-    /// The gateway pid bound to this daemon, whose exit takes it Down: `None` while
-    /// unbound or Down, though the driver may arm a watch on an unbound pid.
+    /// The gateway pid this daemon adopted, whose exit takes it Down: `None` before
+    /// adoption or once Down, though the driver arms a watch on every seen pid.
     pub current_pid: Option<i32>,
 }
 
