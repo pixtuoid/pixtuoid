@@ -1367,22 +1367,14 @@ mod tests {
     /// Whether `pid` is gone, reaped included, within [`SLACK`]: `kill -0` asks.
     #[cfg(unix)]
     fn gone(pid: &str) -> bool {
-        let deadline = std::time::Instant::now() + SLACK;
-        let lives = || {
+        pixtuoid_core::harness::wait_until("its end", SLACK, || {
             std::process::Command::new("kill")
                 .args(["-0", pid])
                 .stderr(std::process::Stdio::null())
                 .status()
-                .unwrap()
-                .success()
-        };
-        while lives() {
-            if std::time::Instant::now() > deadline {
-                return false;
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        true
+                .map(|lives| !lives.success())
+        })
+        .is_ok()
     }
 
     /// The child, which writes its pid where its argument says, ends with the
