@@ -237,11 +237,17 @@ mod tests {
     /// A held toggle fires once; a held step keeps stepping.
     #[test]
     fn only_steps_repeat() {
+        use crate::panels::keys::{VOLUME_DOWN, VOLUME_UP};
         let none = ModifiersState::empty();
+        let typed = |code: KeyCode| Key::Character(code.as_char().unwrap().to_string().into());
         for k in [
             Key::Character("j".into()),
             Key::Named(NamedKey::ArrowDown),
-            Key::Character("+".into()),
+            typed(VOLUME_UP),
+            typed(VOLUME_DOWN),
+            // Their Shift twins, as the dispatch reads them.
+            Key::Character("=".into()),
+            Key::Character("_".into()),
         ] {
             assert_eq!(key(&k, none, true), key(&k, none, false), "{k:?}");
             assert!(key(&k, none, true).is_some(), "{k:?}");
