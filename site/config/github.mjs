@@ -1,10 +1,10 @@
 // The repo's GitHub URLs and build-time star count (`__GH_STARS__`). The hash-CSP
-// forbids runtime fetches, so this runs ONCE at build in astro.config.mjs — and
-// an offline/local build must never fail on it: every error path yields null.
+// forbids runtime fetches, so the star fetch runs ONCE at build (astro.config.mjs),
+// and an offline/local build must never fail on it: every error path yields null.
 import process from 'node:process';
 
 // The repository's slug: the site's GitHub links and calls derive from it, and
-// gh-stars.test.mjs pins install.json's copy, which JSON can't import.
+// github.test.mjs pins the copies no import reaches, in install.json and Cargo.toml.
 export const REPO_SLUG = 'pixtuoid/pixtuoid';
 export const REPO = `https://github.com/${REPO_SLUG}`;
 export const REPO_BLOB = `${REPO}/blob/main`;

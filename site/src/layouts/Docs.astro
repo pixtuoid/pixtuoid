@@ -6,7 +6,7 @@ import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
 import { posix } from 'node:path';
 import { asset, DOCS, FLOORS, type DocId } from '../consts';
-import { REPO_BLOB } from '../../config/gh-stars.mjs';
+import { REPO_BLOB } from '../../config/github.mjs';
 
 interface Props {
   title: string;
@@ -27,7 +27,7 @@ const {
   sourceNote = 'this page renders it verbatim.',
 } = Astro.props;
 
-// The glob loader keeps `filePath` relative to the site root, which sits in the repo root.
+// The glob loader keeps `filePath` relative to the project root (site/), which sits in the repo root.
 if (!entry.filePath) throw new Error(`Docs.astro: the "${current}" entry carries no filePath`);
 const sourcePath = posix.relative('..', entry.filePath);
 

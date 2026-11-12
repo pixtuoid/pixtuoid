@@ -10,7 +10,7 @@ import { rewriteCspMeta } from './config/csp-hashes.mjs';
 import rehypeCallouts from './config/rehype-callouts.mjs';
 import rehypeBeautifulMermaid from './config/rehype-beautiful-mermaid.mjs';
 import rehypeScrollFocus from './config/rehype-scroll-focus.mjs';
-import { REPO_BLOB, fetchStarCount } from './config/gh-stars.mjs';
+import { REPO_BLOB, fetchStarCount } from './config/github.mjs';
 import { latestReleaseTag, resolveDisplayedVersion } from './config/released-version.mjs';
 import { COMPRESS_HTML } from './config/compress-html.mjs';
 import { workspacePackageField } from './config/workspace-package.mjs';

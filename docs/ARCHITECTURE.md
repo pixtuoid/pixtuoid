@@ -104,8 +104,8 @@ flowchart TB
 2. **One channel.** Every source multiplexes onto a single
    `mpsc::Sender<(Transport, AgentEvent)>`; the `Transport` tag drives
    **hook-wins dedup**, so a hook and its transcript echo don't double-count.
-3. **Reduce.** `Reducer::apply` folds events into a `SceneState`, swept
-   stale on the driver's `SWEEP_TICK_INTERVAL_SECS` tick; `SceneSink::publish`
+3. **Reduce.** `Reducer::apply` folds events into a `SceneState`, and `Reducer::tick` sweeps
+   its stale slots on the driver's `SWEEP_TICK_INTERVAL_SECS` tick; `SceneSink::publish`
    sends each changed scene as a fresh `Arc<SceneState>` on a `watch` channel.
 4. **Render.** The renderer borrows the latest scene (O(1), no lock), paints
    it through the engine's terminal-agnostic pixel pass, then flushes it as

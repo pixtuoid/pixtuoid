@@ -4,7 +4,6 @@ import showcaseData from './showcase.json';
 import featuresData from './features.json';
 import { featureText } from '../config/feature-text.mjs';
 
-export { REPO } from '../config/gh-stars.mjs';
 export const CRATES = 'https://crates.io/crates/pixtuoid';
 export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
 

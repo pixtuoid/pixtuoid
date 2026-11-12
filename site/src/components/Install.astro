@@ -1,6 +1,7 @@
 ---
 import { Code } from 'astro:components';
-import { REPO, CRATES, floorById, floorName } from '../consts';
+import { CRATES, floorById, floorName } from '../consts';
+import { REPO } from '../../config/github.mjs';
 
 const floor = floorById('install');
 // The README regenerates its install block from this same file, so the two

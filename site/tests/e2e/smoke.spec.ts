@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import sourcesData from '../../src/sources.json' with { type: 'json' };
-import { E2E_STAR_COUNT } from '../../config/gh-stars.mjs';
+import { E2E_STAR_COUNT } from '../../config/github.mjs';
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
 const supportedSources = (sourcesData as SourceRow[]).filter((s) => s.status === 'supported');

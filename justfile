@@ -867,7 +867,7 @@ gen-banner-check:
 gen-fonts:
     {{ UV_DEV }} python3 scripts/gen-fonts.py
 
-[doc('Sync README install/features/tools sections from site/src/*.json, its images from scripts/media.json + docs/images, and its links from Cargo.toml homepage')]
+[doc("Sync README's generated blocks from site/src/*.json, its images from scripts/media.json + docs/images, and its links from Cargo.toml homepage")]
 [group('gen')]
 gen-readme:
     node scripts/gen-readme.mjs

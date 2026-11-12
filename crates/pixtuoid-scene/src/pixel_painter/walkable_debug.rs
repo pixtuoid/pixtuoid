@@ -1,6 +1,6 @@
-//! Live debug layer toggled by the walkable key: the walkable mask (red), allowed approach
-//! sides (green) / on-furniture seat cells (magenta), and the live A* route
-//! polylines of walking agents (cyan), composited over the finished scene.
+//! The walkable debug layer ([`RenderInputs::debug_walkable`](crate::look::RenderInputs::debug_walkable)):
+//! the walkable mask (red), allowed approach sides (green) / on-furniture seat cells (magenta), and the
+//! live A* route polylines of walking agents (cyan), composited over the finished scene.
 //!
 //! A VIEW over the SAME data the renderer + router already use — never a second
 //! source.

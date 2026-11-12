@@ -1,4 +1,6 @@
+import { existsSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { REPO_BLOB } from '../../config/github.mjs';
 
 // Runs against the PRODUCTION build (see playwright.config.ts).
 
@@ -23,6 +25,22 @@ test('docs mount the statusline: route path left, install chip right, no landing
   await expect(bar.locator('[data-floor-toggle]')).toHaveCount(0);
   await expect(bar.locator('.sl__feed')).toHaveCount(0);
   expect(errors()).toEqual([]);
+});
+
+test("every doc page's source link names a file in this repo", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./config/');
+  const pages = await page
+    .locator('.docs__sidebar .docs__list:not(.docs__list--building) a')
+    .evaluateAll((links) => links.map((a) => (a as HTMLAnchorElement).href));
+  expect(pages.length, 'the docs wing lists no page').toBeGreaterThan(0);
+  for (const url of pages) {
+    await page.goto(url);
+    const href = (await page.locator('.docs__source a').getAttribute('href')) ?? '';
+    expect(href.startsWith(`${REPO_BLOB}/`), `${url} links ${href}`).toBe(true);
+    const file = new URL(`../../../${href.slice(REPO_BLOB.length + 1)}`, import.meta.url);
+    expect(existsSync(file), `${url} links ${href}, no file of this repo`).toBe(true);
+  }
 });
 
 test('404 mounts the statusline too', async ({ page }) => {
