@@ -16,7 +16,7 @@
 //! **The two identity concepts are deliberately separate.** The
 //! [`DaemonInstanceId`] is STABLE — a gateway
 //! restarting on the same port keeps its mascot — while
-//! `DaemonPresence::current_pid` is the PROCESS incarnation, rebound by each
+//! `DaemonPresence::current_pid` is the PROCESS incarnation, re-adopted by each
 //! `GatewayUp`, so a late exit receipt for a replaced process is a no-op instead
 //! of a kill of its replacement.
 
@@ -64,12 +64,12 @@ pub enum DaemonPresenceUpdate {
         /// The failed turn's correlation key (matches its `TurnStarted`).
         turn: TurnKey,
     },
-    /// A live gateway pid OBSERVED on any event carrying `_pid` — adopted into
-    /// `current_pid` ONLY when it was `None` on a daemon that is not Down, so a
-    /// MID-ATTACH or a reconnect-while-alive can still arm the abrupt-down exit
-    /// watch without having seen `gateway_start`, while a stopped gateway's
-    /// trailing events can't bind its dying pid. A pure pid adoption: no
-    /// `DaemonState` change, and `GatewayUp` still owns restart-rebinds.
+    /// A live gateway pid OBSERVED on any event carrying `_pid`. The driver arms the
+    /// abrupt-down exit watch on it either way; adoption into `current_pid`, which
+    /// lets that watch's exit act, happens ONLY when it was `None` on a daemon that
+    /// is not Down: a MID-ATTACH or a reconnect-while-alive gets an acting watch
+    /// without `gateway_start`, while a stopped gateway's trailing events can't
+    /// adopt its dying pid. No `DaemonState` change; `GatewayUp` re-adopts on restart.
     PidSeen {
         /// The live gateway pid observed on the event.
         pid: i32,
@@ -140,7 +140,7 @@ impl DecodedPresence {
     /// Its deltas, each tagged with `source`'s instance they route to, then a
     /// `PidSeen` for its pid: after them, so a resurrecting update brings the
     /// daemon up first, since a Down daemon adopts no pid; never beside a
-    /// `GatewayUp`, which binds its own, nor alone, which resurrects nothing.
+    /// `GatewayUp`, which adopts its own, nor alone, which resurrects nothing.
     pub(crate) fn into_msgs(self, source: &str) -> impl Iterator<Item = PresenceMsg> {
         let key = DaemonInstanceKey::new(source, self.instance);
         let seen = self.pid.filter(|_| {
@@ -211,7 +211,7 @@ impl DaemonPresence {
     /// Transition to `Down` + clear the live-work pair AND `current_pid`, so a
     /// must-clear-on-down field can't be forgotten at one of the four down sites.
     /// `current_pid` is cleared because a Down daemon has no live gateway pid:
-    /// leaving it set strands the binding on the dead pid, so a reconnect as a new
+    /// leaving it set strands the adoption on the dead pid, so a reconnect as a new
     /// pid whose `gateway_start` is missed can't re-adopt via `PidSeen` (None-only)
     /// and the instant abrupt-down rung silently disarms until the presence sweep.
     ///
@@ -695,8 +695,9 @@ mod tests {
     fn pid_seen_adopts_when_current_pid_is_none() {
         for src in SOURCES {
             // Mid-attach: pixtuoid never saw `gateway_start`, so the entry is first
-            // created by a plain activity event carrying `_pid`.
+            // created by a plain activity event carrying `_pid`, its update first.
             let mut s = SceneState::default();
+            apply(&mut s, src, DaemonPresenceUpdate::SessionStarted, ms(0));
             apply(
                 &mut s,
                 src,
@@ -706,7 +707,7 @@ mod tests {
             assert_eq!(
                 p(&s, src).current_pid,
                 Some(555),
-                "the live pid is adopted so the instant abrupt-down rung can arm"
+                "the live pid is adopted, so its watch's exit can take the daemon down"
             );
             assert_eq!(st(&s, src), DaemonState::Idle);
             apply(
@@ -733,13 +734,13 @@ mod tests {
             assert_eq!(
                 p(&s, src).current_pid,
                 Some(100),
-                "PidSeen is adopt-only-when-None; GatewayUp owns rebinds"
+                "PidSeen is adopt-only-when-None; GatewayUp owns re-adoption"
             );
         }
     }
 
     #[test]
-    fn pid_seen_neither_resurrects_nor_binds_a_down_daemon() {
+    fn pid_seen_neither_resurrects_nor_adopts_onto_a_down_daemon() {
         // `into_msgs` appends PidSeen to a state-bearing update, so resurrection
         // rides on that sibling, never on PidSeen alone.
         for src in SOURCES {
@@ -750,7 +751,7 @@ mod tests {
             assert_eq!(
                 (st(&s, src), p(&s, src).current_pid),
                 (DaemonState::Down, None),
-                "a Down daemon has no live pid to bind"
+                "a Down daemon has no live pid to adopt"
             );
         }
     }

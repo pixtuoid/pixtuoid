@@ -504,7 +504,7 @@ mod tests {
         SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(1_800_000_000_000 + ms)
     }
 
-    /// Its process exits seconds after the stop: the receipt finds no pid bound,
+    /// Its process exits seconds after the stop: the receipt finds no adopted pid,
     /// so the Down entry, and the removal clock it carries, stay the stop's.
     #[test]
     fn the_recorded_clean_stops_exit_leaves_its_down_entry_as_it_was() {
@@ -527,9 +527,9 @@ mod tests {
     }
 
     /// The Sources panel walked the gateway out while it kept serving; its next
-    /// session brings it back bound to its pid, so its death takes it down.
+    /// session brings it back with its pid adopted, so its death takes it down.
     #[test]
-    fn a_gateway_back_from_a_disconnect_is_bound_to_its_pid_again() {
+    fn a_gateway_back_from_a_disconnect_adopts_its_pid_again() {
         use pixtuoid_core::state::DaemonState;
 
         let lines = openclaw_clean_stop();
