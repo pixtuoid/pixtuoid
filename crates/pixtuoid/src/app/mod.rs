@@ -91,7 +91,11 @@ pub fn run() -> Result<()> {
     // thread, whose CLI nothing holds to its limit once this process is gone.
     crate::install::io::kill_running();
     // A killed CLI's change still restores what it wrote, and queued saves land.
-    crate::within("panel-jobs-end", crate::EXIT_WAIT, crate::panels::join_jobs);
+    crate::within(
+        "panel-threads-end",
+        crate::EXIT_WAIT,
+        crate::panels::join_panel_threads,
+    );
     // Before the re-raise, which ends the process with the queue unwritten.
     drop(log_flush);
     // After every Drop the run held: the unwind is done, so the signal can now

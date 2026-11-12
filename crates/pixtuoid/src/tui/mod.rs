@@ -501,7 +501,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         audio_cfg,
     } = session;
     let arms = QuitArms::arm();
-    let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
+    let (job_tx, mut landed) = tokio::sync::mpsc::unbounded_channel();
     // Before the terminal is set up, which a failure past it leaves raw.
     let saves = crate::panels::Saves::spawn(config_path.clone(), job_tx.clone())?;
     // Asked before raw mode is on: the query takes the terminal's own for
@@ -599,7 +599,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     ),
                     _ => {}
                 },
-                Some(landed) = job_done.recv() => crate::panels::land(&mut ui, landed),
+                Some(done) = landed.recv() => crate::panels::land(&mut ui, done),
                 signal = &mut quit => {
                     fired = Some(signal);
                     break;
@@ -1223,8 +1223,8 @@ mod apply_key_action_tests {
         _tmp: tempfile::TempDir,
         config_path: std::path::PathBuf,
         saves: crate::panels::Saves,
-        job_tx: crate::panels::JobTx,
-        job_done: tokio::sync::mpsc::UnboundedReceiver<crate::panels::Landed>,
+        job_tx: crate::panels::LandedTx,
+        landed: tokio::sync::mpsc::UnboundedReceiver<crate::panels::Landed>,
         run_job: fn(crate::panels::JobInput) -> crate::panels::JobDone,
     }
 
@@ -1232,7 +1232,7 @@ mod apply_key_action_tests {
         fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let config_path = tmp.path().join("config.toml");
-            let (job_tx, job_done) = tokio::sync::mpsc::unbounded_channel();
+            let (job_tx, landed) = tokio::sync::mpsc::unbounded_channel();
             let saves = crate::panels::Saves::spawn(config_path.clone(), job_tx.clone())
                 .expect("a save thread");
             Self {
@@ -1267,7 +1267,7 @@ mod apply_key_action_tests {
                 config_path,
                 saves,
                 job_tx,
-                job_done,
+                landed,
                 run_job: crate::panels::noted::gated_job,
             }
         }
@@ -1315,11 +1315,9 @@ mod apply_key_action_tests {
 
         /// Take in what lands next, a job or a save, as the loop's arm does.
         fn settle(&mut self) {
-            /// Far past a job's own time on a loaded machine.
-            const LANDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
-            let deadline = std::time::Instant::now() + LANDS_WITHIN;
+            let deadline = std::time::Instant::now() + crate::panels::noted::LANDS_WITHIN;
             loop {
-                match self.job_done.try_recv() {
+                match self.landed.try_recv() {
                     Ok(landed) => return crate::panels::land(&mut self.ui, landed),
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty)
                         if std::time::Instant::now() < deadline =>
@@ -1524,11 +1522,8 @@ mod apply_key_action_tests {
             std::thread::sleep(std::time::Duration::from_millis(100));
             crate::panels::noted::open_gate(&config, false);
         });
-        crate::panels::join_jobs();
-        assert!(
-            h.job_done.try_recv().is_ok(),
-            "the wait ended before the job"
-        );
+        crate::panels::join_panel_threads();
+        assert!(h.landed.try_recv().is_ok(), "the wait ended before the job");
     }
 
     /// The panel opens at once on rows no probe has read, and reads them off

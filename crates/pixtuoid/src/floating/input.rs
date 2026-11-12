@@ -388,13 +388,6 @@ mod tests {
             }
         }
 
-        /// The keys' saves go to the config at `path` from now on.
-        fn config_at(&mut self, path: std::path::PathBuf) {
-            let (landing, landed) = tokio::sync::mpsc::unbounded_channel();
-            self.saves = crate::panels::Saves::spawn(path.clone(), landing).expect("a save thread");
-            (self.config_path, self.landed) = (path, landed);
-        }
-
         fn saved_theme(&mut self) -> Option<String> {
             self.land_saves();
             crate::config::load(&self.config_path, &mut Vec::new()).theme
@@ -574,9 +567,7 @@ mod tests {
     fn an_unwritable_config_keeps_the_committed_theme() {
         use crossterm::event::KeyCode;
         let mut k = Keys::new();
-        let blocker = k._tmp.path().join("missing");
-        std::fs::write(&blocker, "a file, not a dir").expect("write");
-        k.config_at(blocker.join("config.toml"));
+        std::fs::create_dir(&k.config_path).expect("a dir where the config goes");
         k.press(KeyCode::Char('t'));
         k.press(KeyCode::Char('j'));
         assert!(!k.press(KeyCode::Enter));

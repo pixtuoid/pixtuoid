@@ -450,8 +450,11 @@ fn doctor_proves_the_built_shim_delivers_with_no_office_open() {
 #[test]
 fn doctor_proves_the_built_shim_delivers_under_a_deep_tmpdir() {
     let home = tempfile::TempDir::new().expect("tempdir");
-    // Past any `sun_path` (104 bytes on macOS, 108 on Linux) on its own.
-    let deep = home.path().join("deep".repeat(30));
+    // SAFETY: `sockaddr_un` is plain old data, for which all-zero is a valid value.
+    let sun_path = unsafe { std::mem::zeroed::<libc::sockaddr_un>() }
+        .sun_path
+        .len();
+    let deep = home.path().join("d".repeat(sun_path));
     std::fs::create_dir_all(&deep).expect("deep TMPDIR");
     let out = doctor(home.path(), &hook::private_endpoint(home.path(), "none"))
         .env("TMPDIR", &deep)

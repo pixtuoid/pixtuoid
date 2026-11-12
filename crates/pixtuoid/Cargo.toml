@@ -139,7 +139,6 @@ audio = ["dep:rodio", "dep:rtrb"]
 # target, whose headers the cross-lints don't have, so they leave this out.
 serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami", "dep:zbus"]
 
-# The calls rustix doesn't wrap.
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 # The kitty `t=s` objects (graphics/shm.rs), whose `shm_open` libc types

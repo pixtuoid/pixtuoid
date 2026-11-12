@@ -343,8 +343,9 @@ fn a_quit_leaves_a_stalled_read_behind_and_still_ends_by_its_signal() {
         );
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    // A nonblocking open for writing fails while no reader waits on the FIFO,
-    // and held open, never written, it keeps the reader's read waiting.
+    // A nonblocking open for writing fails until a reader waits on the FIFO,
+    // and held open, never written, it keeps that read waiting (POSIX `open`'s
+    // "When opening a FIFO", `read`'s "an empty pipe or FIFO").
     let _held = loop {
         match std::fs::OpenOptions::new()
             .write(true)

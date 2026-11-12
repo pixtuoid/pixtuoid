@@ -139,7 +139,7 @@ struct Notices {
     upgraded: bool,
     terminal_cutaway: bool,
     /// The agent CLIs on this machine as last read: the boot's probe when its
-    /// popup showed, then each panel job's rows.
+    /// popup is due, then each panel job's.
     installed: Vec<&'static str>,
     shown: Arc<[String]>,
 }
@@ -181,15 +181,24 @@ impl UiState {
     /// an agent CLI to connect, else the version popup when this version is
     /// new to the config at `boot.config_path`.
     pub(crate) fn boot(boot: Boot<'_>) -> Self {
-        let detected = if boot.first_run {
+        let first_run = boot.first_run;
+        let detected = if first_run {
             crate::sources::detect_sources()
         } else {
             Vec::new()
         };
+        let found: Vec<&'static str> = detected.iter().map(|d| d.name).collect();
         Self::boot_with(
             boot,
             WelcomeUi::from_detected(&detected),
-            crate::sources::detect,
+            // A first run has probed already.
+            move || {
+                if first_run {
+                    found
+                } else {
+                    crate::sources::detect()
+                }
+            },
             &semver::Version::parse(env!("CARGO_PKG_VERSION"))
                 .expect("CARGO_PKG_VERSION is SemVer"),
         )
@@ -219,8 +228,11 @@ impl UiState {
         ui.notices.upgraded = decision.should_show_popup;
         ui.notices.terminal_cutaway = boot.look == Some(LookKind::Cutaway);
         ui.saved.look = boot.look;
-        if pops_up {
+        // The onboarding can hold the popup back, leaving its notices to `v`.
+        if decision.should_show_popup {
             ui.notices.installed = installed();
+        }
+        if pops_up {
             ui.open_version_popup(boot.connected);
         }
         ui
@@ -349,17 +361,9 @@ impl UiState {
         }
     }
 
-    /// Read which agent CLIs are here from a panel job's `rows`, as
-    /// [`crate::sources::detect`] would find them.
-    pub(crate) fn read_installed(&mut self, rows: &[ConnectionRow]) {
-        self.notices.installed = rows
-            .iter()
-            .filter(|row| {
-                row.target.is_some()
-                    && !matches!(row.state, crate::sources::ConnState::NoCli { .. })
-            })
-            .map(|row| row.source_id)
-            .collect();
+    /// Take in the agent CLIs a panel job found here.
+    pub(crate) fn note_installed(&mut self, installed: Vec<&'static str>) {
+        self.notices.installed = installed;
     }
 
     /// Enter in the picker: close, keeping what it showed, which it returns.
@@ -1162,5 +1166,23 @@ mod tests {
             !upgraded("down.toml", Some("0.21.0"), WelcomeUi::from_detected(&[])),
             "a downgrade"
         );
+    }
+
+    /// The onboarding holds the popup back, never its notices: the `v` after
+    /// it names each host the boot found, though no panel job read one yet.
+    #[test]
+    fn a_popup_the_onboarding_held_back_names_the_hosts_the_boot_found() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        crate::config::save_version(&path, "0.19.0").expect("seed a version");
+        let welcome = WelcomeUi::from_ids(&["codex"]);
+        let mut ui = boot_at(&path, welcome, &semver::Version::new(0, 20, 0));
+        assert!(
+            !ui.modal().version_popup_open,
+            "the onboarding held it back"
+        );
+        ui.open_version_popup(&HashSet::new());
+        let shown = ui.version_notices();
+        assert!(shown.iter().any(|n| n.contains("Codex")), "{shown:?}");
     }
 }

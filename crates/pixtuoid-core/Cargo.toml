@@ -95,7 +95,7 @@ libc = { workspace = true }
 # makes: kqueue+kevent (macOS), pidfd_open+poll+self-pipe (Linux), kill(0),
 # and sysconf(_SC_CLK_TCK) and clock_gettime for `proc_start`'s Linux start
 # time. Unix-only like `libc`, so the wasm32 core build never sees it. libc
-# STAYS for the calls rustix doesn't wrap.
+# STAYS for the macOS libproc calls rustix doesn't wrap.
 rustix = { workspace = true, features = ["event", "process", "pipe", "param", "time"] }
 
 [target.'cfg(windows)'.dependencies]

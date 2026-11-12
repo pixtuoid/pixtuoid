@@ -38,7 +38,7 @@ use window::{FloatingApp, FloatingEvent};
 ///
 /// # Errors
 ///
-/// If the sprite pack cannot be loaded, the tokio runtime or the winit event loop cannot be built, the event loop exits with an error, or the window or its GPU fails to start or is lost.
+/// If the sprite pack cannot be loaded, the tokio runtime or the winit event loop cannot be built, its config writes cannot start, the event loop exits with an error, or the window or its GPU fails to start or is lost.
 pub(crate) fn run(
     cfg: RunConfig,
     notify_ready: bool,

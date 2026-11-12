@@ -1,6 +1,6 @@
-//! Runtime wiring: `RunConfig` (the startup inputs), the one way a command's tokio
-//! runtime starts and ends ([`on_runtime`]), the boot-capacity math, and the headless
-//! summary formatter. The untestable async glue (reducer task, source spawn, Ctrl-C
+//! Runtime wiring: `RunConfig` (the startup inputs), how a command that arms its
+//! quit signals starts and ends its runtime ([`on_runtime`]), the boot-capacity math,
+//! and the headless summary formatter. The untestable async glue (reducer task, source spawn, Ctrl-C
 //! loop) lives in `driver.rs`, which is excluded from coverage.
 
 pub(crate) mod driver;

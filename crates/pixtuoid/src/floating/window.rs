@@ -54,7 +54,7 @@ pub(crate) struct FloatingApp {
     connected: crate::runtime::ConnectedSources,
     /// Where a panel job sends its result, which reaches the loop as
     /// [`FloatingEvent::Landed`].
-    job_tx: crate::panels::JobTx,
+    job_tx: crate::panels::LandedTx,
     saves: crate::panels::Saves,
     /// The modifier keys held, which a key is read with.
     modifiers: winit::keyboard::ModifiersState,
@@ -217,7 +217,7 @@ impl FloatingApp {
         }: Settings,
         boot: super::PipelineBoot,
     ) -> std::io::Result<Self> {
-        let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
+        let (job_tx, mut landed) = tokio::sync::mpsc::unbounded_channel();
         let saves = crate::panels::Saves::spawn(config_path.clone(), job_tx.clone())?;
         let audio_ctl = crate::audio::AudioController::new(audio, saves.clone());
         let pack = std::sync::Arc::new(pack);
@@ -238,7 +238,7 @@ impl FloatingApp {
         let connected = boot.connected.clone();
         let job_proxy = proxy.clone();
         boot.rt.spawn(async move {
-            while let Some(done) = job_done.recv().await {
+            while let Some(done) = landed.recv().await {
                 if job_proxy.send_event(FloatingEvent::Landed(done)).is_err() {
                     break;
                 }
@@ -624,6 +624,11 @@ impl super::lifecycle::Teardown for FloatingApp {
 
     fn stop_audio(&mut self) {
         self.audio_ctl.stop();
+    }
+
+    fn flush_saves(&mut self) {
+        // Past the bound a stalled disk keeps them, as the quit's join does.
+        let _ = self.saves.flush(crate::EXIT_WAIT);
     }
 }
 

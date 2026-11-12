@@ -199,14 +199,25 @@ async fn probe(shim: &Path, endpoint: &Path, exit_deadline: Duration) -> ShimPro
 /// conditions (that dir, its owner, its room in `sun_path`) rather than TMPDIR's.
 #[cfg(unix)]
 fn throwaway_beside(endpoint: &Path) -> anyhow::Result<tempfile::TempDir> {
+    let uid = rustix::process::getuid().as_raw();
+    throwaway_beside_in(endpoint, &hook::owned_tmp_dir(), uid)
+}
+
+/// [`throwaway_beside`] with the owned fallback dir and its owner injected.
+#[cfg(unix)]
+fn throwaway_beside_in(
+    endpoint: &Path,
+    owned: &Path,
+    uid: u32,
+) -> anyhow::Result<tempfile::TempDir> {
     use anyhow::Context as _;
     // Made as the office's bind makes it, where the endpoint is the owned fallback.
-    hook::vet_owned_tmp_path(endpoint)?;
+    hook::vet_owned_tmp_path_in(endpoint, owned, uid)?;
     let parent = endpoint.parent().context("the endpoint names no file")?;
     Ok(tempfile::Builder::new().prefix("px").tempdir_in(parent)?)
 }
 
-/// A pipe's name is machine-wide, so the dir only names the throwaway one.
+/// [`hook::private_endpoint`] makes the dir only a pipe's name here.
 #[cfg(windows)]
 fn throwaway_beside(_: &Path) -> anyhow::Result<tempfile::TempDir> {
     Ok(tempfile::Builder::new().prefix("px").tempdir()?)
@@ -613,6 +624,19 @@ mod tests {
             probe(&relative, &beside(Path::new("bin")), EVENT_WAIT).await,
             ShimProbe::NotTested(why) if why.contains("relative")
         ));
+    }
+
+    /// Where the endpoint is the owned fallback a fresh machine never made, as
+    /// under brew's `test do`, the probe makes it as the office's bind would.
+    #[cfg(unix)]
+    #[test]
+    fn a_probe_beside_a_fresh_owned_fallback_makes_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let owned = tmp.path().join("pixtuoid-42");
+        let uid = rustix::process::getuid().as_raw();
+        let dir = throwaway_beside_in(&owned.join("pixtuoid.sock"), &owned, uid)
+            .expect("a dir beside the endpoint");
+        assert_eq!(dir.path().parent(), Some(owned.as_path()));
     }
 
     /// An endpoint in `dir`, so no probe here touches the real one's dir.

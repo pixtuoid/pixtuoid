@@ -191,7 +191,6 @@ impl AudioController {
 
     fn flush_on_exit(&mut self) {
         if self.volume_dirty {
-            // The run ends: the log is all that's left to tell.
             self.save_volume();
         }
     }
@@ -482,7 +481,7 @@ mod controller_tests {
         let release = crate::panels::noted::stall(&path);
         c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         drop(c);
-        crate::panels::join_jobs();
+        crate::panels::join_panel_threads();
         assert!(
             std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()),
             "the quit left its queued save unwritten"
