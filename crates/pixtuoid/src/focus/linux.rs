@@ -9,7 +9,7 @@
 //! every channel simply fails there → the caller's silent no-op, per the ONE
 //! failure rule.
 //!
-//! codecov-ignored glue; the walk logic is tested in `focus::tests`.
+//! The walk logic is tested in `focus::tests`.
 
 use super::ProcessTable;
 

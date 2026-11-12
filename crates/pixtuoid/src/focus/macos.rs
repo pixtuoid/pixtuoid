@@ -2,8 +2,8 @@
 //! the focusable test and activation. Zero TCC permissions — `activate()` is plain
 //! Cocoa, not an Apple Event.
 //!
-//! codecov-ignored glue (needs a real GUI session); the walk logic itself is
-//! tested in `focus::tests` on mock tables.
+//! Glue that needs a real GUI session; the walk logic itself is tested in
+//! `focus::tests` on mock tables.
 
 use objc2_app_kit::{NSApplicationActivationPolicy, NSRunningApplication};
 

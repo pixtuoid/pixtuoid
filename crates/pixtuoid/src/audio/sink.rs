@@ -140,7 +140,7 @@ fn bus(
 }
 
 /// The real device sink — rodio/cpal construction glue. Needs real audio hardware,
-/// so it is codecov-excluded and has no unit tests.
+/// so it has no unit tests.
 #[cfg(feature = "audio")]
 pub(crate) mod rodio_sink {
     use super::*;

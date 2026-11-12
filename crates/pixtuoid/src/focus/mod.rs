@@ -12,8 +12,7 @@
 //! dead-ends at pid 1.
 //!
 //! Lives in the BINARY (invariant #1: core/scene stay window-free); the walker
-//! is PURE over an injected [`ProcessTable`], the per-OS glue thin and
-//! codecov-ignored.
+//! is PURE over an injected [`ProcessTable`], the per-OS glue thin.
 
 use pixtuoid_core::AgentSlot;
 use pixtuoid_core::source::registry;
