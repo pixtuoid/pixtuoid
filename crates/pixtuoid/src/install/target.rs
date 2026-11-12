@@ -282,8 +282,8 @@ pub struct PluginCopy {
 #[derive(Debug)]
 pub struct CliConfig {
     pub path: fn() -> Result<PathBuf>,
-    /// Remove every entry whose command runs the shim
-    /// ([`invokes_shim`](crate::install::hook_cmd::invokes_shim)), a hand-written one included.
+    /// Remove every entry that runs the shim, a hand-written one included, read as
+    /// each format's strip says ([`strip_shim_json`](crate::install::merge::strip_shim_json)).
     pub strip: fn(content: &str) -> Result<MergeOutcome>,
 }
 

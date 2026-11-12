@@ -359,8 +359,9 @@ fn strip_shim_value(v: &mut Value) -> Stripped {
     done
 }
 
-/// [`strip_shim_json`] for a YAML config, edited in place so every other byte
-/// stays as written; `file` names it in an error.
+/// [`strip_shim_json`] for a YAML config, every entry read by `invokes_shim` (no YAML
+/// host writes an exec form), edited in place so every other byte stays as written;
+/// `file` names it in an error.
 pub(crate) fn strip_shim_yaml(content: &str, file: &str) -> anyhow::Result<MergeOutcome> {
     let unchanged = || MergeOutcome {
         content: content.to_string(),
@@ -424,8 +425,9 @@ fn strip_shim_node(node: &yaml_edit::YamlNode) -> Stripped {
     done
 }
 
-/// [`strip_shim_json`] for a TOML config, through `toml_edit`: what it leaves
-/// unopened keeps its bytes, but for [`end_lines_like`]'s line endings.
+/// [`strip_shim_json`] for a TOML config, every entry read by `invokes_shim` (no TOML
+/// host writes an exec form), through `toml_edit`: what it leaves unopened keeps its
+/// bytes, but for [`end_lines_like`]'s line endings.
 pub(crate) fn strip_shim_toml(content: &str) -> anyhow::Result<MergeOutcome> {
     toml_merge_outcome(content, |doc| {
         strip_shim_table(doc.as_table_mut());
@@ -547,6 +549,26 @@ mod tests {
     /// Every shape a release wrote, Claude Code's group without the `_pixtuoid` key its
     /// own writer drops and its exec form included, goes; a user's hook, mixed group and
     /// empty list stay, as does a spaced path with no `args`, which no shell runs whole.
+    /// A list item goes only once the strip removed entries from it: an item the user
+    /// left empty stays, and one the removal empties goes, nested arrays included.
+    #[test]
+    fn a_list_item_goes_only_once_the_strip_emptied_it() {
+        let shim = json!({"command": "PIXTUOID_SOURCE=codex 'pixtuoid-hook'"});
+        let doc = json!({"hooks": {"Stop": [{}], "Nested": [[shim], ["mine"]]}});
+        let out = strip_shim_json(&doc.to_string()).unwrap().content;
+        let out: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            out["hooks"]["Stop"],
+            json!([{}]),
+            "the user's own empty item stays"
+        );
+        assert_eq!(
+            out["hooks"]["Nested"],
+            json!([["mine"]]),
+            "the emptied array goes"
+        );
+    }
+
     #[test]
     fn the_shim_strip_takes_every_releases_entry_and_leaves_the_users() {
         let ours = |cmd: &str| json!({ "command": cmd });
