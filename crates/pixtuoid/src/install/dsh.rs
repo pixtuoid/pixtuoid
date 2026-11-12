@@ -87,7 +87,7 @@ pub(crate) fn plugin_artifacts(hook_path: &str) -> Result<Vec<(PathBuf, String)>
 
 /// The patch file, held for edits in place. saphyr's strict parse gates it:
 /// yaml-edit's parser recovers from what dsh's loader refuses.
-fn open(content: &str) -> Result<YamlFile> {
+fn patch_file(content: &str) -> Result<YamlFile> {
     merge::single_yaml_doc(content, "cordis.patch.yml")?;
     YamlFile::from_str(content)
         .map_err(|e| anyhow::anyhow!("cordis.patch.yml does not parse as YAML: {e}"))
@@ -105,9 +105,9 @@ fn rows(file: &YamlFile) -> Result<Option<Sequence>> {
     }
 }
 
-/// [`open`] and [`rows`] for a rewrite, which a malformed `insert:` refuses too.
+/// [`patch_file`] and [`rows`] for a rewrite, which a malformed `insert:` refuses too.
 fn rows_to_rewrite(content: &str) -> Result<(YamlFile, Option<Sequence>)> {
-    let file = open(content).context("refusing to overwrite cordis.patch.yml")?;
+    let file = patch_file(content).context("refusing to overwrite cordis.patch.yml")?;
     let rows = rows(&file).context("refusing to overwrite cordis.patch.yml")?;
     if rows.as_ref().is_some_and(malformed_insert) {
         bail!(
@@ -312,7 +312,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
 /// plugin file) — so `shim` stays `Unknown` here. The schema's own, stat-free half
 /// is the row-vs-home path match below.
 pub(crate) fn verify_schema(content: &str) -> SchemaParse {
-    let rows = match open(content).and_then(|file| rows(&file)) {
+    let rows = match patch_file(content).and_then(|file| rows(&file)) {
         Ok(Some(rows)) => rows,
         Ok(None) => Sequence::new(),
         Err(e) => return SchemaParse::broken(e.to_string()),
@@ -582,7 +582,7 @@ mod tests {
             assert!(removed.changed);
             assert_eq!(removed.content, "[]\n");
             assert!(
-                rows(&open(&removed.content).unwrap())
+                rows(&patch_file(&removed.content).unwrap())
                     .unwrap()
                     .is_some_and(|r| r.is_empty())
             );
