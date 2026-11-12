@@ -14,7 +14,7 @@
 //! `before_tool_call`), `before_agent_run`/`agent_end` require
 //! `allowConversationAccess`, and `session_end` fires on a clean stop but not on
 //! a kill. Running is therefore a self-healing decay keyed PER TURN, never a latch —
-//! the daemon-wide `last_seen` is refreshed by any event, so keying the decay on it
+//! the daemon-wide `last_seen` is refreshed by every proof-of-life update, so keying the decay on it
 //! latched Running on a gateway that kept serving other traffic.
 
 use std::num::NonZeroU16;
@@ -111,7 +111,7 @@ pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence>
     // PROCESS start, so a gateway already running when pixtuoid boots stays
     // invisible until it restarts. That is upstream's contract, not a hole to
     // "fix" with a poll.
-    let mut out = match event {
+    let updates = match event {
         "gateway_start" => vec![DaemonPresenceUpdate::GatewayUp { pid }],
         "gateway_stop" => vec![DaemonPresenceUpdate::GatewayDown],
         "session_start" => vec![DaemonPresenceUpdate::SessionStarted],
@@ -138,19 +138,10 @@ pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence>
             vec![]
         }
     };
-    // A `_pid` on a NON-`gateway_start` event bootstraps the abrupt-down exit watch
-    // for a mid-attached daemon; prepend it so the pid is adopted before the state
-    // update applies. An unmapped event stays empty — a lone `PidSeen` would
-    // resurrect nothing.
-    if event != "gateway_start"
-        && !out.is_empty()
-        && let Some(pid) = pid
-    {
-        out.insert(0, DaemonPresenceUpdate::PidSeen { pid });
-    }
     Ok(DecodedPresence {
         instance,
-        updates: out,
+        updates,
+        pid,
     })
 }
 
@@ -209,10 +200,14 @@ mod tests {
             decode(json!({"type": "gateway_start", "_pid": 0})),
             vec![DaemonPresenceUpdate::GatewayUp { pid: None }]
         );
-        assert_eq!(
-            decode(json!({"type": "session_start", "sessionId": "s1", "_pid": -1})),
-            vec![DaemonPresenceUpdate::SessionStarted]
-        );
+        for pid in [-1, 0] {
+            let d = decode_full(json!({"type": "session_start", "sessionId": "s1", "_pid": pid}));
+            assert_eq!(
+                (d.updates, d.pid),
+                (vec![DaemonPresenceUpdate::SessionStarted], None),
+                "_pid {pid}"
+            );
+        }
     }
 
     #[test]
@@ -302,30 +297,30 @@ mod tests {
     }
 
     #[test]
-    fn non_gateway_start_event_with_pid_prepends_pid_seen() {
+    fn a_non_gateway_start_event_carries_its_gateway_pid() {
+        let d = decode_full(json!({"type": "session_start", "sessionId": "s1", "_pid": 7777}));
         assert_eq!(
-            decode(json!({"type": "session_start", "sessionId": "s1", "_pid": 7777})),
-            vec![
-                DaemonPresenceUpdate::PidSeen { pid: 7777 },
-                DaemonPresenceUpdate::SessionStarted,
-            ]
+            (d.updates, d.pid),
+            (vec![DaemonPresenceUpdate::SessionStarted], Some(7777))
         );
+        let d = decode_full(json!({"type": "agent_end", "runId": "r", "_pid": 8888,
+                                   "success": false, "errored": true}));
         assert_eq!(
-            decode(json!({"type": "agent_end", "runId": "r", "_pid": 8888,
-                          "success": false, "errored": true})),
-            vec![
-                DaemonPresenceUpdate::PidSeen { pid: 8888 },
-                DaemonPresenceUpdate::TurnFailed {
+            (d.updates, d.pid),
+            (
+                vec![DaemonPresenceUpdate::TurnFailed {
                     turn: TurnKey::Id("r".into())
-                },
-            ]
+                }],
+                Some(8888)
+            )
         );
     }
 
     #[test]
     fn unmapped_event_with_pid_emits_nothing_not_a_lone_pid_seen() {
+        let d = decode_full(json!({"type": "model_call_started", "_pid": 5}));
         assert!(
-            decode(json!({"type": "model_call_started", "_pid": 5})).is_empty(),
+            d.into_msgs(SOURCE_NAME).next().is_none(),
             "no lone PidSeen for an unmapped event"
         );
     }

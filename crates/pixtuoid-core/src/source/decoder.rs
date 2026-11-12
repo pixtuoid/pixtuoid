@@ -200,10 +200,18 @@ pub(crate) fn derive_prefixed_label(source: &str, cwd: &Path) -> String {
     cwd_basename_label(prefix, cwd).unwrap_or_else(|| prefix.to_string())
 }
 
-/// The first key in `keys` (priority order) whose value on `obj` is a string.
-pub(crate) fn first_present_str<'a>(obj: &'a Value, keys: &[&str]) -> Option<&'a str> {
+/// The first key in `keys` (priority order) whose value on `obj` is a
+/// [`non_blank`] string.
+pub(crate) fn first_non_blank_str<'a>(obj: &'a Value, keys: &[&str]) -> Option<&'a str> {
     let m = obj.as_object()?;
-    keys.iter().find_map(|k| m.get(*k).and_then(|v| v.as_str()))
+    keys.iter()
+        .find_map(|k| m.get(*k).and_then(|v| v.as_str()).and_then(non_blank))
+}
+
+/// `s` unless it is empty or whitespace: a model can leave an optional tool
+/// argument blank, and a blank target names nothing.
+pub(crate) fn non_blank(s: &str) -> Option<&str> {
+    (!s.trim().is_empty()).then_some(s)
 }
 
 /// What a transcript tail says about when its SESSION last wrote — the per-source
@@ -651,6 +659,7 @@ pub(crate) fn make_tool_detail(source: &str, tool_name: &str, input: Option<&Val
 /// rendered as a `: …` suffix.
 pub(crate) fn generic_tool_display(tool: &str, target: Option<&str>) -> ToolDetail {
     let suffix = target
+        .and_then(non_blank)
         .map(|t| format!(": {}", ellipsize(t, MAX_TOOL_TARGET_CHARS)))
         .unwrap_or_default();
     ToolDetail::Generic {
@@ -663,7 +672,7 @@ pub(crate) fn generic_tool_display(tool: &str, target: Option<&str>) -> ToolDeta
 /// format it raw, bypassing [`MAX_TOOL_TARGET_CHARS`]. The per-source `keys`
 /// vocabulary is passed IN as data, so this stays format-agnostic.
 pub(crate) fn generic_keyed_detail(tool: &str, args: Option<&Value>, keys: &[&str]) -> ToolDetail {
-    generic_tool_display(tool, args.and_then(|a| first_present_str(a, keys)))
+    generic_tool_display(tool, args.and_then(|a| first_non_blank_str(a, keys)))
 }
 
 /// CC's per-tool target key dispatch: the RAW `file/cmd` descriptor for the
@@ -1444,6 +1453,16 @@ mod tests {
             ToolDetail::Generic { display } => assert_eq!(display, "noop"),
             other => panic!("expected Generic, got {other:?}"),
         }
+        // A model may leave an optional key blank: the scan reads past it.
+        match generic_keyed_detail("grep", Some(&json!({"command": " ", "path": "src"})), KEYS) {
+            ToolDetail::Generic { display } => assert_eq!(display, "grep: src"),
+            other => panic!("expected Generic, got {other:?}"),
+        }
+        // A target found without the scan (CC's, codex's) is blank-checked too.
+        match generic_tool_display("Read", Some("  ")) {
+            ToolDetail::Generic { display } => assert_eq!(display, "Read"),
+            other => panic!("expected Generic, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1726,7 +1745,7 @@ mod tests {
                         "/o/s.jsonl",
                         "omp",
                         json!({"type":"message","message":{"role":"assistant","content":[
-                            {"type":"toolCall","id":"t1","name":"ask","arguments":{"i":raw}}]}}),
+                            {"type":"toolCall","id":"t1","name":"ask","arguments":{},"intent":raw}]}}),
                     )
                 }),
             ),

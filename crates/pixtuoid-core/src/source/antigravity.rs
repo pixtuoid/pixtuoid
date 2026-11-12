@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    DecodeError, EVENT_STAMP, extract_top_level_cwd, first_present_str, generic_tool_display,
+    DecodeError, EVENT_STAMP, extract_top_level_cwd, first_non_blank_str, generic_tool_display,
 };
 use crate::source::registry::{
     ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -315,7 +315,7 @@ fn ag_tool_target(args: Option<&Value>) -> Option<String> {
         "SearchPath",
         "query",
     ];
-    let raw = first_present_str(args?, KEYS)?;
+    let raw = first_non_blank_str(args?, KEYS)?;
     let clean = raw
         .strip_prefix('"')
         .and_then(|s| s.strip_suffix('"'))

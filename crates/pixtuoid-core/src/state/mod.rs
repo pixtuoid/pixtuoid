@@ -564,17 +564,18 @@ pub struct DaemonPresence {
     pub liveness: DaemonLiveness,
     /// Concurrent sessions the gateway is multiplexing (bubble intensity).
     pub active_sessions: u32,
-    /// Last time ANY presence event arrived — drives the running→idle decay and
-    /// the presence-TTL stale-down sweep, and anchors the leave animation
-    /// (under `Down` this is the moment the gateway died).
+    /// Last time a proof-of-life presence event arrived — the presence-TTL
+    /// stale-down clock; under `Down`, when it went Down or the latest such
+    /// event since, which the removal sweep and the remote snapshot's
+    /// `last_seen_ms` read.
     pub last_seen: SystemTime,
     /// When the gateway first appeared (absent/Down → up) — the enter-animation
     /// anchor and the steady wander clock.
     pub entered_at: SystemTime,
     /// In-flight turns (running iff non-empty), each keyed by its correlation key
     /// and stamped with its LAST observation. The per-turn stamp is what makes
-    /// the running-decay honest: the daemon-wide `last_seen` is refreshed by ANY
-    /// event, so on a gateway still serving other traffic a turn whose
+    /// the running-decay honest: the daemon-wide `last_seen` is refreshed by EVERY
+    /// proof-of-life update, so on a gateway still serving other traffic a turn whose
     /// `agent_end` was dropped would never age out and the mascot would latch
     /// Running forever.
     ///
@@ -582,7 +583,8 @@ pub struct DaemonPresence {
     /// dump can't strand a perpetual Running.
     #[serde(skip)]
     pub in_flight_turns: HashMap<TurnKey, SystemTime>,
-    /// The gateway pid currently armed for `ExitWatch` (None until first seen).
+    /// The gateway pid this daemon adopted, whose exit takes it Down: `None` before
+    /// adoption or once Down, though the driver arms a watch on every seen pid.
     pub current_pid: Option<i32>,
 }
 

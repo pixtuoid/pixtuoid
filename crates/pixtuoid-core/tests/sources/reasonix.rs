@@ -12,6 +12,8 @@ use serde_json::Value;
 const DELEGATIONS: &[(&str, &str)] = &[
     ("subagent-hermetic", "spawn_agents"),
     ("explore-hermetic", "explore"),
+    ("run-skill-hermetic", "run_skill"),
+    ("read-only-skill-hermetic", "read_only_skill"),
 ];
 
 #[test]

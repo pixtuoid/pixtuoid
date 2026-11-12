@@ -105,21 +105,32 @@ pub(crate) fn apply_gated_presence(
 mod tests {
     use super::*;
 
-    /// The recorded cursor tool run's payloads, stamped `_pixtuoid_source` as
-    /// the shim relays them (the only attribution the gate trusts): each one's
-    /// event name, and what `Drive` decodes it to.
-    fn cursor_payloads() -> Vec<(String, Vec<AgentEvent>)> {
-        use pixtuoid_core::harness::{Drive, fixtures_dir, sources_root};
-        let path = fixtures_dir(&sources_root(), "cursor").join("tool-run/hook-payloads.jsonl");
+    /// `source`'s recorded `scenario` payloads, stamped `_pixtuoid_source` as
+    /// the shim relays them (the only attribution the gate trusts).
+    fn recorded_lines(source: &str, scenario: &str) -> Vec<String> {
+        use pixtuoid_core::harness::{HOOK_PAYLOADS, fixtures_dir, sources_root};
+        let path = fixtures_dir(&sources_root(), source)
+            .join(scenario)
+            .join(HOOK_PAYLOADS);
         std::fs::read_to_string(&path)
             .expect("the recorded run")
             .lines()
             .filter(|l| !l.trim().is_empty())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The recorded cursor tool run's payloads: each one's event name, and what
+    /// `Drive` decodes it to.
+    fn cursor_payloads() -> Vec<(String, Vec<AgentEvent>)> {
+        recorded_lines("cursor", "tool-run")
+            .into_iter()
             .map(|l| {
                 let payload: serde_json::Value =
-                    serde_json::from_str(l).expect("a recorded payload is JSON");
+                    serde_json::from_str(&l).expect("a recorded payload is JSON");
                 let event = payload["hook_event_name"].as_str().expect("a named event");
-                (event.to_string(), Drive::hooks().lines([l]).events)
+                let events = pixtuoid_core::harness::Drive::hooks().lines([&l]).events;
+                (event.to_string(), events)
             })
             .collect()
     }
@@ -405,5 +416,137 @@ mod tests {
             2,
             "a disconnected source contributes no instance"
         );
+    }
+
+    /// The recorded openclaw clean stop's payloads, in order: `gateway_start`
+    /// through the trailing `session_end`, each stamped with the gateway's pid.
+    fn openclaw_clean_stop() -> Vec<String> {
+        recorded_lines("openclaw", "tool-run-hermetic")
+    }
+
+    /// The recorded payload of type `ty`, and the pid it carries.
+    fn recorded(lines: &[String], ty: &str) -> (String, i32) {
+        lines
+            .iter()
+            .find_map(|l| {
+                let v: serde_json::Value = serde_json::from_str(l).expect("a recorded payload");
+                (v["type"] == ty).then(|| {
+                    let pid = v[pixtuoid_core::source::decoder::PID_STAMP]
+                        .as_i64()
+                        .expect("a stamped pid");
+                    (l.clone(), i32::try_from(pid).expect("a pid"))
+                })
+            })
+            .unwrap_or_else(|| panic!("the run records a {ty}"))
+    }
+
+    /// `reducer_task`'s presence arm: each line's deltas through the gate, each
+    /// armed pid bound to its daemon as the driver's `PresenceExitWatch` binds it.
+    struct PresenceRun {
+        scene: SceneState,
+        connected: ConnectedSources,
+        armed: std::collections::HashMap<i32, HashSet<daemon::DaemonInstanceKey>>,
+    }
+
+    impl PresenceRun {
+        fn new() -> Self {
+            Self {
+                scene: SceneState::uniform(8),
+                connected: ConnectedSources::new(["openclaw".to_string()].into()),
+                armed: Default::default(),
+            }
+        }
+
+        fn line(&mut self, line: &str, at: SystemTime) {
+            for msg in pixtuoid_core::harness::Drive::hooks()
+                .lines([line])
+                .presence
+            {
+                self.gate(msg.key, msg.delta, at);
+            }
+        }
+
+        fn gate(
+            &mut self,
+            key: daemon::DaemonInstanceKey,
+            delta: daemon::DaemonPresenceUpdate,
+            at: SystemTime,
+        ) {
+            let gated = apply_gated_presence(&mut self.scene, &key, delta, &self.connected, at);
+            if let PresenceGate::Applied { arm_pid: Some(pid) } = gated {
+                self.armed.entry(pid).or_default().insert(key);
+            }
+        }
+
+        /// `pid` dies: its receipt reaches every daemon bound to it, as many
+        /// as there were.
+        fn exit(&mut self, pid: i32, at: SystemTime) -> usize {
+            let keys = self.armed.remove(&pid).unwrap_or_default();
+            for key in &keys {
+                self.gate(
+                    key.clone(),
+                    daemon::DaemonPresenceUpdate::PidExited { pid },
+                    at,
+                );
+            }
+            keys.len()
+        }
+
+        fn gateway(&self) -> &pixtuoid_core::state::DaemonPresence {
+            let mut daemons = self.scene.daemons();
+            let (_, _, p) = daemons.next().expect("the gateway's entry");
+            assert!(daemons.next().is_none(), "one gateway");
+            p
+        }
+    }
+
+    fn at_ms(ms: u64) -> SystemTime {
+        SystemTime::UNIX_EPOCH + std::time::Duration::from_millis(1_800_000_000_000 + ms)
+    }
+
+    /// Its process exits seconds after the stop: the receipt finds no adopted pid,
+    /// so the Down entry, and the removal clock it carries, stay the stop's.
+    #[test]
+    fn the_recorded_clean_stops_exit_leaves_its_down_entry_as_it_was() {
+        use pixtuoid_core::state::DaemonLiveness;
+
+        let lines = openclaw_clean_stop();
+        let mut run = PresenceRun::new();
+        for (i, line) in lines.iter().enumerate() {
+            run.line(line, at_ms(i as u64));
+        }
+        let stopped = run.gateway().clone();
+        assert_eq!(
+            (stopped.liveness, stopped.current_pid),
+            (DaemonLiveness::Down, None),
+            "a Down gateway has no live pid"
+        );
+        let (_, pid) = recorded(&lines, "session_end");
+        assert_eq!(run.exit(pid, at_ms(3_000)), 1, "its exit watch was armed");
+        assert_eq!(run.gateway(), &stopped);
+    }
+
+    /// The Sources panel walked the gateway out while it kept serving; its next
+    /// session brings it back with its pid adopted, so its death takes it down.
+    #[test]
+    fn a_gateway_back_from_a_disconnect_adopts_its_pid_again() {
+        use pixtuoid_core::state::DaemonState;
+
+        let lines = openclaw_clean_stop();
+        let (start, pid) = recorded(&lines, "gateway_start");
+        let (session, _) = recorded(&lines, "session_start");
+        let mut run = PresenceRun::new();
+        run.line(&start, at_ms(0));
+        let mut reducer = Reducer::new();
+        let off = ConnectedSources::new(HashSet::new());
+        reconcile_sweep_tick(&mut reducer, &mut run.scene, &off, at_ms(1_000));
+        assert_eq!(run.gateway().display_state(), DaemonState::Down);
+        run.line(&session, at_ms(2_000));
+        assert_eq!(
+            (run.gateway().display_state(), run.gateway().current_pid),
+            (DaemonState::Idle, Some(pid))
+        );
+        assert_eq!(run.exit(pid, at_ms(3_000)), 1);
+        assert_eq!(run.gateway().display_state(), DaemonState::Down);
     }
 }

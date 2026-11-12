@@ -16,7 +16,7 @@
 //! **The two identity concepts are deliberately separate.** The
 //! [`DaemonInstanceId`] is STABLE — a gateway
 //! restarting on the same port keeps its mascot — while
-//! `DaemonPresence::current_pid` is the PROCESS incarnation, rebound by each
+//! `DaemonPresence::current_pid` is the PROCESS incarnation, re-adopted by each
 //! `GatewayUp`, so a late exit receipt for a replaced process is a no-op instead
 //! of a kill of its replacement.
 
@@ -36,7 +36,7 @@ pub use native::{PresenceExitWatch, PresenceSender, spawn_presence_exit_watch};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DaemonPresenceUpdate {
     /// `gateway_start` — the daemon is up. UP-winning + idempotent; resets the
-    /// session count and rebinds the armed pid.
+    /// session count and adopts its pid as `current_pid`.
     GatewayUp {
         /// The gateway's `process.pid`, armed for the abrupt-down exit watch (`None` if unknown).
         pid: Option<i32>,
@@ -64,16 +64,17 @@ pub enum DaemonPresenceUpdate {
         /// The failed turn's correlation key (matches its `TurnStarted`).
         turn: TurnKey,
     },
-    /// A live gateway pid OBSERVED on any event carrying `_pid` — adopted into
-    /// `current_pid` ONLY when it was `None`, so a MID-ATTACH or a
-    /// reconnect-while-alive can still arm the abrupt-down exit watch without
-    /// having seen `gateway_start`. A pure pid adoption: no `DaemonState` change,
-    /// and `GatewayUp` still owns restart-rebinds.
+    /// A live gateway pid OBSERVED on any mapped event carrying `_pid`. The driver arms the
+    /// abrupt-down exit watch on it either way; adoption into `current_pid`, which
+    /// lets that watch's exit act, happens ONLY when it was `None` on a daemon that
+    /// is not Down: a MID-ATTACH or a reconnect-while-alive gets an acting watch
+    /// without `gateway_start`, while a stopped gateway's trailing events can't
+    /// adopt its dying pid. No `DaemonState` change; `GatewayUp` re-adopts on restart.
     PidSeen {
         /// The live gateway pid observed on the event.
         pid: i32,
     },
-    /// The armed gateway pid died (from the `ExitWatch` drain, not a decoder).
+    /// An armed gateway pid died (from the `ExitWatch` drain, not a decoder).
     PidExited {
         /// The gateway pid that exited.
         pid: i32,
@@ -129,17 +130,28 @@ pub struct DecodedPresence {
     pub instance: DaemonInstanceId,
     /// The presence deltas the envelope implies (empty for a benign skip).
     pub updates: Vec<DaemonPresenceUpdate>,
+    /// The live gateway pid the envelope was stamped with, observed after its
+    /// updates as a [`DaemonPresenceUpdate::PidSeen`].
+    pub pid: Option<i32>,
 }
 
 #[cfg(any(feature = "native", feature = "harness"))]
 impl DecodedPresence {
-    /// Its deltas, each tagged with `source`'s instance they route to.
+    /// Its deltas, each tagged with `source`'s instance they route to, then a
+    /// `PidSeen` for its pid: after them, so a resurrecting update brings the
+    /// daemon up first, since a Down daemon adopts no pid; never alone: an unmapped
+    /// event would create an entry, or restamp a Down one's removal clock.
     pub(crate) fn into_msgs(self, source: &str) -> impl Iterator<Item = PresenceMsg> {
         let key = DaemonInstanceKey::new(source, self.instance);
-        self.updates.into_iter().map(move |delta| PresenceMsg {
-            key: key.clone(),
-            delta,
-        })
+        let seen = self.pid.filter(|_| !self.updates.is_empty());
+        let seen = seen.map(|pid| DaemonPresenceUpdate::PidSeen { pid });
+        self.updates
+            .into_iter()
+            .chain(seen)
+            .map(move |delta| PresenceMsg {
+                key: key.clone(),
+                delta,
+            })
     }
 }
 
@@ -154,9 +166,9 @@ pub struct PresenceTtl {
     /// With no activity for this long the daemon is presumed DOWN (covers a
     /// killed gateway, which fires neither `session_end` nor `gateway_stop`).
     pub(crate) presence_ttl_ms: u64,
-    /// How long a `Down` presence lingers (drawn walking out) before it is
-    /// REMOVED — generously past the renderer's elevator walk-out, so the leave
-    /// animation always completes first.
+    /// How long a `Down` presence stays before it is REMOVED, so the gateway
+    /// chip, the Sources panel and the remote snapshot show it Down; the sim
+    /// walks the mascot out on its own clock, past the removal too.
     pub(crate) down_remove_ms: u64,
 }
 
@@ -171,8 +183,9 @@ impl PresenceTtl {
 
 impl DaemonPresenceUpdate {
     /// The gateway pid this update arms the abrupt-down `ExitWatch` on, if any.
-    /// The variant→pid mapping lives HERE (one place) so the driver's watch-arm
-    /// and `apply_presence`'s `current_pid` adoption can't drift.
+    /// `apply_presence` adopts a `PidSeen` pid only onto a live daemon with no `current_pid`;
+    /// the watch is armed regardless, and its exit acts only if that pid is the
+    /// `current_pid` when the exit lands.
     pub fn armable_pid(&self) -> Option<i32> {
         match self {
             DaemonPresenceUpdate::GatewayUp { pid } => *pid,
@@ -191,16 +204,16 @@ impl DaemonPresence {
         self.in_flight_turns.clear();
     }
 
-    /// Transition to `Down` + clear the live-work pair AND the armed pid, so a
+    /// Transition to `Down` + clear the live-work pair AND `current_pid`, so a
     /// must-clear-on-down field can't be forgotten at one of the four down sites.
     /// `current_pid` is cleared because a Down daemon has no live gateway pid:
-    /// leaving it set strands the binding on the dead pid, so a reconnect as a new
+    /// leaving it set strands the adoption on the dead pid, so a reconnect as a new
     /// pid whose `gateway_start` is missed can't re-adopt via `PidSeen` (None-only)
-    /// and the instant abrupt-down rung silently disarms until the presence sweep.
+    /// and the new pid's exit stays a no-op until the presence sweep.
     ///
     /// `last_seen` is anchored to `now` HERE because the sweep removes a Down
     /// entry on that clock: on an abrupt death, where `last_seen` can be
-    /// minutes stale, the entry would be swept before any frame showed the
+    /// minutes stale, the entry would be swept before any reader showed the
     /// gateway Down. Taking `now` makes entering Down without anchoring the
     /// clock unrepresentable.
     fn enter_down(&mut self, now: SystemTime) {
@@ -249,10 +262,9 @@ pub fn apply_presence(
     let was_down = p.liveness == DaemonLiveness::Down;
     // Proof-of-life ONLY. A `PidExited` on the ordinary clean stop lands after
     // `GatewayDown` already cleared `current_pid`, so its arm is a no-op — yet
-    // stamping the clock here would restart the walk-out the renderer times off
-    // `last_seen` (and push out the sweep's removal), making the mascot vanish and
-    // then leave a second time. This skips BOTH `PidExited` sub-cases, which is why
-    // the MATCHING one (the abrupt death) anchors the clock in `enter_down`.
+    // stamping the clock here would push out the sweep's removal of the Down
+    // entry. This skips BOTH `PidExited` sub-cases, which is why the MATCHING one
+    // (the abrupt death) anchors the clock in `enter_down`.
     if !matches!(update, PidExited { .. }) {
         p.last_seen = now;
     }
@@ -300,11 +312,11 @@ pub fn apply_presence(
             p.liveness = DaemonLiveness::Up { degraded: true };
         }
         PidSeen { pid } => {
-            if p.current_pid.is_none() {
+            if p.current_pid.is_none() && p.liveness != DaemonLiveness::Down {
                 p.current_pid = Some(pid);
             }
         }
-        // Only the CURRENTLY-armed pid dying takes the daemon down: a stale receipt
+        // Only the adopted pid (`current_pid`) dying takes the daemon down: a stale receipt
         // for an old pid after a restart is a no-op, so the live daemon stays up.
         PidExited { pid } => {
             if p.current_pid == Some(pid) {
@@ -337,7 +349,6 @@ pub fn sweep_presence_ttl(scene: &mut SceneState, source: &str, ttl: PresenceTtl
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         if p.liveness == DaemonLiveness::Down {
-            // Keep the Down entry only until the walk-out has had time to finish.
             if idle_ms >= ttl.down_remove_ms {
                 doomed.push(instance.clone());
             }
@@ -356,7 +367,7 @@ pub fn sweep_presence_ttl(scene: &mut SceneState, source: &str, ttl: PresenceTtl
     scene.daemons.remove_instances(source, &doomed);
 }
 
-/// Drive EVERY instance of a source to `Down` (arming the renderer's walk-out),
+/// Drive EVERY instance of a source to `Down` (the sim walks each mascot out),
 /// skipping any already Down — idempotent, so the `down_remove_ms` removal timer
 /// in [`sweep_presence_ttl`] isn't reset on every tick. The runtime calls this
 /// when a source is DISCONNECTED in the Sources panel: the presence side-channel
@@ -680,8 +691,9 @@ mod tests {
     fn pid_seen_adopts_when_current_pid_is_none() {
         for src in SOURCES {
             // Mid-attach: pixtuoid never saw `gateway_start`, so the entry is first
-            // created by a plain activity event carrying `_pid`.
+            // created by a plain activity event carrying `_pid`, its update first.
             let mut s = SceneState::default();
+            apply(&mut s, src, DaemonPresenceUpdate::SessionStarted, ms(0));
             apply(
                 &mut s,
                 src,
@@ -691,7 +703,7 @@ mod tests {
             assert_eq!(
                 p(&s, src).current_pid,
                 Some(555),
-                "the live pid is adopted so the instant abrupt-down rung can arm"
+                "the live pid is adopted, so its watch's exit can take the daemon down"
             );
             assert_eq!(st(&s, src), DaemonState::Idle);
             apply(
@@ -718,26 +730,25 @@ mod tests {
             assert_eq!(
                 p(&s, src).current_pid,
                 Some(100),
-                "PidSeen is adopt-only-when-None; GatewayUp owns rebinds"
+                "PidSeen is adopt-only-when-None; GatewayUp owns re-adoption"
             );
         }
     }
 
     #[test]
-    fn pid_seen_is_pure_adoption_and_does_not_change_state() {
-        // The decoder ALWAYS prepends PidSeen to a state-bearing update, so
-        // resurrection rides on that sibling, never on PidSeen alone.
+    fn pid_seen_neither_resurrects_nor_adopts_onto_a_down_daemon() {
+        // `into_msgs` appends PidSeen to a state-bearing update, so resurrection
+        // rides on that sibling, never on PidSeen alone.
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(&mut s, src, DaemonPresenceUpdate::GatewayDown, ms(0));
             assert_eq!(st(&s, src), DaemonState::Down);
             apply(&mut s, src, DaemonPresenceUpdate::PidSeen { pid: 7 }, ms(1));
             assert_eq!(
-                st(&s, src),
-                DaemonState::Down,
-                "PidSeen is pure pid adoption — it does NOT resurrect by itself"
+                (st(&s, src), p(&s, src).current_pid),
+                (DaemonState::Down, None),
+                "a Down daemon has no live pid to adopt"
             );
-            assert_eq!(p(&s, src).current_pid, Some(7));
         }
     }
 
@@ -760,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn pid_seen_re_adopts_after_an_abrupt_down_so_the_second_cycle_arms() {
+    fn pid_seen_re_adopts_after_an_abrupt_down_so_the_second_cycle_acts() {
         use DaemonPresenceUpdate::*;
         for src in SOURCES {
             let mut s = SceneState::default();
@@ -768,8 +779,8 @@ mod tests {
             apply(&mut s, src, PidExited { pid: 100 }, ms(1)); // P1 dies → Down
             assert_eq!(st(&s, src), DaemonState::Down);
             // Reconnect as P2; gateway_start missed → only a normal event + PidSeen.
+            apply(&mut s, src, SessionStarted, ms(2)); // any event ⇒ up
             apply(&mut s, src, PidSeen { pid: 200 }, ms(2));
-            apply(&mut s, src, SessionStarted, ms(3)); // any event ⇒ up
             assert_eq!(
                 p(&s, src).current_pid,
                 Some(200),
@@ -779,8 +790,61 @@ mod tests {
             assert_eq!(
                 st(&s, src),
                 DaemonState::Down,
-                "the second-cycle PidExited re-armed the instant abrupt-down rung"
+                "the second-cycle PidExited took the re-adopted daemon down"
             );
+        }
+    }
+
+    #[test]
+    fn a_decoded_pid_follows_its_updates_and_never_rides_alone() {
+        use DaemonPresenceUpdate::*;
+        let deltas = |updates, pid| {
+            let decoded = DecodedPresence {
+                instance: inst("1"),
+                updates,
+                pid,
+            };
+            decoded
+                .into_msgs("openclaw")
+                .map(|m| m.delta)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            deltas(vec![SessionStarted], Some(7)),
+            vec![SessionStarted, PidSeen { pid: 7 }]
+        );
+        assert_eq!(deltas(vec![], Some(7)), vec![]);
+    }
+
+    /// A restart inside the Down window whose `gateway_start` was lost, each
+    /// update followed by the `PidSeen` `into_msgs` adds for its `_pid`.
+    #[test]
+    fn a_restart_after_a_clean_stop_outlives_the_old_gateways_exit() {
+        use DaemonPresenceUpdate::*;
+        for src in SOURCES {
+            let mut s = SceneState::default();
+            up(&mut s, src, 100, 0);
+            for (i, update) in [GatewayDown, SessionEnded, SessionStarted]
+                .into_iter()
+                .enumerate()
+            {
+                let pid = if matches!(update, SessionStarted) {
+                    200
+                } else {
+                    100
+                };
+                let at = ms(1 + i as u64);
+                apply(&mut s, src, update, at);
+                apply(&mut s, src, PidSeen { pid }, at);
+            }
+            apply(&mut s, src, PidExited { pid: 100 }, ms(10));
+            assert_eq!(
+                (st(&s, src), p(&s, src).current_pid),
+                (DaemonState::Idle, Some(200)),
+                "the old gateway's exit must not take its live replacement down"
+            );
+            apply(&mut s, src, PidExited { pid: 200 }, ms(11));
+            assert_eq!(st(&s, src), DaemonState::Down);
         }
     }
 
@@ -904,7 +968,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_presence_down_arms_the_walkout_idempotently() {
+    fn mark_presence_down_anchors_the_removal_clock_idempotently() {
         for src in SOURCES {
             let mut s = SceneState::default();
             up(&mut s, src, 1, 0);
@@ -913,7 +977,7 @@ mod tests {
             assert_eq!(
                 last_seen(&s, src),
                 ms(1000),
-                "Down re-anchors last_seen for the walk-out"
+                "Down re-anchors the removal clock"
             );
             mark_presence_down(&mut s, src, ms(5000));
             assert_eq!(
@@ -944,23 +1008,26 @@ mod tests {
             assert_eq!(
                 last_seen(&s, src),
                 ms(ttl.presence_ttl_ms + 1),
-                "walk-out anchor re-stamped"
+                "removal clock re-stamped"
             );
         }
     }
 
     #[test]
-    fn sweep_removes_a_down_entry_after_the_walkout_window() {
+    fn sweep_removes_a_down_entry_after_down_remove_ms() {
         let ttl = PresenceTtl::DEFAULT;
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(&mut s, src, DaemonPresenceUpdate::GatewayDown, ms(0));
             sweep_presence_ttl(&mut s, src, ttl, ms(ttl.down_remove_ms - 1));
-            assert!(p_opt(&s, src).is_some(), "still present mid walk-out");
+            assert!(
+                p_opt(&s, src).is_some(),
+                "still present inside the Down window"
+            );
             sweep_presence_ttl(&mut s, src, ttl, ms(ttl.down_remove_ms + 1));
             assert!(
                 p_opt(&s, src).is_none(),
-                "removed once the walk-out window elapsed"
+                "removed once the Down window elapsed"
             );
         }
     }
@@ -1152,7 +1219,7 @@ mod tests {
     }
 
     #[test]
-    fn restart_on_the_same_port_reuses_the_mascot_and_rebinds_its_process() {
+    fn restart_on_the_same_port_reuses_the_mascot_and_re_adopts_its_process() {
         let src = "openclaw";
         let mut s = SceneState::default();
         apply_at(
@@ -1177,7 +1244,7 @@ mod tests {
     }
 
     #[test]
-    fn an_abrupt_matching_exit_anchors_the_walk_out_clock_at_the_death_instant() {
+    fn an_abrupt_matching_exit_anchors_the_removal_clock_at_the_death_instant() {
         // An abrupt death (SIGKILL/OOM) lands no `GatewayDown`, so the synthesized
         // receipt's pid STILL MATCHES and this arm really transitions to Down — with
         // a `last_seen` that an idle gateway leaves minutes stale.
@@ -1207,13 +1274,13 @@ mod tests {
         assert_eq!(
             p.last_seen,
             ms(60_000),
-            "entering Down must anchor the walk-out clock at the DEATH instant, not \
+            "entering Down must anchor the removal clock at the DEATH instant, not \
              leave it at the last proof-of-life 60s earlier"
         );
     }
 
     #[test]
-    fn a_non_matching_exit_receipt_does_not_restart_the_walk_out_clock() {
+    fn a_non_matching_exit_receipt_does_not_restart_the_removal_clock() {
         // The ORDINARY clean stop: `GatewayDown` clears `current_pid`, so the armed
         // pid's receipt arrives NON-matching. Upstream awaits its stop hook before
         // closing, so this ordering is the norm, not a race.
@@ -1228,7 +1295,7 @@ mod tests {
         );
         apply_at(&mut s, src, A, DaemonPresenceUpdate::GatewayDown, 1_000);
         let at_down = s.daemon(src, &inst(A)).expect("present").last_seen;
-        // The disarmed pid's receipt lands 3s later.
+        // The receipt for pid 7, no longer adopted, lands 3s later.
         apply_at(
             &mut s,
             src,
@@ -1239,8 +1306,8 @@ mod tests {
         assert_eq!(
             s.daemon(src, &inst(A)).expect("present").last_seen,
             at_down,
-            "a death receipt must not refresh the presence clock — the walk-out is \
-             timed off it"
+            "a death receipt must not refresh the presence clock — the sweep's removal \
+             is timed off it"
         );
         apply_at(
             &mut s,
