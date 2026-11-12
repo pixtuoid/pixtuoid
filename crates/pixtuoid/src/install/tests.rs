@@ -2168,6 +2168,21 @@ fn a_half_done_hermes_reload_is_finished_by_the_next() {
     });
 }
 
+/// A strip that changes nothing never takes the lock, whose `.lock` sidecar would
+/// otherwise land beside a config of the CLI's own.
+#[test]
+fn a_strip_that_changes_nothing_takes_no_lock() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let at = tmp.path().join("settings.json");
+    std::fs::write(
+        &at,
+        r#"{"hooks": {"Stop": [{"command": "notify-send done"}]}}"#,
+    )
+    .unwrap();
+    assert!(!strip_managed(merge::strip_shim_json, &at).unwrap());
+    assert!(!tmp.path().join("settings.json.lock").exists());
+}
+
 /// Codex's and Antigravity's own configs, each with content its strip can't parse.
 fn unparsable_cli_configs(
     tmp: &std::path::Path,

@@ -258,9 +258,8 @@ fn extract_shim_path(cmd: &str) -> Option<PathBuf> {
             .strip_suffix('\'')?
             .replace("''", "'")
     } else if cmd.starts_with('\'') {
-        cmd.strip_prefix('\'')?
-            .strip_suffix('\'')?
-            .replace(r"'\''", "'")
+        let [path] = <[String; 1]>::try_from(shell_words::split(cmd).ok()?).ok()?;
+        path
     } else {
         cmd.to_string()
     };

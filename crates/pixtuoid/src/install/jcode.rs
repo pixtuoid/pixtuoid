@@ -8,7 +8,7 @@ use toml::{Table, Value};
 use super::hook_cmd::{SOURCE_FLAG, shell_single_quote};
 use super::merge::{hook_path_str, install_toml_table, open_toml_table, toml_merge_outcome};
 use super::target::MergeOutcome;
-use super::verify::{SchemaParse, ShimRef, assemble, posix_unquote};
+use super::verify::{SchemaParse, ShimRef, assemble};
 use pixtuoid_core::source::jcode::SOURCE_NAME;
 
 /// No `session_start`: each client connection fires one for a provisional
@@ -53,7 +53,8 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 
 fn managed_path(command: &str) -> Option<PathBuf> {
     let quoted = command.strip_suffix(&format!("{SOURCE_FLAG}{SOURCE_NAME}"))?;
-    let path = PathBuf::from(posix_unquote(quoted));
+    let [path] = <[String; 1]>::try_from(shell_words::split(quoted).ok()?).ok()?;
+    let path = PathBuf::from(path);
     // Round-trip equality excludes prefixes, suffixes and shell fragments without
     // narrowing explicit shim overrides to one basename.
     (hook_command(&path, true).ok().as_deref() == Some(command)).then_some(path)

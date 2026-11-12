@@ -64,24 +64,11 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     }
 }
 
-/// Whether `command` runs pixtuoid's shim, hand-written or not; one that only names
-/// the shim, or hands it to another program, does not. Each form a release wrote is
-/// read in its own shape, since one split misreads another's.
+/// Whether the shell `command` runs pixtuoid's shim, hand-written or not; one that only
+/// names it, or hands it to another program, does not, and a renamed shim counts only
+/// with the stamp. Each form a release wrote is read in its own shape.
 pub(crate) fn invokes_shim(command: &str) -> bool {
-    exec_form_runs_shim(command) || bare_form_runs_shim(command) || shell_form_runs_shim(command)
-}
-
-/// Claude Code's Windows exec form (`claude::hook_command`): the whole `command` is the
-/// shim's absolute path, unquoted and spaces included. A character no file name holds
-/// (learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file, "Naming Conventions")
-/// past the drive means more than one path, as when another program is handed the
-/// shim, and such a command is not this form.
-fn exec_form_runs_shim(command: &str) -> bool {
-    let mut chars = command.chars();
-    let drive = chars.next().is_some_and(|c| c.is_ascii_alphabetic())
-        && chars.next() == Some(':')
-        && matches!(chars.next(), Some('\\' | '/'));
-    drive && !chars.as_str().contains(['<', '>', ':', '"', '|', '?', '*']) && is_shim(command)
+    bare_form_runs_shim(command) || shell_form_runs_shim(command)
 }
 
 /// The Windows bare form `<path> --source <name>` ([`shell_hook_command`]): its path is
@@ -128,8 +115,9 @@ fn shell_form_runs_shim(command: &str) -> bool {
     false
 }
 
-/// Whether `path`'s last segment is the shim's binary.
-fn is_shim(path: &str) -> bool {
+/// Whether `path`'s last segment is the shim's binary, as the whole `command` of an
+/// exec-form entry is the program it spawns.
+pub(crate) fn is_shim(path: &str) -> bool {
     let bin = crate::install::io::HOOK_BIN;
     let program = last_segment(path);
     program == bin
@@ -178,7 +166,6 @@ mod tests {
             r#""C:\Program Files\pixtuoid\pixtuoid-hook.exe""#,
             r"c:\progra~1\pixtuo~1\pixtuo~12.exe --source codex",
             "PIXTUOID_SOURCE=codex '/opt/shims/pxhook'",
-            r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe",
             r"C:\Users\O'Brien\.cargo\bin\pixtuoid-hook.exe --source codex",
         ] {
             assert!(invokes_shim(ours), "{ours}");
@@ -196,6 +183,9 @@ mod tests {
             r"C:\PIXTUO~.EXE --source codex",
             r"C:\PROGRA~1\PIXTUO~1\PIXTUO~2.EXE --source notasource",
             r"C:\tools\wrap.exe C:\bin\pixtuoid-hook.exe",
+            r"C:\tools\wrap.exe .\bin\pixtuoid-hook.exe",
+            r"C:\tools\wrap.exe %LOCALAPPDATA%\pixtuoid-hook.exe",
+            r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe",
         ] {
             assert!(!invokes_shim(theirs), "{theirs}");
         }

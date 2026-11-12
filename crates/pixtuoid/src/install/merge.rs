@@ -299,9 +299,16 @@ struct Stripped {
 }
 
 fn json_shim_entry(v: &Value) -> bool {
-    v.get("command")
-        .and_then(Value::as_str)
-        .is_some_and(crate::install::hook_cmd::invokes_shim)
+    let Some(command) = v.get("command").and_then(Value::as_str) else {
+        return false;
+    };
+    // `args` makes it Claude Code's exec form, whose `command` is the program itself,
+    // spawned with no shell (`claude::hook_entry`).
+    if v.get("args").is_some_and(Value::is_array) {
+        crate::install::hook_cmd::is_shim(command)
+    } else {
+        crate::install::hook_cmd::invokes_shim(command)
+    }
 }
 
 fn json_emptied(v: &Value) -> bool {
@@ -534,7 +541,8 @@ mod tests {
     use super::*;
 
     /// Every shape a release wrote, Claude Code's group without the `_pixtuoid` key its
-    /// own writer drops included, goes; a user's hook, mixed group and empty list stay.
+    /// own writer drops and its exec form included, goes; a user's hook, mixed group and
+    /// empty list stay, as does a spaced path with no `args`, which no shell runs whole.
     #[test]
     fn the_shim_strip_takes_every_releases_entry_and_leaves_the_users() {
         let ours = |cmd: &str| json!({ "command": cmd });
@@ -542,8 +550,9 @@ mod tests {
             "theme": "dark",
             "hooks": {
                 "Stop": [
-                    {"matcher": "", "hooks": [{"type": "command", "command": "notify-send done"}]},
+                    {"matcher": "", "hooks": [{"type": "command", "command": "notify-send done"}, {"command": r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe"}]},
                     {"matcher": ".*", "hooks": [{"type": "command", "command": "PIXTUOID_SOURCE=claude-code 'pixtuoid-hook'"}]},
+                    {"matcher": "", "hooks": [{"type": "command", "command": r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe", "args": ["--source", "claude-code"]}]},
                     {"matcher": "x", "hooks": [{"command": "mine"}, ours("'/opt/pixtuoid-hook' --source claude-code")]},
                     ours("PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'"),
                 ],
@@ -560,7 +569,7 @@ mod tests {
             "theme": "dark",
             "hooks": {
                 "Stop": [
-                    {"matcher": "", "hooks": [{"type": "command", "command": "notify-send done"}]},
+                    {"matcher": "", "hooks": [{"type": "command", "command": "notify-send done"}, {"command": r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe"}]},
                     {"matcher": "x", "hooks": [{"command": "mine"}]},
                 ],
                 "Empty": [],

@@ -649,13 +649,7 @@ fn check_cli_config(config: Option<&target::CliConfig>) -> Result<()> {
     let Some(config) = config else {
         return Ok(());
     };
-    let path = (config.path)()?;
-    if !target::config_present(&path) {
-        return Ok(());
-    }
-    (config.strip)(&io::read_config(&path)?)
-        .with_context(|| format!("processing {}", path.display()))
-        .map(drop)
+    strip_needed(config.strip, &(config.path)()?).map(drop)
 }
 
 /// Whether it removed anything from `config`, a config of the CLI's own.
@@ -680,20 +674,40 @@ fn strip_managed(
     uninstall: fn(&str) -> Result<target::MergeOutcome>,
     path: &std::path::Path,
 ) -> Result<bool> {
-    // Decided BEFORE locking: `lock_config` creates the parent dir + a .lock sidecar, and
-    // materializing ~/.reasonix here would flip that target's presence probe on a no-op.
-    if !target::config_present(path) {
+    if !strip_needed(uninstall, path)? {
         return Ok(false);
     }
     let lock = io::lock_config(path)?;
-    let content = lock.read()?;
-    let outcome = uninstall(&content).with_context(|| format!("processing {}", path.display()))?;
-    // A byte compare would falsely fire on hand formatting.
+    // Re-derived under the lock, which a concurrent pixtuoid may have held.
+    let outcome = strip_outcome(uninstall, path, &lock.read()?)?;
     if !outcome.changed {
         return Ok(false);
     }
     lock.write_atomic(&outcome.content)?;
     Ok(true)
+}
+
+/// Whether `uninstall` would change `path`, read without its lock: `lock_config`
+/// creates the parent dir and a `.lock` sidecar, and materializing ~/.reasonix on a
+/// no-op would flip that target's presence probe.
+fn strip_needed(
+    uninstall: fn(&str) -> Result<target::MergeOutcome>,
+    path: &std::path::Path,
+) -> Result<bool> {
+    if !target::config_present(path) {
+        return Ok(false);
+    }
+    Ok(strip_outcome(uninstall, path, &io::read_config(path)?)?.changed)
+}
+
+/// `uninstall` over `content`, read from `path`. Its `changed` is semantic: a byte
+/// compare would falsely fire on hand formatting.
+fn strip_outcome(
+    uninstall: fn(&str) -> Result<target::MergeOutcome>,
+    path: &std::path::Path,
+    content: &str,
+) -> Result<target::MergeOutcome> {
+    uninstall(content).with_context(|| format!("processing {}", path.display()))
 }
 
 /// Write each of `files` that differs on disk. Called before the primary's
