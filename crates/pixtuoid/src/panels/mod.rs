@@ -2330,8 +2330,9 @@ impl Office for NotedOffice {
 /// The desktop calls a test's click or key makes, noted in place of
 /// `crate::focus::focus_slot` and `crate::open_url`, and the panel job it
 /// starts, held in place of [`run_job`](super::run_job), plus the save tests'
-/// stalled-disk fixture and shared deadline. The record is per thread because an
-/// injected `fn` captures nothing to note them in.
+/// `saved` drain and stalled-disk fixture, and the deadline the job and save tests
+/// share. The record is per thread because an injected `fn` captures nothing to
+/// note them in.
 #[cfg(test)]
 pub(crate) mod noted {
     use std::cell::RefCell;
