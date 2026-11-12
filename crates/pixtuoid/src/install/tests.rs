@@ -1454,8 +1454,9 @@ case "$*" in
 esac
 "#;
 
-/// `findstr /b`, never `/x`: the rule's rewrite leaves LF-only lines, which `/x`
-/// never matches, as it anchors at a CR (ss64.com/nt/findstr.html).
+/// `findstr /b`, never `/x`: `merge::strip_shim_toml`'s rewrite (through
+/// `end_lines_like`) leaves LF-only lines, which `/x` never matches, as it anchors at
+/// a CR (ss64.com/nt/findstr.html).
 const FAKE_CODEX_CMD: &str = "@echo off\r
 set \"d=%~dp0\"\r
 set \"c=%CODEX_HOME%\\config.toml\"\r

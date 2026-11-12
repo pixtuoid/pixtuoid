@@ -64,10 +64,9 @@ serde              = { workspace = true }
 serde_json         = { workspace = true, features = ["preserve_order"] }
 toml               = { workspace = true }
 toml_edit          = { workspace = true }
-# Strict YAML parse — the maintained yaml-rust successor, serde_yaml and
-# serde_yml both being abandoned: Hermes's plugin list, and the gate a user's
-# YAML passes before yaml-edit edits it, whose parser recovers from syntax
-# errors (github.com/jelmer/yaml-edit README, "Error recovery").
+# Strict YAML parse: Hermes's plugin list, and the gate a user's YAML passes
+# before yaml-edit edits it, whose parser recovers from syntax errors
+# (github.com/jelmer/yaml-edit README, "Error recovery").
 saphyr             = "0.3.1"
 # Lossless YAML edits, so a write to a user's file (dsh's patch list, Hermes's
 # `config.yaml`) keeps every byte but pixtuoid's entries; saphyr re-emits it all.

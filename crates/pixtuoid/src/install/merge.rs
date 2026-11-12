@@ -163,12 +163,7 @@ pub(crate) fn flat_json_merge_install(
 /// content (a foreign plugin's entry, the user's own allowlist members) is left
 /// exactly as found.
 pub(crate) fn prune_empty(parent: &mut serde_json::Map<String, Value>, key: &str) {
-    let empty = match parent.get(key) {
-        Some(Value::Object(m)) => m.is_empty(),
-        Some(Value::Array(a)) => a.is_empty(),
-        _ => false,
-    };
-    if empty {
+    if parent.get(key).is_some_and(json_emptied) {
         parent.remove(key);
     }
 }
@@ -538,8 +533,8 @@ pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
 mod tests {
     use super::*;
 
-    /// Every shape a release wrote, Claude Code's group with the sentinel its own
-    /// writer drops included, goes; a user's hook, mixed group and empty list stay.
+    /// Every shape a release wrote, Claude Code's group without the `_pixtuoid` key its
+    /// own writer drops included, goes; a user's hook, mixed group and empty list stay.
     #[test]
     fn the_shim_strip_takes_every_releases_entry_and_leaves_the_users() {
         let ours = |cmd: &str| json!({ "command": cmd });
