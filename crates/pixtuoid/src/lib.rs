@@ -44,7 +44,9 @@ pub mod dev {
     pub use crate::floating::compose::{Change, XrgbSurface, composite, composition};
     pub use crate::floating::geometry::{Zoom, floor_caps_for_buffer, window_geometry};
     pub use crate::floating::offscreen::{OfficeRenderer, Pressing, WindowFrame};
-    pub use crate::floating::overlays::{OverlayLayers, Overlays, footer_budget, panel_preview};
+    pub use crate::floating::overlays::{
+        OverlayLayers, Overlays, footer_budget, panel_names, panel_preview,
+    };
     pub use crate::pacing::{Protocol, cutaway_office, forget_frame, renderer, warm};
     pub use crate::panels::OverlayFrame;
     pub use crate::panels::connection::{
@@ -57,7 +59,7 @@ pub mod dev {
     };
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
     pub use crate::panels::widgets::grid_of;
-    pub use crate::snapshot_flags::{ClockArgs, parse_size, pet_parser};
+    pub use crate::snapshot_flags::{ClockArgs, named_parser, parse_pair, parse_size, pet_parser};
     pub use crate::sources::{ConnState, ConnectionRow};
     #[cfg(unix)]
     pub use crate::term::{QUERY_TIMEOUT, TTY_READ_CHUNK};

@@ -1217,20 +1217,23 @@ mod tests {
         let p = dir.path().join("settings.json");
         let guard = lock_config(&p).unwrap();
         let err = lock_config(&p).expect_err("a second lock on the same config must fail");
-        let busy = format!("another pixtuoid is changing {}", p.display());
-        assert_eq!(format!("{err:#}"), busy);
+        assert!(err.downcast_ref::<ConfigBusy>().is_some(), "{err:#}");
         drop(guard);
         lock_config(&p).expect("the lock is released when the guard drops");
     }
 
-    /// Only a change the user asked for says that asking again works: a
-    /// caller that retries on its own must not.
+    /// The lock's own error names only the contention; only a change the
+    /// user asked for adds that asking again works, which a caller that
+    /// retries on its own must not say.
     #[test]
-    fn a_busy_config_tells_the_asker_to_retry() {
+    fn a_busy_config_names_its_holder_and_only_the_asker_hears_retry() {
         let dir = TempDir::new().unwrap();
         let p = dir.path().join("settings.json");
         let _guard = lock_config(&p).unwrap();
-        let err = lock_config(&p).unwrap_err().context("saving");
+        let err = lock_config(&p).unwrap_err();
+        let busy = format!("another pixtuoid is changing {}", p.display());
+        assert_eq!(format!("{err:#}"), busy);
+        let err = err.context("saving");
         assert_eq!(
             failure_reason(&err),
             format!(

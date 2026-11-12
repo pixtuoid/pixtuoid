@@ -170,9 +170,32 @@ pub(crate) fn paint_tooltip(
     paint_grid(canvas, &placed.card, (placed.at, cell), pack, ink);
 }
 
-/// The panel `name` (`help`, `dashboard`, `sources` or `theme`) open over
-/// `scene` in a `window`-px window of screen cells `cell`, for a snapshot to
-/// paint; `None` for a name it doesn't know.
+/// What opens one panel over a scene.
+type OpenPanel = fn(&mut crate::panels::ui_state::UiState, &SceneState);
+
+/// Each panel a snapshot can open by name, and how: the one table both
+/// [`panel_names`] and [`panel_preview`] read.
+const PANELS: [(&str, OpenPanel); 4] = [
+    ("help", |ui, _| ui.toggle_help()),
+    ("dashboard", |ui, scene| ui.toggle_dashboard(scene)),
+    ("sources", |ui, _| {
+        ui.open_connection(crate::panels::connection::build_rows(
+            &crate::runtime::ConnectedSources::default().snapshot(),
+            &crate::panels::ui_state::log_text(ui.log()),
+        ));
+    }),
+    ("theme", |ui, _| ui.open_appearance()),
+];
+
+/// The names [`panel_preview`] opens a panel for.
+#[doc(hidden)]
+pub fn panel_names() -> impl Iterator<Item = &'static str> {
+    PANELS.iter().map(|&(name, _)| name)
+}
+
+/// The panel `name`, one of [`panel_names`], open over `scene` in a
+/// `window`-px window of screen cells `cell`, for a snapshot to paint; `None`
+/// for a name it doesn't know.
 #[doc(hidden)]
 pub fn panel_preview(
     name: &str,
@@ -181,6 +204,7 @@ pub fn panel_preview(
     (window, cell): ((u32, u32), CellPx),
     now: std::time::SystemTime,
 ) -> Option<CellGrid> {
+    let &(_, open) = PANELS.iter().find(|&&(panel, _)| panel == name)?;
     let mut ui = crate::panels::ui_state::UiState::new(
         theme,
         crate::panels::welcome::WelcomeUi::from_detected(&[]),
@@ -188,16 +212,7 @@ pub fn panel_preview(
         None,
         crate::doctor::DriftSeen::default(),
     );
-    match name {
-        "help" => ui.toggle_help(),
-        "dashboard" => ui.toggle_dashboard(scene),
-        "sources" => ui.open_connection(crate::panels::connection::build_rows(
-            &crate::runtime::ConnectedSources::default().snapshot(),
-            &crate::panels::ui_state::log_text(ui.log()),
-        )),
-        "theme" => ui.open_appearance(),
-        _ => return None,
-    }
+    open(&mut ui, scene);
     panels_grid(
         &ui.build_frames(now, scene, &[]),
         panel_cells(window, cell),
@@ -437,6 +452,31 @@ mod tests {
     use pixtuoid_scene::cutaway::glyph_cell;
     use pixtuoid_scene::footer::{FooterInputs, build_footer};
     use winit::dpi::PhysicalSize;
+
+    #[test]
+    fn every_listed_panel_opens_and_no_other_name_does() {
+        let theme = pixtuoid_scene::theme::ALL_THEMES[0];
+        let scene = scene_with(vec![running_on("/p/a.jsonl", 0, 0)], 8);
+        let window = (960, 640);
+        let at = window_geometry(
+            PhysicalSize::new(window.0, window.1),
+            density(),
+            Zoom::default(),
+        );
+        let preview = |name| {
+            panel_preview(
+                name,
+                &scene,
+                theme,
+                (window, chrome_cell(at)),
+                std::time::UNIX_EPOCH,
+            )
+        };
+        for name in panel_names() {
+            assert!(preview(name).is_some(), "{name}");
+        }
+        assert!(preview("bogus").is_none());
+    }
 
     /// A tooltip paints its box in the theme's tooltip background, inside the
     /// window wherever the pointer is: a label near the top flips below it,

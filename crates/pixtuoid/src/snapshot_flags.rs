@@ -47,26 +47,53 @@ impl ClockArgs {
     }
 }
 
+/// Two `T`s joined by `sep`, the shape `want` names: a [`parse_size`], the
+/// floating snapshot's window points.
+///
+/// # Errors
+///
+/// When `s` has no `sep`, or a side is no `T`.
+pub fn parse_pair<T>(s: &str, sep: char, want: &str) -> Result<(T, T), String>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    let side = |n: &str| n.parse::<T>().map_err(|e| format!("{n:?}: {e}"));
+    let (a, b) = s
+        .split_once(sep)
+        .ok_or_else(|| format!("{s:?}: want {want}"))?;
+    Ok((side(a)?, side(b)?))
+}
+
 /// A `WxH` size: the cutaway's `--logical`, the floating snapshot's window.
 ///
 /// # Errors
 ///
 /// When `s` is not two `u16`s joined by `x`.
 pub fn parse_size(s: &str) -> Result<(u16, u16), String> {
-    let side = |n: &str| n.parse::<u16>().map_err(|e| format!("{n:?}: {e}"));
-    let (w, h) = s
-        .split_once('x')
-        .ok_or_else(|| format!("{s:?}: want WxH"))?;
-    Ok((side(w)?, side(h)?))
+    parse_pair(s, 'x', "WxH")
+}
+
+/// One of `all` by its `name`, which clap's help and error list as the
+/// possible values: [`pet_parser`]'s, the classic snapshot's looks.
+pub fn named_parser<T: Copy + Send + Sync + 'static>(
+    all: &'static [T],
+    name: fn(T) -> &'static str,
+) -> impl clap::builder::TypedValueParser<Value = T> {
+    use clap::builder::TypedValueParser as _;
+    clap::builder::PossibleValuesParser::new(all.iter().map(|&value| name(value))).try_map(
+        move |given| {
+            (all.iter().copied())
+                .find(|&value| name(value) == given)
+                .ok_or("each possible value is one of them")
+        },
+    )
 }
 
 /// A pet kind by its [`PetKind::config_name`], for the classic's `--pets` and
-/// the floating snapshot's `--pet`: the possible values clap's help and error
-/// list.
+/// the floating snapshot's `--pet`.
 pub fn pet_parser() -> impl clap::builder::TypedValueParser<Value = PetKind> {
-    use clap::builder::TypedValueParser as _;
-    clap::builder::PossibleValuesParser::new(PetKind::ALL.iter().map(|kind| kind.config_name()))
-        .try_map(|name| PetKind::from_config_name(&name).ok_or("each possible value is a kind's"))
+    named_parser(PetKind::ALL, PetKind::config_name)
 }
 
 #[cfg(test)]
@@ -112,6 +139,11 @@ mod tests {
         let at = clock(&flags).unwrap().instant().unwrap();
         let hour = pixtuoid_scene::localclock::try_on_day(1, 22).unwrap();
         assert_eq!(at, Some(hour + Duration::from_secs(30)));
+    }
+
+    /// Each snapshot then keeps its own clock.
+    #[test]
+    fn no_hour_names_no_instant() {
         assert_eq!(clock(&[]).unwrap().instant().unwrap(), None);
     }
 

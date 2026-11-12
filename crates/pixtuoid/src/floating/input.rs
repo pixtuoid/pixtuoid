@@ -305,10 +305,32 @@ mod tests {
                     no_respawn,
                 ),
                 connected: crate::runtime::ConnectedSources::default(),
-                snapshot: SceneState::uniform(4),
+                snapshot: {
+                    use super::super::fixtures::{running_on, scene_with};
+                    // Two floors, and a root with a subagent: what a floor
+                    // step, a dashboard step and a fold each move.
+                    let root = running_on("/p/root.jsonl", 0, 0);
+                    let child = pixtuoid_core::state::AgentSlot {
+                        parent_id: Some(root.agent_id),
+                        ..running_on("/p/child.jsonl", 0, 1)
+                    };
+                    scene_with(vec![root, child, running_on("/p/up.jsonl", 1, 0)], 4)
+                },
                 config_path,
                 _tmp: tmp,
             }
+        }
+
+        /// The office as the window's next frame leaves it: the scene's floors
+        /// counted, and a slide the keys started (at the epoch) landed.
+        fn settle(&mut self) {
+            const PAST_ANY_SLIDE: std::time::Duration = std::time::Duration::from_secs(60);
+            let conditions = pixtuoid_scene::floor::Conditions::default();
+            (self.renderer).hear(
+                &self.snapshot,
+                conditions,
+                SystemTime::UNIX_EPOCH + PAST_ANY_SLIDE,
+            );
         }
 
         /// Press `code`; whether it quit.
@@ -396,6 +418,82 @@ mod tests {
         k.hold(KeyCode::Enter);
         assert!(k.ui.appearance.is_some(), "a held Enter committed the pick");
         assert_eq!(k.saved_theme(), None, "a held Enter saved the theme");
+    }
+
+    #[test]
+    fn a_held_floor_step_repeats_both_ways() {
+        use crossterm::event::KeyCode::Char;
+        let mut k = Keys::new();
+        k.settle();
+        assert_eq!(k.renderer.n_floors(), 2);
+        k.hold(Char('k'));
+        k.settle();
+        assert_eq!(k.renderer.nav().current(), 1, "a held k stopped");
+        k.hold(Char('j'));
+        k.settle();
+        assert_eq!(k.renderer.nav().current(), 0, "a held j stopped");
+    }
+
+    #[test]
+    fn a_held_list_step_repeats_both_ways_in_each_panel() {
+        use crossterm::event::KeyCode::{Down, Up};
+        let mut k = Keys::new();
+        k.ui.open_connection(crate::panels::noted::rows(|_| false));
+        k.hold(Down);
+        assert_eq!(
+            k.ui.connection.selected, 1,
+            "a held Down stopped in Sources"
+        );
+        k.hold(Up);
+        assert_eq!(k.ui.connection.selected, 0, "a held Up stopped in Sources");
+        k.ui.close_connection();
+
+        k.ui.toggle_dashboard(&k.snapshot);
+        let top = k.ui.dashboard.selected;
+        k.hold(Down);
+        assert_ne!(
+            k.ui.dashboard.selected, top,
+            "a held Down stopped in the dashboard"
+        );
+        k.hold(Up);
+        assert_eq!(
+            k.ui.dashboard.selected, top,
+            "a held Up stopped in the dashboard"
+        );
+        k.ui.close_dashboard();
+
+        k.ui = crate::panels::ui_state::UiState::new(
+            k.theme,
+            crate::panels::welcome::WelcomeUi::from_ids(&["codex", "cursor"]),
+            k._tmp.path().join("sock"),
+            None,
+            crate::doctor::DriftSeen::default(),
+        );
+        k.hold(Down);
+        assert_eq!(
+            k.ui.onboarding_ui.selected, 1,
+            "a held Down stopped in the onboarding"
+        );
+        k.hold(Up);
+        assert_eq!(
+            k.ui.onboarding_ui.selected, 0,
+            "a held Up stopped in the onboarding"
+        );
+    }
+
+    #[test]
+    fn a_held_dashboard_fold_repeats_both_ways() {
+        use crossterm::event::KeyCode::{Left, Right};
+        let mut k = Keys::new();
+        k.ui.toggle_dashboard(&k.snapshot);
+        let rows = |k: &Keys| {
+            crate::panels::dashboard::build_dashboard_rows(&k.snapshot, &k.ui.dashboard.folds).len()
+        };
+        let unfolded = rows(&k);
+        k.hold(Left);
+        assert!(rows(&k) < unfolded, "a held Left left the root unfolded");
+        k.hold(Right);
+        assert_eq!(rows(&k), unfolded, "a held Right left the root folded");
     }
 
     /// Esc closes the version popup, as the help's "Enter / Esc" row says; it

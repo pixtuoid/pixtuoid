@@ -126,7 +126,7 @@ struct FloatingArgs {
     #[arg(long, value_name = "MS", requires = "drag")]
     drop_after: Option<u64>,
     /// Open that panel over the office, as its key does.
-    #[arg(long, value_name = "help|dashboard|sources|theme")]
+    #[arg(long, value_name = "NAME", value_parser = clap::builder::PossibleValuesParser::new(pixtuoid::dev::panel_names()))]
     panel: Option<String>,
     /// Zoom the office N density steps from the automatic scale, as the zoom
     /// keys do.
@@ -140,11 +140,7 @@ struct FloatingArgs {
 }
 
 fn parse_point(s: &str) -> Result<Point, String> {
-    let px = |n: &str| n.parse::<f64>().map_err(|e| format!("{n:?}: {e}"));
-    let (x, y) = s
-        .split_once(',')
-        .ok_or_else(|| format!("{s:?}: want X,Y window px"))?;
-    Ok((px(x)?, px(y)?))
+    pixtuoid::dev::parse_pair(s, ',', "X,Y window px")
 }
 
 fn parse_drag(s: &str) -> Result<(Point, Point), String> {
@@ -196,12 +192,9 @@ fn main() -> Result<()> {
     scene.set_capacities(desks, now);
     let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
     renderer.set_pets(
-        pet.map(|kind| pixtuoid_scene::pet::Pet {
-            kind,
-            name: kind.default_name().to_string(),
-        })
-        .into_iter()
-        .collect(),
+        pet.map(pixtuoid_scene::pet::Pet::defaulted)
+            .into_iter()
+            .collect(),
     );
     // Shown as the window shows a frame, so a press finds what it shows.
     let render = |renderer: &mut OfficeRenderer, now| {
@@ -273,13 +266,9 @@ fn main() -> Result<()> {
             })?;
             Some((tip, (cursor.0 as i32, cursor.1 as i32)))
         }),
-        panels: match panel {
-            Some(name) => Some(
-                pixtuoid::dev::panel_preview(&name, &scene, theme, ((win_w, win_h), cell), now)
-                    .ok_or_else(|| anyhow!("no panel named {name}"))?,
-            ),
-            None => None,
-        },
+        panels: panel.and_then(|name| {
+            pixtuoid::dev::panel_preview(&name, &scene, theme, ((win_w, win_h), cell), now)
+        }),
     };
     let mut overlays = pixtuoid::dev::OverlayLayers::default();
     overlays.update(next, at, (theme, &pack));
@@ -330,6 +319,10 @@ mod tests {
         let args = parse(&[]).unwrap();
         assert_eq!((args.size, args.agents, args.zoom), (None, 0, 0));
         assert_eq!((args.hover, args.drag, args.drop_after), (None, None, None));
+        assert_eq!(
+            (args.pet, args.panel, args.theme.as_str()),
+            (None, None, "normal")
+        );
     }
 
     /// A zoom out is a negative step, which clap would otherwise read as a flag.
@@ -346,6 +339,25 @@ mod tests {
         assert_eq!(dragged.drop_after, Some(300));
         assert!(parse(&["--drop-after", "300"]).is_err());
         assert!(parse(&["--drag", "1,2"]).is_err());
-        assert!(parse(&["--hover", "1,y"]).is_err());
+    }
+
+    #[test]
+    fn a_malformed_hover_point_is_refused() {
+        assert_eq!(parse(&["--hover", "1,2"]).unwrap().hover, Some((1.0, 2.0)));
+        for bad in ["1,y", "1;2"] {
+            assert!(parse(&["--hover", bad]).is_err(), "{bad}");
+        }
+    }
+
+    /// The names are the lib's, so clap refuses one it would draw no panel for.
+    #[test]
+    fn a_panel_must_be_one_the_lib_lists() {
+        for name in pixtuoid::dev::panel_names() {
+            assert_eq!(
+                parse(&["--panel", name]).unwrap().panel.as_deref(),
+                Some(name)
+            );
+        }
+        assert!(parse(&["--panel", "bogus"]).is_err());
     }
 }

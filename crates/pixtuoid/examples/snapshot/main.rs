@@ -329,16 +329,7 @@ fn parse_insets(s: &str) -> Result<pixtuoid_scene::layout::Insets, String> {
 
 /// `--pixel`'s values: the engine's look ids.
 fn pixel_look() -> impl clap::builder::TypedValueParser<Value = LookKind> {
-    use clap::builder::TypedValueParser as _;
-    clap::builder::PossibleValuesParser::new(LookKind::ALL.iter().map(|look| look.name())).map(
-        |name| {
-            LookKind::ALL
-                .iter()
-                .copied()
-                .find(|look| look.name() == name)
-                .expect("each possible value is a look's id")
-        },
-    )
+    pixtuoid::dev::named_parser(LookKind::ALL, LookKind::name)
 }
 
 fn default_projects_root() -> String {
