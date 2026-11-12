@@ -194,7 +194,7 @@ mod tests {
     }
 
     /// The geometry is saved while the window is still held, the window is
-    /// hidden before the audio join starts, and the saves they queued land last.
+    /// hidden before the audio join starts, and the saves they queued are written last.
     #[test]
     fn the_run_persists_before_the_window_goes_and_hides_it_before_the_audio_join() {
         let mut parts = Parts::default();

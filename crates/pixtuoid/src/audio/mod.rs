@@ -107,7 +107,7 @@ pub(crate) struct AudioController {
     saves: crate::panels::Saves,
     volume_dirty: bool,
     /// When the `♩ N%` readout was armed. Doubles as the debounce clock: the
-    /// volume save lands once this window elapses.
+    /// volume save is queued once this window elapses.
     flash_at: Option<std::time::Instant>,
 }
 
@@ -215,7 +215,7 @@ impl AudioController {
     /// The ONE exit verb for BOTH halves of the audio protocol: QUEUE a
     /// pending debounced volume's save, which the quit's
     /// [`join_off_loop_threads`](crate::panels::join_off_loop_threads) or the
-    /// window's teardown lands within [`EXIT_WAIT`](crate::EXIT_WAIT), THEN
+    /// window's teardown writes within [`EXIT_WAIT`](crate::EXIT_WAIT), THEN
     /// stop the device thread. Both run
     /// unconditionally, so a Ctrl-C / terminate / error can't lose a nudge that
     /// landed inside the debounce window. Both halves are panic-free, so this
@@ -286,7 +286,7 @@ mod controller_tests {
     fn saved_ok(setting: Setting) -> SaveOutcome {
         SaveOutcome {
             setting,
-            landed: true,
+            written: true,
         }
     }
 
@@ -333,7 +333,7 @@ mod controller_tests {
         );
     }
 
-    /// `stop` persists and joins once; the drop after it, which production runs
+    /// `stop` queues the save and joins once; the drop after it, which production runs
     /// at every floating quit, does nothing more and does not panic.
     #[test]
     fn stop_then_drop_persists_and_joins_once() {
@@ -362,7 +362,7 @@ mod controller_tests {
         assert_eq!(saved(&mut landed), [saved_ok(Setting::Volume)]);
         assert!(
             std::fs::read_to_string(&path).unwrap().contains("volume"),
-            "stop persists the pending nudge"
+            "stop queues the pending nudge, and the drain writes it"
         );
         drop(c);
         assert_eq!(saved(&mut landed), [], "the drop after stop writes nothing");
@@ -410,7 +410,7 @@ mod controller_tests {
         std::fs::write(&k.path, "not = [valid").unwrap();
         let failed = |setting| SaveOutcome {
             setting,
-            landed: false,
+            written: false,
         };
         let t0 = Instant::now();
         k.c.apply(AudioAction::Volume(false), false, t0, |_, _| {});
@@ -473,11 +473,12 @@ mod controller_tests {
         );
     }
 
-    /// A quit's join waits for the saves still queued when the last handle on
-    /// them goes, the exit's flush included, even behind a stalled disk.
+    /// The quit's join waits for the saves still queued when the last handle on
+    /// them goes, the exit's flush included, a stalled one too; the quit itself
+    /// bounds that join by [`EXIT_WAIT`](crate::EXIT_WAIT).
     #[cfg(unix)]
     #[test]
-    fn a_quit_waits_for_the_queued_saves() {
+    fn the_quit_join_waits_for_the_queued_saves() {
         let Ctl {
             mut c, path, _dir, ..
         } = Ctl::new(false, 0.50);

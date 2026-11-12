@@ -374,7 +374,7 @@ impl UiState {
     /// in TUI mode the alternate screen owns the terminal, so the warn-floor log
     /// is not a user surface.
     pub(crate) fn note_save(&mut self, outcome: crate::config::SaveOutcome) {
-        self.unsaved[outcome.setting] = !outcome.landed;
+        self.unsaved[outcome.setting] = !outcome.written;
     }
 
     pub(crate) fn toggle_dashboard(&mut self, scene: &SceneState) {
