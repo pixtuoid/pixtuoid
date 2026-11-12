@@ -64,7 +64,7 @@ pub enum DaemonPresenceUpdate {
         /// The failed turn's correlation key (matches its `TurnStarted`).
         turn: TurnKey,
     },
-    /// A live gateway pid OBSERVED on any event carrying `_pid`. The driver arms the
+    /// A live gateway pid OBSERVED on any mapped event carrying `_pid`. The driver arms the
     /// abrupt-down exit watch on it either way; adoption into `current_pid`, which
     /// lets that watch's exit act, happens ONLY when it was `None` on a daemon that
     /// is not Down: a MID-ATTACH or a reconnect-while-alive gets an acting watch
@@ -139,15 +139,11 @@ pub struct DecodedPresence {
 impl DecodedPresence {
     /// Its deltas, each tagged with `source`'s instance they route to, then a
     /// `PidSeen` for its pid: after them, so a resurrecting update brings the
-    /// daemon up first, since a Down daemon adopts no pid; never beside a
-    /// `GatewayUp`, which adopts its own, nor alone, which resurrects nothing.
+    /// daemon up first, since a Down daemon adopts no pid; never alone, which
+    /// resurrects nothing.
     pub(crate) fn into_msgs(self, source: &str) -> impl Iterator<Item = PresenceMsg> {
         let key = DaemonInstanceKey::new(source, self.instance);
-        let seen = self.pid.filter(|_| {
-            !self.updates.is_empty()
-                && !(self.updates.iter())
-                    .any(|u| matches!(u, DaemonPresenceUpdate::GatewayUp { .. }))
-        });
+        let seen = self.pid.filter(|_| !self.updates.is_empty());
         let seen = seen.map(|pid| DaemonPresenceUpdate::PidSeen { pid });
         self.updates
             .into_iter()
@@ -817,8 +813,6 @@ mod tests {
             deltas(vec![SessionStarted], Some(7)),
             vec![SessionStarted, PidSeen { pid: 7 }]
         );
-        let up = GatewayUp { pid: Some(7) };
-        assert_eq!(deltas(vec![up.clone()], Some(7)), vec![up]);
         assert_eq!(deltas(vec![], Some(7)), vec![]);
     }
 
@@ -1225,7 +1219,7 @@ mod tests {
     }
 
     #[test]
-    fn restart_on_the_same_port_reuses_the_mascot_and_rebinds_its_process() {
+    fn restart_on_the_same_port_reuses_the_mascot_and_re_adopts_its_process() {
         let src = "openclaw";
         let mut s = SceneState::default();
         apply_at(
@@ -1301,7 +1295,7 @@ mod tests {
         );
         apply_at(&mut s, src, A, DaemonPresenceUpdate::GatewayDown, 1_000);
         let at_down = s.daemon(src, &inst(A)).expect("present").last_seen;
-        // The disarmed pid's receipt lands 3s later.
+        // The receipt for pid 7, no longer adopted, lands 3s later.
         apply_at(
             &mut s,
             src,
