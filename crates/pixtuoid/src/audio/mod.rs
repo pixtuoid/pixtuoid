@@ -212,8 +212,11 @@ impl AudioController {
         &self.ui.handle
     }
 
-    /// The ONE exit verb for BOTH halves of the audio protocol: PERSIST a
-    /// pending debounced volume, THEN stop the device thread. Both run
+    /// The ONE exit verb for BOTH halves of the audio protocol: QUEUE a
+    /// pending debounced volume's save, which the quit's
+    /// [`join_panel_threads`](crate::panels::join_panel_threads) or the
+    /// window's teardown lands within [`EXIT_WAIT`](crate::EXIT_WAIT), THEN
+    /// stop the device thread. Both run
     /// unconditionally, so a Ctrl-C / terminate / error can't lose a nudge that
     /// landed inside the debounce window. Both halves are panic-free, so this
     /// is safe to run during unwind. Idempotent, so a painter can run it ahead

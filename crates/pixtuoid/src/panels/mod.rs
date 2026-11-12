@@ -2122,12 +2122,27 @@ mod dispatch_tests {
             })
         };
 
-        let refreshed = run(PanelJob::Refresh);
+        // A home holding Claude Code's dir alone, so the CLIs it finds are known.
+        let home = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(home.path().join(".claude")).unwrap();
+        let refreshed = temp_env::with_vars(
+            [
+                (
+                    pixtuoid_core::platform::USER_HOME_VAR,
+                    Some(home.path().as_os_str()),
+                ),
+                ("CLAUDE_CONFIG_DIR", None),
+                ("CODEX_HOME", None),
+            ],
+            || run(PanelJob::Refresh),
+        );
         assert!(refreshed.notices.is_empty() && !refreshed.onboarding);
-        assert_eq!(
-            refreshed.installed,
-            crate::sources::detect(),
-            "the CLIs as the boot's probe finds them"
+        // Copilot has no install target, so no probe lists it.
+        let found = |id| refreshed.installed.contains(&id);
+        assert!(
+            found("claude-code") && !found("codex") && !found("copilot"),
+            "the CLIs the probe finds: {:?}",
+            refreshed.installed
         );
         assert_eq!(copilot_on(&refreshed), Some(true));
         assert!(

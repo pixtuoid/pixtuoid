@@ -52,9 +52,9 @@ pub(crate) struct FloatingApp {
     ui: crate::panels::ui_state::UiState,
     /// The Sources panel's mutation seam, as the TUI's.
     connected: crate::runtime::ConnectedSources,
-    /// Where a panel job sends its result, which reaches the loop as
+    /// Where a panel job or a save lands, which reaches the loop as
     /// [`FloatingEvent::Landed`].
-    job_tx: crate::panels::LandedTx,
+    landing: crate::panels::LandedTx,
     saves: crate::panels::Saves,
     /// The modifier keys held, which a key is read with.
     modifiers: winit::keyboard::ModifiersState,
@@ -217,8 +217,8 @@ impl FloatingApp {
         }: Settings,
         boot: super::PipelineBoot,
     ) -> std::io::Result<Self> {
-        let (job_tx, mut landed) = tokio::sync::mpsc::unbounded_channel();
-        let saves = crate::panels::Saves::spawn(config_path.clone(), job_tx.clone())?;
+        let (landing, mut landed) = tokio::sync::mpsc::unbounded_channel();
+        let saves = crate::panels::Saves::spawn(config_path.clone(), landing.clone())?;
         let audio_ctl = crate::audio::AudioController::new(audio, saves.clone());
         let pack = std::sync::Arc::new(pack);
         let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
@@ -236,10 +236,13 @@ impl FloatingApp {
             look: None,
         });
         let connected = boot.connected.clone();
-        let job_proxy = proxy.clone();
+        let landing_proxy = proxy.clone();
         boot.rt.spawn(async move {
-            while let Some(done) = landed.recv().await {
-                if job_proxy.send_event(FloatingEvent::Landed(done)).is_err() {
+            while let Some(arrived) = landed.recv().await {
+                if landing_proxy
+                    .send_event(FloatingEvent::Landed(arrived))
+                    .is_err()
+                {
                     break;
                 }
             }
@@ -251,7 +254,7 @@ impl FloatingApp {
             config_path,
             ui,
             connected,
-            job_tx,
+            landing,
             saves,
             modifiers: winit::keyboard::ModifiersState::empty(),
             // Until `resumed` names the platform: presenting every frame is
@@ -408,7 +411,7 @@ impl FloatingApp {
                 respawn: crate::audio::respawn,
                 saves: &self.saves,
                 focus: crate::focus::focus_slot,
-                job_tx: &self.job_tx,
+                job_tx: &self.landing,
                 run_job: crate::panels::run_job,
             },
         )

@@ -181,24 +181,15 @@ impl UiState {
     /// an agent CLI to connect, else the version popup when this version is
     /// new to the config at `boot.config_path`.
     pub(crate) fn boot(boot: Boot<'_>) -> Self {
-        let first_run = boot.first_run;
-        let detected = if first_run {
+        let detected = if boot.first_run {
             crate::sources::detect_sources()
         } else {
             Vec::new()
         };
-        let found: Vec<&'static str> = detected.iter().map(|d| d.name).collect();
         Self::boot_with(
             boot,
             WelcomeUi::from_detected(&detected),
-            // A first run has probed already.
-            move || {
-                if first_run {
-                    found
-                } else {
-                    crate::sources::detect()
-                }
-            },
+            crate::sources::detect,
             &semver::Version::parse(env!("CARGO_PKG_VERSION"))
                 .expect("CARGO_PKG_VERSION is SemVer"),
         )

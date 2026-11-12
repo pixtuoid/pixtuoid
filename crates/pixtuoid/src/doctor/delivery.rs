@@ -166,8 +166,8 @@ async fn probe(shim: &Path, endpoint: &Path, exit_deadline: Duration) -> ShimPro
         Ok(dir) => dir,
         Err(e) => return ShimProbe::NotTested(format!("no temp dir: {e:#}")),
     };
-    let endpoint = hook::private_endpoint(dir.path(), "p");
-    let listener = match HookSocketListener::bind(&endpoint).await {
+    let throwaway = hook::private_endpoint(dir.path(), "p");
+    let listener = match HookSocketListener::bind(&throwaway).await {
         Ok(listener) => listener,
         Err(e) => return ShimProbe::NotTested(format!("no throwaway endpoint: {e:#}")),
     };
@@ -175,7 +175,7 @@ async fn probe(shim: &Path, endpoint: &Path, exit_deadline: Duration) -> ShimPro
     let serving = tokio::spawn(listener.run(tx));
     let mut verdict = ShimProbe::Failed("it exited 0 and delivered nothing".into());
     for _ in 0..ATTEMPTS {
-        match run_once(shim, &endpoint, exit_deadline).await {
+        match run_once(shim, &throwaway, exit_deadline).await {
             Err(why) => {
                 verdict = ShimProbe::Failed(why);
                 break;
@@ -199,20 +199,19 @@ async fn probe(shim: &Path, endpoint: &Path, exit_deadline: Duration) -> ShimPro
 /// conditions (that dir, its owner, its room in `sun_path`) rather than TMPDIR's.
 #[cfg(unix)]
 fn throwaway_beside(endpoint: &Path) -> anyhow::Result<tempfile::TempDir> {
-    let uid = rustix::process::getuid().as_raw();
-    throwaway_beside_in(endpoint, &hook::owned_tmp_dir(), uid)
+    throwaway_vetted(endpoint, hook::vet_owned_tmp_path)
 }
 
-/// [`throwaway_beside`] with the owned fallback dir and its owner injected.
+/// [`throwaway_beside`] with the owned fallback dir's guard injected, so a
+/// test needn't touch the real one.
 #[cfg(unix)]
-fn throwaway_beside_in(
+fn throwaway_vetted(
     endpoint: &Path,
-    owned: &Path,
-    uid: u32,
+    vet: impl FnOnce(&Path) -> anyhow::Result<()>,
 ) -> anyhow::Result<tempfile::TempDir> {
     use anyhow::Context as _;
     // Made as the office's bind makes it, where the endpoint is the owned fallback.
-    hook::vet_owned_tmp_path_in(endpoint, owned, uid)?;
+    vet(endpoint)?;
     let parent = endpoint.parent().context("the endpoint names no file")?;
     Ok(tempfile::Builder::new().prefix("px").tempdir_in(parent)?)
 }
@@ -634,8 +633,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let owned = tmp.path().join("pixtuoid-42");
         let uid = rustix::process::getuid().as_raw();
-        let dir = throwaway_beside_in(&owned.join("pixtuoid.sock"), &owned, uid)
-            .expect("a dir beside the endpoint");
+        let vet = |path: &Path| hook::vet_owned_tmp_path_in(path, &owned, uid);
+        let dir =
+            throwaway_vetted(&owned.join("pixtuoid.sock"), vet).expect("a dir beside the endpoint");
         assert_eq!(dir.path().parent(), Some(owned.as_path()));
     }
 

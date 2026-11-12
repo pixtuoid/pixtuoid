@@ -501,9 +501,9 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         audio_cfg,
     } = session;
     let arms = QuitArms::arm();
-    let (job_tx, mut landed) = tokio::sync::mpsc::unbounded_channel();
+    let (landing, mut landed) = tokio::sync::mpsc::unbounded_channel();
     // Before the terminal is set up, which a failure past it leaves raw.
-    let saves = crate::panels::Saves::spawn(config_path.clone(), job_tx.clone())?;
+    let saves = crate::panels::Saves::spawn(config_path.clone(), landing.clone())?;
     // Asked before raw mode is on: the query takes the terminal's own for
     // its reply.
     let out = FrameOut::new(stdout(), crate::term::query_sync_output());
@@ -578,7 +578,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                                 respawn: crate::audio::respawn,
                                 saves: &saves,
                                 focus: crate::focus::focus_slot,
-                                job_tx: &job_tx,
+                                job_tx: &landing,
                                 run_job: crate::panels::run_job,
                             },
                         );
@@ -599,7 +599,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     ),
                     _ => {}
                 },
-                Some(done) = landed.recv() => crate::panels::land(&mut ui, done),
+                Some(arrived) = landed.recv() => crate::panels::land(&mut ui, arrived),
                 signal = &mut quit => {
                     fired = Some(signal);
                     break;
@@ -1223,7 +1223,7 @@ mod apply_key_action_tests {
         _tmp: tempfile::TempDir,
         config_path: std::path::PathBuf,
         saves: crate::panels::Saves,
-        job_tx: crate::panels::LandedTx,
+        landing: crate::panels::LandedTx,
         landed: tokio::sync::mpsc::UnboundedReceiver<crate::panels::Landed>,
         run_job: fn(crate::panels::JobInput) -> crate::panels::JobDone,
     }
@@ -1232,8 +1232,8 @@ mod apply_key_action_tests {
         fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let config_path = tmp.path().join("config.toml");
-            let (job_tx, landed) = tokio::sync::mpsc::unbounded_channel();
-            let saves = crate::panels::Saves::spawn(config_path.clone(), job_tx.clone())
+            let (landing, landed) = tokio::sync::mpsc::unbounded_channel();
+            let saves = crate::panels::Saves::spawn(config_path.clone(), landing.clone())
                 .expect("a save thread");
             Self {
                 ui: super::ui_state::UiState::new(
@@ -1266,7 +1266,7 @@ mod apply_key_action_tests {
                 _tmp: tmp,
                 config_path,
                 saves,
-                job_tx,
+                landing,
                 landed,
                 run_job: crate::panels::noted::gated_job,
             }
@@ -1307,7 +1307,7 @@ mod apply_key_action_tests {
                     respawn: no_respawn,
                     saves: &self.saves,
                     focus: crate::panels::noted::focus,
-                    job_tx: &self.job_tx,
+                    job_tx: &self.landing,
                     run_job: self.run_job,
                 },
             )
@@ -1318,7 +1318,7 @@ mod apply_key_action_tests {
             let deadline = std::time::Instant::now() + crate::panels::noted::LANDS_WITHIN;
             loop {
                 match self.landed.try_recv() {
-                    Ok(landed) => return crate::panels::land(&mut self.ui, landed),
+                    Ok(arrived) => return crate::panels::land(&mut self.ui, arrived),
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty)
                         if std::time::Instant::now() < deadline =>
                     {
@@ -1737,7 +1737,6 @@ mod apply_key_action_tests {
         assert!(h.ui.version_notices().is_empty(), "no CLI read yet");
         h.apply(KeyAction::DismissVersionPopup);
 
-        // The gated job's rows find every CLI here.
         h.apply(KeyAction::ToggleConnection);
         h.open_gate(false);
         h.settle();
