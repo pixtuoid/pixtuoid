@@ -1,9 +1,10 @@
-//! The flags the snapshot examples share, so each reads a clock or a size the
-//! same way. Mechanism for `examples/`, not a contract.
+//! The flags the snapshot examples share, so each reads a clock, a size or a
+//! pet the same way. Mechanism for `examples/`, not a contract.
 
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
+use pixtuoid_scene::pet::PetKind;
 
 /// `--now-sec`'s bound: a second past it is the next hour's.
 const HOUR_SECS: u64 = chrono::TimeDelta::hours(1).num_seconds().unsigned_abs();
@@ -56,6 +57,17 @@ pub fn parse_size(s: &str) -> Result<(u16, u16), String> {
     Ok((side(w)?, side(h)?))
 }
 
+/// A pet kind by its `[[pets]]` name: the classic's `--pets`, the floating
+/// snapshot's `--pet`.
+///
+/// # Errors
+///
+/// When no kind has that name. The error lists none: `PetKind` exposes its
+/// kinds but not their names.
+pub fn parse_pet(s: &str) -> Result<PetKind, String> {
+    PetKind::from_config_name(s).ok_or_else(|| format!("{s:?}: not a pet kind"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,6 +106,22 @@ mod tests {
         let hour = pixtuoid_scene::localclock::try_on_day(1, 22).unwrap();
         assert_eq!(at, Some(hour + Duration::from_secs(30)));
         assert_eq!(clock(&[]).unwrap().instant().unwrap(), None);
+    }
+
+    /// Every kind answers to its name, so a kind added without one fails here.
+    #[test]
+    fn each_pet_kind_parses_by_name_and_no_other_name_does() {
+        let named = [("cat", PetKind::Cat), ("dog", PetKind::Dog)];
+        for (name, kind) in named {
+            assert_eq!(parse_pet(name), Ok(kind));
+        }
+        for kind in PetKind::ALL {
+            assert!(
+                named.iter().any(|(_, k)| k == kind),
+                "{kind:?} has no name here"
+            );
+        }
+        assert!(parse_pet("bird").is_err());
     }
 
     #[test]

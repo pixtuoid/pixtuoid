@@ -116,7 +116,7 @@ struct FloatingArgs {
     agents: usize,
     #[arg(long, value_name = "X,Y", value_parser = parse_point)]
     hover: Option<Point>,
-    #[arg(long, value_name = "cat|dog", value_parser = parse_pet)]
+    #[arg(long, value_name = "KIND", value_parser = pixtuoid::dev::parse_pet)]
     pet: Option<pixtuoid_scene::pet::PetKind>,
     /// Press at the first window point and carry what it lifts to the second,
     /// drawing it in hand.
@@ -152,11 +152,6 @@ fn parse_drag(s: &str) -> Result<(Point, Point), String> {
         .split_once(':')
         .ok_or_else(|| format!("{s:?}: want X0,Y0:X1,Y1"))?;
     Ok((parse_point(from)?, parse_point(to)?))
-}
-
-fn parse_pet(s: &str) -> Result<pixtuoid_scene::pet::PetKind, String> {
-    pixtuoid_scene::pet::PetKind::from_config_name(s)
-        .ok_or_else(|| format!("{s:?}: want cat or dog"))
 }
 
 fn main() -> Result<()> {

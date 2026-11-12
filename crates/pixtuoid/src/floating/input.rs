@@ -360,16 +360,42 @@ mod tests {
     /// A held step keeps stepping; a held toggle fires once.
     #[test]
     fn only_a_held_step_repeats() {
-        use crate::panels::keys::{APPEARANCE, PAUSE};
+        use crate::panels::keys::{APPEARANCE, DASHBOARD, MUTE, PAUSE, VOLUME_DOWN, VOLUME_UP};
+        use crossterm::event::KeyCode;
         let mut k = Keys::new();
-        assert!(!k.hold(PAUSE));
-        assert!(!k.ui.paused(), "a held toggle fired again");
+        for toggle in [PAUSE, APPEARANCE, DASHBOARD] {
+            assert!(!k.hold(toggle), "{toggle:?}");
+        }
+        assert!(!k.ui.paused(), "a held pause toggled");
+        assert!(k.ui.appearance.is_none(), "a held t opened the picker");
+        assert!(
+            !k.ui.modal().dashboard_open,
+            "a held Tab opened the dashboard"
+        );
+
+        // The harness starts muted at full volume, so down comes first: up
+        // then both raises the volume and unmutes.
+        k.hold(VOLUME_DOWN);
+        let lowered = k.audio_ctl.handle().volume();
+        assert!(lowered < 1.0, "a held volume-down stopped");
+        k.hold(VOLUME_UP);
+        assert!(
+            k.audio_ctl.handle().volume() > lowered,
+            "a held volume-up stopped"
+        );
+        assert!(!k.audio_ctl.handle().is_muted());
+        k.hold(MUTE);
+        assert!(!k.audio_ctl.handle().is_muted(), "a held mute toggled");
+
         k.press(APPEARANCE);
-        k.hold(crossterm::event::KeyCode::Down);
+        k.hold(KeyCode::Down);
         assert!(
             !std::ptr::eq(k.theme, pixtuoid_scene::theme::ALL_THEMES[0]),
             "a held step stopped"
         );
+        k.hold(KeyCode::Enter);
+        assert!(k.ui.appearance.is_some(), "a held Enter committed the pick");
+        assert_eq!(k.saved_theme(), None, "a held Enter saved the theme");
     }
 
     /// Esc closes the version popup, as the help's "Enter / Esc" row says; it

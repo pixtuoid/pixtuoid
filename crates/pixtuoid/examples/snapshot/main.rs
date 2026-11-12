@@ -193,10 +193,9 @@ struct SnapshotArgs {
     #[arg(long, value_name = "X,Y", conflicts_with = "animation")]
     hover: Option<String>,
 
-    /// Add a wandering office pet to a renderer-driven --gif capture
-    /// (cat | dog).
-    #[arg(long, value_name = "KIND", requires = "gif", conflicts_with = "anim")]
-    pets: Option<String>,
+    /// Add a wandering office pet to a renderer-driven --gif capture.
+    #[arg(long, value_name = "KIND", requires = "gif", conflicts_with = "anim", value_parser = pixtuoid::dev::parse_pet)]
+    pets: Option<pixtuoid_scene::pet::PetKind>,
 
     /// Render with the agent-dashboard popup open over a representative mixed
     /// cc/cx/rx scene.
@@ -488,21 +487,14 @@ fn main() -> Result<()> {
     }
 
     let navigations = parse_navigations(&args.navigate_at)?;
-    let pet_vec: Vec<pixtuoid_scene::pet::Pet> = match args.pets.as_deref() {
-        None => vec![],
-        Some(kind_str) => {
-            use pixtuoid_scene::pet::{Pet, PetKind};
-            let kind = match kind_str {
-                "cat" => PetKind::Cat,
-                "dog" => PetKind::Dog,
-                other => anyhow::bail!("unknown --pets {:?}; valid: cat | dog", other),
-            };
-            vec![Pet {
-                kind,
-                name: "Pixel".into(),
-            }]
-        }
-    };
+    let pet_vec: Vec<pixtuoid_scene::pet::Pet> = args
+        .pets
+        .map(|kind| pixtuoid_scene::pet::Pet {
+            kind,
+            name: "Pixel".into(),
+        })
+        .into_iter()
+        .collect();
 
     let anim_job = AnimJob {
         path: &args.out,
