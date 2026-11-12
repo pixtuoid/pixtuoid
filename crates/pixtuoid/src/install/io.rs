@@ -1467,37 +1467,43 @@ mod tests {
         }
     }
 
-    /// A run that ends leaves the list, so a quit's kill never reaches a group
-    /// or job it no longer owns.
+    /// A run that ends takes only itself off the list, so a quit's kill still
+    /// reaches every run going and no group or job it no longer owns.
     #[test]
     fn a_finished_run_leaves_the_running_list() {
-        let slow = std::ffi::OsStr::new("slow");
+        let hang = std::ffi::OsStr::new("hang");
         let none: [&std::ffi::OsStr; 0] = [];
+        let secs = HANG.as_secs();
         with_fake(
-            "[ \"$1\" = slow ] && sleep 2\necho done",
-            "if \"%~1\"==\"slow\" ping -n 3 127.0.0.1 >nul\r\necho done",
+            &format!("[ \"$1\" = hang ] && exec sleep {secs}\necho done"),
+            &format!(
+                "if \"%~1\"==\"hang\" ping -n {} 127.0.0.1 >nul\r\necho done",
+                secs + 1
+            ),
             || {
                 std::thread::scope(|scope| {
-                    let held = scope.spawn(|| FAKE.run_within(&[slow], HANG));
-                    pixtuoid_core::harness::wait_until("the slow run listed", SLACK, || {
+                    let held = scope.spawn(|| FAKE.run_within(&[hang], HANG));
+                    pixtuoid_core::harness::wait_until("the hung run listed", SLACK, || {
                         Ok(running().handles.len() == 1)
                     })
-                    .expect("the slow run is listed");
+                    .expect("the hung run is listed");
                     let out = FAKE.run_within(&none, LIMIT).unwrap();
                     assert!(out.contains("done"), "{out}");
                     assert_eq!(
                         running().handles.len(),
                         1,
-                        "a finished run took another run off the list"
+                        "the finished run did not leave the list alone"
                     );
-                    held.join().expect("the slow run ends").unwrap();
+                    let killed = std::time::Instant::now();
+                    kill_running();
+                    let _ = held.join().expect("the hung run ends");
+                    let took = killed.elapsed();
+                    assert!(
+                        took < SLACK,
+                        "the kill missed the hung run: it ended {took:?} later"
+                    );
                 });
             },
-        );
-        assert_eq!(
-            running().handles.len(),
-            0,
-            "the finished run is still listed"
         );
     }
 
