@@ -1687,7 +1687,7 @@ mod apply_key_action_tests {
 
     /// A save the config's disk holds up leaves the loop live: the commit, the
     /// mute key and the volume's flush each return at once, and what they
-    /// saved lands once the disk answers.
+    /// saved is written once the disk answers.
     #[cfg(unix)]
     #[test]
     fn a_save_on_a_stalled_config_leaves_the_loop_live() {

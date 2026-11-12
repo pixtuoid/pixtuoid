@@ -620,14 +620,14 @@ struct SavesThread {
 
 impl Saves {
     /// The thread that writes the config at `config_path`, its outcomes sent
-    /// to `landed`.
+    /// to `landing`.
     ///
     /// # Errors
     ///
     /// If the thread cannot start.
     pub(crate) fn spawn(
         config_path: std::path::PathBuf,
-        landed: LandedTx,
+        landing: LandedTx,
     ) -> std::io::Result<Self> {
         let (queue, saves) = std::sync::mpsc::channel::<Save>();
         // Not `spawn_blocking`, for `start_job`'s reason: the quit joins it
@@ -637,7 +637,7 @@ impl Saves {
             .spawn(move || {
                 for save in saves {
                     if let Some(outcome) = save(&config_path) {
-                        let _ = landed.send(Landed::Saved(outcome));
+                        let _ = landing.send(Landed::Saved(outcome));
                     }
                 }
             })?;
@@ -654,8 +654,9 @@ impl Saves {
         let _ = self.0.queue.send(Box::new(save));
     }
 
-    /// Wait at most `bound` for every save queued so far to land; whether
-    /// they did. A save queued after them is the mark, since they run in order.
+    /// Wait at most `bound` for the thread to run every save queued so far,
+    /// whatever each outcome; whether it did. A save queued after them is the
+    /// mark, since they run in order.
     pub(crate) fn flush(&self, bound: std::time::Duration) -> bool {
         let (mark, marked) = std::sync::mpsc::channel();
         self.save(move |_| {
@@ -2508,7 +2509,7 @@ mod saves_tests {
         );
         assert!(
             saves.flush(noted::LANDS_WITHIN),
-            "the save lands once the disk answers"
+            "the save is written once the disk answers"
         );
         let saved = std::fs::read_to_string(&path).expect("the config");
         assert!(saved.contains("muted = true"), "{saved:?}");
