@@ -526,6 +526,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     });
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
+    let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
 
     let mut fired = None;
     let result: Result<()> = (async {
@@ -579,6 +580,8 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                                 respawn: crate::audio::respawn,
                                 installed: crate::sources::detect,
                                 focus: crate::focus::focus_slot,
+                                job_tx: &job_tx,
+                                run_job: crate::panels::run_job,
                             },
                         );
                         if quit {
@@ -598,6 +601,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     ),
                     _ => {}
                 },
+                Some(done) = job_done.recv() => crate::panels::finish_job(&mut ui, done),
                 signal = &mut quit => {
                     fired = Some(signal);
                     break;
@@ -1221,12 +1225,16 @@ mod apply_key_action_tests {
         installed: fn() -> Vec<&'static str>,
         _tmp: tempfile::TempDir,
         config_path: std::path::PathBuf,
+        job_tx: crate::panels::JobTx,
+        job_done: tokio::sync::mpsc::UnboundedReceiver<crate::panels::JobDone>,
+        run_job: fn(crate::panels::JobInput) -> crate::panels::JobDone,
     }
 
     impl Harness {
         fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let config_path = tmp.path().join("config.toml");
+            let (job_tx, job_done) = tokio::sync::mpsc::unbounded_channel();
             Self {
                 ui: super::ui_state::UiState::new(
                     &theme::NORMAL,
@@ -1258,6 +1266,9 @@ mod apply_key_action_tests {
                 installed: Vec::new,
                 _tmp: tmp,
                 config_path,
+                job_tx,
+                job_done,
+                run_job: crate::panels::noted::gated_job,
             }
         }
 
@@ -1296,8 +1307,34 @@ mod apply_key_action_tests {
                     respawn: no_respawn,
                     installed: self.installed,
                     focus: crate::panels::noted::focus,
+                    job_tx: &self.job_tx,
+                    run_job: self.run_job,
                 },
             )
+        }
+
+        /// Take in the job that ends next, as the loop's arm does.
+        fn settle(&mut self) {
+            /// Far past a job's own time on a loaded machine.
+            const LANDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+            let deadline = std::time::Instant::now() + LANDS_WITHIN;
+            loop {
+                match self.job_done.try_recv() {
+                    Ok(done) => return crate::panels::finish_job(&mut self.ui, done),
+                    Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+                        if std::time::Instant::now() < deadline =>
+                    {
+                        std::thread::sleep(std::time::Duration::from_millis(5));
+                    }
+                    Err(e) => panic!("no job landed: {e}"),
+                }
+            }
+        }
+
+        /// Let the job [`crate::panels::noted::gated_job`] holds end, a
+        /// failure when `fails`.
+        fn open_gate(&self, fails: bool) {
+            crate::panels::noted::open_gate(&self.config_path, fails);
         }
     }
 
@@ -1314,6 +1351,14 @@ mod apply_key_action_tests {
         /// The footer row of [`Self::frame`].
         fn footer(&mut self) -> String {
             self.frame().lines().last().unwrap_or_default().to_owned()
+        }
+
+        /// The Sources panel open on rows no machine's CLIs decide, those of
+        /// `connected` connected, on `source_id`'s row.
+        fn sources_on(&mut self, source_id: &str, connected: &[&str]) {
+            self.ui
+                .open_connection(crate::panels::noted::rows(|id| connected.contains(&id)));
+            self.ui.select_connection_source(source_id);
         }
 
         /// Onboarding open on `welcome`, as a first run shows it.
@@ -1353,7 +1398,9 @@ mod apply_key_action_tests {
             }],
             selected: 0,
         });
+        h.run_job = crate::panels::run_job;
         h.apply(KeyAction::OnboardingConfirm);
+        h.settle();
         assert!(!h.ui.onboarding_open());
         assert!(h.connected.is_connected("copilot"));
         let cfg = crate::config::load(&h.config_path, &mut Vec::new());
@@ -1375,7 +1422,9 @@ mod apply_key_action_tests {
             || {
                 let mut h =
                     Harness::onboarding(crate::panels::welcome::WelcomeUi::from_ids(&["openclaw"]));
+                h.run_job = crate::panels::run_job;
                 h.apply(KeyAction::OnboardingConfirm);
+                h.settle();
                 assert!(h.connected.is_connected("openclaw"));
                 let step = crate::sources::post_install_hint("openclaw").expect("declared");
                 assert_eq!(
@@ -1387,6 +1436,211 @@ mod apply_key_action_tests {
                 assert!(frame.contains("\u{2713} OpenClaw connected"), "{frame}");
             },
         );
+    }
+
+    fn name(source_id: &str) -> &'static str {
+        pixtuoid_core::source::display_name(source_id).expect("a registered source")
+    }
+
+    /// A Sources connect leaves the loop at once: while it runs, its row reads
+    /// as connecting, another change is refused and a quit still applies; once
+    /// it ends, its line lands on the rows rebuilt after it.
+    #[test]
+    fn a_connect_runs_off_the_loop_and_lands_when_it_ends() {
+        let mut h = Harness::new();
+        h.sources_on("codex", &[]);
+        assert!(!h.apply(KeyAction::ConnectionToggle));
+        assert!(h.ui.running_job.is_some(), "the change runs");
+        assert_eq!(h.ui.connection.last_result, None, "nothing has landed");
+        let frame = h.frame();
+        assert!(frame.contains("\u{2026} connecting"), "{frame}");
+        assert!(frame.contains("connecting \u{2026}"), "its detail: {frame}");
+
+        h.ui.select_connection_source("cursor");
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(
+            h.ui.connection.last_result,
+            Some(format!(
+                "{}: still connecting \u{2014} one change at a time",
+                name("codex")
+            ))
+        );
+        assert!(h.apply(KeyAction::Quit), "a quit applies while it runs");
+
+        h.open_gate(false);
+        h.settle();
+        assert_eq!(h.ui.running_job, None);
+        assert_eq!(
+            h.ui.connection.last_result,
+            Some(format!("\u{2713} {} connected", name("codex")))
+        );
+        let codex = h.ui.connection.rows.iter().find(|r| r.source_id == "codex");
+        assert!(
+            codex.is_some_and(|r| r.state == crate::sources::ConnState::Connected),
+            "the rows are the change's"
+        );
+    }
+
+    /// A confirmed disconnect leaves the loop as a connect does, its row
+    /// reading as disconnecting until it lands.
+    #[test]
+    fn a_disconnect_runs_off_the_loop_and_lands_when_it_ends() {
+        use pixtuoid_core::remote::{Changed, Outcome};
+        let mut h = Harness::new();
+        h.sources_on("codex", &["codex", "cursor"]);
+        h.apply(KeyAction::ConnectionToggle);
+        h.apply(KeyAction::ConnectionConfirm);
+        let frame = h.frame();
+        assert!(frame.contains("\u{2026} disconnecting"), "{frame}");
+        // A second disconnect is refused before it asks.
+        h.ui.select_connection_source("cursor");
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(h.ui.connection.confirm, None);
+        assert_eq!(
+            h.ui.connection.last_result,
+            Some(format!(
+                "{}: still disconnecting \u{2014} one change at a time",
+                name("codex")
+            ))
+        );
+
+        h.open_gate(false);
+        h.settle();
+        let gone = Changed::new("codex", false, Outcome::Disconnected, false, None, None);
+        assert_eq!(h.ui.connection.last_result, Some(gone.line(name("codex"))));
+        let codex = h.ui.connection.rows.iter().find(|r| r.source_id == "codex");
+        assert!(codex.is_some_and(|r| r.state == crate::sources::ConnState::Disconnected));
+    }
+
+    /// A quit lets a running job end, a killed CLI's rollback included,
+    /// before the process goes.
+    #[test]
+    fn a_quit_waits_for_a_running_change_to_end() {
+        let mut h = Harness::new();
+        h.sources_on("codex", &[]);
+        h.apply(KeyAction::ConnectionToggle);
+        let config = h.config_path.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            crate::panels::noted::open_gate(&config, false);
+        });
+        crate::panels::join_jobs();
+        assert!(
+            h.job_done.try_recv().is_ok(),
+            "the wait ended before the job"
+        );
+    }
+
+    /// The panel opens at once on rows no probe has read, and reads them off
+    /// the loop: until they land, a change waits its turn.
+    #[test]
+    fn the_sources_panel_opens_at_once_and_reads_its_rows_off_the_loop() {
+        let mut h = Harness::new();
+        h.apply(KeyAction::ToggleConnection);
+        assert!(h.ui.connection.open && h.ui.connection.rows.len() > 1);
+        assert!(
+            h.ui.connection.rows.iter().all(|r| r.config_path.is_none()),
+            "the placeholders read no file"
+        );
+        assert_eq!(h.ui.running_job, Some(crate::panels::PanelJob::Refresh));
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(
+            h.ui.connection.last_result.as_deref(),
+            Some("still reading the sources \u{2014} try again in a moment")
+        );
+        h.open_gate(false);
+        h.settle();
+        assert_eq!(h.ui.running_job, None);
+        assert_eq!(
+            h.ui.connection.last_result, None,
+            "its refusal ended with it"
+        );
+        assert_eq!(
+            h.ui.connection.rows.len(),
+            crate::panels::noted::rows(|_| false).len()
+        );
+    }
+
+    /// A landing job ends the refusal it caused, and only that: a no-CLI
+    /// row's hint, shown while the open's refresh runs, stays.
+    #[test]
+    fn a_landing_job_keeps_a_line_it_did_not_cause() {
+        let mut h = Harness::new();
+        h.apply(KeyAction::ToggleConnection);
+        let selected = h.ui.connection.selected;
+        let row = &mut h.ui.connection.rows[selected];
+        row.state = crate::sources::ConnState::NoCli { connected: false };
+        let hint = crate::panels::connection::no_action_hint(row);
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(h.ui.connection.last_result.as_ref(), Some(&hint));
+        h.open_gate(false);
+        h.settle();
+        assert_eq!(
+            h.ui.connection.last_result,
+            Some(hint),
+            "the refresh took the hint"
+        );
+    }
+
+    /// The onboarding's connects leave the loop too: its card stays and says
+    /// they run; Esc hides it while they go on, and once they end their
+    /// failures surface on the Sources panel.
+    #[test]
+    fn onboarding_stays_live_while_it_connects() {
+        let mut h = Harness::onboarding(crate::panels::welcome::WelcomeUi::from_ids(&[
+            "codex", "cursor",
+        ]));
+        h.apply(KeyAction::OnboardingConfirm);
+        assert!(h.ui.onboarding_open() && h.ui.modal().onboarding_busy);
+        let frame = h.frame();
+        assert!(frame.contains("connecting \u{2026}"), "{frame}");
+
+        h.apply(KeyAction::OnboardingSkip);
+        assert!(!h.ui.onboarding_open(), "Esc hides the card");
+        assert!(h.ui.running_job.is_some(), "and the connects go on");
+
+        h.open_gate(true);
+        h.settle();
+        assert!(h.ui.connection.open, "a failure opens the panel");
+        assert_eq!(
+            h.ui.connection.rows[h.ui.connection.selected].source_id, "codex",
+            "on the first failed row"
+        );
+        let line = h.ui.connection.last_result.clone().unwrap_or_default();
+        for id in ["codex", "cursor"] {
+            assert!(
+                line.contains(&format!("{}: connect failed", name(id))),
+                "{line}"
+            );
+        }
+    }
+
+    /// A change that fails once its panel has closed opens it again on its
+    /// row, so the failure is not lost.
+    #[test]
+    fn a_failure_that_lands_on_a_closed_panel_reopens_it() {
+        let mut h = Harness::new();
+        h.sources_on("cursor", &[]);
+        h.apply(KeyAction::ConnectionToggle);
+        h.apply(KeyAction::ConnectionClose);
+        h.open_gate(true);
+        h.settle();
+        assert!(h.ui.connection.open);
+        assert_eq!(
+            h.ui.connection.rows[h.ui.connection.selected].source_id,
+            "cursor"
+        );
+        let line = h.ui.connection.last_result.clone().unwrap_or_default();
+        assert!(
+            line.starts_with(&format!("{}: connect failed", name("cursor"))),
+            "{line}"
+        );
+
+        // A retry from the failed row: the failure gives way to its progress.
+        h.apply(KeyAction::ConnectionToggle);
+        assert_eq!(h.ui.connection.last_result, None);
+        let frame = h.frame();
+        assert!(frame.contains("connecting \u{2026}"), "{frame}");
     }
 
     /// A choice the config refuses still shows this run, and the footer says it

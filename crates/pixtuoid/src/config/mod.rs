@@ -304,6 +304,13 @@ fn update_config<F>(path: &Path, mutate: F) -> Result<()>
 where
     F: FnOnce(&mut toml_edit::DocumentMut),
 {
+    // The file's lock fails on contention, as another pixtuoid must; this
+    // process's own writers (a painter's saves, a Sources change's thread)
+    // take turns here instead.
+    static OWN_WRITES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _turn = OWN_WRITES
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let lock = crate::install::io::lock_config(path)?;
     let real_path = lock.target();
     // Read through the guard's pinned resolution, NOT a raw read of a re-derived

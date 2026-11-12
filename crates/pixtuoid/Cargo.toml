@@ -49,9 +49,9 @@ miniz_oxide        = "0.8"
 crossterm          = { workspace = true, features = ["event-stream"] }
 # `alloc`: doctor runs its version probes at once through `join_all`.
 futures-util       = { version = "0.3", default-features = false, features = ["alloc"] }
-# `tokio1`: doctor kills a hung `--version` with the group or job it ran in,
-# awaited rather than polled; it brings the `futures` facade along.
-# `kill-on-drop`: the Job Object's kill on close.
+# A host CLI's process group or Job Object, which its limit's kill takes whole.
+# `tokio1` and `kill-on-drop`: doctor's version probes, whose Job Object closes
+# with pixtuoid (`doctor::probe_version`).
 process-wrap       = { workspace = true, features = ["tokio1", "kill-on-drop"] }
 clap               = { workspace = true }
 enum-map           = { workspace = true }
@@ -71,6 +71,9 @@ saphyr             = "0.3.1"
 anyhow             = { workspace = true }
 tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
+# The log sinks' worker thread, which a stalled reader or a hung disk parks
+# instead of the `tracing` caller.
+tracing-appender   = "0.2"
 which              = "8"
 # The throwaway hook endpoint `doctor` proves the shim against.
 tempfile           = { workspace = true }
@@ -141,8 +144,8 @@ serve = ["dep:tokio-rustls", "dep:rcgen", "dep:ring", "dep:qrcode", "dep:whoami"
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 # The kitty `t=s` objects (graphics/shm.rs), whose `shm_open` libc types
-# differently on each Unix; `process`: a quit signal's kill of doctor's probe
-# groups.
+# differently on each Unix; `process`: the run log's owner check and
+# `install::io::kill_running`'s group kill.
 rustix = { workspace = true, features = ["shm", "mm", "process"] }
 
 # Focus-jump activation (focus/macos.rs). Pinned to the SAME objc2 stack winit

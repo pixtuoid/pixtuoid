@@ -1990,8 +1990,12 @@ fn press(
             respawn: no_respawn,
             installed: Vec::new,
             focus: |_| panic!("a look key focuses nothing"),
+            job_tx: &tokio::sync::mpsc::unbounded_channel().0,
+            run_job: |_| panic!("a look key changes no source"),
         },
     );
+    // The stand-in panics on its own thread, which fails no test.
+    assert!(ui.running_job.is_none(), "a look key starts no job");
 }
 
 /// Esc reverts the look the picker previewed: a cutaway run back in the

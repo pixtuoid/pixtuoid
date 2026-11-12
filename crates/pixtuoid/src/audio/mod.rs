@@ -736,7 +736,9 @@ impl AudioHandle {
                     // Both locks are dropped before the join: the keypress path must never
                     // block holding one.
                     if let Some(prior) = prior {
-                        join_with_timeout(prior, SHUTDOWN_JOIN_TIMEOUT);
+                        crate::within("audio-join", SHUTDOWN_JOIN_TIMEOUT, move || {
+                            let _ = prior.join();
+                        });
                     }
                 }
                 Err(e) => tracing::warn!(error = %e, "audio: thread spawn failed, running silent"),
@@ -752,7 +754,10 @@ impl AudioHandle {
         *self.tx.lock().unwrap_or_else(|e| e.into_inner()) = None;
         let handle = self.join.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(handle) = handle {
-            join_with_timeout(handle, SHUTDOWN_JOIN_TIMEOUT);
+            // A hung device close must not hold the exit for good.
+            crate::within("audio-join", SHUTDOWN_JOIN_TIMEOUT, move || {
+                let _ = handle.join();
+            });
         }
     }
 
@@ -821,24 +826,6 @@ const TICK_MS: u64 = 50;
 /// that build out: a ceiling under its worst case times the join out and leaves the thread
 /// DETACHED, the very failure the join exists to prevent.
 const SHUTDOWN_JOIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
-
-/// Join `handle`, but give up after `timeout` so a hung device-close (or a
-/// still-in-flight synth build, see [`SHUTDOWN_JOIN_TIMEOUT`]) can't block the
-/// exit forever. On timeout the helper thread is left detached, still blocked on
-/// the real join.
-/// std has no timed `JoinHandle::join`, hence the channel dance.
-fn join_with_timeout(handle: std::thread::JoinHandle<()>, timeout: std::time::Duration) {
-    let (done_tx, done_rx) = mpsc::channel();
-    // `Builder::spawn` (not `thread::spawn`) so an OS thread-exhaustion failure returns `Err`
-    // instead of PANICKING: this can run during unwind, where a panic double-panics → abort.
-    let spawned = std::thread::Builder::new().spawn(move || {
-        let _ = handle.join();
-        let _ = done_tx.send(());
-    });
-    if spawned.is_ok() {
-        let _ = done_rx.recv_timeout(timeout);
-    }
-}
 
 /// The production spawn every caller injects — a named fn so they can't drift.
 pub(crate) fn respawn(handle: &AudioHandle, volume: f32) {

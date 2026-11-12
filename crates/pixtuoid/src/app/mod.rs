@@ -19,7 +19,7 @@ use clap::Parser;
 /// # Errors
 ///
 /// The subcommand's failure, which `main` reports through
-/// [`crate::fatal_error_text`].
+/// [`crate::report_fatal`].
 pub fn run() -> Result<()> {
     crash::install_crash_hook();
     let (log_level, cmd) = Cli::parse().cmd_or_default();
@@ -80,20 +80,33 @@ pub fn run() -> Result<()> {
     }
     let log_level: &'static str = log_level.as_str();
     let file_log = is_run_tui || matches!(&cmd, Cmd::Floating { .. });
-    let drift = logging::init(file_log, log_level);
+    let (drift, log_flush) = logging::init(file_log, log_level);
     let ran = dispatch(cmd, drift);
     // The log file's copy of `main`'s stderr report, which no one reads once a
     // detached `floating`'s launcher lets go; a stderr log would show it twice.
     if file_log && let Err(e) = &ran {
         tracing::error!(error = ?e, "pixtuoid exited with an error");
     }
-    ran
+    // A quit by key, or an error, can leave a panel job running on its own
+    // thread, whose CLI nothing holds to its limit once this process is gone.
+    crate::install::io::kill_running();
+    // A killed CLI's change still restores what it wrote.
+    crate::within("panel-jobs-end", crate::EXIT_WAIT, crate::panels::join_jobs);
+    // Before the re-raise, which ends the process with the queue unwritten.
+    drop(log_flush);
+    // After every Drop the run held: the unwind is done, so the signal can now
+    // end the process the way it would have.
+    if let Some(signal) = ran? {
+        signal.reraise();
+    }
+    Ok(())
 }
 
 /// Run `cmd`: apart from [`run`] so every failure in it, a `?` included,
-/// reaches [`run`]'s log.
-fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
-    match cmd {
+/// reaches [`run`]'s log. The quit signal that ended a `run` (the TUI or
+/// headless), `floating` or `serve` command is [`run`]'s to re-raise.
+fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<Option<runtime::QuitSignal>> {
+    let quit = match cmd {
         Cmd::Run {
             source,
             max_desks: cli_max_desks,
@@ -102,12 +115,7 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
             paint,
         } => {
             let rc = build_run_config(paint, source, cli_max_desks, headless, look, drift)?;
-            // After every Drop the run held: the unwind is done, so the signal can now
-            // end the process the way it would have.
-            if let Some(signal) = runtime::run(rc)? {
-                signal.reraise();
-            }
-            Ok(())
+            runtime::run(rc)?
         }
         Cmd::Floating {
             source,
@@ -123,10 +131,7 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
                 crate::cli::LookArgs::default(),
                 drift,
             )?;
-            if let Some(signal) = floating::run(rc, notify_ready)? {
-                signal.reraise();
-            }
-            Ok(())
+            floating::run(rc, notify_ready)?
         }
         #[cfg(feature = "serve")]
         Cmd::Serve { source, port } => {
@@ -140,11 +145,13 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
                 crate::cli::LookArgs::default(),
                 drift,
             )?;
-            crate::serve::run(rc, port)?.reraise();
-            Ok(())
+            Some(crate::serve::run(rc, port)?)
         }
         #[cfg(feature = "serve")]
-        Cmd::Pair { host, port, reset } => crate::serve::pair(host, port, reset),
+        Cmd::Pair { host, port, reset } => {
+            crate::serve::pair(host, port, reset)?;
+            None
+        }
         // homebrew-core contract: it exits 0 whatever it reports, and the
         // formula's `test do` reads its output only on that exit.
         Cmd::Doctor { look, protocol } => {
@@ -153,28 +160,43 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
                 crate::graphics::LookChoice::new(look, protocol),
             )?;
             write!(crate::cli_stdout(), "{report}")?;
-            Ok(())
+            None
         }
         Cmd::Sources {
             action: None,
             output: JsonArgs { json },
-        } => sources_cli::run_sources_list(json),
+        } => {
+            sources_cli::run_sources_list(json)?;
+            None
+        }
         Cmd::Sources {
             action:
                 Some(SourcesAction::Set {
                     sources: SourceIdArgs { ids },
                 }),
             output: JsonArgs { json },
-        } => sources_cli::run_sources_set(&ids, json),
+        } => {
+            sources_cli::run_sources_set(&ids, json)?;
+            None
+        }
         Cmd::Connect {
             sources: SourceIdArgs { ids },
             output: JsonArgs { json },
-        } => sources_cli::run_change(&ids, json, sources::connect),
+        } => {
+            sources_cli::run_change(&ids, json, sources::connect)?;
+            None
+        }
         Cmd::Disconnect {
             sources: SourceIdArgs { ids },
             output: JsonArgs { json },
-        } => sources_cli::run_change(&ids, json, sources::disconnect),
-        Cmd::Setup { yes } => sources_cli::run_setup(yes),
+        } => {
+            sources_cli::run_change(&ids, json, sources::disconnect)?;
+            None
+        }
+        Cmd::Setup { yes } => {
+            sources_cli::run_setup(yes)?;
+            None
+        }
         // Packaging interfaces: stdout carries ONLY the generated artifact (the
         // tracing subscriber writes to stderr) so the homebrew
         // `generate_completions_from_executable` / `man` capture stays clean.
@@ -184,13 +206,14 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<()> {
             let mut script = Vec::new();
             clap_complete::generate(shell, &mut Cli::command(), "pixtuoid", &mut script);
             crate::cli_stdout().write_all(&script)?;
-            Ok(())
+            None
         }
         Cmd::Man => {
             crate::cli::render_man(&mut crate::cli_stdout())?;
-            Ok(())
+            None
         }
-    }
+    };
+    Ok(quit)
 }
 
 /// Resolve the shared [`runtime::RunConfig`] — the common prelude for `run`

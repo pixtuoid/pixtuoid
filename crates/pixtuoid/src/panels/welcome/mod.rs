@@ -93,6 +93,8 @@ pub struct OnboardingFrame {
     /// The brightness the backdrop leaves the office: `DIM_FLOOR` fully
     /// dimmed.
     pub dim: pixtuoid_scene::look::Dim,
+    /// Its connects run, so its legend gives way to their progress.
+    pub busy: bool,
 }
 
 /// Office brightness the backdrop dims to and the ramp times — the shorter

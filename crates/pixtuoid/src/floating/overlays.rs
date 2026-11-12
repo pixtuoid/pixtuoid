@@ -193,7 +193,7 @@ pub fn panel_preview(
         "dashboard" => ui.toggle_dashboard(scene),
         "sources" => ui.open_connection(crate::panels::connection::build_rows(
             &crate::runtime::ConnectedSources::default().snapshot(),
-            &ui.read_conn_log(),
+            &crate::panels::ui_state::log_text(ui.log()),
         )),
         "theme" => ui.open_appearance(),
         _ => return None,

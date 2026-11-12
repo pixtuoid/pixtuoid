@@ -229,6 +229,7 @@ fn modal_overlays_still_paint_when_the_office_cannot_lay_out() {
                 selected: 0,
                 elapsed_ms: 100_000,
                 dim: pixtuoid_scene::look::Dim::from_brightness(0.4),
+                busy: false,
             },
             ..Default::default()
         },
