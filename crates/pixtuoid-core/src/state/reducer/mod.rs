@@ -641,7 +641,7 @@ impl Reducer {
         let tracking = self.track_tasks_in_flight(scene, event, now, from);
 
         // A payload's registration lands ahead of its dispatch start, so firing
-        // on it would evict the subtree that start defers.
+        // on it would evict the subtree that start keeps alive.
         if event.is_turn_traffic() {
             self.fire_pending_b1_cascades(scene, starts_untracked_task(event), now);
         }

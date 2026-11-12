@@ -547,9 +547,9 @@ fn returned_reasonix_dispatch(r: &mut Reducer, scene: &mut SceneState) -> System
 }
 
 /// A reasonix dispatch carries no call id, so one started inside an earlier
-/// return's grace must defer that cascade as a tracked dispatch does (#151).
+/// return's grace must cancel that cascade as a tracked dispatch does (#151).
 #[test]
-fn an_untracked_dispatch_inside_the_grace_defers_the_pending_cascade() {
+fn an_untracked_dispatch_inside_the_grace_cancels_the_pending_cascade() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
@@ -591,10 +591,10 @@ fn an_untracked_dispatch_inside_the_grace_defers_the_pending_cascade() {
 }
 
 /// At the grace boundary the untracked start only shows on the slot once
-/// applied, after the pre-pass fires, so the start itself must hold the
+/// applied, after the pre-pass fires, so the start itself must cancel the
 /// cascade, as a tracked start's pre-pass insert does.
 #[test]
-fn an_untracked_dispatch_at_the_grace_boundary_defers_the_pending_cascade() {
+fn an_untracked_dispatch_at_the_grace_boundary_cancels_the_pending_cascade() {
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
@@ -625,10 +625,8 @@ fn an_untracked_dispatch_at_the_grace_boundary_defers_the_pending_cascade() {
     );
 }
 
-/// Only the parent's own dispatch holds its cascade: its plain call, or
-/// another session's dispatch, at the boundary fires it.
 #[test]
-fn only_the_parents_own_dispatch_at_the_grace_boundary_holds_its_cascade() {
+fn only_the_parents_own_dispatch_at_the_grace_boundary_cancels_its_cascade() {
     for (session, tool) in [("root", "read_file"), ("other", "explore")] {
         let mut scene = SceneState::uniform(8);
         let mut r = Reducer::new();
@@ -643,7 +641,7 @@ fn only_the_parents_own_dispatch_at_the_grace_boundary_holds_its_cascade() {
         );
         assert!(
             scene.agents[&first_child].exiting_at.is_some(),
-            "{session}'s {tool} at the boundary held root's cascade"
+            "{session}'s {tool} at the boundary cancelled root's cascade"
         );
     }
 }
