@@ -852,7 +852,7 @@ mod tests {
         // Both lines are handled once the connection's task ends.
         assert!(
             prx.try_recv().is_err(),
-            "the CC line must not reach presence"
+            "presence carries only the openclaw line's update and pid"
         );
         assert!(
             rx.try_recv().is_err(),
