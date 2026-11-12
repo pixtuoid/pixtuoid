@@ -540,6 +540,7 @@ mod tests {
                 selected: 0,
                 elapsed_ms,
                 dim: dim_opening(elapsed_ms),
+                busy: false,
             },
             ..Default::default()
         };

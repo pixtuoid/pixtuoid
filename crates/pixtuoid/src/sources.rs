@@ -819,6 +819,24 @@ pub(crate) fn build_rows_from(inputs: Vec<RowInput>) -> Vec<ConnectionRow> {
         .collect()
 }
 
+/// The rows as `connected` alone has them, read from no file: what the Sources
+/// panel opens on until [`build_rows`], whose reads (a `diagnose` can run a
+/// CLI) run off its loop, lands.
+pub(crate) fn placeholder_rows(connected: &HashSet<String>) -> Vec<ConnectionRow> {
+    build_rows_from(
+        registry::REGISTRY
+            .iter()
+            .map(|d| RowInput {
+                source: d,
+                target: by_source(d.name),
+                facts: None,
+                connected: connected.contains(d.name),
+                health: None,
+            })
+            .collect(),
+    )
+}
+
 /// Performs FS reads AND, for connected rows, the health rollup
 /// (`doctor::diagnose`). `log` is the warn-floor log text.
 pub(crate) fn build_rows(connected: &HashSet<String>, log: &str) -> Vec<ConnectionRow> {

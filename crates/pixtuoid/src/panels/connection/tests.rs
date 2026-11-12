@@ -340,8 +340,8 @@ fn only_restart_bound_targets_declare_a_post_install_step_naming_it() {
 
 #[test]
 fn the_panel_words_every_failure_through_one_formatter() {
-    let connect = format_failure(FailedOp::Connect, "Cursor", "boom");
-    let disconnect = format_failure(FailedOp::Disconnect, "Cursor", "boom");
+    let connect = format_failure(SourceOp::Connect, "Cursor", "boom");
+    let disconnect = format_failure(SourceOp::Disconnect, "Cursor", "boom");
 
     assert_eq!(connect, "Cursor: connect failed \u{2014} boom");
     // Exact, not `contains`: "disconnect failed" CONTAINS "connect failed", so a

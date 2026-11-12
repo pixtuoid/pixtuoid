@@ -64,6 +64,50 @@ fn save_audio_muted_persists_and_preserves_the_rest() {
     assert!(resolve_audio(&cfg).muted);
 }
 
+/// Two of this process's writers that meet both land, the second after the
+/// first: a painter's save and a Sources change's thread write the one file.
+#[test]
+fn two_writers_here_take_turns_rather_than_fail_on_the_lock() {
+    const NOT_WAITING: std::time::Duration = std::time::Duration::from_millis(200);
+    let dir = tempfile::tempdir().unwrap();
+    let path = &dir.path().join("config.toml");
+    let (held, holding) = std::sync::mpsc::channel();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    std::thread::scope(|scope| {
+        let first = scope.spawn(move || {
+            update_config(path, |doc| {
+                let _ = held.send(());
+                let _ = released.recv();
+                doc["theme"] = toml_edit::value("normal");
+            })
+        });
+        holding.recv().expect("the first writer holds the file");
+        let (done, landed) = std::sync::mpsc::channel();
+        let second = scope.spawn(move || {
+            let saved = save_audio_muted(path, false);
+            let _ = done.send(());
+            saved
+        });
+        // The second waits its turn: it has not landed while the first holds.
+        let waited = landed.recv_timeout(NOT_WAITING).is_err();
+        let _ = release.send(());
+        assert!(waited, "the second writer did not wait its turn");
+        first
+            .join()
+            .expect("the first writer")
+            .expect("the first save");
+        second
+            .join()
+            .expect("the second writer")
+            .expect("the second save");
+    });
+    let s = std::fs::read_to_string(path).unwrap();
+    assert!(
+        s.contains("theme = \"normal\"") && s.contains("muted = false"),
+        "{s}"
+    );
+}
+
 #[test]
 fn save_audio_volume_persists_the_nudged_level() {
     let dir = tempfile::tempdir().unwrap();

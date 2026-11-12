@@ -401,6 +401,25 @@ pub fn hold_lock(path: &Path) -> std::io::Result<std::fs::File> {
     Ok(lock)
 }
 
+/// A pipe that is full and that nobody reads, so the next write to it waits
+/// for good: a stalled reader. The reader is returned for the caller to hold
+/// open. Not the rig's: the binary's two stall tests (a stalled log sink; the
+/// fatal report into a stalled stderr) share it here.
+///
+/// # Errors
+///
+/// The pipe's own failure.
+#[cfg(unix)]
+pub fn full_pipe() -> std::io::Result<(std::io::PipeReader, std::io::PipeWriter)> {
+    let (reader, mut writer) = std::io::pipe()?;
+    rustix::io::ioctl_fionbio(&writer, true)?;
+    // Byte by byte at the end, so not even a short line fits.
+    while writer.write(&[0; 4096]).is_ok() {}
+    while writer.write(&[0]).is_ok() {}
+    rustix::io::ioctl_fionbio(&writer, false)?;
+    Ok((reader, writer))
+}
+
 /// The lock beside a recording's fixed `dir`, `<name>.lock`, which every user
 /// of `dir` holds: each recording there takes its turn.
 pub fn lock_beside(dir: &Path) -> PathBuf {

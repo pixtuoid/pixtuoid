@@ -1,6 +1,6 @@
 //! The pixtuoid program: `main.rs` only calls [`run`] and reports its error
-//! through [`fatal_error_text`]. What else is public is for the examples and
-//! the integration tests, which are separate crates.
+//! through [`report_fatal`]. What else is public is for the examples and the
+//! integration tests, which are separate crates.
 
 // A print macro panics when its reader leaves (`| head`): CLI and headless
 // output goes through a `CliOut`, a stderr notice through a `let _ = writeln!`.
@@ -46,7 +46,9 @@ pub mod dev {
     pub use crate::floating::overlays::{OverlayLayers, Overlays, footer_budget, panel_preview};
     pub use crate::pacing::{Protocol, cutaway_office, forget_frame, renderer, warm};
     pub use crate::panels::OverlayFrame;
-    pub use crate::panels::connection::{ConnectionFrame, DaemonRollup, LiveFacet, LiveInfo};
+    pub use crate::panels::connection::{
+        ConnectionFrame, DaemonRollup, LiveFacet, LiveInfo, SourceOp,
+    };
     pub use crate::panels::dashboard::{DashboardFolds, DashboardFrame, build_dashboard_rows};
     pub use crate::panels::ui_state::{
         AppearanceFrame, AppearancePick, RenderFrames, VersionPopupFrame, footer_warning,
@@ -154,10 +156,65 @@ pub(crate) fn cli_stdout() -> CliOut<std::io::Stdout> {
 }
 
 /// A fatal error's chain as `main` returning `Err` would print it, stripped line
-/// by line so the chain keeps its shape. Mechanism for `main`, not contract.
-#[doc(hidden)]
-pub fn fatal_error_text(e: &anyhow::Error) -> String {
+/// by line so the chain keeps its shape.
+fn fatal_error_text(e: &anyhow::Error) -> String {
     format!("Error: {}", strip_lines(&format!("{e:?}"), "\n"))
+}
+
+/// Write `e`'s [report](fatal_error_text) to stderr, [within](within)
+/// [`EXIT_WAIT`]: a failed run must still end with stderr into a paused pipe,
+/// where a quit signal no longer kills it once a run has armed its own (tokio
+/// never unregisters a signal handler:
+/// <https://docs.rs/tokio/latest/tokio/signal/unix/fn.signal.html>).
+/// Mechanism for `main`, not contract.
+#[doc(hidden)]
+pub fn report_fatal(e: &anyhow::Error) {
+    let write = |report: &str| {
+        use std::io::Write as _;
+        // Not `eprintln!`, which panics when the write fails (a broken pipe): a
+        // clean failure must not turn into a crash.
+        let _ = writeln!(std::io::stderr(), "{report}");
+    };
+    let report = fatal_error_text(e);
+    let bounded = report.clone();
+    if !within("fatal-report", EXIT_WAIT, move || write(&bounded)) {
+        // No thread to bound it, as when the run failed for want of one: an
+        // unbounded report beats none.
+        write(&report);
+    }
+}
+
+/// How long an exit gives each piece of its outside work (a log flush, the
+/// fatal report, a panel job's rollback) before it goes on without it: a
+/// stalled sink would hold it for good, and a sink that keeps up needs far
+/// less for any of them, so the exit outranks what is left.
+pub(crate) const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Run `work` on a thread of its own named `name`, and wait for it at most
+/// `bound`, since a thread's [join](std::thread::JoinHandle::join) takes no
+/// timeout: outside work (a write to a reader, a device's close) can block for
+/// good, and the caller goes on either way. A
+/// thread still stuck finishes detached, or dies with the process. Returns
+/// whether the thread started; when it did not, `work` was dropped unrun.
+pub(crate) fn within(
+    name: &str,
+    bound: std::time::Duration,
+    work: impl FnOnce() + Send + 'static,
+) -> bool {
+    let (done, finished) = std::sync::mpsc::channel();
+    // `Builder::spawn`: running out of threads is then an `Err` the caller
+    // answers (`report_fatal` writes inline), where `thread::spawn` panics
+    // (<https://doc.rust-lang.org/std/thread/struct.Builder.html#method.spawn>).
+    let started = std::thread::Builder::new()
+        .name(name.into())
+        .spawn(move || {
+            work();
+            let _ = done.send(());
+        })
+        .is_ok();
+    // A spawn that fails drops `done`, which ends the wait at once.
+    let _ = finished.recv_timeout(bound);
+    started
 }
 
 /// The one URL launcher: `open::that` blocks on Linux until the

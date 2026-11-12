@@ -451,7 +451,9 @@ impl HostCli {
             .map(|a| a.to_string_lossy())
             .collect::<Vec<_>>()
             .join(" ");
-        let out = output_within(std::process::Command::new(&cli).args(args), limit)
+        let mut invocation = std::process::Command::new(&cli);
+        invocation.args(args);
+        let out = output_within(invocation, limit)
             .with_context(|| format!("running {}", cli.display()))?
             .with_context(|| format!("`{command} {shown}` did not finish within {limit:?}"))?;
         if !out.status.success() {
@@ -481,28 +483,56 @@ const HOST_CLI_LIMIT: Duration = Duration::from_secs(300);
 /// host CLI still meets the kill.
 const EXIT_POLL: Duration = Duration::from_millis(20);
 
-/// `command`'s output with stdin null, or `None` past `limit`, which kills the
-/// child, though not a grandchild.
+/// `command`'s output with stdin null, or `None` past `limit`. Past it, or on an
+/// error, its process group (Unix) or Job Object (Windows) is killed: a launcher
+/// can leave the hung work to a child of its own.
 fn output_within(
-    command: &mut std::process::Command,
+    command: std::process::Command,
     limit: Duration,
 ) -> std::io::Result<Option<std::process::Output>> {
     use std::process::Stdio;
     let deadline = std::time::Instant::now() + limit;
-    let mut child = command
+    let mut command = process_wrap::std::CommandWrap::from(command);
+    command
+        .command_mut()
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let stdout = drain(child.stdout.take())?;
-    let stderr = drain(child.stderr.take())?;
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    command.wrap(process_wrap::std::ProcessGroup::leader());
+    #[cfg(windows)]
+    command.wrap(process_wrap::std::JobObject);
+    let (child, _listed) = spawn_listed(
+        || Ok(std::sync::Arc::new(std::sync::Mutex::new(command.spawn()?))),
+        handle_of,
+    )?;
+    // Killed before `_listed` drops, so no error unlists a running group.
+    wait_out(&child, deadline).inspect_err(|_| {
+        let _ = locked(&child).start_kill();
+    })
+}
+
+/// `child`'s output, or `None` once `deadline` passes, which kills it.
+fn wait_out(
+    child: &Shared,
+    deadline: std::time::Instant,
+) -> std::io::Result<Option<std::process::Output>> {
+    let (stdout, stderr) = {
+        let mut child = locked(child);
+        (drain(child.stdout().take())?, drain(child.stderr().take())?)
+    };
     let status = loop {
-        if let Some(status) = child.try_wait()? {
+        if let Some(status) = locked(child).try_wait()? {
             break status;
         }
         if std::time::Instant::now() >= deadline {
-            child.kill()?;
-            // Reaped, so no zombie outlives the run.
+            let mut child = locked(child);
+            child.start_kill()?;
+            // Reaped, so no zombie outlives the run. Not on Windows:
+            // process-wrap's wait there waits out every process in the job,
+            // whose exit message is "not guaranteed"
+            // (<https://learn.microsoft.com/en-us/windows/win32/api/winnt/ns-winnt-jobobject_associate_completion_port>).
+            #[cfg(unix)]
             child.wait()?;
             return Ok(None);
         }
@@ -516,8 +546,159 @@ fn output_within(
             stdout: stdout?,
             stderr: stderr?,
         })),
-        _ => Ok(None),
+        _ => {
+            // The group can have emptied since the wait ran out.
+            let _ = locked(child).start_kill();
+            Ok(None)
+        }
     }
+}
+
+/// A host CLI's child, which its run and, on Windows, [`kill_running`] share.
+type Shared = std::sync::Arc<std::sync::Mutex<Box<dyn process_wrap::std::ChildWrapper>>>;
+
+/// How [`kill_running`] reaches `child`, which leads its group (Unix) or sits
+/// in its Job Object (Windows).
+fn handle_of(child: &Shared) -> Option<KillHandle> {
+    #[cfg(unix)]
+    let handle = locked(child).id();
+    #[cfg(windows)]
+    let handle = std::sync::Arc::clone(child);
+    Some(handle)
+}
+
+/// `child`, locked: [`kill_running`] takes it on Windows too, where no holder may block.
+fn locked(child: &Shared) -> std::sync::MutexGuard<'_, Box<dyn process_wrap::std::ChildWrapper>> {
+    child
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// How [`kill_running`] reaches a running CLI: its process group, which it
+/// leads, and which a terminal's Ctrl-C never reaches, since INTR signals the
+/// foreground group only (POSIX Base Definitions 11.1.9).
+#[cfg(unix)]
+pub(crate) type KillHandle = u32;
+
+/// How [`kill_running`] reaches a running CLI: its child, whose kill
+/// terminates its Job Object.
+#[cfg(windows)]
+pub(crate) type KillHandle = Shared;
+
+/// The CLIs this process runs through [`spawn_listed`].
+struct Running {
+    handles: Vec<KillHandle>,
+    /// Set by [`kill_running`]: the process is ending, and a CLI started past
+    /// it would outlive it.
+    closed: bool,
+}
+
+static RUNNING: std::sync::Mutex<Running> = std::sync::Mutex::new(Running {
+    handles: Vec::new(),
+    closed: false,
+});
+
+fn running() -> std::sync::MutexGuard<'static, Running> {
+    RUNNING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The CLI `spawn` starts, with its `handle` listed in [`RUNNING`] for as long
+/// as the guard lives; refused once [`kill_running`] has closed the list.
+/// Spawned under its lock, so no CLI starts between the kill and the close.
+pub(crate) fn spawn_listed<C>(
+    spawn: impl FnOnce() -> std::io::Result<C>,
+    handle: impl FnOnce(&C) -> Option<KillHandle>,
+) -> std::io::Result<(C, Listed)> {
+    #[cfg(unix)]
+    kill_running_on_quit();
+    let mut running = running();
+    if running.closed {
+        return Err(std::io::Error::other("pixtuoid is quitting"));
+    }
+    let child = spawn()?;
+    let handle = handle(&child);
+    running.handles.extend(handle.iter().cloned());
+    Ok((child, Listed(handle)))
+}
+
+/// A CLI's place in [`RUNNING`].
+pub(crate) struct Listed(Option<KillHandle>);
+
+impl Drop for Listed {
+    fn drop(&mut self) {
+        if let Some(listed) = &self.0 {
+            #[cfg(unix)]
+            running().handles.retain(|group| group != listed);
+            #[cfg(windows)]
+            running()
+                .handles
+                .retain(|child| !std::sync::Arc::ptr_eq(child, listed));
+        }
+    }
+}
+
+/// Kill every [listed](spawn_listed) CLI and list no other: once this process
+/// is gone, nothing holds one to its limit.
+pub(crate) fn kill_running() {
+    let mut running = running();
+    running.closed = true;
+    #[cfg(unix)]
+    for group in running
+        .handles
+        .iter()
+        .filter_map(|&group| rustix::process::Pid::from_raw(i32::try_from(group).ok()?))
+    {
+        let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
+    }
+    #[cfg(windows)]
+    for child in &running.handles {
+        let _ = locked(child).start_kill();
+    }
+}
+
+/// From the first call on, a quit signal [kills every running group](kill_running),
+/// then ends the process by its default disposition, unless a run
+/// [armed its own quit](crate::runtime::QuitArms::is_owned): it re-raises after its
+/// teardown, and a signal past its arms is absorbed. Called before a group's spawn:
+/// a signal landing before the arm would end the process with the group left running.
+#[cfg(unix)]
+fn kill_running_on_quit() {
+    static ARMED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    ARMED.get_or_init(|| {
+        if let Err(e) = arm_kill_running_on_quit() {
+            tracing::warn!(error = %e, "a quit will leave the CLIs this process runs running");
+        }
+    });
+}
+
+/// [`kill_running_on_quit`]'s listener: a thread on a runtime of its own,
+/// whose signal driver its handlers register with.
+#[cfg(unix)]
+fn arm_kill_running_on_quit() -> std::io::Result<()> {
+    // Leaked, as it lives as long as the process: a failed spawn below then
+    // drops no runtime, which inside doctor's async probe would panic (tokio
+    // 1.54.1 `src/runtime/blocking/shutdown.rs:52`).
+    let runtime: &'static tokio::runtime::Runtime = Box::leak(Box::new(
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?,
+    ));
+    let quit = {
+        let _in = runtime.enter();
+        crate::runtime::QuitArms::listener()
+    };
+    std::thread::Builder::new()
+        .name("quit-kills-clis".into())
+        .spawn(move || {
+            let signal = runtime.block_on(quit.signalled());
+            kill_running();
+            if !crate::runtime::QuitArms::is_owned() {
+                signal.reraise();
+            }
+        })?;
+    Ok(())
 }
 
 /// What `pipe` holds, read to its end on a thread of its own, so neither pipe
@@ -1231,17 +1412,186 @@ mod tests {
         }
     }
 
-    /// A `sh` fake hands a pipe to a background job as POSIX `&` does; `cmd`'s
-    /// `start /b` documents no such inheritance, so Windows has the test above.
+    /// A `sh` fake's background `sleep` holds the run's pipes, and the limit's
+    /// kill takes it with its group.
     #[cfg(unix)]
     #[test]
     fn a_grandchild_holding_the_pipes_cannot_hold_the_run_past_its_limit() {
         let secs = HANG.as_secs();
         for then in [format!("exec sleep {secs}"), "exit 0".to_owned()] {
-            let (took, err) = timed_out(&format!("sleep {secs} &\n{then}"), "");
-            assert!(took < LIMIT + SLACK, "{then}: {took:?}");
-            assert!(err.contains("did not finish within"), "{then}: {err}");
+            let dir = TempDir::new().unwrap();
+            let sleeper = dir.path().join("sleeper");
+            let started = std::time::Instant::now();
+            let err = with_fake(
+                &format!("sleep {secs} &\necho $! > \"$1\"\n{then}"),
+                "",
+                || FAKE.run_within(&[sleeper.as_os_str()], LIMIT),
+            )
+            .unwrap_err();
+            assert!(started.elapsed() < LIMIT + SLACK, "{then}");
+            assert!(
+                format!("{err:#}").contains("did not finish within"),
+                "{then}: {err:#}"
+            );
+            let pid = std::fs::read_to_string(&sleeper).unwrap();
+            assert!(gone(pid.trim()), "{then}: the sleeper outlived the run");
         }
+    }
+
+    /// A quit's kill takes a running CLI's whole group or Job Object: the run
+    /// ends at once, with the launcher and what it started gone.
+    #[test]
+    fn kill_running_takes_a_running_clis_group() {
+        let dir = TempDir::new().unwrap();
+        let (launcher, sleeper) = (dir.path().join("launcher"), dir.path().join("sleeper"));
+        let written = |at: &std::path::Path| {
+            std::fs::read_to_string(at).is_ok_and(|mark| !mark.trim().is_empty())
+        };
+        let secs = HANG.as_secs();
+        let unix = format!("echo $$ > \"$1\"\nsleep {secs} &\necho $! > \"$2\"\nwait");
+        // Opinion, unverified on a Windows host here: `cmd` starts `ping` with the
+        // batch's inherited pipes, so only the Job Object's kill ends the run in time.
+        // Its markers land before `ping` starts, so the wait proves only `cmd` is up.
+        let windows = format!(
+            "echo up> \"%~1\"\r\necho up> \"%~2\"\r\nping -n {} 127.0.0.1",
+            secs + 1
+        );
+        with_fake(&unix, &windows, || {
+            std::thread::scope(|scope| {
+                let run = scope
+                    .spawn(|| FAKE.run_within(&[launcher.as_os_str(), sleeper.as_os_str()], HANG));
+                pixtuoid_core::harness::wait_until("both markers", SLACK, || {
+                    Ok(written(&launcher) && written(&sleeper))
+                })
+                .expect("the fake comes up");
+                let killed = std::time::Instant::now();
+                kill_running();
+                let _ = run.join().expect("the run ends");
+                let took = killed.elapsed();
+                assert!(took < SLACK, "the run outlived the kill by {took:?}");
+            });
+        });
+        #[cfg(unix)]
+        for at in [&launcher, &sleeper] {
+            let pid = std::fs::read_to_string(at).unwrap();
+            assert!(gone(pid.trim()), "{} outlived the kill", at.display());
+        }
+    }
+
+    /// A run that ends takes only itself off the list, so a quit's kill still
+    /// reaches every run going and no group or job it no longer owns.
+    #[test]
+    fn a_finished_run_leaves_the_running_list() {
+        let hang = std::ffi::OsStr::new("hang");
+        let none: [&std::ffi::OsStr; 0] = [];
+        let secs = HANG.as_secs();
+        with_fake(
+            &format!("[ \"$1\" = hang ] && exec sleep {secs}\necho done"),
+            &format!(
+                "if \"%~1\"==\"hang\" ping -n {} 127.0.0.1 >nul\r\necho done",
+                secs + 1
+            ),
+            || {
+                std::thread::scope(|scope| {
+                    let held = scope.spawn(|| FAKE.run_within(&[hang], HANG));
+                    pixtuoid_core::harness::wait_until("the hung run listed", SLACK, || {
+                        Ok(running().handles.len() == 1)
+                    })
+                    .expect("the hung run is listed");
+                    let out = FAKE.run_within(&none, LIMIT).unwrap();
+                    assert!(out.contains("done"), "{out}");
+                    assert_eq!(
+                        running().handles.len(),
+                        1,
+                        "the finished run did not leave the list alone"
+                    );
+                    let killed = std::time::Instant::now();
+                    kill_running();
+                    let _ = held.join().expect("the hung run ends");
+                    let took = killed.elapsed();
+                    assert!(
+                        took < SLACK,
+                        "the kill missed the hung run: it ended {took:?} later"
+                    );
+                });
+            },
+        );
+    }
+
+    /// A quit's kill waits for a spawn in flight, then takes the CLI it listed:
+    /// the list's lock spans the spawn.
+    #[test]
+    fn a_quit_during_a_spawn_kills_the_cli_it_lists() {
+        /// Far past a kill's own time when nothing holds the list's lock.
+        const AHEAD: Duration = Duration::from_millis(200);
+        let (started, spawning) = std::sync::mpsc::channel();
+        let (release, held) = std::sync::mpsc::channel::<()>();
+        let spawner = std::thread::spawn(move || {
+            spawn_listed(
+                || {
+                    let _ = started.send(());
+                    let _ = held.recv();
+                    #[cfg(unix)]
+                    let hangs = {
+                        let mut sleep = std::process::Command::new("sleep");
+                        sleep.arg(HANG.as_secs().to_string());
+                        sleep
+                    };
+                    #[cfg(windows)]
+                    let hangs = {
+                        let mut ping = std::process::Command::new("ping");
+                        ping.args(["-n", &HANG.as_secs().to_string(), "127.0.0.1"]);
+                        ping
+                    };
+                    let mut command = process_wrap::std::CommandWrap::from(hangs);
+                    command.command_mut().stdout(std::process::Stdio::null());
+                    #[cfg(unix)]
+                    command.wrap(process_wrap::std::ProcessGroup::leader());
+                    #[cfg(windows)]
+                    command.wrap(process_wrap::std::JobObject);
+                    Ok(std::sync::Arc::new(std::sync::Mutex::new(command.spawn()?)))
+                },
+                handle_of,
+            )
+        });
+        spawning.recv().expect("the spawn begins");
+        let killer = std::thread::spawn(kill_running);
+        let waited = std::time::Instant::now();
+        while !killer.is_finished() && waited.elapsed() < AHEAD {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let _ = release.send(());
+        let (child, _listed) = spawner.join().expect("the spawner").expect("the spawn");
+        killer.join().expect("the kill");
+        let ended = pixtuoid_core::harness::wait_until("the listed CLI's end", SLACK, || {
+            Ok(locked(&child).try_wait()?.is_some())
+        });
+        let _ = locked(&child).start_kill();
+        ended.expect("the kill missed the CLI its spawn listed");
+    }
+
+    /// A quit's kill closes the way to new CLIs: one asked to run past it never
+    /// starts, so none outlives the process.
+    #[test]
+    fn no_cli_starts_once_a_quit_has_killed_the_running() {
+        kill_running();
+        let mut spawned = false;
+        let refused = spawn_listed(
+            || {
+                spawned = true;
+                Ok(())
+            },
+            |_: &()| None,
+        );
+        assert!(
+            refused.is_err() && !spawned,
+            "a CLI was spawned past the quit"
+        );
+        let err = with_fake("exit 0", "exit /b 0", || FAKE.run_within(&[], LIMIT)).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("pixtuoid is quitting"),
+            "{err:#}"
+        );
     }
 
     /// More than a pipe holds, so a run that waits before it reads never ends.

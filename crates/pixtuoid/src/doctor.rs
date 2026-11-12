@@ -460,7 +460,8 @@ impl InstalledVersion {
     }
 }
 
-/// The current-thread runtime doctor's child probes run on.
+/// The current-thread runtime doctor's version probes and its delivery check
+/// run on.
 ///
 /// # Errors
 ///
@@ -483,8 +484,6 @@ fn probe_versions<'a, A: AsRef<[&'a str]>>(
     probes: &[Option<A>],
     deadline: std::time::Duration,
 ) -> anyhow::Result<Vec<InstalledVersion>> {
-    #[cfg(unix)]
-    kill_running_probes_on_quit()?;
     let asked = probes.iter().map(|argv| async move {
         match argv {
             Some(argv) => probe_version(argv.as_ref(), deadline).await,
@@ -494,77 +493,13 @@ fn probe_versions<'a, A: AsRef<[&'a str]>>(
     Ok(runtime()?.block_on(futures_util::future::join_all(asked)))
 }
 
-/// The process groups of the version probes still running. Each leads its own,
-/// which a terminal's Ctrl-C never reaches.
-#[cfg(unix)]
-static RUNNING: std::sync::Mutex<Vec<u32>> = std::sync::Mutex::new(Vec::new());
-
-/// Group `0`'s place in [`RUNNING`], for as long as this lives.
-#[cfg(unix)]
-struct Running(u32);
-
-#[cfg(unix)]
-impl Running {
-    fn listed(group: u32) -> Self {
-        let mut running = RUNNING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        running.push(group);
-        Self(group)
-    }
-}
-
-#[cfg(unix)]
-impl Drop for Running {
-    fn drop(&mut self) {
-        let mut running = RUNNING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        running.retain(|&group| group != self.0);
-    }
-}
-
-/// From the first call on, a quit signal kills every [`RUNNING`] group, then
-/// ends doctor by its default disposition.
-///
-/// # Errors
-///
-/// If no tokio runtime can be built.
-#[cfg(unix)]
-fn kill_running_probes_on_quit() -> anyhow::Result<()> {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static ARMED: AtomicBool = AtomicBool::new(false);
-    if ARMED.load(Ordering::SeqCst) {
-        return Ok(());
-    }
-    let runtime = runtime()?;
-    // Here, before any probe runs: a signal landing before the arm would end
-    // doctor with its probes left running.
-    let quit = {
-        let _in = runtime.enter();
-        crate::runtime::QuitArms::arm()
-    };
-    ARMED.store(true, Ordering::SeqCst);
-    std::thread::spawn(move || {
-        let signal = runtime.block_on(quit.signalled());
-        let running = RUNNING
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let groups = running
-            .iter()
-            .filter_map(|&group| rustix::process::Pid::from_raw(i32::try_from(group).ok()?));
-        for group in groups {
-            let _ = rustix::process::kill_process_group(group, rustix::process::Signal::KILL);
-        }
-        signal.reraise();
-    });
-    Ok(())
-}
-
 /// A source's `<cli> --version` (argv from the static registry, never user
 /// input), killed with its whole process group (Unix) or Job Object (Windows)
 /// once `deadline` passes: a launcher can leave the hung work to a child of its
-/// own. A NONZERO exit's text never shows as a version.
+/// own. A NONZERO exit's text never shows as a version. On process-wrap's tokio
+/// side: 10.0.1's std Job Object has no kill on close (`src/std/job_object.rs:106`)
+/// until watchexec/process-wrap#69 ships, and the tokio side's `KillOnDrop` has
+/// one (`src/tokio/job_object.rs:86`).
 async fn probe_version(argv: &[&str], deadline: std::time::Duration) -> InstalledVersion {
     use std::process::Stdio;
     let Some((cmd, args)) = argv.split_first() else {
@@ -586,12 +521,14 @@ async fn probe_version(argv: &[&str], deadline: std::time::Duration) -> Installe
         // The job's kill on close: doctor's end, however it comes, takes the job.
         command.wrap(process_wrap::tokio::KillOnDrop);
     }
-    let mut child = match command.spawn() {
-        Ok(child) => child,
+    #[cfg(unix)]
+    let spawned = crate::install::io::spawn_listed(|| command.spawn(), |child| child.id());
+    #[cfg(windows)]
+    let spawned = command.spawn().map(|child| (child, ()));
+    let (mut child, _listed) = match spawned {
+        Ok(spawned) => spawned,
         Err(e) => return InstalledVersion::Unknown(format!("it would not run: {e}")),
     };
-    #[cfg(unix)]
-    let _running = child.id().map(Running::listed);
     let (stdout, stderr) = (child.stdout().take(), child.stderr().take());
     let ran = tokio::time::timeout(deadline, async {
         tokio::join!(child.wait(), read_all(stdout), read_all(stderr))
