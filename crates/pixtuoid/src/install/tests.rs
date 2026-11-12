@@ -2105,29 +2105,17 @@ fn codex_connect_fails_when_adding_the_plugin_fails_and_leaves_no_hooks() {
 fn a_connect_over_an_unparsable_legacy_config_errs_and_rewrites_nothing() {
     with_fake_hosts(|fake| {
         let tmp = tempfile::TempDir::new().unwrap();
-        for (t, legacy, primary, register) in [(
-            &CODEX,
-            codex_config(),
-            plugin_hooks_path(tmp.path()),
-            "codex plugin",
-        )] {
-            std::fs::write(&legacy, "{ not = = valid [[[").unwrap();
-            let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
-            assert!(
-                install_target_from(t, Some(primary.clone()), hook).is_err(),
-                "{}",
-                t.name
-            );
-            assert_eq!(
-                std::fs::read_to_string(&legacy).unwrap(),
-                "{ not = = valid [[[",
-                "{}",
-                t.name
-            );
-            assert!(!has_hooks(t, Some(primary)), "{}", t.name);
-            let calls = std::fs::read_to_string(fake.join("calls.log")).unwrap_or_default();
-            assert!(!calls.contains(register), "{}: {calls}", t.name);
-        }
+        let primary = plugin_hooks_path(tmp.path());
+        std::fs::write(codex_config(), "{ not = = valid [[[").unwrap();
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        assert!(install_target_from(&CODEX, Some(primary.clone()), hook).is_err());
+        assert_eq!(
+            std::fs::read_to_string(codex_config()).unwrap(),
+            "{ not = = valid [[["
+        );
+        assert!(!has_hooks(&CODEX, Some(primary)));
+        let calls = std::fs::read_to_string(fake.join("calls.log")).unwrap_or_default();
+        assert!(!calls.contains("codex plugin"), "{calls}");
     });
 }
 
