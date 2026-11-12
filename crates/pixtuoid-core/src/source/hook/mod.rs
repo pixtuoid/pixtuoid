@@ -839,6 +839,11 @@ mod tests {
             msg.delta,
             DaemonPresenceUpdate::GatewayUp { pid: Some(4242) }
         ));
+        let seen = prx.recv().await.expect("the line's pid follows its update");
+        assert!(matches!(
+            seen.delta,
+            DaemonPresenceUpdate::PidSeen { pid: 4242 }
+        ));
         assert!(
             prx.try_recv().is_err(),
             "the CC line must not reach presence"
