@@ -23,6 +23,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
+    home,
     refresh: Refresh::Reload(reload),
     legacy: None,
 };

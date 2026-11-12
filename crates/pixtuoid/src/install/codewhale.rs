@@ -87,7 +87,8 @@ fn cw_home() -> Option<PathBuf> {
 
 /// A CodeWhale path variable as CodeWhale reads it (`crates/paths/src/lib.rs`
 /// `absolute_path_env`): blank is unset, text is trimmed, and a leading `~`
-/// expands against the OS home.
+/// expands against the OS home. One still relative CodeWhale refuses, as the
+/// install's refusal does.
 fn cw_env(name: &str, home: Option<&Path>) -> Option<PathBuf> {
     let raw = pixtuoid_core::platform::path_env_trimmed(name)?;
     // Upstream expands only text; other bytes stay verbatim, and so relative.

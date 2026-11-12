@@ -274,17 +274,8 @@ mod tests {
         ids.iter().map(|s| s.to_string()).collect()
     }
 
-    /// Every host a released pixtuoid merged hooks into, which nothing migrates.
-    fn legacy_hosts() -> impl Iterator<Item = &'static Target> {
-        target::TARGETS
-            .iter()
-            .copied()
-            .filter(|t| t.host().is_some_and(|h| h.legacy.is_some()))
-    }
-
-    /// Every host a reconnect notice names, a released pixtuoid having merged
-    /// hooks into each.
-    static LEGACY_HOSTS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+    /// Every host a reconnect notice names.
+    static NOTICED_HOSTS: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
         REPLUGGED
             .iter()
             .chain([&target::HERMES, &target::ANTIGRAVITY].iter())
@@ -299,12 +290,12 @@ mod tests {
         }
     }
 
-    /// Every notice's state holds: each legacy host installed and disconnected,
+    /// Every notice's state holds: each noticed host installed and disconnected,
     /// the TUI's cutaway drawn.
     fn all_hold() -> Facts<'static> {
         static NONE: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(HashSet::new);
         Facts {
-            installed: &LEGACY_HOSTS,
+            installed: &NOTICED_HOSTS,
             connected: &NONE,
             terminal_cutaway: true,
         }
@@ -401,7 +392,7 @@ mod tests {
             )
         };
         assert_eq!(
-            says(&LEGACY_HOSTS, &[]).as_deref(),
+            says(&NOTICED_HOSTS, &[]).as_deref(),
             Some(
                 "pixtuoid now connects to Claude Code, Codex CLI and Reasonix as a plugin: \
                  reconnect the ones you use in Sources (s)."
@@ -413,26 +404,22 @@ mod tests {
                 "pixtuoid now connects to Codex CLI as a plugin: reconnect it in Sources (s) if you use it."
             )
         );
-        assert_eq!(says(&LEGACY_HOSTS, &LEGACY_HOSTS), None, "all reconnected");
+        assert_eq!(
+            says(&NOTICED_HOSTS, &NOTICED_HOSTS),
+            None,
+            "all reconnected"
+        );
         assert_eq!(
             says(&["opencode"], &[]),
             None,
             "no replugged host installed"
         );
         assert_eq!(
-            says(&LEGACY_HOSTS, &["claude-code", "reasonix"]).as_deref(),
+            says(&NOTICED_HOSTS, &["claude-code", "reasonix"]).as_deref(),
             Some(
                 "pixtuoid now connects to Codex CLI as a plugin: reconnect it in Sources (s) if you use it."
             )
         );
-    }
-
-    #[test]
-    fn every_legacy_host_is_named_by_a_notice() {
-        let said = due(Some(&across_every_notice()), &all_hold()).join("\n");
-        for t in legacy_hosts() {
-            assert!(said.contains(t.display_name()), "{}: {said}", t.name);
-        }
     }
 
     /// 0.21.0 merged Antigravity's hooks into the shared hooks.json, which a connected

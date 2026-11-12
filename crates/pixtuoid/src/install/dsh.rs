@@ -16,9 +16,9 @@ use std::str::FromStr;
 use anyhow::{Context, Result, bail};
 use yaml_edit::{Document, Mapping, Sequence, YamlFile, YamlNode};
 
-use crate::install::merge;
 use crate::install::target::MergeOutcome;
 use crate::install::verify::{SchemaParse, ShimRef, reconnect};
+use crate::install::{io, merge};
 
 /// The mount entry's `id` — uninstall and the one-entry verify key on it.
 const PLUGIN_ID: &str = "pixtuoid";
@@ -46,16 +46,17 @@ pub(crate) fn plugin_events() -> Vec<&'static str> {
 }
 
 /// `$DSH_HOME` else `~/.dsh` — upstream `resolveDshHome`
-/// (`packages/util/home-paths/src/index.ts`, fetched 2026-09-01) resolves
-/// configured-path > `$DSH_HOME` > `~/.dsh` with no XDG arm and treats a
-/// blank `$DSH_HOME` as unset. No configured path reaches the mount, so the
-/// env axis is the whole surface here.
+/// (`packages/util/home-paths/src/index.ts:101-110,135-137` @ dsh-v0.2.2-rc.2)
+/// resolves configured-path > `$DSH_HOME` > `~/.dsh` with no XDG arm, treats a
+/// blank `$DSH_HOME` as unset, and expands a leading `~` (`expandHomePath`,
+/// `:87-91`). No configured path reaches the mount, so the env axis is the whole
+/// surface here.
 fn dsh_home() -> Result<PathBuf> {
+    let home = pixtuoid_core::platform::user_home_opt();
     if let Some(p) = pixtuoid_core::platform::path_env("DSH_HOME") {
-        return Ok(p);
+        return Ok(io::expand_tilde(&p, home.as_deref()));
     }
-    pixtuoid_core::platform::user_home_opt()
-        .map(|h| h.join(".dsh"))
+    home.map(|h| h.join(".dsh"))
         .context("no home directory resolves — cannot locate ~/.dsh")
 }
 
@@ -69,9 +70,11 @@ pub(crate) fn plugin_path() -> Result<PathBuf> {
     Ok(dsh_home()?.join(PLUGIN_ID).join("pixtuoid-dsh.mjs"))
 }
 
-/// Presence probe: dsh's own home, never our artifacts (chicken-and-egg).
+/// Presence probe: dsh's own home, never our artifacts (chicken-and-egg). A
+/// relative one names no dir pixtuoid can find; the install's refusal covers
+/// writes only.
 pub(crate) fn detect_installed() -> bool {
-    dsh_home().map(|h| h.exists()).unwrap_or(false)
+    dsh_home().is_ok_and(|h| h.is_absolute() && h.exists())
 }
 
 /// dsh runs plugins under Node and the plugin spawns the shim by embedded
@@ -142,10 +145,7 @@ fn mount_list(plugin: &str) -> Result<Document> {
 }
 
 fn mapping(node: &YamlNode) -> Option<Mapping> {
-    match node {
-        YamlNode::Mapping(m) => Some(m.clone()),
-        _ => None,
-    }
+    node.as_mapping().cloned()
 }
 
 fn insert_of(row: &YamlNode) -> Option<YamlNode> {
@@ -382,6 +382,28 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
 mod tests {
     use super::*;
 
+    /// dsh expands a leading `~` (`expandHomePath`), and a relative home names no
+    /// dir the probe can find.
+    #[test]
+    fn dsh_home_expands_its_tilde_and_a_relative_one_is_no_install() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_vars(
+            [
+                ("DSH_HOME", Some(std::path::Path::new("~/dsh"))),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                assert_eq!(
+                    default_config_path().unwrap(),
+                    home.path().join("dsh").join("cordis.patch.yml")
+                );
+            },
+        );
+        // `.` exists wherever the probe runs, so only the refusal keeps it out.
+        temp_env::with_var("DSH_HOME", Some("."), || assert!(!detect_installed()));
+    }
+
     #[test]
     fn the_presence_probe_reads_dsh_home() {
         let home = tempfile::tempdir().unwrap();
@@ -586,11 +608,13 @@ mod tests {
                     .unwrap()
                     .is_some_and(|r| r.is_empty())
             );
+            let remounted = merge_install(&removed.content, "/unused").unwrap();
+            assert!(remounted.changed);
+            assert!(verify_schema(&remounted.content).issues.is_empty());
             assert!(
-                !merge_install(&removed.content, "/unused")
+                !merge_install(&remounted.content, "/unused")
                     .unwrap()
-                    .content
-                    .is_empty()
+                    .changed
             );
         });
     }

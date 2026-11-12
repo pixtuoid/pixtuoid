@@ -38,6 +38,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
+    home,
     refresh: Refresh::NextStart,
     legacy: None,
 };
@@ -48,12 +49,13 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     host_plugin::owned_path("claude-plugin", host_plugin::HOOKS_FILE)
 }
 
+fn home() -> Result<PathBuf> {
+    claude_config_dir().map_or_else(|| io::home_relative(".claude"), Ok)
+}
+
 /// Claude Code's user settings, where it records the plugin as enabled.
 fn settings_path() -> Result<PathBuf> {
-    if let Some(dir) = claude_config_dir() {
-        return Ok(dir.join("settings.json"));
-    }
-    io::home_relative(".claude/settings.json")
+    Ok(home()?.join("settings.json"))
 }
 
 /// Claude Code is present when its config dir exists; the hooks file is ours, so

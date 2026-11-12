@@ -263,18 +263,18 @@ fn converge_owned_with(
         for (path, error) in &done.failed {
             tracing::warn!(cli = t.name, path = ?path, error = ?error, "could not refresh a plugin file to this build");
         }
-        let next_start = !done.rewritten.is_empty();
+        let rewrote = !done.rewritten.is_empty();
         let loads_new = match t.pickup {
-            Pickup::NextStart => next_start,
+            Pickup::NextStart => rewrote,
             Pickup::Watches => false,
             Pickup::Plugin(host) => match &host.refresh {
-                Refresh::NextStart => next_start,
+                Refresh::NextStart => rewrote,
                 Refresh::Recopy(copy) => recopy(host, copy, t).unwrap_or_else(|e| {
                     tracing::warn!(cli = t.name, error = ?e, "could not re-copy the plugin to this build");
                     false
                 }),
                 Refresh::Reload(reload) => {
-                    let failed = next_start && reload_failed(host, *reload, t);
+                    let failed = rewrote && reload_failed(host, *reload, t);
                     // The disk then says what the CLI runs, so the next launch rewrites
                     // and reloads again.
                     if failed && let Err(e) = install::put_back(&done.rewritten) {
@@ -297,7 +297,7 @@ fn recopy(host: &HostRegistration, copy: &PluginCopy, t: &Target) -> Result<bool
     if !(host.is_registered)()? || !(copy.stale)(&(t.default_config_path)()?)? {
         return Ok(false);
     }
-    (copy.refresh)()?;
+    (copy.recopy)()?;
     Ok(true)
 }
 
@@ -1013,6 +1013,7 @@ mod tests {
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
+        home: || Ok(std::env::temp_dir()),
         refresh: Refresh::Recopy(PluginCopy {
             stale: |_| {
                 use std::sync::atomic::Ordering::SeqCst;
@@ -1021,7 +1022,7 @@ mod tests {
                 }
                 Ok(STALE.load(SeqCst))
             },
-            refresh: || {
+            recopy: || {
                 REFRESHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
             },
@@ -1102,6 +1103,7 @@ mod tests {
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
+        home: || Ok(std::env::temp_dir()),
         refresh: Refresh::Reload(|| {
             use std::sync::atomic::Ordering::SeqCst;
             if RELOAD_FAILS.load(SeqCst) {

@@ -230,7 +230,9 @@ pub struct HostRegistration {
     pub unregister: fn(config: &Path) -> Result<Unregistered>,
     /// Whether the CLI reports the plugin installed and enabled.
     pub is_registered: fn() -> Result<bool>,
-    /// What brings a rewrite of the plugin's files to the running CLI.
+    /// The dir the CLI keeps the state its own commands write.
+    pub home: fn() -> Result<PathBuf>,
+    /// What brings a rewrite of the plugin's files to the CLI.
     pub refresh: Refresh,
     /// Set only where what an older pixtuoid merged into the CLI's own config breaks
     /// the CLI when left.
@@ -265,11 +267,11 @@ pub struct PluginCopy {
     pub stale: fn(config: &Path) -> Result<bool>,
     /// Re-copy the plugin. It may also re-enable a plugin the user disabled, so it
     /// runs only while [`HostRegistration::is_registered`].
-    pub refresh: fn() -> Result<()>,
+    pub recopy: fn() -> Result<()>,
 }
 
-/// A config of the CLI's own that an older pixtuoid merged its hooks into. Connect
-/// and disconnect both strip them, so no event fires twice.
+/// A config of the CLI's own that an older pixtuoid merged its hooks into, and that
+/// connect and disconnect strip ([`HostRegistration::legacy`] says when).
 #[derive(Debug)]
 pub struct LegacyConfig {
     pub path: fn() -> Result<PathBuf>,

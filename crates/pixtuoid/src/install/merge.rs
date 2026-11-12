@@ -245,14 +245,6 @@ pub(crate) fn flat_json_merge_outcome_install(
     })
 }
 
-/// [`flat_json_merge_outcome_uninstall`] of the [`crate::install::SENTINEL_KEY`]
-/// entries: the strip every flat-JSON config pixtuoid merged into shares.
-pub(crate) fn flat_json_uninstall(content: &str) -> anyhow::Result<MergeOutcome> {
-    flat_json_merge_outcome_uninstall(content, |doc| {
-        flat_json_merge_uninstall(doc, crate::install::SENTINEL_KEY)
-    })
-}
-
 /// The uninstall twin, deliberately UNGUARDED on a non-object root — uninstall
 /// must stay a clean no-op on a foreign non-object document, never error.
 pub(crate) fn flat_json_merge_outcome_uninstall(

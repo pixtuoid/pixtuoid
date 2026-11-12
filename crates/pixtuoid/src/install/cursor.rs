@@ -92,7 +92,9 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
     // `version` is deliberately left in place: we can't tell our set-if-absent `1`
     // from a user's own value, and stripping it would DELETE a hookless
     // `{"version": N}` a user wrote themselves.
-    merge::flat_json_uninstall(content)
+    merge::flat_json_merge_outcome_uninstall(content, |doc| {
+        merge::flat_json_merge_uninstall(doc, SENTINEL_KEY)
+    })
 }
 
 fn managed_entry(hook_command: &str) -> Value {

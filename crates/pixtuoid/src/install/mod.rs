@@ -524,20 +524,25 @@ fn primary_path(t: &Target, config: Option<PathBuf>) -> Result<PathBuf> {
     config.map(Ok).unwrap_or_else(|| (t.default_config_path)())
 }
 
-/// [`primary_path`] for a write, which [`refuse_relative`] gates.
+/// [`primary_path`] for a write, which [`refuse_relative`] gates, with the home a
+/// host's own commands write.
 fn write_path(t: &Target, config: Option<PathBuf>) -> Result<PathBuf> {
     let path = primary_path(t, config)?;
     refuse_relative(&path)?;
+    if let Some(host) = t.host() {
+        refuse_relative(&(host.home)()?)?;
+    }
     Ok(path)
 }
 
-/// Refuse a write to a relative `path`: a CLI resolves a relative home override
-/// against the directory it starts in, which pixtuoid can't know.
+/// Refuse a write to a relative `path`: a CLI refuses a relative home override, or
+/// resolves it against the directory it starts in, which pixtuoid can't know.
 fn refuse_relative(path: &std::path::Path) -> Result<()> {
     anyhow::ensure!(
         path.is_absolute(),
-        "{} is relative, and the agent CLI resolves it against the directory it \
-         starts in, which pixtuoid can't know: set its home override to an absolute path",
+        "{} is relative, which the agent CLI refuses or resolves against the \
+         directory it starts in, unknown to pixtuoid: set its home override to an \
+         absolute path",
         path.display()
     );
     Ok(())
@@ -648,7 +653,6 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
         return Ok(false);
     };
     let path = (legacy.path)()?;
-    refuse_relative(&path)?;
     // The CLI's own config resolves from its home, not the primary a test passes.
     #[cfg(test)]
     assert!(
@@ -703,7 +707,7 @@ pub(crate) fn heal_retired_stub(t: &Target, config: Option<PathBuf>) -> Result<b
     else {
         return Ok(false);
     };
-    let path = write_path(t, config)?;
+    let path = primary_path(t, config)?;
     // Checked before the lock, which would create its file beside a CLI the
     // user may not have.
     if io::read_config(&path)? != stub.was {
@@ -779,8 +783,6 @@ pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<Un
         },
         None => None,
     };
-    // Last, so a legacy config it cannot parse fails the disconnect only once the
-    // plugin is gone.
     if let Some(host) = t.host() {
         removed |= strip_legacy(host)?;
     }

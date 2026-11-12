@@ -24,6 +24,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
+    home: config_dir,
     refresh: Refresh::NextStart,
     legacy: None,
 };

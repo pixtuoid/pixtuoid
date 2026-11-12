@@ -50,9 +50,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
+    home,
     refresh: Refresh::Recopy(PluginCopy {
         stale: copy_is_stale,
-        refresh: add_plugin,
+        recopy: add_plugin,
     }),
     // A config.toml hook Codex holds untrusted brings up its hook review on every
     // launch (`codex-rs/tui/src/startup_hooks_review.rs:144-146,290-292` @ rust-v0.167.2).
@@ -68,10 +69,14 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     host_plugin::owned_path("codex-plugin", host_plugin::HOOKS_FILE)
 }
 
-/// Codex's own config, where it records the marketplace and the plugin's enablement.
 /// The SAME codex_home() the watcher uses, so the two can't disagree.
+fn home() -> Result<PathBuf> {
+    Ok(pixtuoid_core::source::codex::codex_home())
+}
+
+/// Codex's own config, where it records the marketplace and the plugin's enablement.
 fn config_toml() -> Result<PathBuf> {
-    Ok(pixtuoid_core::source::codex::codex_home().join("config.toml"))
+    Ok(home()?.join("config.toml"))
 }
 
 /// Codex is present when its config is: an empty ~/.codex says nothing.

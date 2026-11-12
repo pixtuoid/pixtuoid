@@ -1917,7 +1917,7 @@ fn codex_doctor_names_a_stale_copy_until_it_is_re_copied() {
             v.issues
         );
 
-        (copy.refresh)().unwrap();
+        (copy.recopy)().unwrap();
         assert!(!(copy.stale)(&hooks).unwrap());
         assert!(verify_target(&CODEX, Some(hooks)).is_sound());
     });
@@ -2331,28 +2331,40 @@ fn no_target_writes_a_relative_primary() {
             if t.primary.owned_files().is_some() {
                 refused_as_relative(t.name, converge(t, some()));
             }
-            if matches!(
-                t.primary,
-                Primary::Owned {
-                    retired: Some(_),
-                    ..
-                }
-            ) {
-                refused_as_relative(t.name, heal_retired_stub(t, some()));
-            }
         }
         assert_eq!(std::fs::read_dir(into.path()).unwrap().count(), 0);
+        // The heal runs at every launch, so only a stub it would rewrite refuses.
+        for &t in target::TARGETS {
+            let Primary::Owned {
+                retired: Some(stub),
+                ..
+            } = &t.primary
+            else {
+                continue;
+            };
+            assert!(
+                !heal_retired_stub(t, Some(rel.clone())).unwrap(),
+                "{}",
+                t.name
+            );
+            std::fs::write(into.path().join("primary"), stub.was).unwrap();
+            refused_as_relative(t.name, heal_retired_stub(t, Some(rel.clone())));
+            assert_eq!(
+                std::fs::read_to_string(into.path().join("primary")).unwrap(),
+                stub.was
+            );
+        }
     });
 }
 
 /// A relative home override refuses the write it would misplace, whichever of a
-/// target's files it moves: grok's primary, Codex's own config.toml (whose
-/// override counts only when it names an existing dir), OpenClaw's plugin dir
-/// beside an absolute config.
+/// target's files it moves: grok's primary, a host's own home its commands write
+/// (Codex's counts only when it names an existing dir), OpenClaw's plugin dir
+/// beside an absolute config. A disconnect refuses before its first write, too.
 #[cfg(unix)]
 #[test]
 fn a_relative_home_override_refuses_every_file_it_moves() {
-    with_fake_hosts(|_| {
+    with_fake_hosts(|fake| {
         let into = tempfile::TempDir::new().unwrap();
         let rel = relative_into(into.path());
         std::fs::create_dir(into.path().join("codex")).unwrap();
@@ -2371,6 +2383,16 @@ fn a_relative_home_override_refuses_every_file_it_moves() {
                 Some(plugin_hooks_path(primary.path())),
             ),
             (
+                &CLAUDE,
+                vec![("CLAUDE_CONFIG_DIR", Some(rel.join("claude")))],
+                Some(plugin_hooks_path(primary.path())),
+            ),
+            (
+                &REASONIX,
+                vec![("REASONIX_HOME", Some(rel.join("rx")))],
+                Some(reasonix_manifest_path(primary.path())),
+            ),
+            (
                 &OPENCLAW,
                 vec![
                     ("OPENCLAW_STATE_DIR", Some(rel.join("claw"))),
@@ -2380,7 +2402,10 @@ fn a_relative_home_override_refuses_every_file_it_moves() {
             ),
         ] {
             temp_env::with_vars(vars, || {
-                refused_as_relative(t.name, install_target_from(t, at, hook()));
+                refused_as_relative(t.name, install_target_from(t, at.clone(), hook()));
+                if t.host().is_some() {
+                    refused_as_relative(t.name, uninstall_target(t, at));
+                }
             });
         }
         assert_eq!(
@@ -2388,6 +2413,14 @@ fn a_relative_home_override_refuses_every_file_it_moves() {
             1,
             "only the codex dir the test made"
         );
+        for at in [
+            config,
+            plugin_hooks_path(primary.path()),
+            reasonix_manifest_path(primary.path()),
+        ] {
+            assert!(!at.exists(), "{}", at.display());
+        }
+        assert!(!fake.join("calls.log").exists(), "no host command ran");
     });
 }
 
