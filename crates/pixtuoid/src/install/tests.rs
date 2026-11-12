@@ -2301,6 +2301,105 @@ fn antigravity_connect_writes_and_enables_its_plugin() {
     });
 }
 
+/// `dir` spelled relative to this process's cwd, so a write a refusal lets
+/// through still lands in `dir`. A cwd on another drive than `dir` would take
+/// the `..` climb elsewhere, hence Unix only.
+#[cfg(unix)]
+fn relative_into(dir: &std::path::Path) -> PathBuf {
+    let cwd = std::env::current_dir().unwrap();
+    let climb = cwd
+        .components()
+        .skip(1)
+        .map(|_| std::path::Component::ParentDir);
+    climb
+        .chain(dir.components().skip(1))
+        .map(|c| c.as_os_str().to_owned())
+        .collect()
+}
+
+#[cfg(unix)]
+fn refused_as_relative<T>(what: &str, r: Result<T>) {
+    match r {
+        Ok(_) => panic!("{what}: a relative path was written"),
+        Err(e) => assert!(format!("{e:#}").contains("is relative"), "{what}: {e:#}"),
+    }
+}
+
+/// Every write entry point of every target refuses a relative primary.
+#[cfg(unix)]
+#[test]
+fn no_target_writes_a_relative_primary() {
+    with_fake_hosts(|_| {
+        let into = tempfile::TempDir::new().unwrap();
+        let rel = relative_into(into.path()).join("primary");
+        let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
+        for &t in target::TARGETS {
+            let some = || Some(rel.clone());
+            refused_as_relative(t.name, install_target_from(t, some(), hook()));
+            refused_as_relative(t.name, uninstall_target(t, some()));
+            if t.primary.owned_files().is_some() {
+                refused_as_relative(t.name, converge(t, some()));
+            }
+            if matches!(
+                t.primary,
+                Primary::Owned {
+                    retired: Some(_),
+                    ..
+                }
+            ) {
+                refused_as_relative(t.name, heal_retired_stub(t, some()));
+            }
+        }
+        assert_eq!(std::fs::read_dir(into.path()).unwrap().count(), 0);
+    });
+}
+
+/// A relative home override refuses the write it would misplace, whichever of a
+/// target's files it moves: grok's primary, Codex's own config.toml (whose
+/// override counts only when it names an existing dir), OpenClaw's plugin dir
+/// beside an absolute config.
+#[cfg(unix)]
+#[test]
+fn a_relative_home_override_refuses_every_file_it_moves() {
+    with_fake_hosts(|_| {
+        let into = tempfile::TempDir::new().unwrap();
+        let rel = relative_into(into.path());
+        std::fs::create_dir(into.path().join("codex")).unwrap();
+        let primary = tempfile::TempDir::new().unwrap();
+        let config = primary.path().join("openclaw.json");
+        let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
+        for (t, vars, at) in [
+            (
+                &target::GROK,
+                vec![("GROK_HOME", Some(rel.join("grok")))],
+                None,
+            ),
+            (
+                &CODEX,
+                vec![("CODEX_HOME", Some(rel.join("codex")))],
+                Some(plugin_hooks_path(primary.path())),
+            ),
+            (
+                &OPENCLAW,
+                vec![
+                    ("OPENCLAW_STATE_DIR", Some(rel.join("claw"))),
+                    ("OPENCLAW_CONFIG_PATH", Some(config.clone())),
+                ],
+                None,
+            ),
+        ] {
+            temp_env::with_vars(vars, || {
+                refused_as_relative(t.name, install_target_from(t, at, hook()));
+            });
+        }
+        assert_eq!(
+            std::fs::read_dir(into.path()).unwrap().count(),
+            1,
+            "only the codex dir the test made"
+        );
+    });
+}
+
 #[test]
 fn antigravity_disconnect_removes_the_plugin_through_agy() {
     with_fake_hosts(|fake| {

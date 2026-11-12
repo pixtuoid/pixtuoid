@@ -180,8 +180,9 @@ fn expand_vars(s: &str, var: impl Fn(&str) -> Option<String>) -> String {
 /// unit-test on any host. `config_dir` is what Go's `os.UserConfigDir` reads:
 /// `%AppData%`, or a `$XDG_CONFIG_HOME` it refuses unless absolute (golang/go
 /// `src/os/file.go:557-594` @ be57ebb0f3). `None` when upstream's is `""`, and
-/// the registration probe then errs rather than read a CWD-relative file
-/// Reasonix never writes.
+/// the presence and registration probes then miss rather than read a
+/// CWD-relative file Reasonix never writes; the install's refusal covers writes
+/// only.
 fn resolve_reasonix_home(
     reasonix_home_env: Option<PathBuf>,
     windows: bool,

@@ -43,7 +43,7 @@ pub(crate) const SENTINEL_KEY: &str = "_pixtuoid";
 pub(crate) fn has_hooks(t: &'static Target, config: Option<PathBuf>) -> bool {
     // The gate (this) and the verify it guards MUST read the SAME config, or
     // `diagnose` through an injected root could never observe an install.
-    let path = match config.map(Ok).unwrap_or_else(|| (t.default_config_path)()) {
+    let path = match primary_path(t, config) {
         Ok(p) => p,
         Err(_) => return false,
     };
@@ -78,7 +78,7 @@ pub(crate) fn verify_target(
     config: Option<PathBuf>,
 ) -> verify::SchemaVerifyResult {
     use verify::ShimRef;
-    let path = match config.map(Ok).unwrap_or_else(|| (t.default_config_path)()) {
+    let path = match primary_path(t, config) {
         Ok(p) => p,
         Err(_) => {
             return verify::SchemaVerifyResult {
@@ -331,9 +331,7 @@ pub(crate) fn converge(t: &Target, config: Option<PathBuf>) -> Result<Converged>
     let Some(files) = t.primary.owned_files() else {
         return Ok(Converged::default());
     };
-    let primary = config
-        .map(Ok)
-        .unwrap_or_else(|| (t.default_config_path)())?;
+    let primary = write_path(t, config)?;
     converge_files(files, t.hook_command, &primary)
 }
 
@@ -521,6 +519,30 @@ pub(crate) struct InstallReport {
     pub post_install_hint: Option<&'static str>,
 }
 
+/// The primary file `t` addresses: `config`, else the target's default.
+fn primary_path(t: &Target, config: Option<PathBuf>) -> Result<PathBuf> {
+    config.map(Ok).unwrap_or_else(|| (t.default_config_path)())
+}
+
+/// [`primary_path`] for a write, which [`refuse_relative`] gates.
+fn write_path(t: &Target, config: Option<PathBuf>) -> Result<PathBuf> {
+    let path = primary_path(t, config)?;
+    refuse_relative(&path)?;
+    Ok(path)
+}
+
+/// Refuse a write to a relative `path`: a CLI resolves a relative home override
+/// against the directory it starts in, which pixtuoid can't know.
+fn refuse_relative(path: &std::path::Path) -> Result<()> {
+    anyhow::ensure!(
+        path.is_absolute(),
+        "{} is relative, and the agent CLI resolves it against the directory it \
+         starts in, which pixtuoid can't know: set its home override to an absolute path",
+        path.display()
+    );
+    Ok(())
+}
+
 /// Install pixtuoid hooks into `t`'s config, returning a structured report.
 pub(crate) fn install_target(t: &Target, config: Option<PathBuf>) -> Result<InstallReport> {
     install_target_from(
@@ -540,9 +562,7 @@ fn install_target_from(
     config: Option<PathBuf>,
     env_hook: Option<PathBuf>,
 ) -> Result<InstallReport> {
-    let path = config
-        .map(Ok)
-        .unwrap_or_else(|| (t.default_config_path)())?;
+    let path = write_path(t, config)?;
     let (binary, explicit_hook) = resolve_hook_binary_from(t, env_hook, io::default_hook_binary)?;
     let hook_cmd = (t.hook_command)(&binary, explicit_hook)?;
     // Before the lock creates the first file: failing after it leaves a plugin root
@@ -628,6 +648,7 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
         return Ok(false);
     };
     let path = (legacy.path)()?;
+    refuse_relative(&path)?;
     // The CLI's own config resolves from its home, not the primary a test passes.
     #[cfg(test)]
     assert!(
@@ -682,9 +703,7 @@ pub(crate) fn heal_retired_stub(t: &Target, config: Option<PathBuf>) -> Result<b
     else {
         return Ok(false);
     };
-    let path = config
-        .map(Ok)
-        .unwrap_or_else(|| (t.default_config_path)())?;
+    let path = write_path(t, config)?;
     // Checked before the lock, which would create its file beside a CLI the
     // user may not have.
     if io::read_config(&path)? != stub.was {
@@ -703,6 +722,7 @@ fn write_owned_file(
     p: &std::path::Path,
     want: impl FnOnce() -> Result<Option<String>>,
 ) -> Result<Option<String>> {
+    refuse_relative(p)?;
     // A real write here would be invisible: CI has no such dir, and the shim exits
     // 0 by invariant #5, so nothing downstream would report it.
     #[cfg(test)]
@@ -743,9 +763,7 @@ pub(crate) struct UninstallReport {
 /// Remove pixtuoid hooks from `t`'s config, returning a structured report. Same
 /// lock scope as `install_target`, and never rewrites on a semantic no-op.
 pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<UninstallReport> {
-    let path = config
-        .map(Ok)
-        .unwrap_or_else(|| (t.default_config_path)())?;
+    let path = write_path(t, config)?;
     let mut removed = strip_managed(t.primary.uninstall(), &path)?;
     // After the strip, which needs no CLI: a failing deregister leaves a
     // registered plugin whose hooks are gone, or whose copy fires into a

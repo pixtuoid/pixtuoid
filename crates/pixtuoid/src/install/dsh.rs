@@ -47,21 +47,10 @@ pub(crate) fn plugin_events() -> Vec<&'static str> {
 /// `$DSH_HOME` else `~/.dsh` — upstream `resolveDshHome`
 /// (`packages/util/home-paths/src/index.ts`, fetched 2026-09-01) resolves
 /// configured-path > `$DSH_HOME` > `~/.dsh` with no XDG arm and treats a
-/// blank `$DSH_HOME` as unset; it also expands a `~/` value and resolves a
-/// relative one against CWD (`resolve(expandHomePath(..))`) — we refuse both
-/// instead of mirroring, because a cwd-dependent mount row would point
-/// somewhere new each launch. No configured path reaches the mount, so the
+/// blank `$DSH_HOME` as unset. No configured path reaches the mount, so the
 /// env axis is the whole surface here.
 fn dsh_home() -> Result<PathBuf> {
     if let Some(p) = pixtuoid_core::platform::path_env("DSH_HOME") {
-        if !p.is_absolute() {
-            bail!(
-                "DSH_HOME={} is not absolute — dsh would expand `~` and \
-                 resolve the rest against its own CWD, so a pixtuoid-written \
-                 mount row would drift per launch; set an absolute path",
-                p.display()
-            );
-        }
         return Ok(p);
     }
     pixtuoid_core::platform::user_home_opt()
@@ -775,13 +764,6 @@ mod tests {
             assert!(content.contains(SENTINEL));
             assert!(content.contains("\"/opt/bin/pixtuoid-hook\""));
             assert!(!content.contains(crate::install::merge::HOOK_PLACEHOLDER));
-        });
-    }
-
-    #[test]
-    fn dsh_home_refuses_a_relative_override() {
-        temp_env::with_var("DSH_HOME", Some("relative/home"), || {
-            assert!(dsh_home().is_err());
         });
     }
 }

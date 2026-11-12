@@ -55,14 +55,13 @@ pub(crate) const CODEWHALE_EVENTS: &[(&str, bool)] = &[
 ///
 /// # Errors
 ///
-/// If an override is still relative once its `~` is expanded, as CodeWhale
-/// refuses it, or no home resolves.
+/// If no home resolves.
 pub(crate) fn default_config_path() -> Result<PathBuf> {
     let home = cw_home();
     resolve_config_path(
-        cw_env("CODEWHALE_CONFIG_PATH", home.as_deref())?,
-        cw_env("DEEPSEEK_CONFIG_PATH", home.as_deref())?,
-        cw_env("CODEWHALE_HOME", home.as_deref())?,
+        cw_env("CODEWHALE_CONFIG_PATH", home.as_deref()),
+        cw_env("DEEPSEEK_CONFIG_PATH", home.as_deref()),
+        cw_env("CODEWHALE_HOME", home.as_deref()),
         home.clone(),
         |p| p.exists(),
     )
@@ -87,20 +86,15 @@ fn cw_home() -> Option<PathBuf> {
 }
 
 /// A CodeWhale path variable as CodeWhale reads it (`crates/paths/src/lib.rs`
-/// `absolute_path_env`): blank is unset, text is trimmed, a leading `~`
-/// expands against the OS home, and a path still relative is refused.
-fn cw_env(name: &str, home: Option<&Path>) -> Result<Option<PathBuf>> {
-    let Some(raw) = pixtuoid_core::platform::path_env_trimmed(name) else {
-        return Ok(None);
-    };
+/// `absolute_path_env`): blank is unset, text is trimmed, and a leading `~`
+/// expands against the OS home.
+fn cw_env(name: &str, home: Option<&Path>) -> Option<PathBuf> {
+    let raw = pixtuoid_core::platform::path_env_trimmed(name)?;
     // Upstream expands only text; other bytes stay verbatim, and so relative.
-    let path = io::expand_tilde(&raw, home.filter(|_| raw.to_str().is_some()));
-    anyhow::ensure!(
-        path.is_absolute(),
-        "{name} must be an absolute path, got {}",
-        path.display()
-    );
-    Ok(Some(path))
+    Some(io::expand_tilde(
+        &raw,
+        home.filter(|_| raw.to_str().is_some()),
+    ))
 }
 
 /// Pure core for [`default_config_path`] — env overrides, the resolved OS home,
@@ -146,14 +140,12 @@ fn resolve_config_path(
 /// first launch) rather than the file we write.
 pub(crate) fn detect_installed() -> bool {
     let home = cw_home();
-    // An explicit CODEWHALE_HOME suppresses the legacy dir (`legacy_deepseek_home`);
-    // one CodeWhale refuses is no install.
+    // An explicit CODEWHALE_HOME suppresses the legacy dir (`legacy_deepseek_home`).
     match cw_env("CODEWHALE_HOME", home.as_deref()) {
-        Ok(Some(h)) => h.exists(),
-        Ok(None) => {
-            home.is_some_and(|h| h.join(".codewhale").exists() || h.join(".deepseek").exists())
-        }
-        Err(_) => false,
+        // CodeWhale refuses a relative override (`validate_absolute_path`), so it
+        // is no install; the install's refusal covers writes only.
+        Some(h) => h.is_absolute() && h.exists(),
+        None => home.is_some_and(|h| h.join(".codewhale").exists() || h.join(".deepseek").exists()),
     }
 }
 
@@ -313,7 +305,7 @@ mod tests {
     }
 
     #[test]
-    fn an_override_expands_its_tilde_and_must_be_absolute() {
+    fn an_override_expands_its_tilde_and_a_relative_one_is_no_install() {
         let home = tempfile::tempdir().unwrap();
         let home_str = home.path().to_str().unwrap();
         temp_env::with_vars(
@@ -344,13 +336,14 @@ mod tests {
             vars.retain(|(k, _)| *k != var);
             vars.push((var, Some("rel/cw")));
             temp_env::with_vars(vars, || {
-                let err = default_config_path().unwrap_err().to_string();
-                assert!(
-                    err.contains(var) && err.contains("absolute"),
-                    "{var}: {err}"
-                );
+                assert!(default_config_path().unwrap().is_relative(), "{var}");
             });
         }
+        // `.` exists wherever the probe runs, so only the refusal keeps it out.
+        temp_env::with_vars(
+            [("CODEWHALE_HOME", Some(".")), ("HOME", Some(home_str))],
+            || assert!(!detect_installed()),
+        );
     }
 
     #[test]
@@ -388,9 +381,10 @@ mod tests {
                 ("HOME", Some(home.path().as_os_str())),
             ],
             || {
-                assert!(
-                    default_config_path().is_err(),
-                    "verbatim, so relative, so refused"
+                assert_eq!(
+                    default_config_path().unwrap(),
+                    PathBuf::from(raw).join("config.toml"),
+                    "verbatim"
                 )
             },
         );
