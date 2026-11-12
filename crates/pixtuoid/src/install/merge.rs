@@ -164,7 +164,9 @@ pub(crate) fn flat_json_merge_install(
 /// exactly as found.
 pub(crate) fn prune_empty(parent: &mut serde_json::Map<String, Value>, key: &str) {
     if parent.get(key).is_some_and(json_emptied) {
-        parent.remove(key);
+        // Under `preserve_order`, `remove` swaps the last key into this one's place
+        // (serde_json 1.0.154 `src/map.rs:160-164`), reordering the user's keys.
+        parent.shift_remove(key);
     }
 }
 
@@ -198,7 +200,7 @@ pub(crate) fn flat_json_merge_uninstall(mut doc: Value, sentinel: &str) -> Value
         })
         .collect();
     for k in to_remove {
-        hooks_obj.remove(&k);
+        hooks_obj.shift_remove(&k);
     }
     prune_empty(root, "hooks");
     doc
@@ -411,8 +413,8 @@ fn strip_shim_node(node: &yaml_edit::YamlNode) -> Stripped {
     done
 }
 
-/// [`strip_shim_json`] for a TOML config, through `toml_edit`, which keeps every
-/// other byte.
+/// [`strip_shim_json`] for a TOML config, through `toml_edit`: what it leaves
+/// unopened keeps its bytes, but for [`end_lines_like`]'s line endings.
 pub(crate) fn strip_shim_toml(content: &str) -> anyhow::Result<MergeOutcome> {
     toml_merge_outcome(content, |doc| {
         strip_shim_table(doc.as_table_mut());
@@ -852,6 +854,24 @@ command = \"notify-send done\" # theirs
         let noop = toml_merge_outcome("a  =  0x1\n", set("a", 1)).unwrap();
         assert!(!noop.changed, "an equal value must be a semantic no-op");
         assert!(toml_merge_outcome("a = 1\n", set("b", 2)).unwrap().changed);
+    }
+
+    #[test]
+    fn an_uninstall_keeps_the_order_of_the_users_keys() {
+        let doc = json!({
+            "hooks": {
+                "A": [{"command": "ours", "_pixtuoid": true}],
+                "B": [{"command": "theirs"}],
+                "C": [{"command": "theirs too"}],
+            },
+            "after": {"emptied": [], "kept": 1, "last": 2},
+        });
+        let out = flat_json_merge_uninstall(doc, "_pixtuoid");
+        let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+        assert_eq!(keys(&out["hooks"]), ["B", "C"]);
+        let mut after = out["after"].as_object().unwrap().clone();
+        prune_empty(&mut after, "emptied");
+        assert_eq!(keys(&Value::Object(after)), ["kept", "last"]);
     }
 
     #[test]
