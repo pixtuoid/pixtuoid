@@ -336,7 +336,7 @@ mod controller_tests {
     /// `stop` queues the save and joins once; the drop after it, which production runs
     /// at every floating quit, does nothing more and does not panic.
     #[test]
-    fn stop_then_drop_persists_and_joins_once() {
+    fn stop_then_drop_queues_and_joins_once() {
         use std::sync::atomic::Ordering;
 
         let done = std::cell::OnceCell::new();
@@ -369,14 +369,14 @@ mod controller_tests {
     }
 
     #[test]
-    fn mute_persists_immediately_and_does_not_arm_the_volume_flash() {
+    fn mute_saves_immediately_and_does_not_arm_the_volume_flash() {
         let mut k = Ctl::new(false, 0.4);
         let t0 = Instant::now();
         k.c.apply(AudioAction::ToggleMute, false, t0, |_, _| {});
         assert_eq!(k.saved(), [saved_ok(Setting::Mute)]);
         assert!(
             k.file().contains("muted = true"),
-            "mute toggled on AND persists NOW (like a theme commit)"
+            "mute toggled on AND its save queued NOW (like a theme commit)"
         );
         assert_eq!(k.c.volume_flash(t0), None, "mute does not flash ♩ N%");
     }
@@ -390,9 +390,12 @@ mod controller_tests {
         assert_eq!(
             k.saved(),
             [],
-            "volume NOT persisted mid-flash (debounced, not per-repeat)"
+            "volume save NOT queued mid-flash (debounced, not per-repeat)"
         );
-        assert_eq!(k.c.tick(t0 + Duration::from_millis(500)), Some(55));
+        assert_eq!(
+            k.c.tick(t0 + Duration::from_millis(VOLUME_FLASH_MS as u64 / 2)),
+            Some(55)
+        );
         assert_eq!(k.saved(), [], "still within the window → no flush");
         let after = t0 + Duration::from_millis(VOLUME_FLASH_MS as u64 + 50);
         assert_eq!(k.c.tick(after), None, "readout expired");
@@ -422,19 +425,19 @@ mod controller_tests {
     }
 
     #[test]
-    fn flush_on_exit_writes_a_pending_nudge() {
+    fn flush_on_exit_queues_a_pending_nudge() {
         let mut k = Ctl::new(false, 0.50);
         k.c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         k.c.flush_on_exit();
         assert_eq!(k.saved(), [saved_ok(Setting::Volume)]);
         assert!(
             k.file().contains("volume"),
-            "a nudge-then-quit persists on exit"
+            "a nudge-then-quit queues its save on exit, and the drain writes it"
         );
     }
 
     #[test]
-    fn drop_persists_a_pending_nudge_even_without_the_quit_path() {
+    fn drop_queues_a_pending_nudge_even_without_the_quit_path() {
         let Ctl {
             mut c,
             saves,
@@ -446,13 +449,13 @@ mod controller_tests {
         assert_eq!(
             crate::panels::noted::saved(&saves, &mut landed),
             [],
-            "not yet persisted — still inside the debounce window"
+            "not yet queued — still inside the debounce window"
         );
         drop(c); // the ONLY exit signal: no quit key, no explicit flush_on_exit()
         assert_eq!(
             crate::panels::noted::saved(&saves, &mut landed),
             [saved_ok(Setting::Volume)],
-            "AudioController::drop must persist a pending nudge (the #752 Ctrl-C fix)"
+            "AudioController::drop must queue a pending nudge's save (the #752 Ctrl-C fix)"
         );
         assert!(std::fs::read_to_string(&path).unwrap().contains("volume"));
     }

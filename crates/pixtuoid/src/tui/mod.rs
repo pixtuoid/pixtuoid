@@ -1639,9 +1639,9 @@ mod apply_key_action_tests {
     }
 
     /// A choice the config refuses still shows this run, and the footer says it
-    /// reverts at the next launch until a later save of it lands.
+    /// reverts at the next launch until a later save of it is written.
     #[test]
-    fn a_refused_save_shows_in_the_footer_until_one_lands() {
+    fn a_refused_save_shows_in_the_footer_until_one_is_written() {
         let mut h = Harness::new();
         std::fs::write(&h.config_path, "not = [valid").unwrap();
         h.apply(KeyAction::OpenAppearance);

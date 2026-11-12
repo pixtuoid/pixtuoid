@@ -370,7 +370,7 @@ impl UiState {
         self.saved
     }
 
-    /// Hold a failed save in the footer until a later save of its setting lands:
+    /// Hold a failed save in the footer until a later save of its setting is written:
     /// in TUI mode the alternate screen owns the terminal, so the warn-floor log
     /// is not a user surface.
     pub(crate) fn note_save(&mut self, outcome: crate::config::SaveOutcome) {
