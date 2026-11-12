@@ -567,7 +567,7 @@ fn start_job<H: Host>(cx: &mut KeyCtx<'_, H>, job: PanelJob) {
         });
     match started {
         Ok(thread) => {
-            panel_threads().push(thread);
+            off_loop_threads().push(thread);
             // The line a change before it left would stand for this one.
             if job != PanelJob::Refresh {
                 cx.ui.connection.last_result = None;
@@ -581,11 +581,11 @@ fn start_job<H: Host>(cx: &mut KeyCtx<'_, H>, job: PanelJob) {
 /// The threads a panel or a painter started this run, for a quit to let them finish: a
 /// killed CLI leaves its change a rollback to write, and closed [`Saves`] their
 /// queued writes.
-static PANEL_THREADS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+static OFF_LOOP_THREADS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
     std::sync::Mutex::new(Vec::new());
 
-fn panel_threads() -> std::sync::MutexGuard<'static, Vec<std::thread::JoinHandle<()>>> {
-    let mut threads = PANEL_THREADS
+fn off_loop_threads() -> std::sync::MutexGuard<'static, Vec<std::thread::JoinHandle<()>>> {
+    let mut threads = OFF_LOOP_THREADS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     threads.retain(|thread| !thread.is_finished());
@@ -593,10 +593,10 @@ fn panel_threads() -> std::sync::MutexGuard<'static, Vec<std::thread::JoinHandle
 }
 
 /// Wait for every thread a panel or a painter started this run to end.
-pub(crate) fn join_panel_threads() {
+pub(crate) fn join_off_loop_threads() {
     // Taken out first: a `for` head's guard would hold the lock across the
     // joins, which a last `Saves` dropped meanwhile needs.
-    let threads = std::mem::take(&mut *panel_threads());
+    let threads = std::mem::take(&mut *off_loop_threads());
     for thread in threads {
         let _ = thread.join();
     }
@@ -604,9 +604,11 @@ pub(crate) fn join_panel_threads() {
 
 /// The painter's config writes, on a thread of their own in the order they
 /// were made: a write can block on a stalled disk, which the painter's loop
-/// must not wait out, and two saves of one setting must be written in that order,
-/// which the [config](crate::config)'s own turns do not keep. A setting's
-/// outcome comes back as a [`Landed::Saved`].
+/// must not wait out, and two saves of one setting must be written in that order:
+/// one thread draining one channel keeps it, std's mpsc delivering "in the same
+/// order as it was sent" (`library/std/src/sync/mpsc.rs:488-489`), where a thread
+/// per save would not (opinion). A setting's outcome comes back as a
+/// [`Landed::Saved`].
 #[derive(Clone)]
 pub(crate) struct Saves(std::sync::Arc<SavesThread>);
 
@@ -669,11 +671,11 @@ impl Saves {
 }
 
 impl Drop for SavesThread {
-    /// Hands the thread to the quit's [`join_panel_threads`] only once the queue closes,
+    /// Hands the thread to the quit's [`join_off_loop_threads`] only once the queue closes,
     /// so that join waits for it to write what is queued rather than for good.
     fn drop(&mut self) {
         if let Some(thread) = self.thread.take() {
-            panel_threads().push(thread);
+            off_loop_threads().push(thread);
         }
     }
 }
@@ -2469,7 +2471,9 @@ pub(crate) mod noted {
     /// Make `path` a FIFO whose opens for reading wait, as a stalled disk's
     /// reads do, until the returned thread opens it for writing [`STALL`] from
     /// now (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html>,
-    /// "When opening a FIFO"); its close then ends their reads empty.
+    /// "When opening a FIFO"); its close then ends their reads empty
+    /// (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html>,
+    /// "an empty pipe or FIFO").
     #[cfg(unix)]
     pub(crate) fn stall(path: &std::path::Path) -> std::thread::JoinHandle<()> {
         use std::os::unix::ffi::OsStrExt;

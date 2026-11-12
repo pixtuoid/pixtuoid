@@ -214,7 +214,7 @@ impl AudioController {
 
     /// The ONE exit verb for BOTH halves of the audio protocol: QUEUE a
     /// pending debounced volume's save, which the quit's
-    /// [`join_panel_threads`](crate::panels::join_panel_threads) or the
+    /// [`join_off_loop_threads`](crate::panels::join_off_loop_threads) or the
     /// window's teardown lands within [`EXIT_WAIT`](crate::EXIT_WAIT), THEN
     /// stop the device thread. Both run
     /// unconditionally, so a Ctrl-C / terminate / error can't lose a nudge that
@@ -484,7 +484,7 @@ mod controller_tests {
         let release = crate::panels::noted::stall(&path);
         c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         drop(c);
-        crate::panels::join_panel_threads();
+        crate::panels::join_off_loop_threads();
         assert!(
             std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()),
             "the quit left its queued save unwritten"

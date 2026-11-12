@@ -92,9 +92,9 @@ pub fn run() -> Result<()> {
     crate::install::io::kill_running();
     // A killed CLI's change still restores what it wrote, and queued saves are written.
     crate::within(
-        "panel-threads-end",
+        "off-loop-threads-end",
         crate::EXIT_WAIT,
-        crate::panels::join_panel_threads,
+        crate::panels::join_off_loop_threads,
     );
     // Before the re-raise, which ends the process with the queue unwritten.
     drop(log_flush);

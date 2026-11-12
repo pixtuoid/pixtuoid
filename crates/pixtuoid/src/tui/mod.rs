@@ -1522,7 +1522,7 @@ mod apply_key_action_tests {
             std::thread::sleep(std::time::Duration::from_millis(100));
             crate::panels::noted::open_gate(&config, false);
         });
-        crate::panels::join_panel_threads();
+        crate::panels::join_off_loop_threads();
         assert!(h.landed.try_recv().is_ok(), "the wait ended before the job");
     }
 
