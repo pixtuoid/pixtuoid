@@ -14,7 +14,7 @@
 //! `before_tool_call`), `before_agent_run`/`agent_end` require
 //! `allowConversationAccess`, and `session_end` fires on a clean stop but not on
 //! a kill. Running is therefore a self-healing decay keyed PER TURN, never a latch —
-//! the daemon-wide `last_seen` is refreshed by every decoded event, so keying the decay on it
+//! the daemon-wide `last_seen` is refreshed by every proof-of-life update, so keying the decay on it
 //! latched Running on a gateway that kept serving other traffic.
 
 use std::num::NonZeroU16;

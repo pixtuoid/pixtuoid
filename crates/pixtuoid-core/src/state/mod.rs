@@ -575,7 +575,7 @@ pub struct DaemonPresence {
     /// In-flight turns (running iff non-empty), each keyed by its correlation key
     /// and stamped with its LAST observation. The per-turn stamp is what makes
     /// the running-decay honest: the daemon-wide `last_seen` is refreshed by EVERY
-    /// decoded event, so on a gateway still serving other traffic a turn whose
+    /// proof-of-life update, so on a gateway still serving other traffic a turn whose
     /// `agent_end` was dropped would never age out and the mascot would latch
     /// Running forever.
     ///
@@ -583,7 +583,8 @@ pub struct DaemonPresence {
     /// dump can't strand a perpetual Running.
     #[serde(skip)]
     pub in_flight_turns: HashMap<TurnKey, SystemTime>,
-    /// The gateway pid currently armed for `ExitWatch` (None until first seen).
+    /// The gateway pid bound to this daemon, whose exit takes it Down: `None` while
+    /// unbound or Down, though the driver may arm a watch on an unbound pid.
     pub current_pid: Option<i32>,
 }
 
