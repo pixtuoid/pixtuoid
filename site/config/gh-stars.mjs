@@ -7,6 +7,7 @@ import process from 'node:process';
 // gh-stars.test.mjs pins install.json's copy, which JSON can't import.
 export const REPO_SLUG = 'pixtuoid/pixtuoid';
 export const GH_API_REPO = `https://api.github.com/repos/${REPO_SLUG}`;
+export const REPO_BLOB = `https://github.com/${REPO_SLUG}/blob/main`;
 // Shared with Statusline.astro's PR-feed fetch, so an offline/slow CI runner
 // fails every build-time GitHub call the same way.
 export const GH_FETCH_TIMEOUT_MS = 5000;

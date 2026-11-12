@@ -10,7 +10,7 @@ import { rewriteCspMeta } from './config/csp-hashes.mjs';
 import rehypeCallouts from './config/rehype-callouts.mjs';
 import rehypeBeautifulMermaid from './config/rehype-beautiful-mermaid.mjs';
 import rehypeScrollFocus from './config/rehype-scroll-focus.mjs';
-import { REPO_SLUG, fetchStarCount } from './config/gh-stars.mjs';
+import { REPO_BLOB, fetchStarCount } from './config/gh-stars.mjs';
 import { latestReleaseTag, resolveDisplayedVersion } from './config/released-version.mjs';
 import { COMPRESS_HTML } from './config/compress-html.mjs';
 import { workspacePackageField } from './config/workspace-package.mjs';
@@ -112,7 +112,6 @@ for (const [chId, name] of featureChannelOwner) {
 
 // Rewrite repo-relative markdown links to GitHub so they resolve once deployed.
 function rehypeRepoLinks() {
-  const repo = `https://github.com/${REPO_SLUG}/blob/main/`;
   const DOC_DIR = 'docs'; // the rendered docs live in docs/ — links resolve from there
   const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
   const DANGEROUS = /^\s*(?:javascript|data|vbscript):/i;
@@ -130,7 +129,7 @@ function rehypeRepoLinks() {
           .normalize(joined)
           .replace(/^(?:\.\.\/)+/, '')
           .replace(/^\/+/, '');
-        node.properties.href = repo + rel;
+        node.properties.href = `${REPO_BLOB}/${rel}`;
       }
     }
   };
