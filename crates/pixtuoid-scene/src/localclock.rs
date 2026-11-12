@@ -73,10 +73,10 @@ fn local(day: u32, h: u32, m: u32) -> SystemTime {
         .expect("a helper's time in the weeks after day 0 is valid and unambiguous in every zone")
 }
 
-/// Local `h:m` on `day`'s own local date, not day 0: a run on
+/// Local `h:m` on `at`'s own local date, not day 0: a run on
 /// today's sky. `None` where that local time doesn't exist.
-pub(crate) fn on_date_of(day: SystemTime, h: u32, m: u32) -> Option<SystemTime> {
-    local_instant(local_time(day).date(), h, m)
+pub(crate) fn on_date_of(at: SystemTime, h: u32, m: u32) -> Option<SystemTime> {
+    local_instant(local_time(at).date(), h, m)
 }
 
 /// Local `h:00` on day 0.
