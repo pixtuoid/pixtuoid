@@ -17,8 +17,9 @@ use crate::{
     start_id, vouch_snapshot, write_lines,
 };
 
-/// A negative check's window here: several 100 ms probe polls past every
-/// negative-vouch span these tests set, so a wrong `SessionEnd` lands inside it.
+/// A negative check's window here: several 100 ms probe polls past the short
+/// negative-vouch spans these tests set, and past an exit receipt, so a wrong
+/// `SessionEnd` from either rung lands inside it.
 const QUIET: Duration = Duration::from_millis(1500);
 
 #[tokio::test]
