@@ -27,6 +27,7 @@ const QUIET: Duration = PROBE_POLL.saturating_mul(15);
 
 /// A negative-vouch span no wait here reaches, so only the instant-exit rung
 /// can end a session.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 const NO_VOUCH: Duration = Duration::from_secs(3600);
 
 #[tokio::test]
