@@ -483,9 +483,9 @@ const HOST_CLI_LIMIT: Duration = Duration::from_secs(300);
 /// host CLI still meets the kill.
 const EXIT_POLL: Duration = Duration::from_millis(20);
 
-/// `command`'s output with stdin null, or `None` past `limit`, which kills its
-/// process group (Unix) or Job Object (Windows): a launcher can leave the hung
-/// work to a child of its own.
+/// `command`'s output with stdin null, or `None` past `limit`. Past it, or on an
+/// error, its process group (Unix) or Job Object (Windows) is killed: a launcher
+/// can leave the hung work to a child of its own.
 fn output_within(
     command: std::process::Command,
     limit: Duration,
@@ -506,16 +506,27 @@ fn output_within(
         || Ok(std::sync::Arc::new(std::sync::Mutex::new(command.spawn()?))),
         handle_of,
     )?;
+    // Killed before `_listed` drops, so no error unlists a running group.
+    wait_out(&child, deadline).inspect_err(|_| {
+        let _ = locked(&child).start_kill();
+    })
+}
+
+/// `child`'s output, or `None` once `deadline` passes, which kills it.
+fn wait_out(
+    child: &Shared,
+    deadline: std::time::Instant,
+) -> std::io::Result<Option<std::process::Output>> {
     let (stdout, stderr) = {
-        let mut child = locked(&child);
+        let mut child = locked(child);
         (drain(child.stdout().take())?, drain(child.stderr().take())?)
     };
     let status = loop {
-        if let Some(status) = locked(&child).try_wait()? {
+        if let Some(status) = locked(child).try_wait()? {
             break status;
         }
         if std::time::Instant::now() >= deadline {
-            let mut child = locked(&child);
+            let mut child = locked(child);
             child.start_kill()?;
             // Reaped, so no zombie outlives the run. Not on Windows:
             // process-wrap's wait there waits out every process in the job,
@@ -537,7 +548,7 @@ fn output_within(
         })),
         _ => {
             // The group can have emptied since the wait ran out.
-            let _ = locked(&child).start_kill();
+            let _ = locked(child).start_kill();
             Ok(None)
         }
     }
