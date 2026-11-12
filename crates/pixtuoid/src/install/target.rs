@@ -253,10 +253,18 @@ pub enum Refresh {
     /// Its next start loads the files in place.
     NextStart,
     Recopy(PluginCopy),
-    /// The CLI loads the files in place but keeps what it loaded until told. The
-    /// reload may re-enable a plugin the user disabled, so it runs only while
-    /// [`HostRegistration::is_registered`].
-    Reload(fn() -> Result<()>),
+    Reload(PluginReload),
+}
+
+/// A CLI that loads the files in place but keeps what it loaded until told.
+#[derive(Debug)]
+pub struct PluginReload {
+    /// Whether a reload stopped after unloading the plugin, which leaves it off by
+    /// pixtuoid's doing rather than the user's.
+    pub pending: fn() -> Result<bool>,
+    /// Load the files on disk. It may re-enable a plugin the user disabled, so it runs
+    /// only while [`HostRegistration::is_registered`] or [`Self::pending`].
+    pub reload: fn() -> Result<()>,
 }
 
 /// A CLI that runs its own copy of the plugin, so a rewrite of the files reaches it
@@ -270,11 +278,12 @@ pub struct PluginCopy {
     pub recopy: fn() -> Result<()>,
 }
 
-/// A config of the CLI's own that pixtuoid strips its entries from.
+/// A config of the CLI's own that pixtuoid strips the shim's entries from.
 #[derive(Debug)]
 pub struct CliConfig {
     pub path: fn() -> Result<PathBuf>,
-    /// Remove only pixtuoid's entries, as `Primary::Config`'s `merge_uninstall`.
+    /// Remove every entry whose command runs the shim
+    /// ([`invokes_shim`](crate::install::hook_cmd::invokes_shim)), a hand-written one included.
     pub strip: fn(content: &str) -> Result<MergeOutcome>,
 }
 

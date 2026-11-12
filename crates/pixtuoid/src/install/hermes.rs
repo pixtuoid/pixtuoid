@@ -15,7 +15,9 @@ use saphyr::{MappingOwned, ScalarOwned, YamlOwned};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge::{self, SentinelPlugin};
-use crate::install::target::{CliConfig, HostRegistration, MergeOutcome, Refresh, Unregistered};
+use crate::install::target::{
+    CliConfig, HostRegistration, MergeOutcome, PluginReload, Refresh, Unregistered,
+};
 use crate::install::verify::{SchemaParse, ShimRef};
 
 pub(crate) const HOST: HostRegistration = HostRegistration {
@@ -24,7 +26,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     unregister,
     is_registered,
     home,
-    refresh: Refresh::Reload(reload),
+    refresh: Refresh::Reload(PluginReload {
+        pending: reload_pending,
+        reload,
+    }),
     shim_hooks: Some(CliConfig {
         path: config_path,
         strip: |content| merge::strip_shim_yaml(content, "config.yaml"),
@@ -127,9 +132,9 @@ fn register(config: &Path) -> Result<()> {
     let dir = plugin_dir(config)?;
     let manifest_path = dir.join(MANIFEST);
     let fresh = !manifest_path.exists();
-    let enabled = is_registered()?;
+    let reload_due = is_registered()? || reload_pending()?;
     io::write_config_atomic(&manifest_path, &manifest())?;
-    let registered = if enabled {
+    let registered = if reload_due {
         reload()
     } else {
         CLI.run(&[PLUGINS.as_ref(), ENABLE.as_ref(), NAME.as_ref()])
@@ -151,17 +156,20 @@ fn register(config: &Path) -> Result<()> {
 /// which unloads it, then enabled, which loads the files on disk
 /// (`hermes_cli/plugins_activation.py:118-121`).
 fn reload() -> Result<()> {
-    let pending = reload_pending()?;
-    io::write_config_atomic(&pending, "")?;
+    let marker = pending_marker()?;
+    io::write_config_atomic(&marker, "")?;
     CLI.run(&[PLUGINS.as_ref(), DISABLE.as_ref(), NAME.as_ref()])?;
     CLI.run(&[PLUGINS.as_ref(), ENABLE.as_ref(), NAME.as_ref()])?;
-    io::lock_config(&pending)?.restore(None)
+    io::lock_config(&marker)?.restore(None)
 }
 
-/// Marks a [`reload`] whose `disable` may have run without its `enable`, which
-/// [`is_registered`] reads as still enabled, so the next reload re-enables the plugin
-/// rather than leaving it off as a user who disabled it would.
-fn reload_pending() -> Result<PathBuf> {
+fn reload_pending() -> Result<bool> {
+    Ok(pending_marker()?.exists())
+}
+
+/// Spans a [`reload`] from before its `disable` to after its `enable`
+/// ([`PluginReload::pending`]).
+fn pending_marker() -> Result<PathBuf> {
     Ok(default_config_path()?.with_file_name("reload-pending"))
 }
 
@@ -190,9 +198,6 @@ fn is_ours(plugin: &str) -> bool {
 
 /// Read-only, so a status check starts no CLI.
 fn is_registered() -> Result<bool> {
-    if reload_pending()?.exists() {
-        return Ok(true);
-    }
     let root = parse_root_mapping(&io::read_config(&config_path()?)?)?;
     let listed = root
         .get(&ystr(PLUGINS))

@@ -73,8 +73,8 @@ The components that handle untrusted or privileged input, and how they're bounde
    subcommands, so each CLI writes its own settings — and otherwise edits the CLI's config through a single advisory-locked,
    `fsync` + atomic-rename writer that **preserves the file's permissions,
    follows stow symlinks, and changes only pixtuoid's own entries**. A
-   rewritten config keeps every other setting, though not its comments or
-   formatting.
+   rewritten config keeps every other setting; a YAML or TOML one is edited in
+   place, comments and formatting included, and a JSON one is re-emitted.
    Installs are idempotent and reversible (*disconnect* removes the plugin or the hook entries,
    and connect and disconnect remove from Claude Code's, Codex's, Reasonix's, Hermes's and Antigravity's
    own config every hook whose command runs pixtuoid's shim, whichever release wrote it). Past an explicit connect/disconnect,

@@ -1454,6 +1454,8 @@ case "$*" in
 esac
 "#;
 
+/// `findstr /b`, never `/x`: the rule's rewrite leaves LF-only lines, which `/x`
+/// never matches, as it anchors at a CR (ss64.com/nt/findstr.html).
 const FAKE_CODEX_CMD: &str = "@echo off\r
 set \"d=%~dp0\"\r
 set \"c=%CODEX_HOME%\\config.toml\"\r
@@ -1463,14 +1465,14 @@ if exist \"%d%codex-root\" set /p root=<\"%d%codex-root\"\r
 >>\"%d%calls.log\" echo codex %~1 %~2 %~3 %~4\r
 if defined FAKE_HOST_FAIL if \"codex %*\"==\"%FAKE_HOST_FAIL%\" exit /b 1\r
 if \"%1 %2 %3\"==\"plugin marketplace add\" (>\"%d%codex-root\" echo %~4)\r
-if \"%1 %2 %3\"==\"plugin marketplace add\" ((findstr /l /x /c:\"[marketplaces.pixtuoid]\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo [marketplaces.pixtuoid]& >>\"%c%\" echo source_type = 'local'& >>\"%c%\" echo source = '%~4'))& exit /b 0)\r
+if \"%1 %2 %3\"==\"plugin marketplace add\" ((findstr /l /b /c:\"[marketplaces.pixtuoid]\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo [marketplaces.pixtuoid]& >>\"%c%\" echo source_type = 'local'& >>\"%c%\" echo source = '%~4'))& exit /b 0)\r
 if \"%1 %2 %3\"==\"plugin marketplace remove\" ((findstr /l /v /b /c:\"[marketplaces.pixtuoid]\" /c:\"source_type = \" /c:\"source = \" \"%c%\" >\"%c%.tmp\"& move /y \"%c%.tmp\" \"%c%\" >nul)& exit /b 0)\r
 if \"%1 %2\"==\"plugin add\" if not defined root exit /b 1\r
 if \"%1 %2\"==\"plugin add\" (if exist \"%cache%\" rmdir /s /q \"%cache%\")\r
 if \"%1 %2\"==\"plugin add\" (for /d %%p in (\"%root%\\*\") do xcopy /e /i /y /q \"%%p\" \"%cache%\" >nul)\r
-if \"%1 %2\"==\"plugin add\" ((findstr /l /x /c:\"[plugins.'pixtuoid@pixtuoid']\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo [plugins.'pixtuoid@pixtuoid']& >>\"%c%\" echo enabled = true))& exit /b 0)\r
+if \"%1 %2\"==\"plugin add\" ((findstr /l /b /c:\"[plugins.'pixtuoid@pixtuoid']\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo [plugins.'pixtuoid@pixtuoid']& >>\"%c%\" echo enabled = true))& exit /b 0)\r
 if \"%1 %2\"==\"plugin remove\" (if exist \"%cache%\" rmdir /s /q \"%cache%\")\r
-if \"%1 %2\"==\"plugin remove\" ((findstr /l /v /x /c:\"[plugins.'pixtuoid@pixtuoid']\" /c:\"enabled = true\" \"%c%\" >\"%c%.tmp\"& move /y \"%c%.tmp\" \"%c%\" >nul)& exit /b 0)\r
+if \"%1 %2\"==\"plugin remove\" ((findstr /l /v /b /c:\"[plugins.'pixtuoid@pixtuoid']\" /c:\"enabled = true\" \"%c%\" >\"%c%.tmp\"& move /y \"%c%.tmp\" \"%c%\" >nul)& exit /b 0)\r
 exit /b 0\r
 ";
 
@@ -2115,29 +2117,46 @@ fn a_failing_deregister_still_takes_the_shim_entries_out() {
     });
 }
 
-/// A reload whose `enable` fails after its `disable` ran stays registered, so the
-/// next reload, which a converge runs only while registered, re-enables the plugin.
+/// A reload whose `enable` fails after its `disable` ran leaves the plugin off, which
+/// verify reports, and pending until the next reload or connect turns it back on.
 #[test]
 fn a_half_done_hermes_reload_is_finished_by_the_next() {
     with_fake_hosts(|_| {
-        install_target_from(&HERMES, None, Some(PathBuf::from("/fake/pixtuoid-hook"))).unwrap();
+        let connect = || {
+            install_target_from(&HERMES, None, Some(PathBuf::from("/fake/pixtuoid-hook"))).unwrap()
+        };
+        connect();
         let host = HERMES.host().unwrap();
-        let target::Refresh::Reload(reload) = host.refresh else {
+        let target::Refresh::Reload(r) = &host.refresh else {
             panic!("hermes reloads");
         };
-        temp_env::with_var(
-            "FAKE_HOST_FAIL",
-            Some("hermes plugins enable pixtuoid"),
-            || assert!(reload().is_err()),
-        );
+        let half_done = || {
+            temp_env::with_var(
+                "FAKE_HOST_FAIL",
+                Some("hermes plugins enable pixtuoid"),
+                || assert!((r.reload)().is_err()),
+            );
+        };
+        let finished = |by: &str| {
+            assert!((host.is_registered)().unwrap(), "{by}");
+            assert!(!(r.pending)().unwrap(), "{by}");
+        };
+        half_done();
+        assert!(!(host.is_registered)().unwrap(), "the plugin is off");
+        assert!((r.pending)().unwrap());
+        let v = verify_target(&HERMES, None);
         assert!(
-            (host.is_registered)().unwrap(),
-            "a half-done reload stays registered"
+            v.issues
+                .iter()
+                .any(|i| i.contains("not installed and enabled")),
+            "{:?}",
+            v.issues
         );
-        reload().unwrap();
-        assert!((host.is_registered)().unwrap());
-        let config = std::fs::read_to_string(hermes_config()).unwrap();
-        assert!(config.contains("  - pixtuoid"), "{config}");
+        (r.reload)().unwrap();
+        finished("a reload");
+        half_done();
+        connect();
+        finished("a connect");
     });
 }
 
@@ -2476,9 +2495,12 @@ fn connect_and_disconnect_take_every_shim_entry_out_of_the_clis_own_config() {
         let tmp = tempfile::TempDir::new().unwrap();
         let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
         let own = |t: &Target| (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
-        // Connects twice, then disconnects, checking the file after each against `kept`.
-        let round_trip = |t: &Target, primary: Option<PathBuf>, kept: &dyn Fn(&str)| {
+        // Seeds the file, connects twice, then seeds it again and disconnects, checking
+        // the file after each against `kept`.
+        let round_trip = |t: &Target, primary: Option<PathBuf>, seed: &str, kept: &dyn Fn(&str)| {
             let at = own(t);
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(&at, seed).unwrap();
             install_target_from(t, primary.clone(), hook()).unwrap();
             let once = std::fs::read_to_string(&at).unwrap();
             kept(&once);
@@ -2492,6 +2514,7 @@ fn connect_and_disconnect_take_every_shim_entry_out_of_the_clis_own_config() {
             };
             let twice = std::fs::read_to_string(&at).unwrap();
             assert_eq!(lines(&twice), lines(&once), "{}", t.name);
+            std::fs::write(&at, seed).unwrap();
             uninstall_target(t, primary).unwrap();
             kept(&std::fs::read_to_string(&at).unwrap());
         };
@@ -2517,10 +2540,7 @@ fn connect_and_disconnect_take_every_shim_entry_out_of_the_clis_own_config() {
                 serde_json::json!({ "lint": { "Stop": [user.clone()] } }),
             ),
         ] {
-            let at = own(t);
-            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
-            std::fs::write(&at, before.to_string()).unwrap();
-            round_trip(t, primary, &|content| {
+            round_trip(t, primary, &before.to_string(), &|content| {
                 let left: serde_json::Value = serde_json::from_str(content).unwrap();
                 for (k, v) in after.as_object().unwrap() {
                     assert_eq!(&left[k], v, "{}", t.name);
@@ -2533,25 +2553,25 @@ fn connect_and_disconnect_take_every_shim_entry_out_of_the_clis_own_config() {
             "    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      _pixtuoid: true\n";
         let user_yaml =
             "model: gpt\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh   # kept\n";
-        std::fs::write(hermes_config(), format!("{user_yaml}{ours}")).unwrap();
-        round_trip(&HERMES, None, &|content| {
+        round_trip(&HERMES, None, &format!("{user_yaml}{ours}"), &|content| {
             assert!(
                 content.starts_with(user_yaml) && !content.contains("pixtuoid-hook"),
                 "{content}"
             );
         });
 
-        std::fs::write(
-            codex_config(),
-            format!("{CODEX_USER_HOOK}{CODEX_LEGACY_HOOK}"),
-        )
-        .unwrap();
-        round_trip(&CODEX, Some(plugin_hooks_path(tmp.path())), &|content| {
-            assert!(
-                content.starts_with(CODEX_USER_HOOK) && !content.contains("pixtuoid-hook"),
-                "{content}"
-            );
-        });
+        let seed = format!("{CODEX_USER_HOOK}{CODEX_LEGACY_HOOK}");
+        round_trip(
+            &CODEX,
+            Some(plugin_hooks_path(tmp.path())),
+            &seed,
+            &|content| {
+                assert!(
+                    content.starts_with(CODEX_USER_HOOK) && !content.contains("pixtuoid-hook"),
+                    "{content}"
+                );
+            },
+        );
     });
 }
 

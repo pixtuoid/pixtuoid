@@ -520,8 +520,8 @@ pub(crate) fn yaml_file(content: &str, file: &str) -> anyhow::Result<yaml_edit::
 /// `out` in `content`'s line ending, CRLF when `content` broke every line with one,
 /// and ending in a newline, as npm's `package.json` save does (npm/package-json
 /// `lib/index.js:249-257` @ v8.0.0); an empty `out` stays empty. Every config
-/// rewrite but dsh's in-place yaml-edit rides it, pixtuoid's own `config.toml` save
-/// included.
+/// rewrite but yaml-edit's in place (dsh's patch list, Hermes's [`strip_shim_yaml`])
+/// rides it, pixtuoid's own `config.toml` save included.
 pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
@@ -552,7 +552,10 @@ mod tests {
                     {"matcher": "x", "hooks": [{"command": "mine"}, ours("'/opt/pixtuoid-hook' --source claude-code")]},
                     ours("PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'"),
                 ],
-                "PreToolUse": [ours("PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'")],
+                "PreToolUse": [
+                    ours("PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'"),
+                    ours(r"C:\PROGRA~1\PIXTUO~1.EXE --source reasonix"),
+                ],
                 "Empty": [],
             },
             "lint": {"Stop": []},

@@ -82,11 +82,24 @@ pub(crate) fn invokes_shim(command: &str) -> bool {
                 return program == bin
                     || program
                         .strip_prefix(bin)
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case(".exe"));
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case(".exe"))
+                    // Another long name on the `PIXTUO~` stem can hold that alias; only the shim
+                    // takes --source.
+                    || (is_short_shim(program) && words.any(|arg| arg == SOURCE_FLAG.trim()));
             }
         }
     }
     false
+}
+
+/// The shim's DOS 8.3 alias, `PIXTUO~<n>.EXE` in any case, which [`shell_hook_command`]
+/// writes on Windows in place of a cmd-unsafe path.
+fn is_short_shim(program: &str) -> bool {
+    program
+        .to_ascii_uppercase()
+        .strip_prefix("PIXTUO~")
+        .and_then(|rest| rest.strip_suffix(".EXE"))
+        .is_some_and(|n| n.parse::<u32>().is_ok())
 }
 
 fn is_env_name(name: &str) -> bool {
@@ -154,6 +167,8 @@ mod tests {
             "PIXTUOID_SOURCE=antigravity '/opt/pixtuoid-hook' --event Stop",
             r"C:\tools\pixtuoid-hook.exe --source claude-code",
             r#""C:\Program Files\pixtuoid\pixtuoid-hook.exe""#,
+            r"c:\progra~1\pixtuo~1\pixtuo~12.exe --source codex",
+            "PIXTUOID_SOURCE=codex '/opt/shims/pxhook'",
         ] {
             assert!(invokes_shim(ours), "{ours}");
         }
@@ -166,6 +181,8 @@ mod tests {
             "my-tool --hook /opt/bin/pixtuoid-hook",
             "'my tool' 'pixtuoid-hook' --source x",
             "FOO=1 echo PIXTUOID_SOURCE=x",
+            r"C:\PROGRA~1\PIXTUO~1\PIXTUO~2.EXE",
+            r"C:\PIXTUO~.EXE --source codex",
         ] {
             assert!(!invokes_shim(theirs), "{theirs}");
         }

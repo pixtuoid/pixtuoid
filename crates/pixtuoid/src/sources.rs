@@ -17,7 +17,7 @@ use pixtuoid_core::source::registry;
 use crate::config;
 use crate::install::{
     self, InstallOutcome, InstallReport, UninstallOutcome, UninstallReport,
-    target::{HostRegistration, Pickup, PluginCopy, Refresh, Target, by_source},
+    target::{HostRegistration, Pickup, PluginCopy, PluginReload, Refresh, Target, by_source},
 };
 use crate::runtime::ConnectedSources;
 
@@ -274,13 +274,13 @@ fn converge_owned_with(
                     false
                 }),
                 Refresh::Reload(reload) => {
-                    let failed = rewrote && reload_failed(host, *reload, t);
+                    let failed = reload_failed(host, reload, rewrote, t);
                     // The disk then says what the CLI runs, so the next launch rewrites
                     // and reloads again.
                     if failed && let Err(e) = install::put_back(&done.rewritten) {
                         tracing::warn!(cli = t.name, error = ?e, "could not put back the plugin its CLI still runs");
                     }
-                    failed
+                    rewrote && failed
                 }
             },
         };
@@ -301,11 +301,18 @@ fn recopy(host: &HostRegistration, copy: &PluginCopy, t: &Target) -> Result<bool
     Ok(true)
 }
 
-/// Run `reload` to load `t`'s rewritten plugin into its running CLI, and say
-/// whether that failed, leaving the CLI on the old one. A disabled plugin stays as
-/// the user left it.
-fn reload_failed(host: &HostRegistration, reload: fn() -> Result<()>, t: &Target) -> bool {
-    let reloaded = (host.is_registered)().and_then(|on| if on { reload() } else { Ok(()) });
+/// Run `reload` to load `t`'s plugin into its running CLI when it was rewritten or
+/// an earlier reload left it off, and say whether that failed, leaving the CLI on the
+/// old one. A plugin the user disabled stays as they left it.
+fn reload_failed(
+    host: &HostRegistration,
+    reload: &PluginReload,
+    rewrote: bool,
+    t: &Target,
+) -> bool {
+    let reloaded = (reload.pending)()
+        .and_then(|pending| Ok(pending || (rewrote && (host.is_registered)()?)))
+        .and_then(|due| if due { (reload.reload)() } else { Ok(()) });
     if let Err(e) = &reloaded {
         tracing::warn!(cli = t.name, error = ?e, "could not reload the plugin into its CLI");
     }
@@ -1096,6 +1103,7 @@ mod tests {
 
     static RELOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     static RELOAD_FAILS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
     /// A host that loads the files in place and keeps what it loaded until told.
     static RELOADING_HOST: HostRegistration = HostRegistration {
@@ -1104,13 +1112,16 @@ mod tests {
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
         home: || Ok(std::env::temp_dir()),
-        refresh: Refresh::Reload(|| {
-            use std::sync::atomic::Ordering::SeqCst;
-            if RELOAD_FAILS.load(SeqCst) {
-                anyhow::bail!("no gateway answered");
-            }
-            RELOADS.fetch_add(1, SeqCst);
-            Ok(())
+        refresh: Refresh::Reload(PluginReload {
+            pending: || Ok(PENDING.load(std::sync::atomic::Ordering::SeqCst)),
+            reload: || {
+                use std::sync::atomic::Ordering::SeqCst;
+                if RELOAD_FAILS.load(SeqCst) {
+                    anyhow::bail!("no gateway answered");
+                }
+                RELOADS.fetch_add(1, SeqCst);
+                Ok(())
+            },
         }),
         shim_hooks: None,
     };
@@ -1129,13 +1140,16 @@ mod tests {
         let connected = set(&["hermes"]);
         let dir = tempfile::TempDir::new().unwrap();
         let plugin = dir.path().join("__init__.py");
-        for (enabled, fails, rewrote, reloads, announced) in [
-            (true, false, true, 1, false),
-            (true, true, true, 0, true),
-            (false, false, true, 0, false),
-            (true, false, false, 0, false),
+        for (enabled, pending, fails, rewrote, reloads, announced) in [
+            (true, false, false, true, 1, false),
+            (true, false, true, true, 0, true),
+            (false, false, false, true, 0, false),
+            (true, false, false, false, 0, false),
+            (false, true, false, false, 1, false),
+            (false, true, true, false, 0, false),
         ] {
             ENABLED.store(enabled, SeqCst);
+            PENDING.store(pending, SeqCst);
             RELOAD_FAILS.store(fails, SeqCst);
             RELOADS.store(0, SeqCst);
             let refreshed = converge_owned_with(
@@ -1153,7 +1167,8 @@ mod tests {
                     })
                 },
             );
-            let case = format!("enabled {enabled}, fails {fails}, rewrote {rewrote}");
+            let case =
+                format!("enabled {enabled}, pending {pending}, fails {fails}, rewrote {rewrote}");
             assert_eq!(RELOADS.load(SeqCst), reloads, "{case}");
             assert_eq!(!refreshed.is_empty(), announced, "{case}");
         }
