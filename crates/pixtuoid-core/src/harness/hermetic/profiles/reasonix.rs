@@ -35,11 +35,11 @@ pub(crate) const PROFILE: Profile = Profile {
     package: Package::Npm("reasonix"),
     plugin_types: &[],
     // A non-read-only tool is denied headless; this allows the ones the
-    // spawns need (`docs/CLI.md:502-503`, `:517-519`).
+    // spawns need (`docs/CLI.md:525-531` @ v2.60.0).
     invocation: &[
         "reasonix",
         "--allowed-tools",
-        "task,explore",
+        "spawn_agents,explore",
         "-p",
         Placeholder::Prompt.as_str(),
     ],
@@ -113,15 +113,12 @@ model = "guardian-model"
                 "SessionStart",
                 "UserPromptSubmit",
                 "PreToolUse",
-                "SubagentStart",
                 "PostToolUse",
-                "SubagentStop",
                 "Stop",
                 "SessionEnd",
             ],
             turn: Turn::PROFILE,
         },
-        // A skill tool's child fires no SubagentStart or SubagentStop.
         Scenario {
             name: "explore",
             shape: Shape::Subagent,

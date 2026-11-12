@@ -6,7 +6,7 @@
     },
     {
       "match": { "hasToolResult": false },
-      "response": { "toolCalls": [ { "name": "task", "arguments": { "description": "Read the note", "prompt": "CHILD-TASK: read NOTE.txt and report its text." } } ] }
+      "response": { "toolCalls": [ { "name": "spawn_agents", "arguments": { "tasks": [ { "title": "Read the note", "task": "CHILD-TASK: read NOTE.txt and report its text." } ] } } ] }
     },
     {
       "match": { "toolResultContains": "{note}" },
