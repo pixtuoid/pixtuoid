@@ -632,7 +632,7 @@ fn result_line(
 ) -> String {
     match done {
         Ok(changed) => changed.line(name),
-        Err(e) => connection::format_failure(op, name, &format!("{e:#}")),
+        Err(e) => connection::format_failure(op, name, &crate::install::io::failure_reason(e)),
     }
 }
 
@@ -1994,6 +1994,17 @@ mod dispatch_tests {
             connected.is_connected("copilot"),
             "still flagged on disk, so still connected"
         );
+    }
+
+    /// The user can toggle the row again, so a busy config's line says it works.
+    #[test]
+    fn a_busy_configs_failure_line_tells_the_user_to_retry() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp.path().join("config.toml");
+        let connected = crate::runtime::ConnectedSources::default();
+        let _held = crate::install::io::lock_config(&cfg).unwrap();
+        let line = set_connected(&cfg, &connected, "copilot", "Copilot CLI", true).line;
+        assert!(line.ends_with("; try again once it finishes"), "{line}");
     }
 
     /// The worker runs the job it is handed, then reads the rows from the

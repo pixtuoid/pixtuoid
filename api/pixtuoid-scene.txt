@@ -1816,6 +1816,7 @@ pub pixtuoid_scene::pet::PetKind::Cat
 pub pixtuoid_scene::pet::PetKind::Dog
 impl pixtuoid_scene::pet::PetKind
 pub const pixtuoid_scene::pet::PetKind::ALL: &'static [pixtuoid_scene::pet::PetKind]
+pub fn pixtuoid_scene::pet::PetKind::config_name(self) -> &'static str
 pub fn pixtuoid_scene::pet::PetKind::default_name(self) -> &'static str
 pub fn pixtuoid_scene::pet::PetKind::from_config_name(&str) -> core::option::Option<Self>
 pub fn pixtuoid_scene::pet::PetKind::sit_anim(self) -> pixtuoid_scene::pack::Piece

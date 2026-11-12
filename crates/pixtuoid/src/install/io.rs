@@ -295,9 +295,37 @@ pub(crate) fn lock_config(path: &Path) -> Result<ConfigLock> {
     let lock_path = sibling(&target, "lock");
     let file = open_lock_sidecar(&lock_path)
         .with_context(|| format!("opening {}", lock_path.display()))?;
-    file.try_lock()
-        .map_err(|e| anyhow!("could not lock {}: {e}", lock_path.display()))?;
-    Ok(ConfigLock { target, file })
+    match file.try_lock() {
+        Ok(()) => Ok(ConfigLock { target, file }),
+        Err(std::fs::TryLockError::WouldBlock) => Err(ConfigBusy(target).into()),
+        Err(std::fs::TryLockError::Error(e)) => {
+            Err(e).with_context(|| format!("could not lock {}", lock_path.display()))
+        }
+    }
+}
+
+/// [`lock_config`]'s contention: another pixtuoid holds the config's lock.
+#[derive(Debug)]
+pub(crate) struct ConfigBusy(PathBuf);
+
+impl std::fmt::Display for ConfigBusy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "another pixtuoid is changing {}", self.0.display())
+    }
+}
+
+impl std::error::Error for ConfigBusy {}
+
+/// `e`'s chain as the user who asked for the change reads it: after a
+/// [`ConfigBusy`], that asking again works once the other pixtuoid finishes,
+/// which a caller that retries on its own must not say.
+pub(crate) fn failure_reason(e: &anyhow::Error) -> String {
+    let retry = if e.downcast_ref::<ConfigBusy>().is_some() {
+        "; try again once it finishes"
+    } else {
+        ""
+    };
+    format!("{e:#}{retry}")
 }
 
 fn create_parent(target: &Path) -> Result<()> {
@@ -1189,9 +1217,31 @@ mod tests {
         let p = dir.path().join("settings.json");
         let guard = lock_config(&p).unwrap();
         let err = lock_config(&p).expect_err("a second lock on the same config must fail");
-        assert!(err.to_string().contains("could not lock"), "got: {err:#}");
+        assert!(err.downcast_ref::<ConfigBusy>().is_some(), "{err:#}");
         drop(guard);
         lock_config(&p).expect("the lock is released when the guard drops");
+    }
+
+    /// The lock's own error names only the contention; only a change the
+    /// user asked for adds that asking again works, which a caller that
+    /// retries on its own must not say.
+    #[test]
+    fn a_busy_config_names_its_holder_and_only_the_asker_hears_retry() {
+        let dir = TempDir::new().unwrap();
+        let p = dir.path().join("settings.json");
+        let _guard = lock_config(&p).unwrap();
+        let err = lock_config(&p).unwrap_err();
+        let busy = format!("another pixtuoid is changing {}", p.display());
+        assert_eq!(format!("{err:#}"), busy);
+        let err = err.context("saving");
+        assert_eq!(
+            failure_reason(&err),
+            format!(
+                "saving: another pixtuoid is changing {}; try again once it finishes",
+                p.display()
+            )
+        );
+        assert_eq!(failure_reason(&anyhow!("boom")), "boom");
     }
 
     #[test]

@@ -152,18 +152,8 @@ struct SnapshotArgs {
     #[arg(long, value_delimiter = ',')]
     openclaw_ports: Vec<String>,
 
-    /// Override local hour-of-day (0–23) used by time-of-day lighting.
-    #[arg(long)]
-    now_hour: Option<u32>,
-
-    /// Override the local day (1 = `pixtuoid_scene::localclock`'s day 0) used by time-of-day.
-    #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32).range(1..))]
-    now_day: u32,
-
-    /// Seconds past `--now-hour` (0–3599), fine enough to sample a weather
-    /// transition.
-    #[arg(long, default_value_t = 0, requires = "now_hour", value_parser = clap::value_parser!(u64).range(0..3600))]
-    now_sec: u64,
+    #[command(flatten)]
+    clock: pixtuoid::dev::ClockArgs,
 
     /// Force a specific weather, bypassing the clock-based 10-minute cycle.
     /// One of: clear | rain | storm | snow | fog | overcast | windy | smog.
@@ -200,13 +190,12 @@ struct SnapshotArgs {
 
     /// Force a hover tooltip at terminal cell "x,y" (for screenshots / shadow
     /// visual checks), e.g. --hover 30,40.
-    #[arg(long, value_name = "X,Y", conflicts_with = "animation")]
-    hover: Option<String>,
+    #[arg(long, value_name = "X,Y", conflicts_with = "animation", value_parser = |cell: &str| pixtuoid::dev::parse_pair::<u16>(cell, ',', "X,Y cell"))]
+    hover: Option<(u16, u16)>,
 
-    /// Add a wandering office pet to a renderer-driven --gif capture
-    /// (cat | dog).
-    #[arg(long, value_name = "KIND", requires = "gif", conflicts_with = "anim")]
-    pets: Option<String>,
+    /// Add a wandering office pet to a renderer-driven --gif capture.
+    #[arg(long, value_name = "KIND", requires = "gif", conflicts_with = "anim", value_parser = pixtuoid::dev::pet_parser())]
+    pets: Option<pixtuoid_scene::pet::PetKind>,
 
     /// Render with the agent-dashboard popup open over a representative mixed
     /// cc/cx/rx scene.
@@ -340,16 +329,7 @@ fn parse_insets(s: &str) -> Result<pixtuoid_scene::layout::Insets, String> {
 
 /// `--pixel`'s values: the engine's look ids.
 fn pixel_look() -> impl clap::builder::TypedValueParser<Value = LookKind> {
-    use clap::builder::TypedValueParser as _;
-    clap::builder::PossibleValuesParser::new(LookKind::ALL.iter().map(|look| look.name())).map(
-        |name| {
-            LookKind::ALL
-                .iter()
-                .copied()
-                .find(|look| look.name() == name)
-                .expect("each possible value is a look's id")
-        },
-    )
+    pixtuoid::dev::named_parser(LookKind::ALL, LookKind::name)
 }
 
 fn default_projects_root() -> String {
@@ -420,14 +400,7 @@ fn main() -> Result<()> {
         ),
     };
 
-    let now = match args.now_hour {
-        Some(h) => {
-            pixtuoid_scene::localclock::try_on_day(args.now_day - 1, h)
-                .with_context(|| format!("invalid --now-day/--now-hour {}:{h}", args.now_day))?
-                + std::time::Duration::from_secs(args.now_sec)
-        }
-        None => SystemTime::now(),
-    };
+    let now = args.clock.instant()?.unwrap_or_else(SystemTime::now);
     let cols = args.cols.unwrap_or(COLS);
     let rows = args.rows.unwrap_or(ROWS);
     let mut skip_ms = 0u64;
@@ -505,21 +478,14 @@ fn main() -> Result<()> {
     }
 
     let navigations = parse_navigations(&args.navigate_at)?;
-    let pet_vec: Vec<pixtuoid_scene::pet::Pet> = match args.pets.as_deref() {
-        None => vec![],
-        Some(kind_str) => {
-            use pixtuoid_scene::pet::{Pet, PetKind};
-            let kind = match kind_str {
-                "cat" => PetKind::Cat,
-                "dog" => PetKind::Dog,
-                other => anyhow::bail!("unknown --pets {:?}; valid: cat | dog", other),
-            };
-            vec![Pet {
-                kind,
-                name: "Pixel".into(),
-            }]
-        }
-    };
+    let pet_vec: Vec<pixtuoid_scene::pet::Pet> = args
+        .pets
+        .map(|kind| pixtuoid_scene::pet::Pet {
+            kind,
+            name: "Pixel".into(),
+        })
+        .into_iter()
+        .collect();
 
     let anim_job = AnimJob {
         path: &args.out,
@@ -755,10 +721,7 @@ fn main() -> Result<()> {
         now,
         conditions,
     );
-    draw_ctx.mouse_pos = args.hover.as_deref().and_then(|s| {
-        let (x, y) = s.split_once(',')?;
-        Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
-    });
+    draw_ctx.mouse_pos = args.hover;
     draw_ctx.debug_walkable = args.debug_walkable;
     draw_ctx.footer = draw_ctx.footer.with_warning(warning_text.as_deref());
     draw_ctx.overlays = frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]);
@@ -1034,6 +997,19 @@ mod tests {
     fn max_desks_refuses_zero() {
         assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "0"]).is_err());
         assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "1"]).is_ok());
+    }
+
+    /// A malformed cell used to mean no hover, silently.
+    #[test]
+    fn a_hover_cell_parses_spaced_or_not_and_a_malformed_one_is_refused() {
+        let hover = |cell: &str| {
+            SnapshotArgs::try_parse_from(["snapshot", "--hover", cell]).map(|a| a.hover)
+        };
+        assert_eq!(hover("30,40").unwrap(), Some((30, 40)));
+        assert_eq!(hover("30, 40").unwrap(), Some((30, 40)));
+        for bad in ["30;40", "30,y"] {
+            assert!(hover(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

@@ -32,8 +32,8 @@ pub(crate) const VOLUME_STEP: f32 = 0.05;
 /// volume-persist debounce window on both painters.
 pub(crate) const VOLUME_FLASH_MS: u128 = 1000;
 
-/// The two gestures both painters drive; the KEY→action map is painter-specific, the state
-/// transition ([`apply_audio_action`]) is not.
+/// The two gestures both painters drive, decoded by the one
+/// [`dispatch_key`](crate::panels::dispatch_key) and applied by [`apply_audio_action`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum AudioAction {
     ToggleMute,
