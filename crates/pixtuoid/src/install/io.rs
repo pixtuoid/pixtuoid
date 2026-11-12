@@ -1471,9 +1471,29 @@ mod tests {
     /// or job it no longer owns.
     #[test]
     fn a_finished_run_leaves_the_running_list() {
+        let slow = std::ffi::OsStr::new("slow");
         let none: [&std::ffi::OsStr; 0] = [];
-        let out = with_fake("echo done", "echo done", || FAKE.run_within(&none, LIMIT)).unwrap();
-        assert!(out.contains("done"), "{out}");
+        with_fake(
+            "[ \"$1\" = slow ] && sleep 2\necho done",
+            "if \"%~1\"==\"slow\" ping -n 3 127.0.0.1 >nul\r\necho done",
+            || {
+                std::thread::scope(|scope| {
+                    let held = scope.spawn(|| FAKE.run_within(&[slow], HANG));
+                    pixtuoid_core::harness::wait_until("the slow run listed", SLACK, || {
+                        Ok(running().handles.len() == 1)
+                    })
+                    .expect("the slow run is listed");
+                    let out = FAKE.run_within(&none, LIMIT).unwrap();
+                    assert!(out.contains("done"), "{out}");
+                    assert_eq!(
+                        running().handles.len(),
+                        1,
+                        "a finished run took another run off the list"
+                    );
+                    held.join().expect("the slow run ends").unwrap();
+                });
+            },
+        );
         assert_eq!(
             running().handles.len(),
             0,
