@@ -13,7 +13,7 @@ use pixtuoid_core::source::codex::CodexSource;
 use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::grok::GrokSource;
 
-use crate::{fast_watch, wait_for_session_start};
+use crate::{TRAIL, collect_for, collect_until, fast_watch, first_of, start_id};
 
 #[tokio::test]
 async fn codex_source_run_emits_events_from_rollout() {
@@ -49,17 +49,12 @@ async fn codex_source_run_emits_events_from_rollout() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut got_activity = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ToolUseStart { .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            got_activity = true;
-            break;
-        }
-    }
-    assert!(got_activity, "CodexSource::run should surface ToolUseStart");
+    collect_until(
+        &mut rx,
+        "CodexSource::run should surface ToolUseStart",
+        |e| matches!(e, AgentEvent::ToolUseStart { .. }),
+    )
+    .await;
     handle.abort();
 }
 
@@ -96,20 +91,12 @@ async fn antigravity_source_run_emits_events_from_transcript() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut got_activity = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ToolUseStart { .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            got_activity = true;
-            break;
-        }
-    }
-    assert!(
-        got_activity,
-        "AntigravitySource::run should surface ToolUseStart"
-    );
+    collect_until(
+        &mut rx,
+        "AntigravitySource::run should surface ToolUseStart",
+        |e| matches!(e, AgentEvent::ToolUseStart { .. }),
+    )
+    .await;
     handle.abort();
 }
 
@@ -152,20 +139,12 @@ async fn claude_code_source_run_emits_session_start_from_jsonl() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut got_start = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            got_start = true;
-            break;
-        }
-    }
-    assert!(
-        got_start,
-        "ClaudeCodeSource::run should surface SessionStart from the JSONL leg"
-    );
+    collect_until(
+        &mut rx,
+        "ClaudeCodeSource::run should surface SessionStart from the JSONL leg",
+        |e| matches!(e, AgentEvent::SessionStart { .. }),
+    )
+    .await;
     handle.abort();
 }
 
@@ -212,21 +191,16 @@ async fn claude_code_source_run_emits_usage_from_jsonl() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut got_usage = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::Usage { fresh_tokens, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            assert_eq!(fresh_tokens, 56_500, "fresh = in + cache_create + out");
-            got_usage = true;
-            break;
-        }
-    }
-    assert!(
-        got_usage,
-        "ClaudeCodeSource::run should surface Usage from a usage-bearing line"
-    );
+    let fresh_tokens = first_of(
+        &mut rx,
+        "ClaudeCodeSource::run should surface Usage from a usage-bearing line",
+        |e| match e {
+            AgentEvent::Usage { fresh_tokens, .. } => Some(*fresh_tokens),
+            _ => None,
+        },
+    )
+    .await;
+    assert_eq!(fresh_tokens, 56_500, "fresh = in + cache_create + out");
     handle.abort();
 }
 
@@ -270,26 +244,16 @@ async fn copilot_source_run_emits_session_start_from_events_jsonl() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut session_id = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            _,
-            AgentEvent::SessionStart {
-                source,
-                session_id: sid,
-                ..
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            assert_eq!(source, "copilot");
-            session_id = Some(sid);
-            break;
-        }
-    }
+    let (source, session_id) = first_of(&mut rx, "a copilot SessionStart", |e| match e {
+        AgentEvent::SessionStart {
+            source, session_id, ..
+        } => Some((source.clone(), session_id.clone())),
+        _ => None,
+    })
+    .await;
+    assert_eq!(source, "copilot");
     assert_eq!(
-        session_id.as_deref(),
-        Some("65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3"),
+        session_id, "65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3",
         "CopilotSource::run should surface a copilot SessionStart from events.jsonl"
     );
     handle.abort();
@@ -339,25 +303,18 @@ async fn grok_source_run_emits_events_from_updates_jsonl() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut saw_start = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_, AgentEvent::ToolUseStart { agent_id, .. }))) => {
-                // grok keys on the transcript's PARENT-DIR name, so the id the
-                // watcher mints must equal the hook leg's for the same session.
-                assert_eq!(agent_id, AgentId::from_parts("grok", session_id));
-                saw_start = true;
-                break;
-            }
-            Ok(Some(_)) => continue,
-            _ => continue,
-        }
-    }
-    assert!(
-        saw_start,
-        "GrokSource::run should surface ToolUseStart from updates.jsonl"
-    );
+    let agent_id = first_of(
+        &mut rx,
+        "GrokSource::run should surface ToolUseStart from updates.jsonl",
+        |e| match e {
+            AgentEvent::ToolUseStart { agent_id, .. } => Some(*agent_id),
+            _ => None,
+        },
+    )
+    .await;
+    // grok keys on the transcript's PARENT-DIR name, so the id the watcher
+    // mints must equal the hook leg's for the same session.
+    assert_eq!(agent_id, AgentId::from_parts("grok", session_id));
     handle.abort();
 }
 
@@ -390,10 +347,12 @@ async fn omp_source_run_watches_profile_roots_beside_the_primary() {
     write_omp_header(&transcript, "0197f0aa-0000-7000-8000-000000000021").await;
 
     let want = AgentId::from_parts("omp", &omp_watcher_key(&transcript));
-    assert!(
-        wait_for_session_start(&mut rx, want).await,
-        "a transcript under a PROFILE root must register like a primary one"
-    );
+    collect_until(
+        &mut rx,
+        "a transcript under a PROFILE root must register like a primary one",
+        |e| start_id(e) == Some(want),
+    )
+    .await;
     handle.abort();
 }
 
@@ -458,26 +417,30 @@ async fn omp_source_rescan_hot_plugs_a_profile_created_mid_run() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     let late =
         write_profile_session(dir.path(), "late", "0197f0aa-0000-7000-8000-000000000022").await;
-    assert!(
-        wait_for_session_start(&mut rx, late).await,
-        "a profile created after startup must gain a watcher without a restart"
-    );
+    collect_until(
+        &mut rx,
+        "a profile created after startup must gain a watcher without a restart",
+        |e| start_id(e) == Some(late),
+    )
+    .await;
 
     // A second profile re-lists the first: the already-bound root must not be
     // disturbed. (Watcher-count dedup itself is not observable here — one
     // watcher already emits SessionStart twice, seed + decoded header.)
     let later =
         write_profile_session(dir.path(), "later", "0197f0aa-0000-7000-8000-000000000023").await;
-    assert!(
-        wait_for_session_start(&mut rx, later).await,
-        "a second profile must gain a watcher too"
-    );
+    collect_until(&mut rx, "a second profile must gain a watcher too", |e| {
+        start_id(e) == Some(later)
+    })
+    .await;
     let again =
         write_profile_session(dir.path(), "late", "0197f0aa-0000-7000-8000-000000000024").await;
-    assert!(
-        wait_for_session_start(&mut rx, again).await,
-        "a re-listed root must keep registering new transcripts"
-    );
+    collect_until(
+        &mut rx,
+        "a re-listed root must keep registering new transcripts",
+        |e| start_id(e) == Some(again),
+    )
+    .await;
     handle.abort();
 }
 
@@ -497,10 +460,12 @@ async fn omp_source_hot_plugs_a_profiles_dir_created_mid_run() {
     tokio::time::sleep(Duration::from_millis(300)).await;
     let first =
         write_profile_session(dir.path(), "first", "0197f0aa-0000-7000-8000-000000000025").await;
-    assert!(
-        wait_for_session_start(&mut rx, first).await,
-        "the first profile must gain a watcher without a restart"
-    );
+    collect_until(
+        &mut rx,
+        "the first profile must gain a watcher without a restart",
+        |e| start_id(e) == Some(first),
+    )
+    .await;
     handle.abort();
 }
 
@@ -562,29 +527,23 @@ async fn omp_source_run_links_a_nested_subagent_to_its_root() {
 
     let root_id = AgentId::from_parts("omp", &omp_watcher_key(&root_transcript));
     let child_id = AgentId::from_parts("omp", &omp_watcher_key(&child_transcript));
-    let mut child_linked = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline && !child_linked {
-        if let Ok(Some((
-            _,
+    let (agent_id, source, parent) = first_of(
+        &mut rx,
+        "OmpSource::run should surface the nested child's parent-linked SessionStart",
+        |e| match e {
             AgentEvent::SessionStart {
                 agent_id,
                 source,
                 parent_id: Some(parent),
                 ..
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            assert_eq!(source, "omp");
-            assert_eq!(agent_id, child_id, "the parented start must be the child");
-            assert_eq!(parent, root_id, "child must link to the root stem's id");
-            child_linked = true;
-        }
-    }
-    assert!(
-        child_linked,
-        "OmpSource::run should surface the nested child's parent-linked SessionStart"
-    );
+            } => Some((*agent_id, source.clone(), *parent)),
+            _ => None,
+        },
+    )
+    .await;
+    assert_eq!(source, "omp");
+    assert_eq!(agent_id, child_id, "the parented start must be the child");
+    assert_eq!(parent, root_id, "child must link to the root stem's id");
     handle.abort();
 }
 
@@ -616,20 +575,15 @@ async fn omp_ended_transcript_is_gated_at_first_sight_and_a_live_one_seeds() {
         let src = OmpSource::single_root(sessions_root);
         let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
-        let deadline =
-            tokio::time::Instant::now() + Duration::from_secs(if expect_start { 15 } else { 1 });
-        let mut saw_start = false;
-        while tokio::time::Instant::now() < deadline && !saw_start {
-            if let Ok(Some((_, AgentEvent::SessionStart { .. }))) =
-                tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            {
-                saw_start = true;
-            }
+        let is_start = |e: &AgentEvent| matches!(e, AgentEvent::SessionStart { .. });
+        let what = format!("{name}: a recent pre-existing transcript's SessionStart");
+        if expect_start {
+            collect_until(&mut rx, &what, is_start).await;
+        } else {
+            // Nothing to wait on: a first sight lands on the boot scan.
+            let boot = collect_for(&mut rx, TRAIL, &what).await;
+            assert!(!boot.iter().any(|(_, e)| is_start(e)), "{what}: {boot:?}");
         }
-        assert_eq!(
-            saw_start, expect_start,
-            "{name}: expected SessionStart={expect_start} for a recent pre-existing transcript"
-        );
         handle.abort();
     }
 }
@@ -686,28 +640,24 @@ async fn omp_oversized_first_sight_uses_the_head_title_through_source_wiring() {
             .await
     });
 
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    let mut rename_seen_at = None;
-    let mut rename_labels = Vec::new();
-    let mut saw_activity = false;
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_, AgentEvent::Rename { label, .. }))) => {
-                if rename_seen_at.is_none() {
-                    rename_seen_at = Some(tokio::time::Instant::now());
-                }
-                rename_labels.push(label);
-            }
-            Ok(Some((_, AgentEvent::ToolUseStart { .. }))) => saw_activity = true,
-            Ok(Some(_)) | Ok(None) | Err(_) => {}
-        }
-        if rename_seen_at.is_some_and(|at| at.elapsed() >= Duration::from_millis(500)) {
-            break;
-        }
-    }
+    let mut events = collect_until(&mut rx, "the oversized root's Rename", |e| {
+        matches!(e, AgentEvent::Rename { .. })
+    })
+    .await;
+    events.extend(collect_for(&mut rx, TRAIL, "past its Rename").await);
     handle.abort();
 
+    let rename_labels: Vec<&str> = events
+        .iter()
+        .filter_map(|(_, e)| match e {
+            AgentEvent::Rename { label, .. } => Some(label.as_str()),
+            _ => None,
+        })
+        .collect();
     assert_eq!(rename_labels, vec!["om·Oversized root title"]);
+    let saw_activity = events
+        .iter()
+        .any(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. }));
     assert!(
         !saw_activity,
         "the buried tool must not replay; otherwise this never tested the oversized path"
@@ -745,31 +695,27 @@ async fn codex_permission_hermetic_fixture_drives_the_reducer_through_its_turn()
     // events arrive in file order without a flaky per-line sleep.
     tokio::fs::write(&transcript, &body).await.unwrap();
 
+    // The read of the finite fixture ends on the event its last line decodes to.
+    let last = pixtuoid_core::harness::Drive::transcript_at("codex", &transcript)
+        .expect("a transcript source")
+        .lines(body.lines())
+        .events
+        .pop()
+        .expect("the fixture decodes");
+    let events = collect_until(&mut rx, "the fixture's turn", |e| *e == last).await;
+    handle.abort();
+
     let mut scene = SceneState::uniform(8);
     let mut reducer = Reducer::new();
     let mut states: Vec<ActivityState> = Vec::new();
-
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(300), rx.recv()).await {
-            Ok(Some((transport, ev))) => {
-                reducer.apply(&mut scene, ev, std::time::SystemTime::now(), transport);
-                if let Some(slot) = scene.agents.values().next()
-                    && states.last() != Some(&slot.state)
-                {
-                    states.push(slot.state.clone());
-                }
-            }
-            // A quiet gap once the finite fixture has been folded is the normal
-            // exit, not a timeout failure. A CLOSED channel ends the loop
-            // unconditionally — guarding that arm on `states` would spin at full
-            // CPU until the deadline on the very path where nothing can arrive.
-            Ok(None) => break,
-            Err(_) if !states.is_empty() => break,
-            _ => {}
+    for (transport, ev) in events {
+        reducer.apply(&mut scene, ev, std::time::SystemTime::now(), transport);
+        if let Some(slot) = scene.agents.values().next()
+            && states.last() != Some(&slot.state)
+        {
+            states.push(slot.state.clone());
         }
     }
-    handle.abort();
 
     let slot = scene
         .agents

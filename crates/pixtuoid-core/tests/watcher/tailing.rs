@@ -7,7 +7,10 @@ use tokio::sync::mpsc;
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::Transport;
 
-use crate::{copilot_start_line, copilot_tool_line, spawn_copilot};
+use crate::{
+    TRAIL, collect_for, collect_until, copilot_start_line, copilot_tool_line, spawn_copilot,
+    starts_call,
+};
 
 #[tokio::test]
 async fn watcher_emits_session_start_then_activity_for_tool_use() {
@@ -37,23 +40,19 @@ async fn watcher_emits_session_start_then_activity_for_tool_use() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut starts = Vec::new();
-    let mut activity = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((t, AgentEvent::SessionStart { agent_id, .. }))) => {
-                starts.push((t, agent_id));
-            }
-            Ok(Some((t, AgentEvent::ToolUseStart { agent_id, .. }))) => {
-                activity = Some((t, agent_id));
-                break;
-            }
-            Ok(Some(_)) => {}
-            Ok(None) | Err(_) => {}
-        }
-    }
-    let activity = activity.expect("expected ToolUseStart from JSONL watcher");
+    let mut events = collect_until(&mut rx, "a ToolUseStart from the JSONL watcher", |e| {
+        matches!(e, AgentEvent::ToolUseStart { .. })
+    })
+    .await;
+    let activity = events
+        .pop()
+        .map(|(t, e)| (t, e.agent_id()))
+        .expect("collect_until ends on its event");
+    let starts: Vec<_> = events
+        .iter()
+        .filter(|(_, e)| matches!(e, AgentEvent::SessionStart { .. }))
+        .map(|(t, e)| (*t, e.agent_id()))
+        .collect();
     assert!(
         !starts.is_empty(),
         "expected SessionStart from JSONL watcher"
@@ -96,25 +95,11 @@ async fn watcher_does_not_consume_partial_trailing_line() {
     f.flush().await.unwrap();
     drop(f);
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let mut seen_tool_use_ids: Vec<String> = Vec::new();
-    while let Ok(Some((_t, ev))) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
-    {
-        if let AgentEvent::ToolUseStart {
-            tool_use_id: Some(id),
-            ..
-        } = ev
-        {
-            seen_tool_use_ids.push(id);
-        }
-    }
+    let mut seen = collect_until(&mut rx, "tu_1 from the complete line", starts_call("tu_1")).await;
+    seen.extend(collect_for(&mut rx, TRAIL, "past the complete line").await);
     assert!(
-        seen_tool_use_ids.contains(&"tu_1".to_string()),
-        "expected tu_1 from complete line, got {seen_tool_use_ids:?}"
-    );
-    assert!(
-        !seen_tool_use_ids.contains(&"tu_2".to_string()),
-        "tu_2 came from a partial line and must not be emitted yet"
+        !seen.iter().any(|(_, e)| starts_call("tu_2")(e)),
+        "tu_2 came from a partial line and must not be emitted yet: {seen:?}"
     );
 
     let partial_tail = "s\"}}}\n";
@@ -127,20 +112,12 @@ async fn watcher_does_not_consume_partial_trailing_line() {
     f.flush().await.unwrap();
     drop(f);
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
-    let mut got_tu_2 = false;
-    while let Ok(Some((_t, ev))) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
-    {
-        if let AgentEvent::ToolUseStart { tool_use_id, .. } = ev
-            && tool_use_id.as_deref() == Some("tu_2")
-        {
-            got_tu_2 = true;
-        }
-    }
-    assert!(
-        got_tu_2,
-        "tu_2 should appear after partial line is completed"
-    );
+    collect_until(
+        &mut rx,
+        "tu_2 should appear after partial line is completed",
+        starts_call("tu_2"),
+    )
+    .await;
 
     handle.abort();
 }
@@ -164,39 +141,19 @@ async fn watcher_resets_cursor_on_truncation_below_cursor() {
         .await
         .unwrap();
 
-    let mut saw_long = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ToolUseStart { tool_use_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && tool_use_id.as_deref() == Some("tu_long")
-        {
-            saw_long = true;
-            break;
-        }
-    }
-    assert!(saw_long, "expected the first long line to decode");
+    collect_until(&mut rx, "the first long line", starts_call("tu_long")).await;
 
     let fresh = tool_line("tu_fresh");
     tokio::fs::write(&transcript, format!("{fresh}\n"))
         .await
         .unwrap();
 
-    let mut saw_fresh = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ToolUseStart { tool_use_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && tool_use_id.as_deref() == Some("tu_fresh")
-        {
-            saw_fresh = true;
-            break;
-        }
-    }
-    assert!(
-        saw_fresh,
-        "after truncation the cursor must reset so the fresh line decodes"
-    );
+    collect_until(
+        &mut rx,
+        "after truncation the cursor must reset so the fresh line decodes",
+        starts_call("tu_fresh"),
+    )
+    .await;
     handle.abort();
 }
 
@@ -225,20 +182,11 @@ async fn watcher_skips_non_utf8_line_and_keeps_going() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut got_valid = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ToolUseStart { tool_use_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && tool_use_id.as_deref() == Some("tu_valid")
-        {
-            got_valid = true;
-            break;
-        }
-    }
-    assert!(
-        got_valid,
-        "a non-UTF8 line must be skipped, not block the following valid line"
-    );
+    collect_until(
+        &mut rx,
+        "a non-UTF8 line must be skipped, not block the following valid line",
+        starts_call("tu_valid"),
+    )
+    .await;
     handle.abort();
 }

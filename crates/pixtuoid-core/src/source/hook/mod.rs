@@ -839,19 +839,25 @@ mod tests {
             msg.delta,
             DaemonPresenceUpdate::GatewayUp { pid: Some(4242) }
         ));
-        assert!(
-            prx.try_recv().is_err(),
-            "the CC line must not reach presence"
-        );
+        let seen = prx.recv().await.expect("the line's pid follows its update");
+        assert!(matches!(
+            seen.delta,
+            DaemonPresenceUpdate::PidSeen { pid: 4242 }
+        ));
 
         let (transport, ev) = rx.recv().await.expect("one agent event");
         assert_eq!(transport, Transport::Hook);
         assert!(matches!(ev, AgentEvent::SessionStart { .. }));
+        task.await.unwrap();
+        // Both lines are handled once the connection's task ends.
+        assert!(
+            prx.try_recv().is_err(),
+            "presence carries only the openclaw line's update and pid"
+        );
         assert!(
             rx.try_recv().is_err(),
             "the openclaw line emits no AgentEvent"
         );
-        task.await.unwrap();
     }
 
     // The INVERSE of the routing test above: it FAILS the moment an agent source

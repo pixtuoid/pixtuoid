@@ -1,7 +1,6 @@
 use std::time::{Duration, SystemTime};
 
 use tempfile::TempDir;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::mpsc;
 
 use pixtuoid_core::AgentId;
@@ -13,8 +12,8 @@ use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 
 use crate::today::spawn_source;
 use crate::{
-    Watched, a_first_sight_ends, append, fast_watch, recorded, split_before_last, stage,
-    write_lines,
+    Watched, a_first_sight_ends, append, collect_until, fast_watch, recorded, split_before_last,
+    stage, start_id, write_lines,
 };
 
 #[tokio::test]
@@ -84,20 +83,15 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
         "payload": { "type": "task_started", "turn_id": "t1" }
     });
     write_lines(&rollout, &[meta, work.clone()]).await;
-    let mut claimed = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline && !claimed {
-        if let Ok(Some((transport, ev))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            claimed = matches!(
-                &ev,
-                AgentEvent::SessionStart { agent_id, .. } if *agent_id == child
-            );
-            r.apply(&mut scene, ev, SystemTime::now(), transport);
-        }
+    let claim = collect_until(
+        &mut rx,
+        "the watcher must claim the child's flat rollout",
+        |e| start_id(e) == Some(child),
+    )
+    .await;
+    for (transport, ev) in claim {
+        r.apply(&mut scene, ev, SystemTime::now(), transport);
     }
-    assert!(claimed, "the watcher must claim the child's flat rollout");
 
     apply_hook(
         &mut r,
@@ -119,32 +113,34 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
         "the child's first life is GC'd after the SubagentStop"
     );
 
-    let mut relinked = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline && !relinked {
-        let mut f = tokio::fs::OpenOptions::new()
-            .append(true)
-            .open(&rollout)
-            .await
-            .unwrap();
-        f.write_all(format!("{work}\n").as_bytes()).await.unwrap();
-        f.flush().await.unwrap();
-        drop(f);
-        let wait_until = tokio::time::Instant::now() + Duration::from_millis(300);
-        while tokio::time::Instant::now() < wait_until {
-            if let Ok(Some((transport, ev))) =
-                tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-            {
-                // Inside the end gate a transcript start of the child is its
-                // echo (#244).
-                let turn = SystemTime::now() + CHILD_END_GATE_TTL;
-                r.apply(&mut scene, ev, turn, transport);
-                relinked = scene.agents.get(&child).map(|s| s.parent_id) == Some(Some(parent));
-                if relinked {
-                    break;
-                }
-            }
-        }
+    // The un-claim drain walks bytes already written under the still-held
+    // claim, and emits nothing when none are: so a straggler line comes first,
+    // its re-sent start the drain's one sign, and turn N+1 is appended after it.
+    append(&rollout, &format!("{work}\n"));
+    let straggler = collect_until(
+        &mut rx,
+        "the drain walks the straggler under the held claim",
+        |e| start_id(e) == Some(child),
+    )
+    .await;
+    for (transport, ev) in straggler {
+        r.apply(&mut scene, ev, SystemTime::now(), transport);
+    }
+    assert!(
+        !scene.agents.contains_key(&child),
+        "a straggler inside the end gate is the stop's echo (#244)"
+    );
+    append(&rollout, &format!("{work}\n"));
+    let revival = collect_until(
+        &mut rx,
+        "turn N+1 must re-register the child through the released claim",
+        |e| start_id(e) == Some(child),
+    )
+    .await;
+    for (transport, ev) in revival {
+        // Inside the end gate a transcript start of the child is its echo (#244).
+        let turn = SystemTime::now() + CHILD_END_GATE_TTL;
+        r.apply(&mut scene, ev, turn, transport);
     }
     assert!(
         scene.agents.contains_key(&child),

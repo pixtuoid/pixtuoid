@@ -13,9 +13,9 @@ use pixtuoid_core::source::antigravity::AntigravitySource;
 use pixtuoid_core::source::jsonl::JsonlWatcher;
 
 use crate::{
-    Watched, a_first_sight_ends, ag_step_line, cc_watcher, codex_meta_line, codex_watcher,
-    codex_work_line, copilot_tool_line, fast_watch, recorded, spawn_copilot, split_before_last,
-    stage, vouch_snapshot, write_lines,
+    TRAIL, Watched, a_first_sight_ends, ag_step_line, cc_watcher, codex_meta_line, codex_watcher,
+    codex_work_line, collect_for, collect_until, copilot_tool_line, fast_watch, first_of, recorded,
+    spawn_copilot, split_before_last, stage, start_id, starts_call, vouch_snapshot, write_lines,
 };
 
 #[tokio::test]
@@ -44,20 +44,10 @@ async fn codex_watcher_registers_stale_rollout_when_probe_says_live() {
         .with_liveness_probe(std::sync::Arc::new(move || vouch_snapshot(&[uuid])));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
-    let expected = AgentId::from_parts("codex", uuid);
-    let mut start_id = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            start_id = Some(agent_id);
-            break;
-        }
-    }
+    let registered = first_of(&mut rx, "a probe-live stale rollout", start_id).await;
     assert_eq!(
-        start_id,
-        Some(expected),
+        registered,
+        AgentId::from_parts("codex", uuid),
         "a probe-live stale rollout must register on startup, UUID-keyed"
     );
     handle.abort();
@@ -85,23 +75,16 @@ async fn codex_first_sight_session_start_carries_bare_uuid_session_id() {
         JsonlWatcher::new(root.clone(), "codex".to_string()).expect("a transcript source");
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
-    let mut got = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            _,
+    let (agent_id, session_id) =
+        first_of(&mut rx, "the codex watcher's SessionStart", |e| match e {
             AgentEvent::SessionStart {
                 agent_id,
                 session_id,
                 ..
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            got = Some((agent_id, session_id));
-            break;
-        }
-    }
-    let (agent_id, session_id) = got.expect("expected SessionStart from the codex watcher");
+            } => Some((*agent_id, session_id.clone())),
+            _ => None,
+        })
+        .await;
     assert_eq!(agent_id, AgentId::from_parts("codex", uuid));
     assert_eq!(
         session_id, uuid,
@@ -145,21 +128,13 @@ async fn watcher_emits_session_start_for_recent_files_on_startup() {
         .await
         .unwrap();
 
-    let mut got_start = false;
-    let mut got_activity = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(30);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(100), rx.recv()).await {
-            Ok(Some((_, AgentEvent::SessionStart { .. }))) => got_start = true,
-            Ok(Some((_, AgentEvent::ToolUseStart { .. }))) => got_activity = true,
-            _ => {}
-        }
-        if got_start && got_activity {
-            break;
-        }
-    }
-    assert!(got_start, "fresh file should produce SessionStart");
-    assert!(got_activity, "fresh file content should be replayed");
+    let (mut got_start, mut got_activity) = (false, false);
+    collect_until(&mut rx, "a fresh file's SessionStart and replay", |e| {
+        got_start |= matches!(e, AgentEvent::SessionStart { .. });
+        got_activity |= matches!(e, AgentEvent::ToolUseStart { .. });
+        got_start && got_activity
+    })
+    .await;
     handle.abort();
 }
 
@@ -188,19 +163,14 @@ async fn first_sight_cwd_ignores_foreign_source_shapes() {
         .unwrap();
     tokio::fs::rename(&staging, &transcript).await.unwrap();
 
-    let mut found_cwd = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::SessionStart { cwd, .. }))) =
-            tokio::time::timeout(Duration::from_millis(100), rx.recv()).await
-        {
-            found_cwd = Some(cwd);
-            break;
-        }
-    }
+    let found_cwd = first_of(&mut rx, "the antigravity SessionStart", |e| match e {
+        AgentEvent::SessionStart { cwd, .. } => Some(cwd.clone()),
+        _ => None,
+    })
+    .await;
     assert_eq!(
         found_cwd,
-        Some(std::path::PathBuf::new()),
+        std::path::PathBuf::new(),
         "a foreign source's cwd shape must not label this source's session"
     );
     handle.abort();
@@ -241,22 +211,18 @@ async fn codex_rollout_yields_uuid_keyed_session_start() {
     let expected = AgentId::from_parts("codex", uuid);
     let mut saw_session_start = false;
     let mut default_label = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_t, AgentEvent::SessionStart { agent_id, .. }))) => {
-                assert_eq!(agent_id, expected, "Codex SessionStart must be UUID-keyed");
+    collect_until(&mut rx, "the codex SessionStart and its label", |e| {
+        match e {
+            AgentEvent::SessionStart { agent_id, .. } => {
+                assert_eq!(*agent_id, expected, "Codex SessionStart must be UUID-keyed");
                 saw_session_start = true;
             }
-            Ok(Some((_t, AgentEvent::Rename { label, .. }))) => default_label = Some(label),
-            Ok(Some(_)) => {}
-            Ok(None) | Err(_) => {}
+            AgentEvent::Rename { label, .. } => default_label = Some(label.clone()),
+            _ => {}
         }
-        if saw_session_start && default_label.is_some() {
-            break;
-        }
-    }
-    assert!(saw_session_start, "expected a SessionStart event");
+        saw_session_start && default_label.is_some()
+    })
+    .await;
     assert_eq!(
         default_label.as_deref(),
         Some("cx·dotfiles"),
@@ -289,37 +255,36 @@ async fn watcher_skips_oversized_pending_tail() {
 
     let mut got_start = false;
     let mut got_rename = None;
-    let mut activity_before = 0usize;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_, AgentEvent::SessionStart { cwd, .. }))) => {
-                got_start = true;
-                assert_eq!(
-                    cwd,
-                    std::path::PathBuf::from(""),
-                    "a no-newline head yields an empty-cwd SessionStart"
-                );
-            }
-            Ok(Some((_, AgentEvent::Rename { label, .. }))) => got_rename = Some(label),
-            Ok(Some((_, AgentEvent::ToolUseStart { .. }))) => activity_before += 1,
-            Ok(Some(_)) => {}
-            Ok(None) | Err(_) => {
-                if got_start && got_rename.is_some() {
-                    break;
+    let mut first_sight = collect_until(
+        &mut rx,
+        "a first-sight oversized transcript must register an agent (#204)",
+        |e| {
+            match e {
+                AgentEvent::SessionStart { cwd, .. } => {
+                    got_start = true;
+                    assert_eq!(
+                        *cwd,
+                        std::path::PathBuf::from(""),
+                        "a no-newline head yields an empty-cwd SessionStart"
+                    );
                 }
+                AgentEvent::Rename { label, .. } => got_rename = Some(label.clone()),
+                _ => {}
             }
-        }
-    }
-    assert!(
-        got_start,
-        "a first-sight oversized transcript must register an agent (#204), not stay invisible"
-    );
+            got_start && got_rename.is_some()
+        },
+    )
+    .await;
+    first_sight.extend(collect_for(&mut rx, TRAIL, "past the oversized registration").await);
     assert_eq!(
         got_rename.as_deref(),
         Some("cp"),
         "empty-cwd Rename falls back to the bare source prefix"
     );
+    let activity_before = first_sight
+        .iter()
+        .filter(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. }))
+        .count();
     assert_eq!(
         activity_before, 0,
         "the oversized backlog must not be replayed (got {activity_before} ToolUseStart)"
@@ -337,21 +302,12 @@ async fn watcher_skips_oversized_pending_tail() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut got_after = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ToolUseStart { tool_use_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && tool_use_id.as_deref() == Some("tu_after_junk")
-        {
-            got_after = true;
-            break;
-        }
-    }
-    assert!(
-        got_after,
-        "the post-skip valid line must decode after the oversized tail is skipped"
-    );
+    collect_until(
+        &mut rx,
+        "the post-skip valid line must decode after the oversized tail is skipped",
+        starts_call("tu_after_junk"),
+    )
+    .await;
     handle.abort();
 }
 
@@ -384,42 +340,28 @@ async fn watcher_registers_large_transcript_on_first_sight() {
     let watcher = codex_watcher(root.clone());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
-    let mut start_id = None;
     let mut start_cwd = None;
     let mut label = None;
-    let mut activity_count = 0usize;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_, AgentEvent::SessionStart { agent_id, cwd, .. }))) => {
-                start_id = Some(agent_id);
-                start_cwd = Some(cwd);
+    let mut first_sight = collect_until(
+        &mut rx,
+        "the large first-sight transcript's SessionStart and label",
+        |e| {
+            match e {
+                AgentEvent::SessionStart { cwd, .. } => start_cwd = Some(cwd.clone()),
+                AgentEvent::Rename { label: l, .. } => label = Some(l.clone()),
+                _ => {}
             }
-            Ok(Some((_, AgentEvent::Rename { label: l, .. }))) => {
-                label = Some(l);
-            }
-            Ok(Some((_, AgentEvent::ToolUseStart { .. }))) => {
-                activity_count += 1;
-            }
-            Ok(Some(_)) => {}
-            Ok(None) | Err(_) => {}
-        }
-        if start_id.is_some() && label.is_some() {
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            while let Ok(Some((_, ev))) =
-                tokio::time::timeout(Duration::from_millis(20), rx.recv()).await
-            {
-                if matches!(ev, AgentEvent::ToolUseStart { .. }) {
-                    activity_count += 1;
-                }
-            }
-            break;
-        }
-    }
-
-    let _start_id = start_id.expect("expected SessionStart for the large first-sight transcript");
-    let start_cwd = start_cwd.expect("SessionStart should carry the head-derived cwd");
-    let label = label.expect("expected a Rename label for the large transcript");
+            start_cwd.is_some() && label.is_some()
+        },
+    )
+    .await;
+    first_sight.extend(collect_for(&mut rx, TRAIL, "past the large first sight").await);
+    let activity_count = first_sight
+        .iter()
+        .filter(|(_, e)| matches!(e, AgentEvent::ToolUseStart { .. }))
+        .count();
+    let start_cwd = start_cwd.expect("collect_until saw it");
+    let label = label.expect("collect_until saw it");
     assert_eq!(
         start_cwd,
         std::path::PathBuf::from("/Users/me/work/bigrepo"),
@@ -473,22 +415,14 @@ async fn watcher_derives_parent_id_for_subagent_path() {
 
     let expected = AgentId::from_parts("claude-code", "parent");
 
-    let mut found_parent = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            _,
-            AgentEvent::SessionStart {
-                parent_id: Some(pid),
-                ..
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            found_parent = Some(pid);
-            break;
-        }
-    }
-    let found = found_parent.expect("expected a SessionStart carrying parent_id");
+    let found = first_of(&mut rx, "a SessionStart carrying parent_id", |e| match e {
+        AgentEvent::SessionStart {
+            parent_id: Some(pid),
+            ..
+        } => Some(*pid),
+        _ => None,
+    })
+    .await;
     assert_eq!(
         found, expected,
         "parent_id must key on the <parent-uuid> dir component; got {found:?}"
@@ -561,29 +495,27 @@ async fn watcher_links_subagent_across_project_dirs() {
 
     let mut parent_agent_id: Option<AgentId> = None;
     let mut sub_parent_id: Option<AgentId> = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((
-                _,
-                AgentEvent::SessionStart {
-                    agent_id,
-                    parent_id,
-                    ..
-                },
-            ))) => match parent_id {
-                Some(pid) => sub_parent_id = Some(pid),
-                None => parent_agent_id = Some(agent_id),
-            },
-            Ok(Some(_)) => {}
-            Ok(None) | Err(_) => {}
-        }
-        if parent_agent_id.is_some() && sub_parent_id.is_some() {
-            break;
-        }
-    }
-    let parent_agent_id = parent_agent_id.expect("expected the parent's SessionStart");
-    let sub_parent_id = sub_parent_id.expect("expected the subagent's SessionStart with parent_id");
+    collect_until(
+        &mut rx,
+        "the parent's and the subagent's SessionStarts",
+        |e| {
+            if let AgentEvent::SessionStart {
+                agent_id,
+                parent_id,
+                ..
+            } = e
+            {
+                match parent_id {
+                    Some(pid) => sub_parent_id = Some(*pid),
+                    None => parent_agent_id = Some(*agent_id),
+                }
+            }
+            parent_agent_id.is_some() && sub_parent_id.is_some()
+        },
+    )
+    .await;
+    let parent_agent_id = parent_agent_id.expect("collect_until saw it");
+    let sub_parent_id = sub_parent_id.expect("collect_until saw it");
     assert_eq!(
         sub_parent_id, parent_agent_id,
         "subagent parent_id must equal the parent's agent_id across a cwd-split (different project dirs)"
@@ -606,22 +538,17 @@ async fn the_registry_row_filters_the_untruncated_copy_and_the_builder_overrides
         }
         let handle = tokio::spawn(async move { watcher.run(tx).await });
 
+        let is_start = |e: &AgentEvent| matches!(e, AgentEvent::SessionStart { .. });
         let mut starts = 0;
-        let mut deadline = tokio::time::Instant::now() + Duration::from_secs(4);
-        while tokio::time::Instant::now() < deadline {
-            if let Ok(Some((_, AgentEvent::SessionStart { .. }))) =
-                tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            {
-                starts += 1;
-                // both files exist before the first scan: a start past `want`
-                // lands within a few more scans, not seconds later
-                if starts == want {
-                    deadline = tokio::time::Instant::now() + 20 * super::POLL;
-                }
-            }
-        }
+        collect_until(&mut rx, "the first sights", |e| {
+            starts += usize::from(is_start(e));
+            starts == want
+        })
+        .await;
+        // Both files exist before the first scan, so a start past `want` trails it.
+        let trail = collect_for(&mut rx, TRAIL, "past the first sights").await;
         handle.abort();
-        starts
+        starts + trail.iter().filter(|(_, e)| is_start(e)).count()
     }
 
     fast_watch();

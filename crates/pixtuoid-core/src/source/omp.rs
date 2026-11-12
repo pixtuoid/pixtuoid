@@ -23,8 +23,8 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd, first_present_str,
-    generic_tool_display, non_empty,
+    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd,
+    first_non_blank_str, generic_tool_display, non_empty,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -665,17 +665,18 @@ const BLOCK_TOOL_CALL: &str = "toolCall";
 /// directly follows its own start, never a sibling's.
 const TOOL_ASK: &str = "ask";
 
-/// The per-call intent omp's harness asks of every tool call by default
-/// (`packages/agent/src/types.ts:1227-1233` at `v18.18.8`), kept in the
-/// persisted `arguments`.
-const INTENT_FIELD: &str = "i";
+/// The tool-call block's intent as omp resolved it: the model's `i` trimmed of
+/// trailing dots, none for a tool whose own schema owns `i`, else the one its
+/// tool derives, written before the block is persisted
+/// (`packages/agent/src/agent-loop.ts:3167-3184`, `:2401`, `:2434` at `v18.18.8`).
+const INTENT_FIELD: &str = "intent";
 
-/// The call's intent, trimmed, or `None` when blank: its schema admits a blank
-/// string, which omp's own reader counts as no intent
-/// (`packages/agent/src/agent-loop.ts:1045`, `:1099-1108` at `v18.18.8`).
-fn omp_intent(args: Option<&Value>) -> Option<&str> {
-    let intent = args?.get(INTENT_FIELD)?.as_str()?.trim();
-    (!intent.is_empty()).then_some(intent)
+/// The tool-call `block`'s resolved intent, `None` when absent or blank.
+fn omp_intent(block: &Value) -> Option<&str> {
+    block
+        .get(INTENT_FIELD)?
+        .as_str()
+        .and_then(crate::source::decoder::non_blank)
 }
 
 /// `prefix·<text>` at the label cap — the ONE place omp assembles a
@@ -824,7 +825,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                         out.push(AgentEvent::ToolUseStart {
                             agent_id: acting,
                             tool_use_id: Some(id.to_string()),
-                            detail: Some(omp_tool_detail(name, b.get("arguments"))),
+                            detail: Some(omp_tool_detail(name, b.get("arguments"), omp_intent(b))),
                             // The provider mints the call's id, and a local model's
                             // need not be unique.
                             copy_id: entry_copy(obj, &format!("#{index}")).map(CopyId::new),
@@ -832,7 +833,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                         if name == TOOL_ASK {
                             out.push(AgentEvent::user_action_request(
                                 acting,
-                                Some(omp_ask_reason(b.get("arguments"))),
+                                Some(omp_ask_reason(omp_intent(b))),
                                 RequestKeys {
                                     tool_use_id: Some(id.to_string()),
                                     ..RequestKeys::default()
@@ -891,7 +892,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
 /// omp's tool-detail dispatch. The subagent dispatch is the `task` tool,
 /// detected by NAME only: `arguments` are model-authored, so a hallucinated
 /// `subagent_type` key must not flip an ordinary tool to Delegating.
-fn omp_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
+fn omp_tool_detail(tool: &str, args: Option<&Value>, intent: Option<&str>) -> ToolDetail {
     if tool == "task" {
         return ToolDetail::Task;
     }
@@ -899,16 +900,16 @@ fn omp_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     // paraphrase of that path. It earns its place on the tools with no keyed
     // target at all (`edit`, `todo`, `job`, `hub`, …).
     const KEYS: &[&str] = &["command", "path", "pattern", "query"];
-    let target = args.and_then(|a| first_present_str(a, KEYS));
-    generic_tool_display(tool, target.or_else(|| omp_intent(args)))
+    let target = args.and_then(|a| first_non_blank_str(a, KEYS));
+    generic_tool_display(tool, target.or(intent))
 }
 
 /// The [`AgentEvent::UserActionRequest`] reason for an `ask` round: the call's
 /// intent, else the bare tool name. The question itself sits in one HTML form
 /// (`packages/coding-agent/src/tools/ask.ts:61-63` at `v18.18.8`), which the
 /// intent paraphrases.
-fn omp_ask_reason(args: Option<&Value>) -> String {
-    omp_intent(args).map_or_else(
+fn omp_ask_reason(intent: Option<&str>) -> String {
+    intent.map_or_else(
         || TOOL_ASK.to_owned(),
         |i| ellipsize(i, MAX_DECODED_FIELD_CHARS),
     )
@@ -1054,7 +1055,7 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
                 AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: Some(tool_call_id.to_string()),
-                    detail: Some(omp_tool_detail(tool, None)),
+                    detail: Some(omp_tool_detail(tool, None, None)),
                     copy_id: None,
                 }
             } else {
@@ -1575,16 +1576,20 @@ mod tests {
         );
     }
 
-    /// Byte-real: omp mandates a per-call `i` intent, and its `edit`/`todo`
-    /// tools carry NO path-like argument, so they would render as a bare verb
-    /// without `i` as the last-resort target.
+    /// omp resolves each call's intent onto the persisted `toolCall` block, and
+    /// its `edit`/`todo` tools carry NO path-like argument, so they would
+    /// render as a bare verb without it as the last-resort target.
     #[test]
     fn intent_is_the_last_resort_target_and_never_outranks_a_concrete_one() {
-        let display_of = |args: &str| {
-            let line = format!(
-                r#"{{"type":"message","id":"m1","parentId":null,"timestamp":"t","message":{{"role":"assistant","content":[{{"type":"toolCall","id":"t1","name":"edit","arguments":{args}}}],"timestamp":1}}}}"#
-            );
-            match &decode(&line)[..] {
+        let display_of = |args: Value, intent: Option<&str>| {
+            let mut call =
+                json!({"type": "toolCall", "id": "t1", "name": "edit", "arguments": args});
+            if let Some(intent) = intent {
+                call["intent"] = json!(intent);
+            }
+            let line = json!({"type": "message", "id": "m1", "parentId": null, "timestamp": "t",
+                              "message": {"role": "assistant", "content": [call], "timestamp": 1}});
+            match &decode(&line.to_string())[..] {
                 [
                     AgentEvent::ToolUseStart {
                         detail: Some(ToolDetail::Generic { display }),
@@ -1594,30 +1599,31 @@ mod tests {
                 other => panic!("expected one ToolUseStart, got {other:?}"),
             }
         };
+        let intent = Some("Adding the palette color");
         assert_eq!(
-            display_of(r#"{"i":"Adding the palette color","input":"…"}"#),
+            display_of(json!({"input": "…"}), intent),
             "edit: Adding the palette color",
             "a keyless tool falls back to its intent"
         );
         assert_eq!(
-            display_of(r#"{"path":"src/burn.rs","i":"Adding the palette color"}"#),
+            display_of(json!({"path": "src/burn.rs"}), intent),
             "edit: src/burn.rs",
             "a CONCRETE target outranks the paraphrase"
         );
         assert_eq!(
-            display_of(r#"{"input":"…"}"#),
+            display_of(json!({"input": "…"}), None),
             "edit",
             "no target and no intent stays a bare verb"
         );
         assert_eq!(
-            display_of(r#"{"i":"  ","input":"…"}"#),
+            display_of(json!({"i": "Adding the palette color", "input": "…"}), None),
             "edit",
-            "a blank intent is no intent"
+            "an `i` omp resolved to no intent (one its tool's schema owns) is none"
         );
         // The intent rides the same target cap as every other key, so a
         // model that writes an essay can't blow out the sprite's detail line.
         let long = "T".repeat(200);
-        let capped = display_of(&format!(r#"{{"i":"{long}"}}"#));
+        let capped = display_of(json!({}), Some(&long));
         let target = capped.strip_prefix("edit: ").expect("has a target suffix");
         assert_eq!(
             target.chars().count(),
@@ -1727,7 +1733,7 @@ mod tests {
 
     #[test]
     fn ask_call_starts_activity_then_waits_on_its_intent() {
-        let line = r#"{"type":"message","id":"m7","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK1","name":"ask","arguments":{"i":"Resolving packages/ui collision","html":"<form><p>packages/ui already exists.</p><label><input type=\"radio\" name=\"ui\" value=\"replace\" checked> Replace</label><label><input type=\"radio\" name=\"ui\" value=\"merge\"> Merge</label></form>"}}],"timestamp":1}}"#;
+        let line = r#"{"type":"message","id":"m7","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK1","name":"ask","arguments":{"i":"Resolving packages/ui collision.","html":"<form><p>packages/ui already exists.</p><label><input type=\"radio\" name=\"ui\" value=\"replace\" checked> Replace</label><label><input type=\"radio\" name=\"ui\" value=\"merge\"> Merge</label></form>"},"intent":"Resolving packages/ui collision"}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
                 AgentEvent::ToolUseStart {
@@ -1746,25 +1752,33 @@ mod tests {
                 assert_eq!(*wid, root());
                 assert_eq!(tool_use_id.as_deref(), Some("tool_ASK1"));
                 assert_eq!(asked, tool_use_id, "the question names its own call");
-                assert_eq!(reason.as_deref(), Some("Resolving packages/ui collision"));
+                assert_eq!(
+                    reason.as_deref(),
+                    Some("Resolving packages/ui collision"),
+                    "omp's resolved intent, not the raw `i`"
+                );
             }
             other => panic!("expected ToolUseStart then UserActionRequest, got {other:?}"),
         }
-        // No intent, and one the model left blank, which omp's schema admits.
-        for arguments in [
-            json!(null),
-            json!({"i": ""}),
-            json!({"i": "  ", "html": "<form/>"}),
+        // No intent omp resolved, or a blank one.
+        for (arguments, intent) in [
+            (json!(null), None),
+            (json!({"i": "Asking"}), None),
+            (json!({"html": "<form/>"}), Some(json!(""))),
+            (json!({"html": "<form/>"}), Some(json!("  "))),
         ] {
             let mut call = json!({"type": "toolCall", "id": "tool_ASK3", "name": "ask"});
             if !arguments.is_null() {
                 call["arguments"] = arguments.clone();
             }
+            if let Some(intent) = &intent {
+                call["intent"] = intent.clone();
+            }
             let line = json!({"type": "message", "id": "m9", "parentId": null, "timestamp": "t",
                               "message": {"role": "assistant", "content": [call], "timestamp": 1}});
             match &decode(&line.to_string())[..] {
                 [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                    assert_eq!(reason.as_deref(), Some("ask"), "{arguments}")
+                    assert_eq!(reason.as_deref(), Some("ask"), "{arguments} {intent:?}")
                 }
                 other => panic!("expected Start+UserActionRequest, got {other:?}"),
             }
@@ -1773,7 +1787,7 @@ mod tests {
 
     #[test]
     fn an_ask_among_parallel_calls_names_its_own() {
-        let line = r#"{"type":"message","id":"mB","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK5","name":"ask","arguments":{"i":"Confirming scope"}},{"type":"toolCall","id":"t7","name":"bash","arguments":{"command":"cargo check"}}],"timestamp":1}}"#;
+        let line = r#"{"type":"message","id":"mB","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK5","name":"ask","arguments":{},"intent":"Confirming scope"},{"type":"toolCall","id":"t7","name":"bash","arguments":{"command":"cargo check"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
                 AgentEvent::ToolUseStart {
@@ -2722,6 +2736,17 @@ mod tests {
         match &evs[..] {
             [_, AgentEvent::UserActionRequest { reason, .. }] => {
                 assert_eq!(reason.as_deref(), Some("outside workspace"))
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        // Neither, which only a drifted wire sends: the gate still names itself.
+        let evs = hook(serde_json::json!({
+            "type": "tool_approval_requested", "sessionFile": HOOK_ROOT,
+            "sessionId": "x", "cwd": "/repo", "toolCallId": "call_1",
+        }));
+        match &evs[..] {
+            [_, AgentEvent::UserActionRequest { reason, .. }] => {
+                assert_eq!(reason.as_deref(), Some("approval"))
             }
             other => panic!("unexpected: {other:?}"),
         }
