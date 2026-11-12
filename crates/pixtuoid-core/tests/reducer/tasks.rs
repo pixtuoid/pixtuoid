@@ -436,59 +436,63 @@ fn a_turn_end_over_an_untracked_task_walks_out_its_child_under_any_task_end() {
     assert!(scene.agents[&parent].exiting_at.is_none());
 }
 
+fn feed_reasonix(
+    r: &mut Reducer,
+    scene: &mut SceneState,
+    (event, session, tool): (&str, &str, &str),
+    t: SystemTime,
+) {
+    let payload = json!({
+        "event": event, "sessionId": session, "cwd": "/repo",
+        "toolName": tool, "_pixtuoid_source": "reasonix",
+    });
+    for ev in decode_hook_payload(payload).expect("reasonix payload decodes") {
+        r.apply(scene, ev, t, Transport::Hook);
+    }
+}
+
 /// Two reasonix skill calls overlap. The first return walks out the other's
 /// live child too; that child comes back on its next hook, and the other
 /// call's return must still walk it out, though the parent went Idle between.
 #[test]
 fn overlapping_skill_calls_each_walk_their_child_out_on_return() {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
-    fn feed(r: &mut Reducer, scene: &mut SceneState, v: serde_json::Value, t: SystemTime) {
-        for ev in decode_hook_payload(v).expect("reasonix payload decodes") {
-            r.apply(scene, ev, t, Transport::Hook);
-        }
-    }
-    let hook = |event: &str, session: &str, tool: &str| {
-        json!({
-            "event": event, "sessionId": session, "cwd": "/repo",
-            "toolName": tool, "_pixtuoid_source": "reasonix",
-        })
-    };
     let mut scene = SceneState::uniform(8);
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let at = |ms| t0 + Duration::from_millis(ms);
     let late_child = AgentId::from_parts("reasonix", "root:subagent:call_b");
 
-    feed(&mut r, &mut scene, hook("SessionStart", "root", ""), at(0));
-    feed(
+    feed_reasonix(&mut r, &mut scene, ("SessionStart", "root", ""), at(0));
+    feed_reasonix(
         &mut r,
         &mut scene,
-        hook("PreToolUse", "root", "explore"),
+        ("PreToolUse", "root", "explore"),
         at(100),
     );
-    feed(
+    feed_reasonix(
         &mut r,
         &mut scene,
-        hook("PreToolUse", "root", "research"),
+        ("PreToolUse", "root", "research"),
         at(200),
     );
-    feed(
+    feed_reasonix(
         &mut r,
         &mut scene,
-        hook("PreToolUse", "root:subagent:call_a", "read_file"),
+        ("PreToolUse", "root:subagent:call_a", "read_file"),
         at(300),
     );
-    feed(
+    feed_reasonix(
         &mut r,
         &mut scene,
-        hook("PreToolUse", "root:subagent:call_b", "read_file"),
+        ("PreToolUse", "root:subagent:call_b", "read_file"),
         at(400),
     );
     let first_return = at(1_000);
-    feed(
+    feed_reasonix(
         &mut r,
         &mut scene,
-        hook("PostToolUse", "root", "explore"),
+        ("PostToolUse", "root", "explore"),
         first_return,
     );
     let gone = first_return + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1);
@@ -500,10 +504,10 @@ fn overlapping_skill_calls_each_walk_their_child_out_on_return() {
     );
 
     let back = gone + Duration::from_secs(1);
-    feed(
+    feed_reasonix(
         &mut r,
         &mut scene,
-        hook("PreToolUse", "root:subagent:call_b", "read_file"),
+        ("PreToolUse", "root:subagent:call_b", "read_file"),
         back,
     );
     assert!(
@@ -511,10 +515,10 @@ fn overlapping_skill_calls_each_walk_their_child_out_on_return() {
         "its next hook brought it back"
     );
     let second_return = back + Duration::from_secs(1);
-    feed(
+    feed_reasonix(
         &mut r,
         &mut scene,
-        hook("PostToolUse", "root", "research"),
+        ("PostToolUse", "root", "research"),
         second_return,
     );
     r.tick(&mut scene, second_return + B1_CASCADE_GRACE);
@@ -522,6 +526,122 @@ fn overlapping_skill_calls_each_walk_their_child_out_on_return() {
         scene.agents[&late_child].exiting_at.is_some(),
         "the second return walks its own child out"
     );
+}
+
+fn returned_reasonix_dispatch(r: &mut Reducer, scene: &mut SceneState) -> SystemTime {
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let at = |ms| t0 + Duration::from_millis(ms);
+    let returned = 1_000;
+    for (hook, ms) in [
+        (("SessionStart", "root", ""), 0),
+        (("PreToolUse", "root", "explore"), 100),
+        (("PreToolUse", "root:subagent:call_a", "read_file"), 200),
+        (("PostToolUse", "root:subagent:call_a", "read_file"), 300),
+        (("PostToolUse", "root", "explore"), returned),
+    ] {
+        feed_reasonix(r, scene, hook, at(ms));
+    }
+    at(returned)
+}
+
+/// A reasonix `SUBAGENT_TOOLS` call carries no call id, so one started inside an earlier
+/// return's grace must cancel that cascade as a tracked dispatch does (#151).
+#[test]
+fn an_untracked_dispatch_inside_the_grace_cancels_the_pending_cascade() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
+    let second_child = AgentId::from_parts("reasonix", "root:subagent:call_b");
+    let first_return = returned_reasonix_dispatch(&mut r, &mut scene);
+
+    for (hook, t) in [
+        (
+            ("PreToolUse", "root", "explore"),
+            first_return + B1_CASCADE_GRACE / 2,
+        ),
+        (
+            ("PreToolUse", "root:subagent:call_b", "read_file"),
+            first_return + B1_CASCADE_GRACE * 3 / 4,
+        ),
+    ] {
+        feed_reasonix(&mut r, &mut scene, hook, t);
+    }
+    r.tick(&mut scene, first_return + B1_CASCADE_GRACE);
+    assert!(
+        scene.agents[&second_child].exiting_at.is_none(),
+        "the first return's cascade walked out the second dispatch's live child"
+    );
+
+    let second_return = first_return + B1_CASCADE_GRACE * 2;
+    feed_reasonix(
+        &mut r,
+        &mut scene,
+        ("PostToolUse", "root", "explore"),
+        second_return,
+    );
+    r.tick(&mut scene, second_return + B1_CASCADE_GRACE);
+    for child in [first_child, second_child] {
+        assert!(
+            scene.agents[&child].exiting_at.is_some(),
+            "the second return walks the whole subtree out"
+        );
+    }
+}
+
+/// At the grace boundary the untracked start only shows on the slot once
+/// applied, after the pre-pass fires, so the start itself must cancel the
+/// cascade, as a tracked start's pre-pass insert does.
+#[test]
+fn an_untracked_dispatch_at_the_grace_boundary_cancels_the_pending_cascade() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
+    let first_return = returned_reasonix_dispatch(&mut r, &mut scene);
+
+    feed_reasonix(
+        &mut r,
+        &mut scene,
+        ("PreToolUse", "root", "explore"),
+        first_return + B1_CASCADE_GRACE,
+    );
+    assert!(
+        scene.agents[&first_child].exiting_at.is_none(),
+        "the second dispatch's own start fired the first return's cascade"
+    );
+
+    let second_return = first_return + B1_CASCADE_GRACE * 2;
+    feed_reasonix(
+        &mut r,
+        &mut scene,
+        ("PostToolUse", "root", "explore"),
+        second_return,
+    );
+    r.tick(&mut scene, second_return + B1_CASCADE_GRACE);
+    assert!(
+        scene.agents[&first_child].exiting_at.is_some(),
+        "the second return walks the first child out"
+    );
+}
+
+#[test]
+fn only_the_parents_own_dispatch_at_the_grace_boundary_cancels_its_cascade() {
+    for (session, tool) in [("root", "read_file"), ("other", "explore")] {
+        let mut scene = SceneState::uniform(8);
+        let mut r = Reducer::new();
+        let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
+        let first_return = returned_reasonix_dispatch(&mut r, &mut scene);
+
+        feed_reasonix(
+            &mut r,
+            &mut scene,
+            ("PreToolUse", session, tool),
+            first_return + B1_CASCADE_GRACE,
+        );
+        assert!(
+            scene.agents[&first_child].exiting_at.is_some(),
+            "{session}'s {tool} at the boundary cancelled root's cascade"
+        );
+    }
 }
 
 /// Two shims a few ms apart can be decoded in either order (#242): a Task's
