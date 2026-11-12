@@ -1,4 +1,5 @@
 {
+  "_pixtuoid_source": "claude-code",
   "hook_event_name": "PreToolUse",
   "session_id": "ses-abc",
   "transcript_path": "/Users/me/.claude/projects/x/ses-abc.jsonl",

@@ -414,11 +414,16 @@ async fn handle_conn(
                     Ok(evs) => {
                         // Not beside the forward: an envelope that decodes to
                         // nothing is a cross-fired duplicate, no sign of its CLI.
-                        if let Some(relay) = relay.as_ref().filter(|_| !evs.is_empty()) {
-                            relay.sighted(hook_source(obj));
+                        let source = hook_source(obj);
+                        if let (Some(relay), Some(source)) =
+                            (relay.as_ref().filter(|_| !evs.is_empty()), source)
+                        {
+                            relay.sighted(source);
                         }
-                        if let (Some(pid), Some(watch)) = (pid, pid_watch.as_ref()) {
-                            for (agent_id, corroborate) in bind_targets(hook_source(obj), &evs) {
+                        if let (Some(pid), Some(watch), Some(source)) =
+                            (pid, pid_watch.as_ref(), source)
+                        {
+                            for (agent_id, corroborate) in bind_targets(source, &evs) {
                                 watch.note(pid, agent_id, corroborate);
                             }
                         }
@@ -698,7 +703,8 @@ mod tests {
 
     // Decodes to THREE events (Identity + ToolUsePending + ToolUseStart) — the
     // shape the mid-payload loss path needs: more than one event per payload.
-    const PRE_TOOL_USE_LINE: &[u8] = b"{\"hook_event_name\":\"PreToolUse\",\
+    const PRE_TOOL_USE_LINE: &[u8] =
+        b"{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"PreToolUse\",\
         \"session_id\":\"ses-abc\",\
         \"transcript_path\":\"/p/ses-abc.jsonl\",\
         \"cwd\":\"/repo\",\
@@ -710,7 +716,7 @@ mod tests {
     #[tokio::test]
     async fn the_hook_fuzz_target_frames_a_connection_as_handle_conn_does() {
         let payload: &[u8] =
-            br#"{"session_id":"s","cwd":"/repo","hook_event_name":"SessionStart"}"#;
+            br#"{"_pixtuoid_source":"claude-code","session_id":"s","cwd":"/repo","hook_event_name":"SessionStart"}"#;
         let unterminated = payload.to_vec();
         let past_a_bad_line = [b"\xff\n".as_slice(), payload].concat();
         let past_blank_lines = [b"\n  \n".as_slice(), payload, b"\n"].concat();
@@ -743,7 +749,7 @@ mod tests {
         ));
         client
             .write_all(
-                b"{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
+                b"{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
                   \"transcript_path\":\"/Users/me/.claude/projects/x/s1.jsonl\"}\n",
             )
             .await
@@ -773,7 +779,7 @@ mod tests {
         ));
         let pad = "x".repeat((1 << 20) + (1 << 18));
         let line = format!(
-            "{{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
+            "{{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
              \"transcript_path\":\"/p/s1.jsonl\",\"pad\":\"{pad}\"}}\n"
         );
         let writer = tokio::spawn(async move {
@@ -817,7 +823,7 @@ mod tests {
             .unwrap();
         client
             .write_all(
-                b"{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
+                b"{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
                   \"transcript_path\":\"/Users/me/.claude/projects/x/s1.jsonl\"}\n",
             )
             .await
@@ -1176,7 +1182,7 @@ mod tests {
         ));
         let me = std::process::id();
         let line = format!(
-            "{{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"ses-cc\",\
+            "{{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"PreToolUse\",\"session_id\":\"ses-cc\",\
              \"transcript_path\":\"/p/a.jsonl\",\"cwd\":\"/repo\",\
              \"tool_name\":\"Bash\",\"tool_use_id\":\"t1\",\"_pid\":{me}}}\n"
         );
@@ -1289,12 +1295,12 @@ mod tests {
             None,
         ));
         client
-            .write_all(b"{\"hook_event_name\":\"BogusEvent\",\"session_id\":\"s1\"}\n")
+            .write_all(b"{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"BogusEvent\",\"session_id\":\"s1\"}\n")
             .await
             .unwrap();
         client
             .write_all(
-                b"{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s2\",\
+                b"{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s2\",\
                   \"transcript_path\":\"/Users/me/.claude/projects/x/s2.jsonl\"}\n",
             )
             .await
@@ -1331,7 +1337,7 @@ mod tests {
         client.write_all(b"   \n").await.unwrap();
         client
             .write_all(
-                b"{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
+                b"{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
                   \"transcript_path\":\"/Users/me/.claude/projects/x/s1.jsonl\"}\n",
             )
             .await
@@ -1373,7 +1379,7 @@ mod tests {
             .unwrap();
         client
             .write_all(
-                b"{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
+                b"{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s1\",\
                   \"transcript_path\":\"/Users/me/.claude/projects/x/s1.jsonl\"}\n",
             )
             .await

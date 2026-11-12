@@ -30,6 +30,7 @@ fn endpoint(name: &str) -> (tempfile::TempDir, Endpoint) {
 
 fn session_start(session: &str) -> Vec<u8> {
     let mut line = serde_json::to_vec(&serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionStart",
         "session_id": session,
         "transcript_path": format!("/p/{session}.jsonl"),

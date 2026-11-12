@@ -192,9 +192,7 @@ pub(crate) fn hook_command(resolved: &Path, explicit: bool) -> Result<String> {
     #[cfg(not(windows))]
     {
         // CC's Unix entry carries no `args` key, so it runs through a SHELL and
-        // the env prefix every other source uses works here too. It was bare for
-        // years, which made "no `_pixtuoid_source`" mean "probably CC" — the
-        // guess `decoder` still has to make for installs written before this.
+        // the env prefix every other source uses works here too.
         let p = if explicit {
             merge::hook_path_str(resolved)?
         } else {
@@ -438,6 +436,7 @@ mod tests {
         use pixtuoid_core::source::decoder::decode_hook_payload;
         for ev in EVENTS {
             let payload = serde_json::json!({
+                "_pixtuoid_source": "claude-code",
                 "hook_event_name": ev,
                 "session_id": "sess",
                 "transcript_path": "/p/sess.jsonl",

@@ -257,8 +257,8 @@ pub const SOURCE_STAMP: &str = "_pixtuoid_source";
 /// (startup/resume/clear/compact), so reading it would namespace the agent under
 /// "startup" and split it from the claude-code-keyed tool/JSONL/SessionEnd events:
 /// an un-reapable ghost.
-pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> &str {
-    non_empty(obj, SOURCE_STAMP).unwrap_or(crate::source::claude_code::SOURCE_NAME)
+pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> Option<&str> {
+    non_empty(obj, SOURCE_STAMP)
 }
 
 /// A test payload as the object every hook decoder is handed.
@@ -452,7 +452,11 @@ pub(crate) fn hook_object(v: &Value) -> DecodeResult<&crate::source::registry::H
 pub(crate) fn decode_hook_object(
     obj: &crate::source::registry::HookObject,
 ) -> DecodeResult<Vec<AgentEvent>> {
-    let source = hook_source(obj);
+    let Some(source) = hook_source(obj) else {
+        // Not `warn!`: a hook that carries no stamp fires once per tool call.
+        tracing::debug!(event = ?obj.get("hook_event_name"), "unstamped hook payload dropped");
+        return Ok(vec![]);
+    };
     let desc = crate::source::registry::descriptor_for(source);
     if decodes_to_nothing(source, obj, desc) {
         return Ok(vec![]);
@@ -880,6 +884,7 @@ mod tests {
     fn tool_hooks_surface_the_effort_level() {
         for event in ["PreToolUse", "PostToolUse"] {
             let v = serde_json::json!({
+                "_pixtuoid_source": "claude-code",
                 "hook_event_name": event,
                 "session_id": "ses-e",
                 "transcript_path": "/p/ses-e.jsonl",
@@ -895,6 +900,7 @@ mod tests {
             );
         }
         let v = serde_json::json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "PreToolUse",
             "session_id": "ses-e",
             "transcript_path": "/p/ses-e.jsonl",
@@ -911,6 +917,7 @@ mod tests {
     #[test]
     fn session_start_hook_surfaces_the_model_when_offered() {
         let v = serde_json::json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SessionStart",
             "session_id": "ses-m",
             "transcript_path": "/p/ses-m.jsonl",
@@ -923,6 +930,7 @@ mod tests {
             "got {evs:?}"
         );
         let v = serde_json::json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SessionStart",
             "session_id": "ses-m",
             "transcript_path": "/p/ses-m.jsonl",
@@ -1073,6 +1081,7 @@ mod tests {
     fn post_tool_use_without_cwd_decodes_to_identity_with_none_cwd() {
         // Real CC PostToolUse payloads can omit cwd.
         let evs = decode_hook_payload(json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "PostToolUse",
             "session_id": "ses-abc",
             "transcript_path": "/p/ses-abc.jsonl",
@@ -1100,6 +1109,7 @@ mod tests {
     #[test]
     fn empty_cwd_on_tool_hook_decodes_to_identity_with_none_cwd() {
         let evs = decode_hook_payload(json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "Notification",
             "session_id": "ses-abc",
             "transcript_path": "/p/ses-abc.jsonl",
@@ -1118,6 +1128,7 @@ mod tests {
     #[test]
     fn cc_session_start_reason_source_does_not_hijack_cli_source() {
         let ev = decode_single(json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SessionStart",
             "session_id": "ses-abc",
             "transcript_path": "/Users/me/.claude/projects/x/ses-abc.jsonl",
@@ -1142,18 +1153,18 @@ mod tests {
     /// A blank stamp names no CLI, as an absent one: a writer past the shim
     /// that stamps `""` mints no slot whose source the gate cannot resolve.
     #[test]
-    fn a_blank_source_stamp_reads_as_none() {
-        let ev = decode_single(json!({
-            "hook_event_name": "SessionStart",
-            "session_id": "ses-abc",
-            "cwd": "/repo",
-            SOURCE_STAMP: "",
-        }));
-        match ev {
-            AgentEvent::SessionStart { source, .. } => {
-                assert_eq!(source, crate::source::claude_code::SOURCE_NAME);
+    fn an_unstamped_hook_payload_decodes_to_nothing() {
+        for stamp in [None, Some("")] {
+            let mut v = json!({
+                "hook_event_name": "SessionStart",
+                "session_id": "ses-abc",
+                "cwd": "/repo",
+            });
+            if let Some(stamp) = stamp {
+                v[SOURCE_STAMP] = json!(stamp);
             }
-            other => panic!("expected SessionStart, got {other:?}"),
+            let evs = decode_hook_payload(v).expect("no decode error");
+            assert!(evs.is_empty(), "{stamp:?}: {evs:?}");
         }
     }
 
@@ -1198,22 +1209,6 @@ mod tests {
             AgentId::from_parts("some-future-cli", "s-1"),
             "unknown source keys under its own namespace, not claude-code's"
         );
-    }
-
-    #[test]
-    fn absent_source_still_defaults_to_claude() {
-        let ev = decode_single(json!({
-            "hook_event_name": "SessionStart",
-            "session_id": "s",
-            "transcript_path": "/p/a.jsonl",
-            "cwd": "/repo"
-        }));
-        match ev {
-            AgentEvent::SessionStart { source, .. } => {
-                assert_eq!(source, crate::source::claude_code::SOURCE_NAME)
-            }
-            other => panic!("expected SessionStart, got {other:?}"),
-        }
     }
 
     #[test]
@@ -1938,48 +1933,28 @@ mod tests {
     /// arms and bail.
     #[test]
     fn a_cursor_envelope_on_the_claude_code_channel_is_dropped_quietly() {
-        let unstamped = json!({
+        let mut envelope = json!({
             "hook_event_name": "preToolUse",
             "session_id": "s1",
             "cursor_version": "2026.10.22-27dcf5f",
             "workspace_roots": ["/w"],
             "tool_name": "Read",
             "tool_use_id": "t1",
+            SOURCE_STAMP: crate::source::claude_code::SOURCE_NAME,
         });
-        let mut cc_stamped = unstamped.clone();
-        cc_stamped["_pixtuoid_source"] = json!(crate::source::claude_code::SOURCE_NAME);
-        for (copy, envelope) in [
-            ("unstamped", &unstamped),
-            ("claude-code-stamped", &cc_stamped),
-        ] {
-            assert!(
-                decode_hook_payload(envelope.clone())
-                    .expect("must not error")
-                    .is_empty(),
-                "a {copy} cursor envelope is a duplicate of the cursor-stamped one"
-            );
-        }
-
-        // The STAMPED copy is the one that must survive — dropping both would
-        // erase cursor from the office entirely.
-        let mut stamped = unstamped;
-        stamped["_pixtuoid_source"] = json!("cursor");
         assert!(
-            !decode_hook_payload(stamped).expect("Ok").is_empty(),
-            "the stamped copy carries the arc"
+            decode_hook_payload(envelope.clone())
+                .expect("must not error")
+                .is_empty(),
+            "a claude-code-stamped cursor envelope is a duplicate of the cursor-stamped one"
         );
 
-        // An install written before CC's command gained its env prefix sends a bare,
-        // unstamped payload, so this guard must leave the default that catches it.
-        let cc = json!({
-            "hook_event_name": "PreToolUse",
-            "session_id": "cc1",
-            "cwd": "/w",
-            "tool_name": "Read",
-        });
+        // The cursor-stamped copy is the one that must survive — dropping both
+        // would erase cursor from the office entirely.
+        envelope[SOURCE_STAMP] = json!("cursor");
         assert!(
-            !decode_hook_payload(cc).expect("Ok").is_empty(),
-            "an unstamped CC payload must still decode as claude-code"
+            !decode_hook_payload(envelope).expect("Ok").is_empty(),
+            "the stamped copy carries the arc"
         );
     }
 
@@ -1993,11 +1968,6 @@ mod tests {
                 "{tag}: cross-fired grok envelope must decode to zero events, got {evs:?}"
             );
         }
-        // An untagged envelope defaults to claude-code — same quiet drop.
-        let mut untagged = grok_envelope("x");
-        untagged.as_object_mut().unwrap().remove("_pixtuoid_source");
-        assert!(decode_hook_payload(untagged).expect("Ok").is_empty());
-
         assert!(
             decode_hook_payload(grok_envelope("some-future-cli")).is_err(),
             "a non-cc/cursor camelCase envelope must bail (observed), not drop silently"
@@ -2007,6 +1977,7 @@ mod tests {
     #[test]
     fn cc_envelopes_still_decode_normally_despite_the_guard() {
         let evs = decode_hook_payload(json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "PreToolUse",
             "session_id": "cc-sess",
             "cwd": "/repo",

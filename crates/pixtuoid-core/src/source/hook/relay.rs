@@ -409,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_a_feed_cut_mid_line_reads_as_a_hang_up() {
-        let session = "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
+        let session = "{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
                        \"transcript_path\":\"/p/s.jsonl\",\"cwd\":\"/repo\"}\n";
         let cut = &session[..session.len() / 2];
         for (feed, is_cut) in [
@@ -623,7 +623,7 @@ mod tests {
         let (_dir, path) = endpoint("second-line");
         let (task, mut rx) = listen(&path);
         let mut conn = client(&path).await;
-        let session = "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
+        let session = "{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
                        \"transcript_path\":\"/p/s.jsonl\",\"cwd\":\"/repo\"}\n";
         conn.write_all(format!("{session}{SUBSCRIBE_LINE}").as_bytes())
             .await

@@ -27,6 +27,7 @@ async fn listener_parses_line_and_emits_event() {
 
     let mut s = UnixStream::connect(&path).await.unwrap();
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionStart",
         "session_id": "ses-1",
         "transcript_path": "/p/a.jsonl",
@@ -59,6 +60,7 @@ async fn listener_skips_malformed_line_and_keeps_going() {
     let mut s = UnixStream::connect(&path).await.unwrap();
     s.write_all(b"not json\n").await.unwrap();
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionEnd",
         "session_id": "ses-1",
         "transcript_path": "/p/a.jsonl",
@@ -102,6 +104,7 @@ async fn listener_drops_slow_connection_via_timeout() {
 
     let mut s = UnixStream::connect(&path).await.unwrap();
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionStart",
         "session_id": "after-timeout",
         "transcript_path": "/p/b.jsonl",
@@ -138,6 +141,7 @@ async fn listener_survives_non_utf8_read_error() {
 
     let mut s = UnixStream::connect(&path).await.unwrap();
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionStart",
         "session_id": "after-bad-read",
         "transcript_path": "/p/c.jsonl",
@@ -191,6 +195,7 @@ async fn bind_bails_when_a_live_listener_holds_the_path() {
     // The losing bind must be side-effect-free — the owner keeps serving.
     let mut s = UnixStream::connect(&path).await.unwrap();
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionStart",
         "session_id": "after-probe",
         "transcript_path": "/p/probe.jsonl",
@@ -233,6 +238,7 @@ async fn bind_reclaims_a_stale_socket_file() {
 
     let mut s = UnixStream::connect(&path).await.unwrap();
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionStart",
         "session_id": "after-reclaim",
         "transcript_path": "/p/reclaim.jsonl",
@@ -511,6 +517,7 @@ async fn listener_handles_concurrent_connections() {
         handles.push(tokio::spawn(async move {
             let mut s = UnixStream::connect(&p).await.unwrap();
             let payload = serde_json::json!({
+                "_pixtuoid_source": "claude-code",
                 "hook_event_name": "SessionStart",
                 "session_id": format!("ses-{i}"),
                 "transcript_path": format!("/p/{i}.jsonl"),

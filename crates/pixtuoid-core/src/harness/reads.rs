@@ -335,6 +335,23 @@ pub(crate) fn blank_of(node: &Value) -> Option<Value> {
     (blank != *node).then_some(blank)
 }
 
+/// What [`probe`] writes over `node`: [`blank_of`], but a hook envelope's root
+/// keeps its shim stamps, since without its source stamp a line is no source's
+/// and decodes to nothing, read or not.
+fn neutral_of(stamped: bool, at: &str, node: &Value) -> Option<Value> {
+    match node {
+        Value::Object(m) if stamped && at.is_empty() => {
+            let stamps: serde_json::Map<String, Value> = m
+                .iter()
+                .filter(|(k, _)| is_shim_stamp(at, k))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            (stamps.len() != m.len()).then_some(Value::Object(stamps))
+        }
+        _ => blank_of(node),
+    }
+}
+
 /// The JSON pointer to `key` under `at`, escaped (RFC 6901).
 pub(crate) fn child_pointer(at: &str, key: &str) -> String {
     format!("{at}/{}", key.replace('~', "~0").replace('/', "~1"))
@@ -426,7 +443,7 @@ fn probe(
     let slot = lines[i]
         .pointer_mut(at)
         .expect("`at` is a pointer into the line's own value");
-    let Some(neutral) = blank_of(slot) else {
+    let Some(neutral) = neutral_of(stamped, at, slot) else {
         return 0;
     };
     let kept = std::mem::replace(slot, neutral);
@@ -637,22 +654,29 @@ mod tests {
         );
     }
 
+    /// grok's `model-error` holds a line that decodes to nothing, the
+    /// `agent_error` notification.
     #[test]
     fn the_shim_stamps_survive_the_strip() {
-        let (_d, hooks) = stripped_copy("claude-code", "tool-run-hermetic", HOOK_PAYLOADS);
-        let stamps = |p: &Path| -> Vec<serde_json::Value> {
-            parsed_lines(p)
-                .expect("read")
-                .expect("json")
-                .1
-                .iter()
-                .map(|l| l[crate::harness::merge::SHIM_STAMP].clone())
-                .collect()
-        };
-        let before = stamps(&hooks);
-        assert!(before.iter().all(|v| v.as_i64().is_some_and(|ms| ms > 0)));
-        strip_unread("claude-code", std::slice::from_ref(&hooks)).expect("strip");
-        assert_eq!(stamps(&hooks), before);
+        for (source, scenario) in [
+            ("claude-code", "tool-run-hermetic"),
+            ("grok", "model-error-hermetic"),
+        ] {
+            let (_d, hooks) = stripped_copy(source, scenario, HOOK_PAYLOADS);
+            let stamps = |p: &Path| -> Vec<serde_json::Value> {
+                parsed_lines(p)
+                    .expect("read")
+                    .expect("json")
+                    .1
+                    .iter()
+                    .map(|l| l[crate::harness::merge::SHIM_STAMP].clone())
+                    .collect()
+            };
+            let before = stamps(&hooks);
+            assert!(before.iter().all(|v| v.as_i64().is_some_and(|ms| ms > 0)));
+            strip_unread(source, std::slice::from_ref(&hooks)).expect("strip");
+            assert_eq!(stamps(&hooks), before, "{source}/{scenario}");
+        }
     }
 
     #[test]
