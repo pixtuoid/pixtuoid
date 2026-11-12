@@ -155,9 +155,9 @@ pub struct PresenceTtl {
     /// With no activity for this long the daemon is presumed DOWN (covers a
     /// killed gateway, which fires neither `session_end` nor `gateway_stop`).
     pub(crate) presence_ttl_ms: u64,
-    /// How long a `Down` presence lingers (drawn walking out) before it is
-    /// REMOVED — generously past the renderer's elevator walk-out, so the leave
-    /// animation always completes first.
+    /// How long a `Down` presence stays before it is REMOVED, so the gateway
+    /// chip, the Sources panel and the remote snapshot show it Down; the sim
+    /// walks the mascot out on its own clock, past the removal too.
     pub(crate) down_remove_ms: u64,
 }
 
@@ -201,7 +201,7 @@ impl DaemonPresence {
     ///
     /// `last_seen` is anchored to `now` HERE because the sweep removes a Down
     /// entry on that clock: on an abrupt death, where `last_seen` can be
-    /// minutes stale, the entry would be swept before any frame showed the
+    /// minutes stale, the entry would be swept before any reader showed the
     /// gateway Down. Taking `now` makes entering Down without anchoring the
     /// clock unrepresentable.
     fn enter_down(&mut self, now: SystemTime) {
@@ -250,10 +250,9 @@ pub fn apply_presence(
     let was_down = p.liveness == DaemonLiveness::Down;
     // Proof-of-life ONLY. A `PidExited` on the ordinary clean stop lands after
     // `GatewayDown` already cleared `current_pid`, so its arm is a no-op — yet
-    // stamping the clock here would restart the walk-out the renderer times off
-    // `last_seen` (and push out the sweep's removal), making the mascot vanish and
-    // then leave a second time. This skips BOTH `PidExited` sub-cases, which is why
-    // the MATCHING one (the abrupt death) anchors the clock in `enter_down`.
+    // stamping the clock here would push out the sweep's removal of the Down
+    // entry. This skips BOTH `PidExited` sub-cases, which is why the MATCHING one
+    // (the abrupt death) anchors the clock in `enter_down`.
     if !matches!(update, PidExited { .. }) {
         p.last_seen = now;
     }
@@ -338,7 +337,6 @@ pub fn sweep_presence_ttl(scene: &mut SceneState, source: &str, ttl: PresenceTtl
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
         if p.liveness == DaemonLiveness::Down {
-            // Keep the Down entry only until the walk-out has had time to finish.
             if idle_ms >= ttl.down_remove_ms {
                 doomed.push(instance.clone());
             }
@@ -357,7 +355,7 @@ pub fn sweep_presence_ttl(scene: &mut SceneState, source: &str, ttl: PresenceTtl
     scene.daemons.remove_instances(source, &doomed);
 }
 
-/// Drive EVERY instance of a source to `Down` (arming the renderer's walk-out),
+/// Drive EVERY instance of a source to `Down` (the sim walks each mascot out),
 /// skipping any already Down — idempotent, so the `down_remove_ms` removal timer
 /// in [`sweep_presence_ttl`] isn't reset on every tick. The runtime calls this
 /// when a source is DISCONNECTED in the Sources panel: the presence side-channel
@@ -945,7 +943,7 @@ mod tests {
             assert_eq!(
                 last_seen(&s, src),
                 ms(1000),
-                "Down re-anchors last_seen for the walk-out"
+                "Down re-anchors the removal clock"
             );
             mark_presence_down(&mut s, src, ms(5000));
             assert_eq!(
@@ -976,23 +974,26 @@ mod tests {
             assert_eq!(
                 last_seen(&s, src),
                 ms(ttl.presence_ttl_ms + 1),
-                "walk-out anchor re-stamped"
+                "removal clock re-stamped"
             );
         }
     }
 
     #[test]
-    fn sweep_removes_a_down_entry_after_the_walkout_window() {
+    fn sweep_removes_a_down_entry_after_down_remove_ms() {
         let ttl = PresenceTtl::DEFAULT;
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(&mut s, src, DaemonPresenceUpdate::GatewayDown, ms(0));
             sweep_presence_ttl(&mut s, src, ttl, ms(ttl.down_remove_ms - 1));
-            assert!(p_opt(&s, src).is_some(), "still present mid walk-out");
+            assert!(
+                p_opt(&s, src).is_some(),
+                "still present inside the Down window"
+            );
             sweep_presence_ttl(&mut s, src, ttl, ms(ttl.down_remove_ms + 1));
             assert!(
                 p_opt(&s, src).is_none(),
-                "removed once the walk-out window elapsed"
+                "removed once the Down window elapsed"
             );
         }
     }
@@ -1209,7 +1210,7 @@ mod tests {
     }
 
     #[test]
-    fn an_abrupt_matching_exit_anchors_the_walk_out_clock_at_the_death_instant() {
+    fn an_abrupt_matching_exit_anchors_the_removal_clock_at_the_death_instant() {
         // An abrupt death (SIGKILL/OOM) lands no `GatewayDown`, so the synthesized
         // receipt's pid STILL MATCHES and this arm really transitions to Down — with
         // a `last_seen` that an idle gateway leaves minutes stale.
@@ -1239,13 +1240,13 @@ mod tests {
         assert_eq!(
             p.last_seen,
             ms(60_000),
-            "entering Down must anchor the walk-out clock at the DEATH instant, not \
+            "entering Down must anchor the removal clock at the DEATH instant, not \
              leave it at the last proof-of-life 60s earlier"
         );
     }
 
     #[test]
-    fn a_non_matching_exit_receipt_does_not_restart_the_walk_out_clock() {
+    fn a_non_matching_exit_receipt_does_not_restart_the_removal_clock() {
         // The ORDINARY clean stop: `GatewayDown` clears `current_pid`, so the armed
         // pid's receipt arrives NON-matching. Upstream awaits its stop hook before
         // closing, so this ordering is the norm, not a race.
@@ -1271,8 +1272,8 @@ mod tests {
         assert_eq!(
             s.daemon(src, &inst(A)).expect("present").last_seen,
             at_down,
-            "a death receipt must not refresh the presence clock — the walk-out is \
-             timed off it"
+            "a death receipt must not refresh the presence clock — the sweep's removal \
+             is timed off it"
         );
         apply_at(
             &mut s,
