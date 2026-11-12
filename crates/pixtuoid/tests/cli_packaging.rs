@@ -444,6 +444,23 @@ fn doctor_proves_the_built_shim_delivers_with_no_office_open() {
     assert!(stdout.contains("no instance on"), "{stdout}");
 }
 
+/// The probe meets the endpoint's own conditions, not TMPDIR's: a TMPDIR too
+/// deep for a socket's path says nothing of an endpoint that binds elsewhere.
+#[cfg(unix)]
+#[test]
+fn doctor_proves_the_built_shim_delivers_under_a_deep_tmpdir() {
+    let home = tempfile::TempDir::new().expect("tempdir");
+    // Past any `sun_path` (104 bytes on macOS, 108 on Linux) on its own.
+    let deep = home.path().join("deep".repeat(30));
+    std::fs::create_dir_all(&deep).expect("deep TMPDIR");
+    let out = doctor(home.path(), &hook::private_endpoint(home.path(), "none"))
+        .env("TMPDIR", &deep)
+        .output()
+        .expect("run pixtuoid doctor");
+    assert!(out.status.success(), "{out:?}");
+    assert_the_built_shim_delivered(&String::from_utf8_lossy(&out.stdout));
+}
+
 // The whole chain: a shim's hook reaches a live owner, and doctor reads it there.
 #[tokio::test(flavor = "multi_thread")]
 async fn doctor_reads_what_the_built_shim_delivered_to_a_live_owner() {
