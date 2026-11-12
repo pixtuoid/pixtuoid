@@ -302,7 +302,7 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
             removed |= paths.len() != was;
         }
         if let Some(entries) = plugins.get_mut("entries").and_then(Value::as_object_mut) {
-            removed |= entries.remove(PLUGIN_ID).is_some();
+            removed |= entries.shift_remove(PLUGIN_ID).is_some();
         }
         if removed {
             // NEVER by emptying the list: dropping the last member turns
@@ -1089,6 +1089,31 @@ mod tests {
                     .any(|p| p.as_str().is_some_and(|s| s.ends_with("plugins/pixtuoid")))),
                 "our load.path removed, got {paths:?}"
             );
+        });
+    }
+
+    /// Entries the user added after pixtuoid's keep their place: a plain `remove` on a
+    /// `preserve_order` map swaps the last one into the hole.
+    #[test]
+    fn uninstall_keeps_the_order_of_the_users_entries() {
+        in_state_dir(|| {
+            let installed = merge_install(
+                r#"{"plugins":{"entries":{"anthropic":{"enabled":true}}}}"#,
+                "/x",
+            )
+            .unwrap();
+            let mut v: Value = serde_json::from_str(&installed.content).unwrap();
+            let entries = v["plugins"]["entries"].as_object_mut().unwrap();
+            entries.insert("b".into(), json!({}));
+            entries.insert("c".into(), json!({}));
+            let removed = merge_uninstall(&v.to_string()).unwrap();
+            let v: Value = serde_json::from_str(&removed.content).unwrap();
+            let keys: Vec<_> = v["plugins"]["entries"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .collect();
+            assert_eq!(keys, ["anthropic", "b", "c"]);
         });
     }
 

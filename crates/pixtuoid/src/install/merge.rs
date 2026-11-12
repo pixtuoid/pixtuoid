@@ -384,14 +384,12 @@ fn strip_shim_node(node: &yaml_edit::YamlNode) -> Stripped {
     if let Some(items) = node.as_sequence() {
         for i in (0..items.len()).rev() {
             let Some(item) = items.get(i) else { continue };
-            let inner = if yaml_shim_entry(&item) {
-                Stripped {
-                    removed: true,
-                    hollowed: true,
-                }
-            } else {
-                strip_shim_node(&item)
-            };
+            if yaml_shim_entry(&item) {
+                done.removed = true;
+                items.remove(i);
+                continue;
+            }
+            let inner = strip_shim_node(&item);
             done.removed |= inner.removed;
             if inner.removed && (inner.hollowed || yaml_emptied(&item)) {
                 items.remove(i);
