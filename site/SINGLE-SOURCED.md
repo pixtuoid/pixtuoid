@@ -52,12 +52,11 @@ Notes no gate carries:
   pixelated canvas from `Office.overlay_json()`, the painters' badge/neon_sign
   model (the web `labels == badges` test): a badge's name in its activity tone
   on its plate, ringed in its CLI's hue and framed by the engine's
-  `badge_insets`, never a copy of its numbers. Rules:
-  captions pop in only after the roll settles;
-  `.textContent` never `innerHTML` (cwds are untrusted); reduced-motion is
-  `display:none`; the board's legibility is HALO-carried by design (raw hues are
-  deliberately not WCAG-gated against office pixels). Pinned by
-  `smoke.spec.ts` "crisp AA captions overlay the live office".
+  `badge_insets`, never a copy of its numbers. Rules: captions pop in only after
+  the roll settles; `.textContent` never `innerHTML` (cwds are untrusted);
+  reduced-motion is `display:none`; the board's legibility is HALO-carried by
+  design (raw hues are deliberately not WCAG-gated against office pixels).
+  Pinned by `smoke.spec.ts` "crisp AA captions overlay the live office".
 - **Contrast has FOUR populations**, each swept: bare-over-office
   ("bare hero text clears WCAG AA…" — `officeGrounds` scrolls the element in
   AND asserts the read hit painted canvas, else `getImageData` grades "dimmer
