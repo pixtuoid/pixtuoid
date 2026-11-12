@@ -528,8 +528,6 @@ fn overlapping_skill_calls_each_walk_their_child_out_on_return() {
     );
 }
 
-/// Reasonix parent `root`, whose `explore` returned with its child
-/// (`root:subagent:call_a`) done: the instant it returned.
 fn returned_reasonix_dispatch(r: &mut Reducer, scene: &mut SceneState) -> SystemTime {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let at = |ms| t0 + Duration::from_millis(ms);
