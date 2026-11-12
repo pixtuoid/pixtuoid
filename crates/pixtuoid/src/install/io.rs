@@ -567,7 +567,7 @@ fn handle_of(child: &Shared) -> Option<KillHandle> {
     Some(handle)
 }
 
-/// `child`, locked for one call: [`kill_running`] takes it too on Windows.
+/// `child`, locked: [`kill_running`] takes it on Windows too, where no holder may block.
 fn locked(child: &Shared) -> std::sync::MutexGuard<'_, Box<dyn process_wrap::std::ChildWrapper>> {
     child
         .lock()
@@ -659,10 +659,10 @@ pub(crate) fn kill_running() {
 }
 
 /// From the first call on, a quit signal [kills every running group](kill_running),
-/// then ends the process by its default disposition, unless a run that
-/// [owns the quit](crate::runtime::QuitArms::is_owned) caught it too, whose
-/// teardown comes first. Called before a group's spawn: a signal landing
-/// before the arm would end the process with the group left running.
+/// then ends the process by its default disposition, unless a run
+/// [armed its own quit](crate::runtime::QuitArms::is_owned): it re-raises after its
+/// teardown, and a signal past its arms is absorbed. Called before a group's spawn:
+/// a signal landing before the arm would end the process with the group left running.
 #[cfg(unix)]
 fn kill_running_on_quit() {
     static ARMED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
