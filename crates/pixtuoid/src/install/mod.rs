@@ -573,6 +573,9 @@ fn install_target_from(
     // no manifest names, which no disconnect removes.
     if let Some(host) = t.host() {
         host.cli.require()?;
+        // So a config of the CLI's own that the strip can't parse fails the connect
+        // before the CLI registers anything and before any file lands.
+        check_cli_config(host.shim_hooks.as_ref())?;
     }
     // Lost-update TOCTOU: two concurrent pixtuoid runs would otherwise interleave
     // read(A)→write(B)→write(A), and A's rename clobbers B's change.
@@ -616,15 +619,19 @@ fn install_target_from(
     // still under its lock, so a failed registration puts back the hooks file this
     // call wrote: the hooks ARE the connected fact (`has_hooks`), and a plugin that
     // never registered fires none of the new ones.
-    if let Some(host) = t.host()
-        && let Err(e) = connect_host(host, &path)
-    {
-        if outcome.changed
-            && let Err(undo) = lock.restore(prior.as_deref())
-        {
-            return Err(e.context(format!("the hooks it wrote stay in place: {undo:#}")));
+    if let Some(host) = t.host() {
+        if let Err(e) = (host.register)(&path) {
+            if outcome.changed
+                && let Err(undo) = lock.restore(prior.as_deref())
+            {
+                return Err(e.context(format!("the hooks it wrote stay in place: {undo:#}")));
+            }
+            return Err(e);
         }
-        return Err(e);
+        // After the registration, so a failed one keeps the old hook and the CLI is
+        // never left with neither, and re-read, as the registration may write this
+        // same file.
+        strip_cli_config(host.shim_hooks.as_ref())?;
     }
     Ok(InstallReport {
         outcome: if outcome.changed {
@@ -637,12 +644,18 @@ fn install_target_from(
     })
 }
 
-/// Register, then remove every hook in the CLI's own config that runs pixtuoid's
-/// shim: a registration that fails keeps the hook already there, so the CLI is never
-/// left with neither.
-fn connect_host(host: &target::HostRegistration, primary: &std::path::Path) -> Result<()> {
-    (host.register)(primary)?;
-    strip_cli_config(host.shim_hooks.as_ref()).map(drop)
+/// Fail where [`strip_cli_config`] would on a config it can't parse, writing nothing.
+fn check_cli_config(config: Option<&target::CliConfig>) -> Result<()> {
+    let Some(config) = config else {
+        return Ok(());
+    };
+    let path = (config.path)()?;
+    if !target::config_present(&path) {
+        return Ok(());
+    }
+    (config.strip)(&io::read_config(&path)?)
+        .with_context(|| format!("processing {}", path.display()))
+        .map(drop)
 }
 
 /// Whether it removed anything from `config`, a config of the CLI's own.

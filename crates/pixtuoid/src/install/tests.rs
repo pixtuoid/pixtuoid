@@ -2118,7 +2118,8 @@ fn a_failing_deregister_still_takes_the_shim_entries_out() {
 }
 
 /// A reload whose `enable` fails after its `disable` ran leaves the plugin off, which
-/// verify reports, and pending until the next reload or connect turns it back on.
+/// verify reports, and pending until the next reload or connect turns it back on; one
+/// whose `disable` fails leaves nothing pending.
 #[test]
 fn a_half_done_hermes_reload_is_finished_by_the_next() {
     with_fake_hosts(|_| {
@@ -2141,6 +2142,12 @@ fn a_half_done_hermes_reload_is_finished_by_the_next() {
             assert!((host.is_registered)().unwrap(), "{by}");
             assert!(!(r.pending)().unwrap(), "{by}");
         };
+        temp_env::with_var(
+            "FAKE_HOST_FAIL",
+            Some("hermes plugins disable pixtuoid"),
+            || assert!((r.reload)().is_err()),
+        );
+        assert!(!(r.pending)().unwrap(), "a reload that unloaded nothing");
         half_done();
         assert!(!(host.is_registered)().unwrap(), "the plugin is off");
         assert!((r.pending)().unwrap());
@@ -2160,23 +2167,46 @@ fn a_half_done_hermes_reload_is_finished_by_the_next() {
     });
 }
 
-/// A legacy config that no longer parses is never rewritten: the connect fails
-/// before the strip touches it, and before any registration.
+/// A CLI config the strip can't parse fails the connect before the CLI registers
+/// anything or pixtuoid writes a file, so no registration outlives the rolled-back
+/// hooks.
 #[test]
 fn a_connect_over_an_unparsable_legacy_config_errs_and_rewrites_nothing() {
     with_fake_hosts(|fake| {
         let tmp = tempfile::TempDir::new().unwrap();
-        let primary = plugin_hooks_path(tmp.path());
-        std::fs::write(codex_config(), "{ not = = valid [[[").unwrap();
-        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
-        assert!(install_target_from(&CODEX, Some(primary.clone()), hook).is_err());
-        assert_eq!(
-            std::fs::read_to_string(codex_config()).unwrap(),
-            "{ not = = valid [[["
-        );
-        assert!(!has_hooks(&CODEX, Some(primary)));
-        let calls = std::fs::read_to_string(fake.join("calls.log")).unwrap_or_default();
-        assert!(!calls.contains("codex plugin"), "{calls}");
+        for (t, cli, primary, garbage) in [
+            (
+                &CODEX,
+                "codex",
+                Some(plugin_hooks_path(tmp.path())),
+                "{ not = = valid [[[",
+            ),
+            (&ANTIGRAVITY, "agy", None, "{ not json"),
+        ] {
+            let own = (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+            std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+            std::fs::write(&own, garbage).unwrap();
+            let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+            assert!(
+                install_target_from(t, primary.clone(), hook).is_err(),
+                "{}",
+                t.name
+            );
+            assert_eq!(
+                std::fs::read_to_string(&own).unwrap(),
+                garbage,
+                "{}",
+                t.name
+            );
+            let at = primary_path(t, primary).unwrap();
+            assert!(
+                !at.parent().unwrap().exists(),
+                "{}: {}",
+                t.name,
+                at.display()
+            );
+            assert_eq!(calls_of(fake, cli), Vec::<String>::new(), "{}", t.name);
+        }
     });
 }
 

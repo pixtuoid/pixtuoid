@@ -156,9 +156,9 @@ fn register(config: &Path) -> Result<()> {
 /// which unloads it, then enabled, which loads the files on disk
 /// (`hermes_cli/plugins_activation.py:118-121`).
 fn reload() -> Result<()> {
+    CLI.run(&[PLUGINS.as_ref(), DISABLE.as_ref(), NAME.as_ref()])?;
     let marker = pending_marker()?;
     io::write_config_atomic(&marker, "")?;
-    CLI.run(&[PLUGINS.as_ref(), DISABLE.as_ref(), NAME.as_ref()])?;
     CLI.run(&[PLUGINS.as_ref(), ENABLE.as_ref(), NAME.as_ref()])?;
     io::lock_config(&marker)?.restore(None)
 }
@@ -167,8 +167,8 @@ fn reload_pending() -> Result<bool> {
     Ok(pending_marker()?.exists())
 }
 
-/// Spans a [`reload`] from before its `disable` to after its `enable`
-/// ([`PluginReload::pending`]).
+/// Spans a [`reload`] from its `disable` landing to its `enable` landing: the plugin
+/// unloaded by pixtuoid and not yet back ([`PluginReload::pending`]).
 fn pending_marker() -> Result<PathBuf> {
     Ok(default_config_path()?.with_file_name("reload-pending"))
 }

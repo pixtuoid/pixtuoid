@@ -64,42 +64,87 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     }
 }
 
-/// Whether `command` runs pixtuoid's shim, whichever release wrote it: its program,
-/// past any leading `NAME=value` assignments, is the shim by its last path segment,
-/// or one of those assignments is the [`SOURCE_ENV`] stamp only the shim reads.
+/// Whether `command` runs pixtuoid's shim, read in the shape of each form a release
+/// wrote, since one split misreads another's.
 pub(crate) fn invokes_shim(command: &str) -> bool {
-    let mut words = shell_words(command).into_iter();
-    for word in words.by_ref() {
+    exec_form_runs_shim(command) || bare_form_runs_shim(command) || shell_form_runs_shim(command)
+}
+
+/// Claude Code's Windows exec form (`claude::hook_command`): the whole `command` is the
+/// shim's absolute path, unquoted and spaces included. A character no file name holds
+/// (learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file, "Naming Conventions")
+/// past the drive means more than one path, so a program handed the shim stays.
+fn exec_form_runs_shim(command: &str) -> bool {
+    let mut chars = command.chars();
+    let drive = chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && chars.next() == Some(':')
+        && matches!(chars.next(), Some('\\' | '/'));
+    drive && !chars.as_str().contains(['<', '>', ':', '"', '|', '?', '*']) && is_shim(command)
+}
+
+/// The Windows bare form `<path> --source <name>` ([`shell_hook_command`]): its path is
+/// screened free of spaces and never quoted, so its first word is the program, an
+/// apostrophe in it included. In place of a cmd-unsafe path it holds the path's 8.3
+/// alias, which `--source` and a registered name, the shim's own argument contract,
+/// tell from any other program's.
+fn bare_form_runs_shim(command: &str) -> bool {
+    let mut words = command.split_whitespace();
+    let Some(program) = words.next() else {
+        return false;
+    };
+    is_shim(program)
+        || (is_short_alias(last_segment(program))
+            && words
+                .skip_while(|w| *w != SOURCE_FLAG.trim())
+                .nth(1)
+                .is_some_and(|name| {
+                    pixtuoid_core::source::registry::registered_source_names().any(|n| n == name)
+                }))
+}
+
+/// The Unix forms ([`shell_hook_command`], Claude Code's bare name, Hermes's
+/// `'<path>' --source hermes`) as `/bin/sh` splits them: past any leading `NAME=value`
+/// assignments the program is the shim, or one of them is the [`SOURCE_ENV`] stamp
+/// only the shim reads, which also finds a shim renamed through
+/// [`HOOK_OVERRIDE_ENV`](crate::install::io::HOOK_OVERRIDE_ENV).
+fn shell_form_runs_shim(command: &str) -> bool {
+    for word in shell_words(command) {
         match word.split_once('=') {
             Some((name, _)) if is_env_name(name) => {
                 if name == SOURCE_ENV {
                     return true;
                 }
             }
-            _ => {
-                let program = word.rsplit(['/', '\\']).next().unwrap_or(&word);
-                let bin = crate::install::io::HOOK_BIN;
-                return program == bin
-                    || program
-                        .strip_prefix(bin)
-                        .is_some_and(|ext| ext.eq_ignore_ascii_case(".exe"))
-                    // Another long name on the `PIXTUO~` stem can hold that alias; only the shim
-                    // takes --source.
-                    || (is_short_shim(program) && words.any(|arg| arg == SOURCE_FLAG.trim()));
-            }
+            _ => return is_shim(&word),
         }
     }
     false
 }
 
-/// The shim's DOS 8.3 alias, `PIXTUO~<n>.EXE` in any case, which [`shell_hook_command`]
-/// writes on Windows in place of a cmd-unsafe path.
-fn is_short_shim(program: &str) -> bool {
+/// Whether `path`'s last segment is the shim's binary.
+fn is_shim(path: &str) -> bool {
+    let bin = crate::install::io::HOOK_BIN;
+    let program = last_segment(path);
+    program == bin
+        || program
+            .strip_prefix(bin)
+            .is_some_and(|ext| ext.eq_ignore_ascii_case(".exe"))
+}
+
+fn last_segment(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
+}
+
+/// A DOS 8.3 alias of an `.EXE`, `<stem>~<n>.EXE` in any case. The `~<n>` tail is my
+/// opinion of the alias Windows generates: [MS-FSCC] 2.1.5.2.1 ("8.3 Filename",
+/// learn.microsoft.com) bounds only the name, and [MS-FSA] leaves the alias's string
+/// to the implementation.
+fn is_short_alias(program: &str) -> bool {
     program
         .to_ascii_uppercase()
-        .strip_prefix("PIXTUO~")
-        .and_then(|rest| rest.strip_suffix(".EXE"))
-        .is_some_and(|n| n.parse::<u32>().is_ok())
+        .strip_suffix(".EXE")
+        .and_then(|base| base.rsplit_once('~'))
+        .is_some_and(|(stem, n)| !stem.is_empty() && n.parse::<u32>().is_ok())
 }
 
 fn is_env_name(name: &str) -> bool {
@@ -169,6 +214,8 @@ mod tests {
             r#""C:\Program Files\pixtuoid\pixtuoid-hook.exe""#,
             r"c:\progra~1\pixtuo~1\pixtuo~12.exe --source codex",
             "PIXTUOID_SOURCE=codex '/opt/shims/pxhook'",
+            r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe",
+            r"C:\Users\O'Brien\.cargo\bin\pixtuoid-hook.exe --source codex",
         ] {
             assert!(invokes_shim(ours), "{ours}");
         }
@@ -183,6 +230,8 @@ mod tests {
             "FOO=1 echo PIXTUOID_SOURCE=x",
             r"C:\PROGRA~1\PIXTUO~1\PIXTUO~2.EXE",
             r"C:\PIXTUO~.EXE --source codex",
+            r"C:\PROGRA~1\PIXTUO~1\PIXTUO~2.EXE --source notasource",
+            r"C:\tools\wrap.exe C:\bin\pixtuoid-hook.exe",
         ] {
             assert!(!invokes_shim(theirs), "{theirs}");
         }
