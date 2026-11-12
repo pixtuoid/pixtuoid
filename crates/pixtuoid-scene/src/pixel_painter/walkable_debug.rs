@@ -136,7 +136,7 @@ fn paint_approach(buf: &mut RgbBuffer, layout: &SceneLayout) {
         // SEAT last: the 3x3 blobs overlap when the approach cell lands a pixel off the chair.
         for (dx, dy) in DIRS {
             // The desk's OWN facing, as production reads it — a fixed South here
-            // mirrors the blobs on every back-turned desk, and this overlay is
+            // mirrors the blobs on every back-turned desk, and this layer is
             // what the next reader reaches for to check that very geometry.
             if !desk_def.approach.allows(facing, (dx, dy)) {
                 continue;
@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_marks_seat_approach_sides_distinct_from_the_seat_cell() {
+    fn debug_layer_marks_seat_approach_sides_distinct_from_the_seat_cell() {
         let l = SceneLayout::compute(crate::layout::Viewport::full(200, 130), Some(8), 0).unwrap();
         let couch = l
             .waypoints
@@ -218,7 +218,7 @@ mod tests {
             buf.get(couch.pos.x, couch.pos.y)
         );
 
-        // Expected cells come from the SIM's own scan, so this asserts the overlay
+        // Expected cells come from the SIM's own scan, so this asserts the layer
         // marks where the router routes — not "something green near the couch".
         let def = furniture_def(couch.kind.furniture());
         let found_green_approach = DIRS.iter().any(|&(dx, dy)| {
@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn overlay_marks_desk_approach_distinct_from_the_chair() {
+    fn debug_layer_marks_desk_approach_distinct_from_the_chair() {
         use crate::layout::{Facing, Furniture};
         let l = SceneLayout::compute(crate::layout::Viewport::full(200, 130), Some(8), 0).unwrap();
         let desk = *l.home_desks.first().expect("a home desk");

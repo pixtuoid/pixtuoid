@@ -25,7 +25,7 @@ fn walkable_debug_toggle_tints_blocked_pixels_and_is_reversible() {
     };
     assert!(
         to_red(on.get(bx, by)) < to_red(before.get(bx, by)),
-        "debug overlay must tint a blocked cell toward red (was {:?}, now {:?})",
+        "the walkable debug layer must tint a blocked cell toward red (was {:?}, now {:?})",
         before.get(bx, by),
         on.get(bx, by),
     );

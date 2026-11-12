@@ -49,11 +49,11 @@ impl ClassicCaches {
 
 mod ambient;
 mod background;
-mod debug_overlay;
 pub(crate) mod drawable;
 pub(crate) mod effects;
 mod furniture;
 pub(crate) mod palette;
+mod walkable_debug;
 
 /// Applies the hour's object terms to every pixel painted since `since`.
 ///
@@ -111,8 +111,8 @@ use drawable::{Drawable, DrawableKind, Layer, enqueue_room_walls, paint_drawable
 
 /// The paint pass's borrow set — everything `paint_frame` may touch. The only
 /// `&mut`s are the pixel buffer and the paint-local caches; the sim stores are
-/// absent BY TYPE (`walks` is an immutable view, read by the debug route
-/// overlay), so painting cannot move the world.
+/// absent BY TYPE (`walks` is an immutable view, read by the walkable debug
+/// layer), so painting cannot move the world.
 pub(crate) struct PaintCtx<'a> {
     scene: &'a SceneState,
     layout: &'a SceneLayout,
@@ -318,7 +318,7 @@ pub(crate) fn paint_frame(ctx: &mut PaintCtx<'_>, frame: &SimFrame) -> Drawn {
     background::paint_lightning_flash(ctx.buf, &ctx.sky);
 
     if ctx.debug_walkable {
-        debug_overlay::paint(ctx.buf, ctx.layout, ctx.scene, ctx.walks);
+        walkable_debug::paint(ctx.buf, ctx.layout, ctx.scene, ctx.walks);
     }
 
     drawn

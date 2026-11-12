@@ -15,7 +15,7 @@ use crate::walkable::WalkableMask;
 /// cell before giving up on a side.
 const STAND_SCAN: i32 = 4;
 
-/// The four cardinal unit axes (N, S, W, E). `debug_overlay`'s DIRS is a
+/// The four cardinal unit axes (N, S, W, E). `walkable_debug`'s DIRS is a
 /// different order and stays separate.
 const CARDINAL_DIRS: [(i32, i32); 4] = [(0, -1), (0, 1), (-1, 0), (1, 0)];
 
@@ -82,8 +82,8 @@ const SEAT_APPROACH_SCAN: i32 = 14;
 /// onto a far strip — that would resurrect a back-side approach.
 ///
 /// Single-sourced: [`approach_point`]'s seat branch ROUTES agents with it and
-/// `pixel_painter::debug_overlay` DRAWS it, so the `w` overlay's green dots land
-/// exactly where the agent goes.
+/// `pixel_painter::walkable_debug` DRAWS it, so the walkable debug layer's green
+/// dots land exactly where the agent goes.
 pub(crate) fn first_reachable_on_side(
     mask: &WalkableMask,
     reachable: &ReachSet,
