@@ -38,8 +38,8 @@ pub(crate) enum FloatingEvent {
     GpuFailed(String),
     /// A quit signal ([`QuitArms`](crate::runtime::QuitArms)): quit as the close button does.
     Quit,
-    /// A panel job finished off the loop.
-    PanelJobDone(crate::panels::JobDone),
+    /// Work the panels started off the loop landed.
+    Landed(crate::panels::Landed),
 }
 
 pub(crate) struct FloatingApp {
@@ -53,8 +53,9 @@ pub(crate) struct FloatingApp {
     /// The Sources panel's mutation seam, as the TUI's.
     connected: crate::runtime::ConnectedSources,
     /// Where a panel job sends its result, which reaches the loop as
-    /// [`FloatingEvent::PanelJobDone`].
+    /// [`FloatingEvent::Landed`].
     job_tx: crate::panels::JobTx,
+    saves: crate::panels::Saves,
     /// The modifier keys held, which a key is read with.
     modifiers: winit::keyboard::ModifiersState,
     /// What the frame on screen shows beside the office.
@@ -215,8 +216,10 @@ impl FloatingApp {
             notify_ready,
         }: Settings,
         boot: super::PipelineBoot,
-    ) -> Self {
-        let audio_ctl = crate::audio::AudioController::new(audio, config_path.clone());
+    ) -> std::io::Result<Self> {
+        let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
+        let saves = crate::panels::Saves::spawn(config_path.clone(), job_tx.clone())?;
+        let audio_ctl = crate::audio::AudioController::new(audio, saves.clone());
         let pack = std::sync::Arc::new(pack);
         let mut renderer = OfficeRenderer::new(std::sync::Arc::clone(&pack));
         renderer.set_audio(audio_ctl.handle().clone());
@@ -233,19 +236,15 @@ impl FloatingApp {
             look: None,
         });
         let connected = boot.connected.clone();
-        let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
         let job_proxy = proxy.clone();
         boot.rt.spawn(async move {
             while let Some(done) = job_done.recv().await {
-                if job_proxy
-                    .send_event(FloatingEvent::PanelJobDone(done))
-                    .is_err()
-                {
+                if job_proxy.send_event(FloatingEvent::Landed(done)).is_err() {
                     break;
                 }
             }
         });
-        Self {
+        Ok(Self {
             cfg,
             theme,
             pack,
@@ -253,6 +252,7 @@ impl FloatingApp {
             ui,
             connected,
             job_tx,
+            saves,
             modifiers: winit::keyboard::ModifiersState::empty(),
             // Until `resumed` names the platform: presenting every frame is
             // safe on any.
@@ -276,7 +276,7 @@ impl FloatingApp {
             gpu: None,
             proxy,
             failure: Stop::default(),
-        }
+        })
     }
 
     /// Why the window stopped, when it failed: its creation, its GPU's, or a
@@ -406,7 +406,7 @@ impl FloatingApp {
                 snapshot: &snapshot,
                 now,
                 respawn: crate::audio::respawn,
-                installed: crate::sources::detect,
+                saves: &self.saves,
                 focus: crate::focus::focus_slot,
                 job_tx: &self.job_tx,
                 run_job: crate::panels::run_job,
@@ -424,7 +424,7 @@ impl FloatingApp {
         let Some(scene) = self.live.as_ref().map(|l| l.scene_rx.borrow().clone()) else {
             return;
         };
-        crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
+        self.audio_ctl.tick(Instant::now());
         self.renderer.hear(&scene, self.conditions(), self.ui.now());
     }
 
@@ -446,8 +446,7 @@ impl FloatingApp {
         else {
             return;
         };
-        let volume_flash =
-            crate::panels::tick_audio(&mut self.ui, &mut self.audio_ctl, Instant::now());
+        let volume_flash = self.audio_ctl.tick(Instant::now());
         let audio_audible = self.audio_ctl.handle().is_audible();
         let at = super::geometry::window_geometry(size, self.pack.max_density_variant(), self.zoom);
         super::geometry::sync_floor_caps(
@@ -602,9 +601,12 @@ impl super::lifecycle::Teardown for FloatingApp {
                 .map(|p| DESKTOP_UNIT.spot(p, scale)),
             zoom: self.zoom,
         };
-        if let Err(e) = config::save_floating(&self.config_path, &save) {
-            tracing::warn!(error = ?e, "pixtuoid floating: could not persist window geometry");
-        }
+        self.saves.save(move |path| {
+            if let Err(e) = config::save_floating(path, &save) {
+                tracing::warn!(error = ?e, "pixtuoid floating: could not persist window geometry");
+            }
+            None
+        });
     }
 
     fn hide_window(&mut self) {
@@ -722,8 +724,8 @@ impl ApplicationHandler<FloatingEvent> for FloatingApp {
                 }
             }
             FloatingEvent::Quit => event_loop.exit(),
-            FloatingEvent::PanelJobDone(done) => {
-                crate::panels::finish_job(&mut self.ui, done);
+            FloatingEvent::Landed(landed) => {
+                crate::panels::land(&mut self.ui, landed);
                 self.request_redraw();
             }
         }

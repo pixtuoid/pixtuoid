@@ -113,7 +113,8 @@ pub(crate) fn run(
                 proxy,
                 rt: rt.handle().clone(),
             },
-        );
+        )
+        .context("starting the floating window's config writes")?;
         let ran = event_loop.run_app(&mut app);
         // The window's own failure is the cause; a loop error after it is not.
         if let Some(failure) = app.into_failure() {

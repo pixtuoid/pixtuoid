@@ -138,6 +138,9 @@ struct Notices {
     /// onboarding could hold the popup back.
     upgraded: bool,
     terminal_cutaway: bool,
+    /// The agent CLIs on this machine as last read: the boot's probe when its
+    /// popup showed, then each panel job's rows.
+    installed: Vec<&'static str>,
     shown: Arc<[String]>,
 }
 
@@ -217,7 +220,8 @@ impl UiState {
         ui.notices.terminal_cutaway = boot.look == Some(LookKind::Cutaway);
         ui.saved.look = boot.look;
         if pops_up {
-            ui.open_version_popup(boot.connected, &installed());
+            ui.notices.installed = installed();
+            ui.open_version_popup(boot.connected);
         }
         ui
     }
@@ -310,15 +314,12 @@ impl UiState {
         self.version_popup_open = false;
     }
 
-    /// Open the version popup with the notices due while `connected` holds
-    /// and the agent CLIs `installed` here are.
-    pub(crate) fn open_version_popup(
-        &mut self,
-        connected: &HashSet<String>,
-        installed: &[&'static str],
-    ) {
+    /// Open the version popup with the notices due while `connected` holds,
+    /// on the agent CLIs last read here: its loop probes nothing, a stalled
+    /// home being no reason to freeze it.
+    pub(crate) fn open_version_popup(&mut self, connected: &HashSet<String>) {
         let facts = crate::version::Facts {
-            installed,
+            installed: &self.notices.installed,
             connected,
             terminal_cutaway: self.notices.terminal_cutaway,
         };
@@ -346,6 +347,19 @@ impl UiState {
         if let Some(open) = &mut self.appearance {
             open.look = open.look.map(|_| look);
         }
+    }
+
+    /// Read which agent CLIs are here from a panel job's `rows`, as
+    /// [`crate::sources::detect`] would find them.
+    pub(crate) fn read_installed(&mut self, rows: &[ConnectionRow]) {
+        self.notices.installed = rows
+            .iter()
+            .filter(|row| {
+                row.target.is_some()
+                    && !matches!(row.state, crate::sources::ConnState::NoCli { .. })
+            })
+            .map(|row| row.source_id)
+            .collect();
     }
 
     /// Enter in the picker: close, keeping what it showed, which it returns.
@@ -1053,7 +1067,8 @@ mod tests {
             previous: semver::Version::new(0, 19, 0),
             current: semver::Version::new(0, 20, 0),
         });
-        ui.open_version_popup(&HashSet::new(), &["codex"]);
+        ui.notices.installed = vec!["codex"];
+        ui.open_version_popup(&HashSet::new());
         assert!(ui.modal().version_popup_open);
         let shown = ui.version_notices().to_vec();
         assert!(shown.iter().any(|n| n.contains("Codex")), "{shown:?}");
@@ -1068,7 +1083,7 @@ mod tests {
         );
 
         let connected = HashSet::from(["codex".to_string()]);
-        ui.open_version_popup(&connected, &["codex"]);
+        ui.open_version_popup(&connected);
         assert!(ui.modal().version_popup_open);
         assert!(
             ui.version_notices().is_empty(),
@@ -1088,7 +1103,8 @@ mod tests {
             previous: semver::Version::new(0, 19, 0),
             current: semver::Version::new(0, 20, 0),
         });
-        ui.open_version_popup(&HashSet::new(), &["codex"]);
+        ui.notices.installed = vec!["codex"];
+        ui.open_version_popup(&HashSet::new());
         let screen = (120, 44);
         let bounds = ratatui::layout::Rect::new(0, 0, screen.0, screen.1);
         let bare = version_popup_url_rect(bounds, &[], 1.0).expect("a link");
@@ -1121,7 +1137,7 @@ mod tests {
                 crate::config::save_version(&path, seed).expect("seed a version");
             }
             let mut ui = boot_at(&path, welcome, &semver::Version::new(0, 20, 0));
-            ui.open_version_popup(&HashSet::new(), &[]);
+            ui.open_version_popup(&HashSet::new());
             let frames = ui.build_frames(SystemTime::now(), &SceneState::new([0; 10]), &[]);
             frames.version_popup.upgraded
         };
