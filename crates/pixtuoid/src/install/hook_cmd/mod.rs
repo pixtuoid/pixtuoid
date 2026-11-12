@@ -115,15 +115,17 @@ fn shell_form_runs_shim(command: &str) -> bool {
     false
 }
 
-/// Whether `path`'s last segment is the shim's binary, as the whole `command` of an
-/// exec-form entry is the program it spawns.
+/// Whether `path`'s last segment is the shim's binary in any case, as Windows names
+/// a file ("Do not assume case sensitivity",
+/// <https://learn.microsoft.com/en-us/windows/win32/fileio/naming-a-file>), and as
+/// the whole `command` of an exec-form entry is the program it spawns.
 pub(crate) fn is_shim(path: &str) -> bool {
     let bin = crate::install::io::HOOK_BIN;
     let program = last_segment(path);
-    program == bin
-        || program
-            .strip_prefix(bin)
-            .is_some_and(|ext| ext.eq_ignore_ascii_case(".exe"))
+    program
+        .get(..bin.len())
+        .is_some_and(|stem| stem.eq_ignore_ascii_case(bin))
+        && matches!(&program[bin.len()..], ext if ext.is_empty() || ext.eq_ignore_ascii_case(".exe"))
 }
 
 fn last_segment(path: &str) -> &str {
@@ -167,6 +169,7 @@ mod tests {
             r"c:\progra~1\pixtuo~1\pixtuo~12.exe --source codex",
             "PIXTUOID_SOURCE=codex '/opt/shims/pxhook'",
             r"C:\Users\O'Brien\.cargo\bin\pixtuoid-hook.exe --source codex",
+            r"C:\TOOLS\PIXTUOID-HOOK.EXE --source codex",
         ] {
             assert!(invokes_shim(ours), "{ours}");
         }
