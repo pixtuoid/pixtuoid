@@ -13,9 +13,13 @@ use pixtuoid_core::source::jsonl::ProbeSnapshot;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::vouch_snapshot_with_pids;
 use crate::{
-    backdate, codex_meta_line, codex_watcher, codex_work_line, vouch_snapshot,
-    wait_for_session_start, write_lines,
+    backdate, codex_meta_line, codex_watcher, codex_work_line, collect_for, collect_until,
+    start_id, vouch_snapshot, write_lines,
 };
+
+/// A negative check's window here: several 100 ms probe polls past every
+/// negative-vouch span these tests set, so a wrong `SessionEnd` lands inside it.
+const QUIET: Duration = Duration::from_millis(1500);
 
 #[tokio::test]
 async fn watcher_emits_proof_of_life_for_probe_live_ids() {
@@ -38,16 +42,12 @@ async fn watcher_emits_proof_of_life_for_probe_live_ids() {
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let expected = AgentId::from_parts("codex", uuid);
-    let mut pol = None;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((t, AgentEvent::ProofOfLife { agent_id }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-        {
-            pol = Some((t, agent_id));
-            break;
-        }
-    }
+    let pol = collect_until(&mut rx, "a probe refresh's ProofOfLife", |e| {
+        matches!(e, AgentEvent::ProofOfLife { .. })
+    })
+    .await
+    .pop()
+    .map(|(t, e)| (t, e.agent_id()));
     assert_eq!(
         pol,
         Some((Transport::Jsonl, expected)),
@@ -90,46 +90,33 @@ async fn poll_arm_refreshes_probe_snapshot_and_reemits_proof_of_life() {
         }));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
-    let quiet_until = tokio::time::Instant::now() + Duration::from_millis(300);
-    while tokio::time::Instant::now() < quiet_until {
-        if let Ok(Some((_, ev))) = tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
-        {
-            assert!(
-                !matches!(
-                    ev,
-                    AgentEvent::SessionStart { .. } | AgentEvent::ProofOfLife { .. }
-                ),
-                "the gate must hold while the probe snapshot is empty, got {ev:?}"
-            );
-        }
-    }
+    // Three of its 100 ms polls.
+    let held = collect_for(&mut rx, Duration::from_millis(300), "the empty-probe gate").await;
+    assert!(
+        !held.iter().any(|(_, ev)| matches!(
+            ev,
+            AgentEvent::SessionStart { .. } | AgentEvent::ProofOfLife { .. }
+        )),
+        "the gate must hold while the probe snapshot is empty, got {held:?}"
+    );
 
     live.lock().unwrap().insert(uuid.to_string());
 
     let expected = AgentId::from_parts("codex", uuid);
-    let mut got_start = false;
-    let mut got_pol = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline && !(got_start && got_pol) {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) if agent_id == expected => {
-                got_start = true;
-            }
-            Ok(Some((Transport::Jsonl, AgentEvent::ProofOfLife { agent_id })))
-                if agent_id == expected =>
-            {
-                got_pol = true;
-            }
-            _ => {}
-        }
-    }
+    let (mut got_start, mut got_pol) = (false, false);
+    let events = collect_until(
+        &mut rx,
+        "the poll arm's re-vouched SessionStart and its ProofOfLife",
+        |e| {
+            got_start |= start_id(e) == Some(expected);
+            got_pol |= matches!(e, AgentEvent::ProofOfLife { agent_id } if *agent_id == expected);
+            got_start && got_pol
+        },
+    )
+    .await;
     assert!(
-        got_start,
-        "the poll-arm snapshot refresh must re-vouch and admit the gated file"
-    );
-    assert!(
-        got_pol,
-        "the poll arm must re-emit ProofOfLife for every vouched id"
+        events.iter().all(|(t, _)| *t == Transport::Jsonl),
+        "{events:?}"
     );
     handle.abort();
 }
@@ -169,10 +156,12 @@ async fn admitted_with_mutable_probe(
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let expected = AgentId::from_parts("codex", uuid);
-    assert!(
-        wait_for_session_start(&mut rx, expected).await,
-        "the probe-vouched stale transcript must register"
-    );
+    collect_until(
+        &mut rx,
+        "the probe-vouched stale transcript must register",
+        |e| start_id(e) == Some(expected),
+    )
+    .await;
     (probe_state, rx, stale, handle)
 }
 
@@ -183,39 +172,27 @@ async fn assert_no_session_end_within(
     window: Duration,
     why: &str,
 ) {
-    let quiet_until = tokio::time::Instant::now() + window;
-    while tokio::time::Instant::now() < quiet_until {
-        if let Ok(Some((_, AgentEvent::SessionEnd { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
-        {
-            assert_ne!(agent_id, expected, "{why}");
-        }
-    }
+    let events = collect_for(rx, window, why).await;
+    assert!(
+        !events.iter().any(
+            |(_, e)| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == expected)
+        ),
+        "{why}"
+    );
 }
 
-/// Drain `rx` until a root `SessionEnd` for `expected` arrives, panicking with
-/// `why` if none does within `window`.
-async fn expect_session_end_within(
+/// Drain `rx` until `expected`'s root `SessionEnd`, panicking with `why` if
+/// none comes.
+async fn expect_session_end(
     rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
     expected: AgentId,
-    window: Duration,
     why: &str,
 ) {
-    let deadline = tokio::time::Instant::now() + window;
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((
-            Transport::Jsonl,
-            AgentEvent::SessionEnd {
-                agent_id,
-                as_child: false,
-            },
-        ))) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            return;
-        }
-    }
-    panic!("{why}");
+    let end = collect_until(rx, why, |e| {
+        matches!(e, AgentEvent::SessionEnd { agent_id, as_child: false } if *agent_id == expected)
+    })
+    .await;
+    assert_eq!(end.last().map(|(t, _)| *t), Some(Transport::Jsonl), "{why}");
 }
 
 #[tokio::test]
@@ -234,10 +211,9 @@ async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
     // The owning process exits: the probe stays HEALTHY but stops vouching.
     *probe_state.lock().unwrap() = vouch_snapshot(&[]);
 
-    expect_session_end_within(
+    expect_session_end(
         &mut rx,
         expected,
-        Duration::from_secs(15),
         "two healthy snapshots ≥ the span apart without the vouch must emit SessionEnd",
     )
     .await;
@@ -253,10 +229,12 @@ async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
     f.flush().await.unwrap();
     drop(f);
 
-    assert!(
-        wait_for_session_start(&mut rx, expected).await,
-        "an append after the negative-vouch exit must re-register the session (seen un-claim)"
-    );
+    collect_until(
+        &mut rx,
+        "an append after the negative-vouch exit must re-register the session (seen un-claim)",
+        |e| start_id(e) == Some(expected),
+    )
+    .await;
     handle.abort();
 }
 
@@ -317,7 +295,7 @@ async fn probe_failure_changes_nothing() {
     assert_no_session_end_within(
         &mut rx,
         expected,
-        Duration::from_millis(1500),
+        QUIET,
         "a probe failure must never confirm an exit — None is not an observation",
     )
     .await;
@@ -333,21 +311,12 @@ async fn probe_failure_changes_nothing() {
     f.flush().await.unwrap();
     drop(f);
 
-    let mut got_activity = false;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        if let Ok(Some((_, AgentEvent::ToolUseStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(200), rx.recv()).await
-            && agent_id == expected
-        {
-            got_activity = true;
-            break;
-        }
-    }
-    assert!(
-        got_activity,
-        "a fresh append must still walk normally while the probe is failing"
-    );
+    collect_until(
+        &mut rx,
+        "a fresh append must still walk normally while the probe is failing",
+        |e| matches!(e, AgentEvent::ToolUseStart { agent_id, .. } if *agent_id == expected),
+    )
+    .await;
     handle.abort();
 }
 
@@ -382,16 +351,18 @@ async fn probe_panic_changes_nothing() {
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let expected = AgentId::from_parts("codex", uuid);
-    assert!(
-        wait_for_session_start(&mut rx, expected).await,
-        "the probe-vouched stale transcript must register while the probe is healthy"
-    );
+    collect_until(
+        &mut rx,
+        "the probe-vouched stale transcript must register while the probe is healthy",
+        |e| start_id(e) == Some(expected),
+    )
+    .await;
 
     boom.store(true, Ordering::SeqCst);
     assert_no_session_end_within(
         &mut rx,
         expected,
-        Duration::from_millis(1500),
+        QUIET,
         "a probe panic must fold into the fail-safe, never confirm an exit",
     )
     .await;
@@ -433,10 +404,9 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
     let _ = child.kill();
     let _ = child.wait();
 
-    expect_session_end_within(
+    expect_session_end(
         &mut rx,
         expected,
-        Duration::from_secs(5),
         "a bound pid dying must SessionEnd within seconds (instant exit), \
          not wait out the 60s negative vouch",
     )
@@ -453,10 +423,12 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
     f.flush().await.unwrap();
     drop(f);
 
-    assert!(
-        wait_for_session_start(&mut rx, expected).await,
-        "an append after the instant exit must re-register the session (seen un-claim)"
-    );
+    collect_until(
+        &mut rx,
+        "an append after the instant exit must re-register the session (seen un-claim)",
+        |e| start_id(e) == Some(expected),
+    )
+    .await;
     handle.abort();
 }
 
@@ -485,10 +457,9 @@ async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {
 
     // The session ends while its process lives on: healthy probe, no vouch.
     *probe_state.lock().unwrap() = vouch_snapshot(&[]);
-    expect_session_end_within(
+    expect_session_end(
         &mut rx,
         expected,
-        Duration::from_secs(15),
         "the negative vouch must confirm the first exit",
     )
     .await;
@@ -498,7 +469,7 @@ async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {
     assert_no_session_end_within(
         &mut rx,
         expected,
-        Duration::from_millis(1500),
+        QUIET,
         "a process exit after the id was negative-vouch-confirmed must not re-emit SessionEnd",
     )
     .await;
@@ -535,25 +506,18 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
     let _ = child.kill();
     let _ = child.wait();
 
-    expect_session_end_within(
+    expect_session_end(
         &mut rx,
         expected,
-        Duration::from_secs(5),
         "the instant exit must emit the SessionEnd",
     )
     .await;
 
-    let quiet_until = tokio::time::Instant::now() + Duration::from_millis(1500);
-    while tokio::time::Instant::now() < quiet_until {
-        if let Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) =
-            tokio::time::timeout(Duration::from_millis(50), rx.recv()).await
-        {
-            assert_ne!(
-                agent_id, expected,
-                "a probe-failure pass after the instant exit must not mint a phantom SessionStart"
-            );
-        }
-    }
+    let after = collect_for(&mut rx, QUIET, "past the instant exit").await;
+    assert!(
+        !after.iter().any(|(_, e)| start_id(e) == Some(expected)),
+        "a probe-failure pass after the instant exit must not mint a phantom SessionStart"
+    );
     handle.abort();
 }
 
@@ -589,10 +553,9 @@ async fn a_rebound_session_ends_with_its_new_pid_while_the_old_one_lives() {
 
     let _ = new.kill();
     let _ = new.wait();
-    expect_session_end_within(
+    expect_session_end(
         &mut rx,
         expected,
-        Duration::from_secs(5),
         "the migrated binding must follow the new pid — its death is the session's instant exit",
     )
     .await;
@@ -637,7 +600,7 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
     assert_no_session_end_within(
         &mut rx,
         expected,
-        Duration::from_millis(1500),
+        QUIET,
         "a holder's death must not end a session another live pid holds",
     )
     .await;
@@ -645,10 +608,9 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
     *probe_state.lock().unwrap() = vouch_snapshot_with_pids(&[uuid], &[last_pid]);
     let _ = last.kill();
     let _ = last.wait();
-    expect_session_end_within(
+    expect_session_end(
         &mut rx,
         expected,
-        Duration::from_secs(5),
         "the last holder's death is the session's instant exit",
     )
     .await;

@@ -48,25 +48,6 @@ fn vouch_snapshot_with_pids(ids: &[&str], pids: &[i32]) -> Option<ProbeSnapshot>
     Some(snap)
 }
 
-/// Drain until `want`'s SessionStart or a deadline; true on arrival.
-async fn wait_for_session_start(
-    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-    want: pixtuoid_core::AgentId,
-) -> bool {
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
-    while tokio::time::Instant::now() < deadline {
-        match tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
-            Ok(Some((_, AgentEvent::SessionStart { agent_id, .. }))) if agent_id == want => {
-                return true;
-            }
-            Ok(Some(_)) => {}
-            Ok(None) => return false,
-            Err(_) => {}
-        }
-    }
-    false
-}
-
 fn cc_watcher(root: std::path::PathBuf) -> JsonlWatcher {
     fast_watch();
     JsonlWatcher::new(root, "claude-code".to_string()).expect("a transcript source")
@@ -210,6 +191,76 @@ async fn collect_until(
             Err(_) => panic!("{what}: no end"),
         }
     }
+}
+
+/// The first `T` `pick` finds in what the watcher sends, by [`collect_until`].
+async fn first_of<T>(
+    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    what: &str,
+    mut pick: impl FnMut(&AgentEvent) -> Option<T>,
+) -> T {
+    let mut found = None;
+    collect_until(rx, what, |event| {
+        found = pick(event);
+        found.is_some()
+    })
+    .await;
+    found.expect("collect_until ends on its event")
+}
+
+/// [`first_of`]'s pick of a `SessionStart`'s id.
+fn start_id(event: &AgentEvent) -> Option<pixtuoid_core::AgentId> {
+    match event {
+        AgentEvent::SessionStart { agent_id, .. } => Some(*agent_id),
+        _ => None,
+    }
+}
+
+/// `done` for the `ToolUseStart` of call `id`.
+fn starts_call(id: &str) -> impl Fn(&AgentEvent) -> bool + '_ {
+    move |event| {
+        matches!(event, AgentEvent::ToolUseStart { tool_use_id, .. }
+            if tool_use_id.as_deref() == Some(id))
+    }
+}
+
+/// How long a check listens past its positive event for what must not follow
+/// it: the same read's events are queued behind that one, a re-scan's within a
+/// few polls.
+const TRAIL: Duration = POLL.saturating_mul(20);
+
+/// Every event the watcher sends in the next `window`: nothing but listening
+/// proves an absence, and a closed stream proves nothing, so that panics.
+async fn collect_for(
+    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    window: Duration,
+    what: &str,
+) -> Vec<(Transport, AgentEvent)> {
+    let until = tokio::time::Instant::now() + window;
+    let mut events = Vec::new();
+    loop {
+        match tokio::time::timeout_at(until, rx.recv()).await {
+            Ok(Some(tagged)) => events.push(tagged),
+            Ok(None) => panic!("{what}: the stream closed"),
+            Err(_) => return events,
+        }
+    }
+}
+
+#[tokio::test]
+#[should_panic(expected = "the stream closed")]
+async fn a_dead_watcher_proves_no_quiet() {
+    let (tx, mut rx) = mpsc::channel(1);
+    drop(tx);
+    collect_for(&mut rx, TRAIL, "quiet").await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "the stream closed")]
+async fn a_dead_watcher_fails_a_wait_at_once() {
+    let (tx, mut rx) = mpsc::channel(1);
+    drop(tx);
+    collect_until(&mut rx, "a start", |_| false).await;
 }
 
 /// `done` for a replaying read: its closing bracket, which `walk_jsonl` sends
