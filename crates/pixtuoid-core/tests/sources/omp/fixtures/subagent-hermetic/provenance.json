@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "omp",
-  "version": "omp/18.18.1",
-  "captured": "2026-11-09",
+  "version": "omp/18.18.8",
+  "captured": "2026-11-11",
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 144
+    "blanked": 162
   },
   "aimock": "1.47.0",
   "script": "tests/sources/omp/hermetic/subagent.json",
@@ -18,7 +18,6 @@
         "system-prompt-digest",
         "tool_execution_start"
       ],
-      "/message/content/*/name": [],
       "/message/content/*/type": [
         "text"
       ],
@@ -36,14 +35,16 @@
     }
   },
   "sentinel_reads": {
-    "2026-11-09T04-23-02-025Z_01a1be8b-9889-74b8-97fc-3ed9cde9492a.jsonl": [
+    "2026-11-11T19-05-33-532Z_01a1cc00-4a5c-7591-b9ff-70674a78e232.jsonl": [
       "11:/message/usage/cacheWrite",
       "14:/message/usage/cacheWrite",
       "8:/message/usage/cacheWrite"
     ],
-    "2026-11-09T04-23-02-025Z_01a1be8b-9889-74b8-97fc-3ed9cde9492a/Reader.jsonl": [
+    "2026-11-11T19-05-33-532Z_01a1cc00-4a5c-7591-b9ff-70674a78e232/Reader.jsonl": [
       "11:/message/usage/cacheWrite",
-      "14:/message/usage/cacheWrite"
+      "14:/message/usage/cacheWrite",
+      "5:/usage/cacheWrite",
+      "6:/usage/cacheWrite"
     ]
   }
 }

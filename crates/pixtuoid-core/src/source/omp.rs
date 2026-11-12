@@ -23,7 +23,8 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd, non_empty,
+    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd, first_present_str,
+    generic_tool_display, non_empty,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -43,7 +44,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Oh My Pi",
     label_prefix: "om",
-    verified_version: "18.18.1",
+    verified_version: "18.18.8",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),
@@ -608,6 +609,14 @@ const SESSION: &str = "session";
 /// READS are re-served context, not new spend.
 const MESSAGE: &str = "message";
 
+/// A model call outside the conversation, its `usage` a turn's shape: a
+/// session title since 18.18.4, a judgment, a cache-warm refresh. omp's own
+/// totals count it beside the turns, and none appears as a turn too
+/// (`docs/session.md:214-220`,
+/// `packages/coding-agent/src/session/session-stats.ts:72-93` at v18.18.8;
+/// can1357/oh-my-pi#18491).
+const MODEL_USAGE: &str = "model_usage";
+
 /// The `custom` entry envelope. Its `customType:"tool_execution_start"` duplicates
 /// each toolCall right before execution and is deliberately NOT decoded — the same
 /// `tool_use_id` would double-count `tool_call_count`.
@@ -655,6 +664,19 @@ const BLOCK_TOOL_CALL: &str = "toolCall";
 /// shown when it is raised, so ask pairs are appended LAST: each ask's [`AgentEvent::UserActionRequest`]
 /// directly follows its own start, never a sibling's.
 const TOOL_ASK: &str = "ask";
+
+/// The per-call intent omp's harness asks of every tool call by default
+/// (`packages/agent/src/types.ts:1227-1233` at `v18.18.8`), kept in the
+/// persisted `arguments`.
+const INTENT_FIELD: &str = "i";
+
+/// The call's intent, trimmed, or `None` when blank: its schema admits a blank
+/// string, which omp's own reader counts as no intent
+/// (`packages/agent/src/agent-loop.ts:1045`, `:1099-1108` at `v18.18.8`).
+fn omp_intent(args: Option<&Value>) -> Option<&str> {
+    let intent = args?.get(INTENT_FIELD)?.as_str()?.trim();
+    (!intent.is_empty()).then_some(intent)
+}
 
 /// `prefix·<text>` at the label cap — the ONE place omp assembles a
 /// content-derived label, shared by the subagent-stem deriver and the session
@@ -717,6 +739,29 @@ fn entry_copy(entry: &serde_json::Map<String, Value>, tail: &str) -> Option<Stri
     Some(format!("{id}@{stamp}{tail}"))
 }
 
+/// The fresh spend (see [`MESSAGE`]) of the `usage` its `entry` carries, a
+/// turn's or a side call's.
+fn omp_usage(
+    acting: AgentId,
+    entry: &serde_json::Map<String, Value>,
+    usage: Option<&Value>,
+) -> Option<AgentEvent> {
+    let usage = usage?.as_object()?;
+    let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+    let fresh = field("input")
+        .saturating_add(field("cacheWrite"))
+        .saturating_add(field("output"));
+    (fresh > 0).then(|| AgentEvent::Usage {
+        agent_id: acting,
+        fresh_tokens: fresh,
+        // A prune or compaction rewrites the file whole with each entry's own
+        // id (v18.15.0 `session-manager.ts` `#serializeBody`), so an entry read
+        // twice counts once.
+        reading_id: non_empty(entry, "id").map(str::to_owned),
+        copy_id: entry_copy(entry, "").map(CopyId::new),
+    })
+}
+
 /// Decode one omp session JSONL line into zero or more `AgentEvent`s.
 /// Unknown entry types / roles and malformed shapes return `vec![]` — the
 /// upstream loader is itself lenient (`parseJsonlLenient`).
@@ -761,23 +806,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                             effort: None,
                         });
                     }
-                    if let Some(usage) = msg.get("usage").and_then(|u| u.as_object()) {
-                        let field = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
-                        let fresh = field("input")
-                            .saturating_add(field("cacheWrite"))
-                            .saturating_add(field("output"));
-                        if fresh > 0 {
-                            out.push(AgentEvent::Usage {
-                                agent_id: acting,
-                                fresh_tokens: fresh,
-                                // A prune or compaction rewrites the file whole with
-                                // each entry's own id (v18.15.0 `session-manager.ts`
-                                // `#serializeBody`), so an entry read twice counts once.
-                                reading_id: non_empty(obj, "id").map(str::to_owned),
-                                copy_id: entry_copy(obj, "").map(CopyId::new),
-                            });
-                        }
-                    }
+                    out.extend(omp_usage(acting, obj, msg.get("usage")));
                     let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
                         return out;
                     };
@@ -827,6 +856,9 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                 _ => vec![],
             }
         }
+        MODEL_USAGE => omp_usage(acting, obj, obj.get("usage"))
+            .into_iter()
+            .collect(),
         CUSTOM if obj.get("customType").and_then(|c| c.as_str()) == Some(SESSION_EXIT) => {
             vec![AgentEvent::SessionEnd {
                 agent_id: acting,
@@ -863,26 +895,23 @@ fn omp_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     if tool == "task" {
         return ToolDetail::Task;
     }
-    // `i` is omp's mandated per-call INTENT, so it sits LAST, below every concrete
-    // target — a path beats a paraphrase of that path. It earns its place on the
-    // tools with no keyed target at all (`edit`, `todo`, `job`, `hub`, …).
-    const KEYS: &[&str] = &["command", "path", "pattern", "query", "i"];
-    crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
+    // The intent sits LAST, below every concrete target — a path beats a
+    // paraphrase of that path. It earns its place on the tools with no keyed
+    // target at all (`edit`, `todo`, `job`, `hub`, …).
+    const KEYS: &[&str] = &["command", "path", "pattern", "query"];
+    let target = args.and_then(|a| first_present_str(a, KEYS));
+    generic_tool_display(tool, target.or_else(|| omp_intent(args)))
 }
 
-/// The [`AgentEvent::UserActionRequest`] reason for an `ask` round: the first question's text, falling
-/// back to the call's intent (`arguments.i`), then the bare tool name.
+/// The [`AgentEvent::UserActionRequest`] reason for an `ask` round: the call's
+/// intent, else the bare tool name. The question itself sits in one HTML form
+/// (`packages/coding-agent/src/tools/ask.ts:61-63` at `v18.18.8`), which the
+/// intent paraphrases.
 fn omp_ask_reason(args: Option<&Value>) -> String {
-    args.and_then(|a| {
-        a.get("questions")
-            .and_then(|q| q.as_array())
-            .and_then(|q| q.first())
-            .and_then(|q| q.get("question"))
-            .and_then(|q| q.as_str())
-            .or_else(|| a.get("i").and_then(|i| i.as_str()))
-    })
-    .map(|t| ellipsize(t, MAX_DECODED_FIELD_CHARS))
-    .unwrap_or_else(|| "ask".to_string())
+    omp_intent(args).map_or_else(
+        || TOOL_ASK.to_owned(),
+        |i| ellipsize(i, MAX_DECODED_FIELD_CHARS),
+    )
 }
 
 // --- extension-bridge hook payloads (#951) ---------------------------------
@@ -1155,6 +1184,8 @@ mod tests {
                                                 "timestamp": "t", "thinkingLevel": "high"}),
                 TITLE | TITLE_CHANGE => json!({"type": ty, "id": "x", "parentId": null,
                                                "timestamp": "t", "title": "Named session"}),
+                MODEL_USAGE => json!({"type": ty, "id": "x", "parentId": null,
+                                      "timestamp": "t", "usage": {"output": 1}}),
                 _ => json!({"type": ty, "version": 3, "id": "x", "timestamp": "t",
                             "cwd": "/home/u/proj"}),
             };
@@ -1171,10 +1202,32 @@ mod tests {
             THINKING_LEVEL_CHANGE,
             TITLE,
             TITLE_CHANGE,
+            MODEL_USAGE,
         ] {
             assert!(drive(ty), "{ty} must reach a real arm");
         }
         assert!(!drive("checkpoint"), "an unread entry type reaches neither");
+    }
+
+    /// A side call's spend reads as a turn's, named by its own entry, so a
+    /// re-read of it counts once.
+    #[test]
+    fn a_side_calls_usage_reads_its_fresh_spend_under_its_entry() {
+        let line = json!({"type": MODEL_USAGE, "id": "c8cd345b", "parentId": "1675707c",
+                          "timestamp": "2026-11-11T15:38:10.475Z", "purpose": "title",
+                          "api": "openai-completions", "provider": "aimock", "model": "gpt-4.1",
+                          "usage": {"input": 3716, "output": 32, "cacheRead": 7,
+                                    "cacheWrite": 5, "totalTokens": 3760},
+                          "stopReason": "stop"});
+        assert_eq!(
+            decode_omp_line(ROOT, SOURCE_NAME, line),
+            [AgentEvent::Usage {
+                agent_id: root(),
+                fresh_tokens: 3716 + 5 + 32,
+                reading_id: Some("c8cd345b".to_owned()),
+                copy_id: Some(CopyId::new("c8cd345b@2026-11-11T15:38:10.475Z")),
+            }]
+        );
     }
 
     /// The length gate is EXCLUSIVE: `<19-char ts>_` is the longest stem that still
@@ -1556,6 +1609,11 @@ mod tests {
             "edit",
             "no target and no intent stays a bare verb"
         );
+        assert_eq!(
+            display_of(r#"{"i":"  ","input":"…"}"#),
+            "edit",
+            "a blank intent is no intent"
+        );
         // The intent rides the same target cap as every other key, so a
         // model that writes an essay can't blow out the sprite's detail line.
         let long = "T".repeat(200);
@@ -1668,8 +1726,8 @@ mod tests {
     }
 
     #[test]
-    fn ask_call_starts_activity_then_waits_on_the_question() {
-        let line = r#"{"type":"message","id":"m7","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK1","name":"ask","arguments":{"i":"Resolving packages/ui collision","questions":[{"id":"ui_collision","question":"packages/ui already exists. What should happen?","options":[{"label":"Replace"},{"label":"Merge"}]}]}}],"timestamp":1}}"#;
+    fn ask_call_starts_activity_then_waits_on_its_intent() {
+        let line = r#"{"type":"message","id":"m7","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK1","name":"ask","arguments":{"i":"Resolving packages/ui collision","html":"<form><p>packages/ui already exists.</p><label><input type=\"radio\" name=\"ui\" value=\"replace\" checked> Replace</label><label><input type=\"radio\" name=\"ui\" value=\"merge\"> Merge</label></form>"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
                 AgentEvent::ToolUseStart {
@@ -1688,32 +1746,28 @@ mod tests {
                 assert_eq!(*wid, root());
                 assert_eq!(tool_use_id.as_deref(), Some("tool_ASK1"));
                 assert_eq!(asked, tool_use_id, "the question names its own call");
-                assert!(
-                    reason
-                        .as_deref()
-                        .is_some_and(|r| r.contains("packages/ui already exists")),
-                    "reason carries the question text, got {reason:?}"
-                );
+                assert_eq!(reason.as_deref(), Some("Resolving packages/ui collision"));
             }
             other => panic!("expected ToolUseStart then UserActionRequest, got {other:?}"),
         }
-    }
-
-    #[test]
-    fn ask_reason_falls_back_to_intent_then_bare_name() {
-        let intent = r#"{"type":"message","id":"m8","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK2","name":"ask","arguments":{"i":"Confirming scope"}}],"timestamp":1}}"#;
-        match &decode(intent)[..] {
-            [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                assert_eq!(reason.as_deref(), Some("Confirming scope"))
+        // No intent, and one the model left blank, which omp's schema admits.
+        for arguments in [
+            json!(null),
+            json!({"i": ""}),
+            json!({"i": "  ", "html": "<form/>"}),
+        ] {
+            let mut call = json!({"type": "toolCall", "id": "tool_ASK3", "name": "ask"});
+            if !arguments.is_null() {
+                call["arguments"] = arguments.clone();
             }
-            other => panic!("expected Start+UserActionRequest, got {other:?}"),
-        }
-        let bare = r#"{"type":"message","id":"m9","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK3","name":"ask"}],"timestamp":1}}"#;
-        match &decode(bare)[..] {
-            [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                assert_eq!(reason.as_deref(), Some("ask"))
+            let line = json!({"type": "message", "id": "m9", "parentId": null, "timestamp": "t",
+                              "message": {"role": "assistant", "content": [call], "timestamp": 1}});
+            match &decode(&line.to_string())[..] {
+                [_, AgentEvent::UserActionRequest { reason, .. }] => {
+                    assert_eq!(reason.as_deref(), Some("ask"), "{arguments}")
+                }
+                other => panic!("expected Start+UserActionRequest, got {other:?}"),
             }
-            other => panic!("expected Start+UserActionRequest, got {other:?}"),
         }
     }
 

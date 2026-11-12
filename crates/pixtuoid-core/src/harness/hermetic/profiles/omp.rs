@@ -34,14 +34,14 @@ const TUI_APPROVE: tui::Tui = tui::Tui {
     ..TUI
 };
 
-/// [`TUI`] answering the `ask` tool's dialog with its highlighted first
-/// choice: Enter submits a lone single-select question (`docs/tools/ask.md`
-/// at `v18.13.1`).
+/// [`TUI`] submitting the `ask` tool's form as preselected: Enter picks the
+/// focused radio and moves to Submit, and Enter there submits
+/// (`packages/tui/src/html-form/dialog.ts:17-21` at `v18.18.8`).
 const TUI_ASK: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
-        // Its last choice (`packages/tui/src/overlays/ask-dialog.ts:102`).
-        shows: "Other (type your own)",
-        keys: &[tui::Key::Enter],
+        // Its footer's hint, which no other omp surface draws (`:1393`).
+        shows: "next field",
+        keys: &[tui::Key::Enter, tui::Key::Enter],
         dwell: std::time::Duration::ZERO,
     }],
     ..TUI
@@ -161,7 +161,7 @@ startup:
             turn: Turn::PROFILE,
         },
         // omp's question is a tool the model calls, which only a UI answers
-        // (`docs/tools/ask.md` at `v18.13.1`).
+        // (`docs/tools/ask.md` at `v18.18.8`).
         Scenario {
             name: "ask",
             shape: Shape::Permission,
