@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -15,39 +15,51 @@ use super::walk::{TAIL_BYTES, park_if_truncated_below_cursor, tail_life, walk_js
 use super::{SourceDecoders, WatchCtx};
 
 /// One healthy liveness-probe observation: which agent processes are verified
-/// alive RIGHT NOW, and which OS pid owns each. The live-id set IS `pid_of`'s
-/// key set; a separate `ids` set would only make "id without pid" representable.
+/// alive RIGHT NOW, and which OS pids hold each. The live-id set IS `pids_of`'s
+/// key set, and `bind_pid`, its only writer, never leaves an id without a pid.
 #[derive(Debug, Clone, Default)]
 pub struct ProbeSnapshot {
-    /// id → owning OS pid, for the exit watch. Many ids may share one pid — one
-    /// codex process holds every rollout it has open.
-    pub pid_of: HashMap<String, i32>,
+    /// id → every live OS pid holding it: the exit watch ends a session only
+    /// when the last of them dies. Many ids may share one pid — one codex
+    /// process holds every rollout it has open.
+    pids_of: HashMap<String, BTreeSet<i32>>,
 }
 
 impl ProbeSnapshot {
     /// The ids this probe saw alive.
     #[cfg(test)]
     pub(crate) fn ids(&self) -> impl Iterator<Item = &String> {
-        self.pid_of.keys()
+        self.pids_of.keys()
+    }
+    /// `id`'s holders, ascending; empty when it is not alive.
+    #[cfg(test)]
+    pub(crate) fn pids(&self, id: &str) -> Vec<i32> {
+        self.pids_of
+            .get(id)
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect()
     }
     /// Was `id` alive at probe time?
     pub(crate) fn contains(&self, id: &str) -> bool {
-        self.pid_of.contains_key(id)
+        self.pids_of.contains_key(id)
     }
     /// Did the probe see nothing alive? Distinct from a FAILED probe, which is `None`.
     #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
-        self.pid_of.is_empty()
+        self.pids_of.is_empty()
     }
 
-    /// Bind `id` to its owning `pid`. A contested id (two live processes holding
-    /// one file open — a resume overlap) resolves to the LARGER pid: arbitrary
-    /// but stable, never proc-enumeration order (#252).
-    pub(crate) fn bind_pid(&mut self, id: String, pid: i32) {
-        let bound = self.pid_of.entry(id).or_insert(pid);
-        if pid > *bound {
-            *bound = pid;
-        }
+    /// Record `pid` as one of `id`'s holders.
+    pub fn bind_pid(&mut self, id: String, pid: i32) {
+        self.pids_of.entry(id).or_default().insert(pid);
+    }
+
+    /// The holder a click on `id` focuses: its largest pid, so the choice never
+    /// follows enumeration order (#252).
+    pub(crate) fn focus_pid(&self, id: &str) -> Option<i32> {
+        self.pids_of.get(id)?.last().copied()
     }
 
     /// Build a snapshot from the regular files that live `comm_names`-named
@@ -138,12 +150,12 @@ impl ProbeSnapshot {
 
 /// Optional first-party liveness probe: the session ids — in the source's
 /// `IdDeriver` id-space — of agent processes known to be ALIVE right now.
-/// ADDITIVE-ONLY for admission: membership bypasses the first-sight
-/// recency/ended gate. Failure is EXPLICIT: `None` means the probe itself FAILED
-/// and callers must change NOTHING; `Some` with an empty snapshot means it ran
-/// fine and nothing is alive — the distinction `ProbeLadder`'s negative vouch
-/// (#223) rests on. `Arc<dyn Fn>` rather than a fn pointer because the real
-/// probe captures its registry dir.
+/// ADDITIVE-ONLY for admission: membership bypasses the first-sight gate's
+/// recency half, never its ended-tail half. Failure is EXPLICIT: `None` means
+/// the probe itself FAILED and callers must change NOTHING; `Some` with an
+/// empty snapshot means it ran fine and nothing is alive — the distinction
+/// `ProbeLadder`'s negative vouch (#223) rests on. `Arc<dyn Fn>` rather than a
+/// fn pointer because the real probe captures its registry dir.
 pub type LivenessProbe = Arc<dyn Fn() -> Option<ProbeSnapshot> + Send + Sync>;
 
 /// Negative vouch (#223): a previously-vouched id must be MISSING from two
@@ -208,10 +220,10 @@ pub(super) struct ProbeLadder {
     /// id → when a healthy snapshot FIRST came back without it. `Instant`
     /// (monotonic): a wall-clock jump must not fake a `min_span`.
     miss_since: HashMap<String, std::time::Instant>,
-    /// pid → the session ids a healthy snapshot bound to it, ADDITIVE per
-    /// snapshot: an id leaves via `pid_died` or a confirmed exit, never by
-    /// snapshot omission — the vouch ladder owns "gone" semantics. Bound under
-    /// at most ONE pid (`fold`'s migration maintains this).
+    /// pid → the session ids a healthy snapshot bound to it. An id a snapshot
+    /// names is bound to exactly the pids it names it under; one it omits keeps
+    /// its bindings and leaves via its last holder's `pid_died` or a confirmed
+    /// exit, never by omission — the vouch ladder owns "gone" semantics.
     pid_bindings: HashMap<i32, HashSet<String>>,
 }
 
@@ -264,30 +276,28 @@ impl ProbeLadder {
         }
         // Ids whose miss window still runs must STAY vouched, or no later
         // snapshot can confirm them.
-        self.prev_vouched = snap.pid_of.keys().cloned().collect();
+        self.prev_vouched = snap.pids_of.keys().cloned().collect();
         self.prev_vouched.extend(self.miss_since.keys().cloned());
 
         let mut newly_watched = Vec::new();
-        for (id, pid) in &snap.pid_of {
-            // find-then-compare (not `any(p != pid && contains)`): the first
-            // holder is the only holder, so there is no conjunction to mutate.
-            let bound_elsewhere = self
-                .pid_bindings
-                .iter()
-                .find(|(_, ids)| ids.contains(id))
-                .is_some_and(|(p, _)| p != pid);
-            if bound_elsewhere {
-                // A rebind (a codex `resume` of one rollout in a second process)
-                // MIGRATES the id — the old pid's death would else instant-exit it.
-                self.unbind(id);
-            }
-            let newly_seen = !self.pid_bindings.contains_key(pid);
-            self.pid_bindings
-                .entry(*pid)
-                .or_default()
-                .insert(id.clone());
-            if newly_seen {
-                newly_watched.push(*pid);
+        for (id, pids) in &snap.pids_of {
+            // A pid the snapshot no longer names under the id no longer holds
+            // it up, so the pids it does name keep their instant exit.
+            self.pid_bindings.retain(|pid, ids| {
+                if !pids.contains(pid) {
+                    ids.remove(id);
+                }
+                !ids.is_empty()
+            });
+            for pid in pids {
+                let newly_seen = !self.pid_bindings.contains_key(pid);
+                self.pid_bindings
+                    .entry(*pid)
+                    .or_default()
+                    .insert(id.clone());
+                if newly_seen {
+                    newly_watched.push(*pid);
+                }
             }
         }
         ProbeOutcome {
@@ -297,14 +307,14 @@ impl ProbeLadder {
     }
 
     /// The instant-exit rung: the watched OS process `pid` died. Remove its
-    /// whole binding and `forget` every id it held, so the slower negative-vouch
-    /// rung can't re-confirm an exit this rung is about to emit.
+    /// whole binding and return the ids it held that no other pid still holds,
+    /// `forget`ting each, so the slower negative-vouch rung can't re-confirm an
+    /// exit this rung is about to emit.
     pub(super) fn pid_died(&mut self, pid: i32) -> Vec<String> {
-        let ids: Vec<String> = self
-            .pid_bindings
-            .remove(&pid)
+        let held = self.pid_bindings.remove(&pid).unwrap_or_default();
+        let ids: Vec<String> = held
             .into_iter()
-            .flatten()
+            .filter(|id| !self.pid_bindings.values().any(|ids| ids.contains(id)))
             .collect();
         for id in &ids {
             self.forget(id);
@@ -314,8 +324,9 @@ impl ProbeLadder {
 
     /// Disarm the negative-vouch ledger for `id` WITHOUT confirming anything —
     /// a later healthy snapshot must not open/age a miss window toward
-    /// re-confirming an exit a faster rung already emitted. Always paired with
-    /// `unbind`, its bindings inverse.
+    /// re-confirming an exit a faster rung already emitted. Every exit also drops
+    /// the id's bindings: `unbind` on a confirmed one, the dead pid's own entry
+    /// (the id's last) in `pid_died`.
     fn forget(&mut self, id: &str) {
         self.prev_vouched.remove(id);
         self.miss_since.remove(id);
@@ -405,7 +416,7 @@ pub(super) async fn refresh_probe_snapshot(
             return false;
         }
     };
-    *ctx.live.lock().await = snap.pid_of.keys().cloned().collect();
+    *ctx.live.lock().await = snap.pids_of.keys().cloned().collect();
     let outcome = ladder.fold(&snap, std::time::Instant::now());
     for id in &outcome.exits {
         emit_session_exit(id, decoders, ctx).await;

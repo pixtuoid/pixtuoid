@@ -130,10 +130,7 @@ pub fn registry_dir(projects_root: &Path) -> Option<PathBuf> {
 }
 
 fn pid_for_session(sessions_dir: &Path, session_id: &str) -> Option<i32> {
-    live_cc_session_ids(sessions_dir)?
-        .pid_of
-        .get(session_id)
-        .copied()
+    live_cc_session_ids(sessions_dir)?.focus_pid(session_id)
 }
 
 #[cfg(test)]

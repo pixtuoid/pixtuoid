@@ -83,8 +83,8 @@ pub(crate) const PROFILE: Profile = Profile {
     not_yet_fields: &[],
     not_yet_literals: &[],
     children_inherit_cwd: false,
-    // agy returns a result under role `model`, and aimock's Gemini route
-    // reads one only under `user` (`@copilotkit/aimock` `dist/gemini.js:55-71`).
+    // agy returns a result under role `model`, and aimock's Gemini route reads one
+    // only under `user` (`@copilotkit/aimock` `dist/gemini.js:70-123` at v1.47.0).
     result_unseen: true,
     live: None,
     daemon: None,

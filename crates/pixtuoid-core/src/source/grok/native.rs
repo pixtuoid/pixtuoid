@@ -25,8 +25,8 @@ const MAX_SESSION_REGISTRY_BYTES: u64 = 1024 * 1024;
 static PINS: StartPins = StartPins::new();
 
 /// grok's liveness probe: the session ids of every entry in
-/// `{grok_home}/active_sessions.json` whose pid is alive, plus the owning pid
-/// per id for the instant-exit watch.
+/// `{grok_home}/active_sessions.json` whose pid is alive, plus every pid
+/// holding each for the instant-exit watch.
 ///
 /// The registry is grok's OWN crash-recovery design: registered per TUI session
 /// with `std::process::id()`, removed on clean quit, left behind on crash. grok
@@ -139,8 +139,6 @@ fn grok_ids_from_registry(
                 continue;
             }
         }
-        // Duplicate session_id across entries is upstream junk — keep the
-        // deterministic tiebreak winner (larger pid).
         snap.bind_pid(e.session_id, pid);
     }
     pins.retain(start);
@@ -238,10 +236,7 @@ fn session_registry(grok_root: &Path) -> PathBuf {
 /// The live session's pid, keyed by the session id (== the transcript's
 /// parent-dir name), as grok's own registry names it.
 fn pid_for_session(registry: &Path, session_id: &str) -> Option<i32> {
-    live_grok_session_ids(registry.parent()?)?
-        .pid_of
-        .get(session_id)
-        .copied()
+    live_grok_session_ids(registry.parent()?)?.focus_pid(session_id)
 }
 
 #[cfg(test)]
@@ -298,7 +293,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let snap =
                 live_grok_session_ids(dir.path()).expect("an absent registry is not a failure");
-            assert!(snap.pid_of.is_empty());
+            assert!(snap.is_empty());
         }
 
         #[test]
@@ -329,7 +324,7 @@ mod tests {
             )
             .unwrap();
             let snap = live_grok_session_ids(dir.path()).expect("8 KiB is far under the 1 MiB cap");
-            assert_eq!(snap.pid_of.get("big"), Some(&(me as i32)));
+            assert_eq!(snap.pids("big"), [me as i32]);
         }
 
         /// The drift breadcrumb must name the RIGHT cause: a truncation
@@ -360,8 +355,8 @@ mod tests {
             .unwrap();
             let snap = live_grok_session_ids(dir.path()).expect("a readable registry is healthy");
             assert_eq!(
-                snap.pid_of.get("live-1"),
-                Some(&(me as i32)),
+                snap.pids("live-1"),
+                [me as i32],
                 "a live registry entry must bind its id to its pid"
             );
         }
@@ -383,7 +378,7 @@ mod tests {
             });
             let snap = live_grok_session_ids(dir.path()).expect("a readable registry is healthy");
             assert!(
-                snap.pid_of.contains_key("kept"),
+                snap.contains("kept"),
                 "judged once by the probe's pins, the marker holds it"
             );
         }
@@ -393,8 +388,8 @@ mod tests {
             let snap =
                 grok_ids_from_registry(REG.as_bytes(), alive_all, |_| None, &StartPins::new())
                     .unwrap();
-            assert_eq!(snap.pid_of.get("0197-a"), Some(&100));
-            assert_eq!(snap.pid_of.get("0197-b"), Some(&200));
+            assert_eq!(snap.pids("0197-a"), [100]);
+            assert_eq!(snap.pids("0197-b"), [200]);
         }
 
         #[test]
@@ -402,7 +397,7 @@ mod tests {
             let snap =
                 grok_ids_from_registry(REG.as_bytes(), alive_none, |_| None, &StartPins::new())
                     .unwrap();
-            assert!(snap.pid_of.is_empty(), "dead pids yield a healthy empty");
+            assert!(snap.is_empty(), "dead pids yield a healthy empty");
             // Both halves of `checked_pid`'s narrowing — zero AND negative (a
             // negative pid would make `kill(-n, 0)` probe a process GROUP).
             let junk = r#"[{"session_id":"","pid":100,"cwd":"/r","opened_at":"x"},
@@ -413,11 +408,11 @@ mod tests {
                 grok_ids_from_registry(junk.as_bytes(), alive_all, |_| None, &StartPins::new())
                     .unwrap();
             assert_eq!(
-                snap.pid_of.get("live"),
-                Some(&77),
+                snap.pids("live"),
+                [77],
                 "a junk entry must not cost its healthy siblings"
             );
-            assert_eq!(snap.pid_of.len(), 1, "junk VALUES skip entries silently");
+            assert_eq!(snap.ids().count(), 1, "junk VALUES skip entries silently");
         }
 
         /// A pid outside `i32` range skips ITS OWN entry, exactly like every
@@ -438,10 +433,10 @@ mod tests {
                 let snap =
                     grok_ids_from_registry(reg.as_bytes(), alive_all, |_| None, &StartPins::new())
                         .expect("one out-of-range VALUE is not document-level shape drift");
-                assert_eq!(snap.pid_of.get("ok"), Some(&200), "siblings still bind");
-                assert_eq!(snap.pid_of.get("over"), None, "the bad entry is skipped");
+                assert_eq!(snap.pids("ok"), [200], "siblings still bind");
+                assert!(!snap.contains("over"), "the bad entry is skipped");
                 assert!(
-                    !snap.pid_of.values().any(|&p| p == 1),
+                    !snap.ids().any(|id| snap.pids(id).contains(&1)),
                     "narrowing must reject, never truncate ({over} casts to pid 1)"
                 );
             }
@@ -497,7 +492,7 @@ mod tests {
                 |_| started(recycled_start),
                 &StartPins::new(),
             );
-            assert_eq!(snap.unwrap().pid_of.get("0197-a"), None);
+            assert!(!snap.unwrap().contains("0197-a"));
             // At exactly claim + tolerance the entry SURVIVES.
             let boundary_start = opened + tolerance;
             let snap = grok_ids_from_registry(
@@ -506,7 +501,7 @@ mod tests {
                 |_| started(boundary_start),
                 &StartPins::new(),
             );
-            assert_eq!(snap.unwrap().pid_of.get("0197-a"), Some(&100));
+            assert_eq!(snap.unwrap().pids("0197-a"), [100]);
             // A process started BEFORE the claim is the NORMAL welcome-screen
             // lag — never rejected.
             let snap = grok_ids_from_registry(
@@ -515,7 +510,7 @@ mod tests {
                 |_| started(opened - 3600),
                 &StartPins::new(),
             );
-            assert_eq!(snap.unwrap().pid_of.get("0197-a"), Some(&100));
+            assert_eq!(snap.unwrap().pids("0197-a"), [100]);
         }
 
         /// A realtime step moves the start read after it past the tolerance;
@@ -531,8 +526,7 @@ mod tests {
                 let start = move |_| Some(Start { marker, secs });
                 grok_ids_from_registry(REG.as_bytes(), alive_all, start, &pins)
                     .expect("a parseable registry")
-                    .pid_of
-                    .contains_key("0197-a")
+                    .contains("0197-a")
             };
             assert!(vouches(1, opened), "judged at open");
             assert!(vouches(1, stepped), "after the step, the marker holds it");
@@ -561,8 +555,7 @@ mod tests {
                     let start = move |_| Some(Start { marker: 1, secs });
                     grok_ids_from_registry(REG.as_bytes(), alive_all, start, &pins)
                         .expect("a parseable registry")
-                        .pid_of
-                        .contains_key("0197-a")
+                        .contains("0197-a")
                 };
                 assert!(vouches(opened), "judged at open");
                 between(&pins);
@@ -591,7 +584,7 @@ mod tests {
         }
 
         #[test]
-        fn duplicate_session_id_keeps_the_larger_pid_in_both_orders() {
+        fn a_session_id_two_live_entries_claim_binds_both_pids() {
             for reg in [
                 r#"[{"session_id":"s","pid":100,"cwd":"/r","opened_at":"2026-01-01T00:00:00Z"},
                     {"session_id":"s","pid":200,"cwd":"/r","opened_at":"2026-01-01T00:00:00Z"}]"#,
@@ -601,7 +594,7 @@ mod tests {
                 let snap =
                     grok_ids_from_registry(reg.as_bytes(), alive_all, |_| None, &StartPins::new())
                         .unwrap();
-                assert_eq!(snap.pid_of.get("s"), Some(&200));
+                assert_eq!(snap.pids("s"), [100, 200]);
             }
         }
 
@@ -637,21 +630,22 @@ mod tests {
                 let snap =
                     live_grok_session_ids(tmp.path()).expect("a readable registry is healthy");
                 drop(listener);
-                snap
+                snap.ids()
+                    .map(|id| (id.clone(), snap.pids(id)))
+                    .collect::<std::collections::BTreeMap<_, _>>()
             };
             let without = build(false);
             let with = build(true);
             assert_eq!(
-                with.pid_of, without.pid_of,
+                with, without,
                 "a live leader.sock must not change what the probe vouches"
             );
-            assert_eq!(
-                with.pid_of.get("leader-1"),
-                None,
+            assert!(
+                !with.contains_key("leader-1"),
                 "a leader-kept session is deliberately unvouched (#826)"
             );
             assert!(
-                with.pid_of.contains_key("client-1"),
+                with.contains_key("client-1"),
                 "control: the registry's own live entry still binds"
             );
         }

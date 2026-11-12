@@ -934,7 +934,8 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::jsonl::JsonlWatcher
 impl !core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::jsonl::JsonlWatcher
 impl !core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::jsonl::JsonlWatcher
 pub struct pixtuoid_core::source::jsonl::ProbeSnapshot
-pub pixtuoid_core::source::jsonl::ProbeSnapshot::pid_of: std::collections::hash::map::HashMap<alloc::string::String, i32>
+impl pixtuoid_core::source::jsonl::ProbeSnapshot
+pub fn pixtuoid_core::source::jsonl::ProbeSnapshot::bind_pid(&mut self, alloc::string::String, i32)
 impl core::clone::Clone for pixtuoid_core::source::jsonl::ProbeSnapshot
 pub fn pixtuoid_core::source::jsonl::ProbeSnapshot::clone(&self) -> Self
 impl core::default::Default for pixtuoid_core::source::jsonl::ProbeSnapshot

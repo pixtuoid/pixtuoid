@@ -1,4 +1,4 @@
-//! Linux focus glue: `/proc/<pid>/stat` for the ancestor walk; window
+//! Linux focus glue: core's `pid_parent` for the ancestor walk; window
 //! ownership and activation ride ONE channel per environment — sway's IPC
 //! when `$SWAYSOCK` is present (`swaymsg`), hyprland's when
 //! `$HYPRLAND_INSTANCE_SIGNATURE` is (`hyprctl`), else the X11/EWMH
@@ -46,11 +46,7 @@ pub(crate) struct OsProcessTable;
 
 impl ProcessTable for OsProcessTable {
     fn ppid(&self, pid: i32) -> Option<i32> {
-        // /proc/<pid>/stat field 4 is ppid; the comm field (2) can contain
-        // spaces/parens, so parse AFTER the last ')'.
-        let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-        let after = stat.rsplit_once(')')?.1;
-        after.split_whitespace().nth(1)?.parse().ok()
+        pixtuoid_core::source::pid_parent(pid)
     }
 
     fn focusable(&self, pid: i32) -> bool {

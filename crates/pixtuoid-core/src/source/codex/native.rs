@@ -12,8 +12,8 @@ use crate::source::{Source, TaggedSender};
 
 /// Codex's liveness probe: the rollout UUIDs (in `codex_id_from_path` id-space,
 /// so they join the watcher's first-sight gate directly) of every rollout under
-/// `sessions_root` held OPEN by a running `codex` process, plus the owning pid
-/// per id.
+/// `sessions_root` held OPEN by a running `codex` process, plus every pid
+/// holding each.
 ///
 /// Codex has no session registry (unlike CC's `sessions/<pid>.json`), but a live
 /// `codex` process holds its rollout file open in append mode for the whole
@@ -103,10 +103,7 @@ fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
 /// `session_id`) — NOT the rollout path, which comes back kernel-canonicalized
 /// from the fd probe and is deliberately not matched on.
 fn pid_for_session(sessions_root: &Path, uuid: &str) -> Option<i32> {
-    live_codex_rollout_ids(sessions_root)?
-        .pid_of
-        .get(uuid)
-        .copied()
+    live_codex_rollout_ids(sessions_root)?.focus_pid(uuid)
 }
 
 #[cfg(test)]
@@ -137,11 +134,11 @@ mod tests {
             got.ids().cloned().collect::<Vec<_>>(),
             vec![UUID.to_string()]
         );
-        assert_eq!(got.pid_of.get(UUID), Some(&42));
+        assert_eq!(got.pids(UUID), [42]);
     }
 
     #[test]
-    fn shared_rollout_binds_the_larger_pid_regardless_of_enumeration_order() {
+    fn a_shared_rollout_binds_both_holders() {
         // Two live processes holding ONE rollout: a resume overlap.
         let root = Path::new("/home/u/.codex/sessions");
         let path = root.join(format!(
@@ -159,9 +156,9 @@ mod tests {
                 vec![UUID.to_string()]
             );
             assert_eq!(
-                got.pid_of.get(UUID),
-                Some(&200),
-                "the larger pid must win in both enumeration orders"
+                got.pids(UUID),
+                [100, 200],
+                "each holder keeps the rollout alive, in both enumeration orders"
             );
         }
     }
@@ -172,7 +169,6 @@ mod tests {
         let outside = PathBuf::from(format!("/tmp/elsewhere/rollout-1-{UUID}.jsonl"));
         let got = snap_of(root, vec![outside]);
         assert!(got.is_empty());
-        assert!(got.pid_of.is_empty());
     }
 
     #[test]
@@ -191,7 +187,6 @@ mod tests {
         let missing = Path::new("/definitely/not/a/real/.codex/sessions");
         let snap = live_codex_rollout_ids(missing).expect("absent root is not a probe failure");
         assert!(snap.is_empty());
-        assert!(snap.pid_of.is_empty());
     }
 
     #[test]

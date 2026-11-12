@@ -66,8 +66,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // shim-stamped pid, which reaches the CLI only because the ancestor walk
             // skips Cursor's wrapper shell (#896).
             has_exit_signal: true,
-            // Each `cursor-agent` invocation is a NEW session_id, so a swept
-            // session never walks back in.
+            // No prompt hook is registered (`CURSOR_EVENTS`).
             resurrects_on_prompt: false,
             // A child's events ride its own session, so the parent's goes quiet
             // until its `Task` post.
@@ -86,9 +85,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// `_pixtuoid_source == "cursor"`). Envelope per `cursor.com/docs/hooks`; an
 /// unregistered event bails, so registered-vs-decoded drift is loud.
 ///
-/// The activity arms prepend an [`AgentEvent::Identity`] (#221) because Cursor
-/// is HOOK-ONLY: the identity is the one claim that registers a session first
-/// seen mid-turn.
+/// The activity arms and the turn end prepend an [`AgentEvent::Identity`] (#221)
+/// because Cursor is HOOK-ONLY: the identity is the one claim that registers a
+/// session first seen mid-turn.
 ///
 /// # Errors
 ///
@@ -177,8 +176,11 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 },
             ])
             .collect()),
-        // Identity-less: an end alone registers nothing.
-        "stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
+        // Claims, unlike the shared `Stop`: a child's loop ends on `subagentStop`, and
+        // `stop` blocks its loop for a follow-up reply, so none lands past a `Task` post
+        // (cursor-agent 2026.11.11-043ef28: `index.js` `case"stop"` replies `followupMessage`;
+        // `9448.index.js` `shouldSkipHookDueToLoopLimit` pairs `stop` with `subagentStop`).
+        "stop" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
         "sessionEnd" => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
@@ -398,7 +400,7 @@ mod tests {
     }
 
     #[test]
-    fn post_tool_use_without_an_id_is_an_id_less_end_and_stop_a_turn_end() {
+    fn post_tool_use_without_an_id_is_an_id_less_end() {
         for event in ["postToolUse", "postToolUseFailure"] {
             let ev = decode(
                 json!({"hook_event_name": event, "session_id": "s", "cwd": "/r",
@@ -415,11 +417,6 @@ mod tests {
                 "{event} must decode to ToolUseEnd with no tool id"
             );
         }
-        let evs = decode_all(json!({"hook_event_name": "stop", "session_id": "s", "cwd": "/r"}));
-        assert!(
-            matches!(evs.as_slice(), [AgentEvent::TurnEnd { .. }]),
-            "got {evs:?}"
-        );
     }
 
     #[test]
@@ -442,9 +439,23 @@ mod tests {
     }
 
     #[test]
-    fn stop_session_events_and_session_end_carry_no_identity() {
+    fn a_turn_end_claims_its_session_and_session_events_do_not() {
+        let evs = decode_all(json!({
+            "hook_event_name": "stop", "session_id": "s", "cwd": "",
+            "workspace_roots": ["/repo"]
+        }));
+        assert!(
+            matches!(
+                evs.as_slice(),
+                [AgentEvent::Identity { agent_id, session_id, cwd: Some(cwd), .. },
+                 AgentEvent::TurnEnd { .. }]
+                    if *agent_id == AgentId::from_parts(SOURCE_NAME, "s")
+                        && session_id == "s"
+                        && cwd == std::path::Path::new("/repo")
+            ),
+            "got {evs:?}"
+        );
         for payload in [
-            json!({"hook_event_name": "stop", "session_id": "s", "cwd": "/r"}),
             json!({"hook_event_name": "sessionStart", "session_id": "s", "cwd": "/r"}),
             json!({"hook_event_name": "sessionEnd", "session_id": "s", "cwd": "/r"}),
         ] {
