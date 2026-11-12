@@ -77,6 +77,18 @@ fn shows_untracked_task(slot: &AgentSlot) -> bool {
     )
 }
 
+fn starts_untracked_task(event: &AgentEvent) -> Option<AgentId> {
+    match event {
+        AgentEvent::ToolUseStart {
+            agent_id,
+            tool_use_id: None,
+            detail: Some(d),
+            ..
+        } if d.is_task() => Some(*agent_id),
+        _ => None,
+    }
+}
+
 fn stale_threshold(slot: &AgentSlot) -> Duration {
     stale_threshold_with_caps(slot, caps_of(slot))
 }
@@ -271,10 +283,8 @@ pub struct Reducer {
     corr: Correlation,
     /// Parents whose last Task drained on a source that infers child ends from
     /// one, or whose id-less Task ended on an [`ChildEndInference::AnyTaskEnd`]
-    /// one, awaiting the deferred b1 cascade
-    /// ([`B1_CASCADE_GRACE`]) — fired only if no dispatch is in flight at fire
-    /// time ([`Self::fire_pending_b1_cascades`]), which is how a dispatch inside
-    /// the grace defuses it (#151).
+    /// one, awaiting the deferred b1 cascade ([`B1_CASCADE_GRACE`]), which
+    /// [`Self::fire_pending_b1_cascades`] fires or discards (#151).
     pending_b1_cascades: HashMap<AgentId, SystemTime>,
 
     next_label_n: u32,
@@ -303,7 +313,7 @@ impl Reducer {
     pub fn tick(&mut self, scene: &mut SceneState, now: SystemTime) {
         self.corr.gc(now);
         self.sweep_exited(scene, now);
-        self.fire_pending_b1_cascades(scene, now);
+        self.fire_pending_b1_cascades(scene, None, now);
         self.sweep_stale(scene, now);
         // Here, not at each reader: a device in another zone has no clock that
         // can say when this reducer's day ends.
@@ -630,7 +640,11 @@ impl Reducer {
 
         let tracking = self.track_tasks_in_flight(scene, event, now, from);
 
-        self.fire_pending_b1_cascades(scene, now);
+        // A payload's registration lands ahead of its dispatch start, so firing
+        // on it would evict the subtree that start defers.
+        if event.is_turn_traffic() {
+            self.fire_pending_b1_cascades(scene, starts_untracked_task(event), now);
+        }
 
         Preprocessed::Dispatch(tracking)
     }
@@ -1553,11 +1567,15 @@ impl Reducer {
     }
 
     /// Fire deferred b1 cascades whose [`B1_CASCADE_GRACE`] elapsed (#151). The
-    /// fire-time check IS the cancel mechanism: a dispatch inside the grace
-    /// re-populates `tasks_in_flight`, or shows as the parent's untracked Task,
-    /// so the due entry is discarded instead of fired — no separate
-    /// cancel-on-insert bookkeeping that could drift out of sync with the ledger.
-    fn fire_pending_b1_cascades(&mut self, scene: &mut SceneState, now: SystemTime) {
+    /// fire-time check IS the cancel mechanism: a due entry is discarded, not fired,
+    /// while its parent has a Task in `tasks_in_flight`, shows an untracked Task or
+    /// is `dispatching` one — no cancel-on-insert bookkeeping to drift from the ledger.
+    fn fire_pending_b1_cascades(
+        &mut self,
+        scene: &mut SceneState,
+        dispatching: Option<AgentId>,
+        now: SystemTime,
+    ) {
         let due: Vec<AgentId> = self
             .pending_b1_cascades
             .iter()
@@ -1573,6 +1591,7 @@ impl Reducer {
                 .get(&id)
                 .is_some_and(|s| !s.is_empty())
                 || scene.agents.get(&id).is_some_and(shows_untracked_task)
+                || dispatching == Some(id)
             {
                 continue;
             }

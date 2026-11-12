@@ -573,6 +573,53 @@ fn an_untracked_dispatch_inside_the_grace_defers_the_pending_cascade() {
     }
 }
 
+/// At the grace boundary the untracked start only shows on the slot once
+/// applied, after the pre-pass fires, so the start itself must hold the
+/// cascade, as a tracked start's pre-pass insert does.
+#[test]
+fn an_untracked_dispatch_at_the_grace_boundary_defers_the_pending_cascade() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let at = |ms| t0 + Duration::from_millis(ms);
+    let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
+    let first_return = at(1_000);
+
+    for (hook, t) in [
+        (("SessionStart", "root", ""), at(0)),
+        (("PreToolUse", "root", "explore"), at(100)),
+        (("PreToolUse", "root:subagent:call_a", "read_file"), at(200)),
+        (
+            ("PostToolUse", "root:subagent:call_a", "read_file"),
+            at(300),
+        ),
+        (("PostToolUse", "root", "explore"), first_return),
+        (
+            ("PreToolUse", "root", "explore"),
+            first_return + B1_CASCADE_GRACE,
+        ),
+    ] {
+        feed_reasonix(&mut r, &mut scene, hook, t);
+    }
+    assert!(
+        scene.agents[&first_child].exiting_at.is_none(),
+        "the second dispatch's own start fired the first return's cascade"
+    );
+
+    let second_return = at(5_000);
+    feed_reasonix(
+        &mut r,
+        &mut scene,
+        ("PostToolUse", "root", "explore"),
+        second_return,
+    );
+    r.tick(&mut scene, second_return + B1_CASCADE_GRACE);
+    assert!(
+        scene.agents[&first_child].exiting_at.is_some(),
+        "the second return walks the first child out"
+    );
+}
+
 /// Two shims a few ms apart can be decoded in either order (#242): a Task's
 /// hook End landing first must not leave its Start opening a call that already
 /// returned, which would put the parent back to Delegating after each own tool.
