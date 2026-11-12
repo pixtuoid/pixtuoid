@@ -605,7 +605,7 @@ mod tests {
     fn openclaw_state_dir_errors_when_nothing_resolves() {
         let err = resolve_openclaw_state_dir(None, None, None).unwrap_err();
         assert!(
-            err.to_string().ends_with("unset); set one and reconnect"),
+            err.to_string().ends_with("unset); set one"),
             "unresolvable home must surface the actionable error: {err}"
         );
     }

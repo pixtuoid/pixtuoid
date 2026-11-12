@@ -72,7 +72,7 @@ pub(crate) const HOOK_OVERRIDE_ENV: &str = "PIXTUOID_HOOK";
 /// `vars` is what that target's resolver reads, so the remedy always follows
 /// the list it refers to.
 pub(crate) fn home_unset(what: &str, vars: &str) -> anyhow::Error {
-    anyhow!("cannot resolve {what} ({vars} unset); set one and reconnect")
+    anyhow!("cannot resolve {what} ({vars} unset); set one")
 }
 
 /// The remedy sentence for "the shim isn't where we looked", shared by every site
@@ -1308,7 +1308,7 @@ mod tests {
         let var = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
         assert_eq!(
             err.to_string(),
-            format!("cannot resolve the home directory ({var} unset); set one and reconnect")
+            format!("cannot resolve the home directory ({var} unset); set one")
         );
     }
 
