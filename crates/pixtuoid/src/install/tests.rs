@@ -2079,11 +2079,10 @@ fn codex_disconnect_without_codex_on_path_leaves_a_registered_plugin() {
     });
 }
 
-/// The legacy strip runs before the plugin registers, so a registration that fails
-/// leaves neither firing: stripping after would leave the copy and the legacy
-/// hooks both firing whenever the strip failed.
+/// The shim strip runs once the plugin registered, so a registration that fails
+/// keeps the hook an older release left firing rather than leave neither.
 #[test]
-fn codex_connect_fails_when_adding_the_plugin_fails_and_leaves_no_hooks() {
+fn codex_connect_fails_when_adding_the_plugin_fails_and_keeps_the_old_hook() {
     with_fake_hosts_failing(Some("codex plugin add pixtuoid@pixtuoid"), |_| {
         std::fs::write(codex_config(), CODEX_LEGACY_HOOK).unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
@@ -2091,11 +2090,54 @@ fn codex_connect_fails_when_adding_the_plugin_fails_and_leaves_no_hooks() {
         let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
         assert!(install_target_from(&CODEX, Some(hooks.clone()), hook).is_err());
         assert!(!has_hooks(&CODEX, Some(hooks)));
-        assert!(
-            !std::fs::read_to_string(codex_config())
-                .unwrap()
-                .contains(SENTINEL_KEY)
+        let config = std::fs::read_to_string(codex_config()).unwrap();
+        assert!(config.starts_with(CODEX_LEGACY_HOOK), "{config}");
+    });
+}
+
+/// The CLI-config strip needs no CLI, so it runs before a deregister that fails.
+#[test]
+fn a_failing_deregister_still_takes_the_shim_entries_out() {
+    with_fake_hosts_failing(Some("reasonix plugin remove"), |_| {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let manifest = reasonix_manifest_path(tmp.path());
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        install_target_from(&REASONIX, Some(manifest.clone()), hook).unwrap();
+        let settings = (REASONIX.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+        std::fs::write(
+            &settings,
+            r#"{"hooks": {"Stop": [{"command": "PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'"}]}}"#,
+        )
+        .unwrap();
+        assert!(uninstall_target(&REASONIX, Some(manifest)).is_err());
+        let left = std::fs::read_to_string(&settings).unwrap();
+        assert!(!left.contains("pixtuoid-hook"), "{left}");
+    });
+}
+
+/// A reload whose `enable` fails after its `disable` ran stays registered, so the
+/// next reload, which a converge runs only while registered, re-enables the plugin.
+#[test]
+fn a_half_done_hermes_reload_is_finished_by_the_next() {
+    with_fake_hosts(|_| {
+        install_target_from(&HERMES, None, Some(PathBuf::from("/fake/pixtuoid-hook"))).unwrap();
+        let host = HERMES.host().unwrap();
+        let target::Refresh::Reload(reload) = host.refresh else {
+            panic!("hermes reloads");
+        };
+        temp_env::with_var(
+            "FAKE_HOST_FAIL",
+            Some("hermes plugins enable pixtuoid"),
+            || assert!(reload().is_err()),
         );
+        assert!(
+            (host.is_registered)().unwrap(),
+            "a half-done reload stays registered"
+        );
+        reload().unwrap();
+        assert!((host.is_registered)().unwrap());
+        let config = std::fs::read_to_string(hermes_config()).unwrap();
+        assert!(config.contains("  - pixtuoid"), "{config}");
     });
 }
 

@@ -615,8 +615,7 @@ fn install_target_from(
     // After the hooks file is written, so the plugin never registers empty, and
     // still under its lock, so a failed registration puts back the hooks file this
     // call wrote: the hooks ARE the connected fact (`has_hooks`), and a plugin that
-    // never registered fires none of the new ones. Legacy hooks `connect_host`
-    // already stripped stay stripped.
+    // never registered fires none of the new ones.
     if let Some(host) = t.host()
         && let Err(e) = connect_host(host, &path)
     {
@@ -638,13 +637,12 @@ fn install_target_from(
     })
 }
 
-/// Remove every hook in the CLI's own config that runs pixtuoid's shim, then
-/// register. A registration that fails after the strip leaves neither firing, which
-/// is what a failed connect reads as; a CLI that isn't on PATH failed it before any
-/// write.
+/// Register, then remove every hook in the CLI's own config that runs pixtuoid's
+/// shim: a registration that fails keeps the hook already there, so the CLI is never
+/// left with neither.
 fn connect_host(host: &target::HostRegistration, primary: &std::path::Path) -> Result<()> {
-    strip_cli_config(host.shim_hooks.as_ref())?;
-    (host.register)(primary)
+    (host.register)(primary)?;
+    strip_cli_config(host.shim_hooks.as_ref()).map(drop)
 }
 
 /// Whether it removed anything from `config`, a config of the CLI's own.
@@ -769,9 +767,12 @@ pub(crate) struct UninstallReport {
 pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<UninstallReport> {
     let path = write_path(t, config)?;
     let mut removed = strip_managed(t.primary.uninstall(), &path)?;
-    // After the strip, which needs no CLI: a failing deregister leaves a
-    // registered plugin whose hooks are gone, or whose copy fires into a
+    // Before the deregister, as neither strip needs the CLI: a failing deregister
+    // leaves a registered plugin whose hooks are gone, or whose copy fires into a
     // disconnected source, which drops the events.
+    if let Some(host) = t.host() {
+        removed |= strip_cli_config(host.shim_hooks.as_ref())?;
+    }
     let plugin_left_registered = match t.host() {
         Some(host) => match (host.unregister)(&path)? {
             target::Unregistered::Removed => {
@@ -783,9 +784,6 @@ pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<Un
         },
         None => None,
     };
-    if let Some(host) = t.host() {
-        removed |= strip_cli_config(host.shim_hooks.as_ref())?;
-    }
     Ok(UninstallReport {
         outcome: if removed {
             UninstallOutcome::Removed

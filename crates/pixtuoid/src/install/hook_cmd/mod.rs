@@ -64,19 +64,80 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     }
 }
 
-/// Whether `command` runs pixtuoid's shim, whichever release wrote it: the shim's
-/// name as a path's last component, or the [`SOURCE_ENV`] stamp only it reads.
+/// Whether `command` runs pixtuoid's shim, whichever release wrote it: its program,
+/// past any leading `NAME=value` assignments, is the shim by its last path segment,
+/// or one of those assignments is the [`SOURCE_ENV`] stamp only the shim reads.
 pub(crate) fn invokes_shim(command: &str) -> bool {
-    let edge = |c: Option<char>| c.is_none_or(|c| c.is_whitespace() || matches!(c, '\'' | '"'));
-    command.contains(&format!("{SOURCE_ENV}="))
-        || command
-            .match_indices(crate::install::io::HOOK_BIN)
-            .any(|(at, bin)| {
-                let rest = &command[at + bin.len()..];
-                let before = command[..at].chars().next_back();
-                (edge(before) || matches!(before, Some('/' | '\\')))
-                    && edge(rest.strip_prefix(".exe").unwrap_or(rest).chars().next())
-            })
+    let mut words = shell_words(command).into_iter();
+    for word in words.by_ref() {
+        match word.split_once('=') {
+            Some((name, _)) if is_env_name(name) => {
+                if name == SOURCE_ENV {
+                    return true;
+                }
+            }
+            _ => {
+                let program = word.rsplit(['/', '\\']).next().unwrap_or(&word);
+                let bin = crate::install::io::HOOK_BIN;
+                return program == bin
+                    || program
+                        .strip_prefix(bin)
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case(".exe"));
+            }
+        }
+    }
+    false
+}
+
+fn is_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// `command` split into words as `/bin/sh` and `cmd.exe` both read the forms
+/// pixtuoid writes: single and double quotes group, and a backslash escapes only a
+/// quote, a backslash or a space, so a Windows path keeps its separators.
+fn shell_words(command: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut word = String::new();
+    let mut started = false;
+    let mut quote = None;
+    let mut chars = command.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (quote, c) {
+            (None, c) if c.is_whitespace() => {
+                if started {
+                    words.push(std::mem::take(&mut word));
+                    started = false;
+                }
+            }
+            (None, '\'' | '"') => {
+                quote = Some(c);
+                started = true;
+            }
+            (Some(q), c) if c == q => quote = None,
+            (Some('\''), c) => word.push(c),
+            (_, '\\')
+                if chars
+                    .peek()
+                    .is_some_and(|n| matches!(n, '\'' | '"' | '\\' | ' ')) =>
+            {
+                word.extend(chars.next());
+                started = true;
+            }
+            (_, c) => {
+                word.push(c);
+                started = true;
+            }
+        }
+    }
+    if started {
+        words.push(word);
+    }
+    words
 }
 
 #[cfg(test)]
@@ -100,7 +161,11 @@ mod tests {
             "notify-send done",
             "/opt/pixtuoid-hook-wrapper",
             "my-pixtuoid-hook",
-            "echo pixtuoid-hooks",
+            "echo pixtuoid-hook",
+            "printf 'PIXTUOID_SOURCE=x'",
+            "my-tool --hook /opt/bin/pixtuoid-hook",
+            "'my tool' 'pixtuoid-hook' --source x",
+            "FOO=1 echo PIXTUOID_SOURCE=x",
         ] {
             assert!(!invokes_shim(theirs), "{theirs}");
         }

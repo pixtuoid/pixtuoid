@@ -151,9 +151,18 @@ fn register(config: &Path) -> Result<()> {
 /// which unloads it, then enabled, which loads the files on disk
 /// (`hermes_cli/plugins_activation.py:118-121`).
 fn reload() -> Result<()> {
+    let pending = reload_pending()?;
+    io::write_config_atomic(&pending, "")?;
     CLI.run(&[PLUGINS.as_ref(), DISABLE.as_ref(), NAME.as_ref()])?;
     CLI.run(&[PLUGINS.as_ref(), ENABLE.as_ref(), NAME.as_ref()])?;
-    Ok(())
+    io::lock_config(&pending)?.restore(None)
+}
+
+/// Marks a [`reload`] whose `disable` may have run without its `enable`, which
+/// [`is_registered`] reads as still enabled, so the next reload re-enables the plugin
+/// rather than leaving it off as a user who disabled it would.
+fn reload_pending() -> Result<PathBuf> {
+    Ok(default_config_path()?.with_file_name("reload-pending"))
 }
 
 /// Disable first: it unloads the plugin from a running gateway, which `remove`
@@ -181,6 +190,9 @@ fn is_ours(plugin: &str) -> bool {
 
 /// Read-only, so a status check starts no CLI.
 fn is_registered() -> Result<bool> {
+    if reload_pending()?.exists() {
+        return Ok(true);
+    }
     let root = parse_root_mapping(&io::read_config(&config_path()?)?)?;
     let listed = root
         .get(&ystr(PLUGINS))
