@@ -544,7 +544,7 @@ fn returned_reasonix_dispatch(r: &mut Reducer, scene: &mut SceneState) -> System
     at(returned)
 }
 
-/// A reasonix dispatch carries no call id, so one started inside an earlier
+/// A reasonix `SUBAGENT_TOOLS` call carries no call id, so one started inside an earlier
 /// return's grace must cancel that cascade as a tracked dispatch does (#151).
 #[test]
 fn an_untracked_dispatch_inside_the_grace_cancels_the_pending_cascade() {
