@@ -15,7 +15,7 @@ use saphyr::{MappingOwned, ScalarOwned, YamlOwned};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge::{self, SentinelPlugin};
-use crate::install::target::{HostRegistration, MergeOutcome, Pickup, Unregistered};
+use crate::install::target::{HostRegistration, MergeOutcome, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 
 pub(crate) const HOST: HostRegistration = HostRegistration {
@@ -23,7 +23,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    pickup: Some(Pickup::Reload(reload)),
+    refresh: Refresh::Reload(reload),
     legacy: None,
 };
 

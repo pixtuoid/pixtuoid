@@ -1,12 +1,12 @@
 use super::*;
 use crate::install::target::{
-    ANTIGRAVITY, CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Primary, REASONIX, Target,
+    ANTIGRAVITY, CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Pickup, Primary, REASONIX, Target,
 };
 
 /// Claude's owned hooks file without its plugin registration or presence probe,
 /// for the tests of the primary-write path itself.
 const CLAUDE_FILE: Target = Target {
-    host: None,
+    pickup: Pickup::NextStart,
     presence_probe: || false,
     ..CLAUDE
 };
@@ -36,7 +36,7 @@ static FAKE: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: || false,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     registers: Vec::new,
     consumes: &[],
 };
@@ -78,7 +78,7 @@ static FAKE2: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: || false,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     registers: Vec::new,
     consumes: &[],
 };
@@ -109,7 +109,7 @@ static FAKE_DIR: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: || false,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     registers: Vec::new,
     consumes: &[],
 };
@@ -140,7 +140,7 @@ static FAKE_NO_HOME: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: || false,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     registers: Vec::new,
     consumes: &[],
 };
@@ -1900,7 +1900,10 @@ fn codex_doctor_names_a_stale_copy_until_it_is_re_copied() {
         let hooks = plugin_hooks_path(tmp.path());
         let hook = Some(std::env::current_exe().unwrap());
         install_target_from(&CODEX, Some(hooks.clone()), hook).unwrap();
-        let copy = CODEX.host.and_then(target::HostRegistration::copy).unwrap();
+        let copy = CODEX
+            .host()
+            .and_then(target::HostRegistration::copy)
+            .unwrap();
         assert!(!(copy.stale)(&hooks).unwrap(), "connect copies the plugin");
 
         let cached =
@@ -1983,7 +1986,7 @@ fn a_host_state_file_absent_reads_unregistered_and_unparsable_errs() {
             (&REASONIX, reasonix_packages(), "{not json"),
             (&HERMES, hermes_config(), "plugins: [unclosed\n"),
         ] {
-            let is_registered = t.host.unwrap().is_registered;
+            let is_registered = t.host().unwrap().is_registered;
             assert!(!is_registered().unwrap(), "{}: absent", t.name);
             std::fs::write(&state, unparsable).unwrap();
             assert!(is_registered().is_err(), "{}: unparsable", t.name);
@@ -1993,7 +1996,7 @@ fn a_host_state_file_absent_reads_unregistered_and_unparsable_errs() {
             r#"{"version":1,"plugins":[{"name":"other","enabled":true}]}"#,
         )
         .unwrap();
-        assert!(!(REASONIX.host.unwrap().is_registered)().unwrap());
+        assert!(!(REASONIX.host().unwrap().is_registered)().unwrap());
     });
 }
 
@@ -2420,7 +2423,7 @@ fn antigravity_disconnect_removes_the_plugin_through_agy() {
 #[test]
 fn antigravity_reports_what_agy_lists() {
     with_fake_hosts(|fake| {
-        let is_registered = ANTIGRAVITY.host.unwrap().is_registered;
+        let is_registered = ANTIGRAVITY.host().unwrap().is_registered;
         assert!(!is_registered().unwrap(), "never connected");
         let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
         install_target_from(&ANTIGRAVITY, None, hook).unwrap();
@@ -2530,7 +2533,7 @@ fn hermes_reconnect_reloads_the_plugin_into_a_running_gateway() {
                 "hermes plugins enable pixtuoid"
             ]
         );
-        assert!((HERMES.host.unwrap().is_registered)().unwrap());
+        assert!((HERMES.host().unwrap().is_registered)().unwrap());
     });
 }
 
@@ -2543,7 +2546,7 @@ fn hermes_disconnect_disables_the_plugin_before_removing_it() {
         let u = uninstall_target(&HERMES, None).unwrap();
         assert!(matches!(u.outcome, UninstallOutcome::Removed));
         assert!(!hermes_plugin().parent().unwrap().exists());
-        assert!(!(HERMES.host.unwrap().is_registered)().unwrap());
+        assert!(!(HERMES.host().unwrap().is_registered)().unwrap());
         assert_eq!(
             calls_of(fake, "hermes"),
             [

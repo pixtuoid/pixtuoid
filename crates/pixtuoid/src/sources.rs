@@ -17,7 +17,7 @@ use pixtuoid_core::source::registry;
 use crate::config;
 use crate::install::{
     self, InstallOutcome, InstallReport, UninstallOutcome, UninstallReport,
-    target::{HostRegistration, Pickup, PluginCopy, Target, by_source},
+    target::{HostRegistration, Pickup, PluginCopy, Refresh, Target, by_source},
 };
 use crate::runtime::ConnectedSources;
 
@@ -263,21 +263,26 @@ fn converge_owned_with(
         for (path, error) in &done.failed {
             tracing::warn!(cli = t.name, path = ?path, error = ?error, "could not refresh a plugin file to this build");
         }
-        let loads_new = match t.host.and_then(|h| h.pickup.as_ref().map(|p| (h, p))) {
-            Some((host, Pickup::Recopy(copy))) => recopy(host, copy, t).unwrap_or_else(|e| {
-                tracing::warn!(cli = t.name, error = ?e, "could not re-copy the plugin to this build");
-                false
-            }),
-            Some((host, Pickup::Reload(reload))) => {
-                let failed = !done.rewritten.is_empty() && reload_failed(host, *reload, t);
-                // The disk then says what the CLI runs, so the next launch rewrites
-                // and reloads again.
-                if failed && let Err(e) = install::put_back(&done.rewritten) {
-                    tracing::warn!(cli = t.name, error = ?e, "could not put back the plugin its CLI still runs");
+        let next_start = !done.rewritten.is_empty();
+        let loads_new = match t.pickup {
+            Pickup::NextStart => next_start,
+            Pickup::Watches => false,
+            Pickup::Plugin(host) => match &host.refresh {
+                Refresh::NextStart => next_start,
+                Refresh::Recopy(copy) => recopy(host, copy, t).unwrap_or_else(|e| {
+                    tracing::warn!(cli = t.name, error = ?e, "could not re-copy the plugin to this build");
+                    false
+                }),
+                Refresh::Reload(reload) => {
+                    let failed = next_start && reload_failed(host, *reload, t);
+                    // The disk then says what the CLI runs, so the next launch rewrites
+                    // and reloads again.
+                    if failed && let Err(e) = install::put_back(&done.rewritten) {
+                        tracing::warn!(cli = t.name, error = ?e, "could not put back the plugin its CLI still runs");
+                    }
+                    failed
                 }
-                failed
-            }
-            None => !done.rewritten.is_empty() && !t.primary.reloads_on_change(),
+            },
         };
         if loads_new {
             refreshed.push(t);
@@ -311,10 +316,10 @@ fn reload_failed(host: &HostRegistration, reload: fn() -> Result<()>, t: &Target
 /// has a newer plugin to load.
 pub(crate) fn refreshed_notice(t: &Target) -> String {
     let name = t.display_name();
-    let step = match (t.post_install_hint, t.host.and_then(|h| h.pickup.as_ref())) {
+    let step = match (t.post_install_hint, t.host().map(|h| &h.refresh)) {
         (Some(hint), _) => hint.to_string(),
         // A connect runs the reload.
-        (None, Some(Pickup::Reload(_))) => format!("reconnect {name} to load it"),
+        (None, Some(Refresh::Reload(_))) => format!("reconnect {name} to load it"),
         (None, _) => format!("restart {name} to load it"),
     };
     format!("pixtuoid: refreshed the {name} plugin to this build — {step}")
@@ -1004,11 +1009,11 @@ mod tests {
 
     /// A host that runs a copy, with the enabled and stale states the test sets.
     static COPYING_HOST: HostRegistration = HostRegistration {
-        cli: crate::install::target::CLAUDE.host.unwrap().cli,
+        cli: crate::install::target::CLAUDE.host().unwrap().cli,
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
-        pickup: Some(Pickup::Recopy(PluginCopy {
+        refresh: Refresh::Recopy(PluginCopy {
             stale: |_| {
                 use std::sync::atomic::Ordering::SeqCst;
                 if STALE_ERRS.load(SeqCst) {
@@ -1020,7 +1025,7 @@ mod tests {
                 REFRESHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
             },
-        })),
+        }),
         legacy: None,
     };
 
@@ -1030,7 +1035,7 @@ mod tests {
     fn a_launch_re_copies_a_stale_copy_only_while_enabled() {
         use std::sync::atomic::Ordering::SeqCst;
         let t = Target {
-            host: Some(&COPYING_HOST),
+            pickup: Pickup::Plugin(&COPYING_HOST),
             ..crate::install::target::CLAUDE
         };
         let copy = COPYING_HOST.copy().unwrap();
@@ -1052,7 +1057,7 @@ mod tests {
     }
 
     static COPYING: Target = Target {
-        host: Some(&COPYING_HOST),
+        pickup: Pickup::Plugin(&COPYING_HOST),
         ..crate::install::target::CLAUDE
     };
 
@@ -1093,23 +1098,23 @@ mod tests {
 
     /// A host that loads the files in place and keeps what it loaded until told.
     static RELOADING_HOST: HostRegistration = HostRegistration {
-        cli: crate::install::target::HERMES.host.unwrap().cli,
+        cli: crate::install::target::HERMES.host().unwrap().cli,
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
-        pickup: Some(Pickup::Reload(|| {
+        refresh: Refresh::Reload(|| {
             use std::sync::atomic::Ordering::SeqCst;
             if RELOAD_FAILS.load(SeqCst) {
                 anyhow::bail!("no gateway answered");
             }
             RELOADS.fetch_add(1, SeqCst);
             Ok(())
-        })),
+        }),
         legacy: None,
     };
 
     static RELOADING: Target = Target {
-        host: Some(&RELOADING_HOST),
+        pickup: Pickup::Plugin(&RELOADING_HOST),
         ..crate::install::target::HERMES
     };
 
@@ -1220,6 +1225,30 @@ mod tests {
             ["dsh"]
         );
         assert_eq!(seen.into_inner(), ["claude", "opencode", "omp", "dsh"]);
+    }
+
+    /// A host whose next start loads the rewritten plugin is told to restart.
+    #[test]
+    fn a_launch_announces_a_host_that_loads_its_plugin_at_next_start() {
+        let refreshed = converge_owned_with(
+            &[&crate::install::target::CLAUDE],
+            &set(&["claude-code"]),
+            |_| Ok(false),
+            |_| {
+                Ok(install::Converged {
+                    rewritten: vec![(PathBuf::from("/x/hooks.json"), String::new())],
+                    failed: Vec::new(),
+                })
+            },
+        );
+        let [claude] = refreshed.as_slice() else {
+            panic!("{:?}", refreshed.iter().map(|t| t.name).collect::<Vec<_>>());
+        };
+        assert!(
+            refreshed_notice(claude).ends_with("restart Claude Code to load it"),
+            "{}",
+            refreshed_notice(claude)
+        );
     }
 
     /// The heal's whole population is the disconnected: a stub is what a
@@ -1457,7 +1486,7 @@ mod tests {
         let plain = "\u{2713} Codex disconnected";
         assert_eq!(line(UninstallOutcome::Removed, None), plain);
         assert_eq!(line(UninstallOutcome::NothingToRemove, None), plain);
-        let codex = crate::install::target::CODEX.host.map(|h| h.cli);
+        let codex = crate::install::target::CODEX.host().map(|h| h.cli);
         let stranded = line(UninstallOutcome::Removed, codex);
         assert!(
             stranded.contains("plugin left registered (codex not on PATH)"),
@@ -1976,7 +2005,7 @@ mod tests {
         binary_strategy: crate::install::target::BinaryStrategy::EmbedAbsolute,
         presence_probe: || false,
         post_install_hint: None,
-        host: None,
+        pickup: Pickup::NextStart,
         registers: Vec::new,
         consumes: &[],
     };

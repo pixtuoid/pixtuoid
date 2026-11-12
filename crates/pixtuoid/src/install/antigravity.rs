@@ -15,7 +15,7 @@ use crate::install::hook_cmd::HOOK_EVENT_FLAG;
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-use crate::install::target::{HostRegistration, MergeOutcome, Unregistered};
+use crate::install::target::{HostRegistration, MergeOutcome, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef, assemble, shell_shim_ref};
 use pixtuoid_core::source::antigravity::{CLI_APP_DATA_DIR, SOURCE_NAME, gemini_dir};
 
@@ -24,7 +24,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    pickup: None,
+    refresh: Refresh::NextStart,
     legacy: None,
 };
 

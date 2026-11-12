@@ -136,7 +136,7 @@ pub(crate) fn verify_target(
     if let Some(files) = t.primary.owned_files() {
         verify_owned_drift(t, files, &path, &mut issues, &mut notes);
     }
-    if let Some(host) = t.host {
+    if let Some(host) = t.host() {
         match (host.is_registered)() {
             Ok(true) => match host.copy().map(|c| (c.stale)(&path)) {
                 Some(Ok(true)) => issues.push(format!(
@@ -567,7 +567,7 @@ fn install_target_from(
     let hook_cmd = (t.hook_command)(&binary, explicit_hook)?;
     // Before the lock creates the first file: failing after it leaves a plugin root
     // no manifest names, which no disconnect removes.
-    if let Some(host) = t.host {
+    if let Some(host) = t.host() {
         host.cli.require()?;
     }
     // Lost-update TOCTOU: two concurrent pixtuoid runs would otherwise interleave
@@ -613,7 +613,7 @@ fn install_target_from(
     // call wrote: the hooks ARE the connected fact (`has_hooks`), and a plugin that
     // never registered fires none of the new ones. Legacy hooks `connect_host`
     // already stripped stay stripped.
-    if let Some(host) = t.host
+    if let Some(host) = t.host()
         && let Err(e) = connect_host(host, &path)
     {
         if outcome.changed
@@ -768,7 +768,7 @@ pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<Un
     // After the strip, which needs no CLI: a failing deregister leaves a
     // registered plugin whose hooks are gone, or whose copy fires into a
     // disconnected source, which drops the events.
-    let plugin_left_registered = match t.host {
+    let plugin_left_registered = match t.host() {
         Some(host) => match (host.unregister)(&path)? {
             target::Unregistered::Removed => {
                 removed = true;
@@ -781,7 +781,7 @@ pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<Un
     };
     // Last, so a legacy config it cannot parse fails the disconnect only once the
     // plugin is gone.
-    if let Some(host) = t.host {
+    if let Some(host) = t.host() {
         removed |= strip_legacy(host)?;
     }
     Ok(UninstallReport {

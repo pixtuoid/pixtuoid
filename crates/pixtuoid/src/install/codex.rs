@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::install::host_plugin::{self, NAME};
 use crate::install::target::{
-    HostRegistration, LegacyConfig, MergeOutcome, Pickup, PluginCopy, Unregistered,
+    HostRegistration, LegacyConfig, MergeOutcome, PluginCopy, Refresh, Unregistered,
 };
 use crate::install::verify::{SchemaParse, ShimRef};
 use crate::install::{io, merge};
@@ -50,10 +50,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    pickup: Some(Pickup::Recopy(PluginCopy {
+    refresh: Refresh::Recopy(PluginCopy {
         stale: copy_is_stale,
         refresh: add_plugin,
-    })),
+    }),
     // A config.toml hook Codex holds untrusted brings up its hook review on every
     // launch (`codex-rs/tui/src/startup_hooks_review.rs:144-146,290-292` @ rust-v0.167.2).
     legacy: Some(LegacyConfig {

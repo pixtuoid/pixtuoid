@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-use crate::install::target::{HostRegistration, Unregistered};
+use crate::install::target::{HostRegistration, Refresh, Unregistered};
 use crate::install::verify::ShimRef;
 
 pub(crate) const EVENTS: &[&str] = &[
@@ -38,7 +38,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    pickup: None,
+    refresh: Refresh::NextStart,
     legacy: None,
 };
 

@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-use crate::install::target::{HostRegistration, MergeOutcome, Unregistered};
+use crate::install::target::{HostRegistration, MergeOutcome, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 
 /// Events we register == events we decode, enforced by
@@ -62,7 +62,7 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    pickup: None,
+    refresh: Refresh::NextStart,
     legacy: None,
 };
 

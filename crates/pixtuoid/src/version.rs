@@ -279,7 +279,7 @@ mod tests {
         target::TARGETS
             .iter()
             .copied()
-            .filter(|t| t.host.is_some_and(|h| h.legacy.is_some()))
+            .filter(|t| t.host().is_some_and(|h| h.legacy.is_some()))
     }
 
     /// Every host a reconnect notice names, a released pixtuoid having merged

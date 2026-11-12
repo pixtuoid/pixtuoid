@@ -97,10 +97,8 @@ pub struct Target {
     /// installing is not the last step the user must take. `None` for every target
     /// whose hooks take effect on the CLI's next run.
     pub post_install_hint: Option<&'static str>,
-    /// Set when the CLI loads our hooks through its own plugin system: the owned
-    /// primary is then the plugin file that carries them (a hooks file, a manifest
-    /// with the hooks inside, or code that registers them), which this registers.
-    pub host: Option<&'static HostRegistration>,
+    /// How the CLI picks up the files pixtuoid writes, a rewrite included.
+    pub pickup: Pickup,
     /// The hook names the installed artifact subscribes to: a profiled CLI's
     /// hermetic scenarios fire or owe each it forwards
     /// (`every_hook_a_profiled_cli_forwards_is_fired_or_owed`).
@@ -119,6 +117,25 @@ impl Target {
     pub(crate) fn display_name(&self) -> &'static str {
         pixtuoid_core::source::display_name(self.core_source).unwrap_or(self.core_source)
     }
+
+    pub(crate) const fn host(&self) -> Option<&'static HostRegistration> {
+        match self.pickup {
+            Pickup::Plugin(host) => Some(host),
+            Pickup::NextStart | Pickup::Watches => None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Pickup {
+    /// Its next start loads the files where it looks for them.
+    NextStart,
+    /// It reloads the files when they change.
+    Watches,
+    /// It loads the files through its own plugin system: the owned primary is then
+    /// the plugin file that carries the hooks (a hooks file, a manifest with the
+    /// hooks inside, or code that registers them), which this registers.
+    Plugin(&'static HostRegistration),
 }
 
 /// Whose the primary file is: the user's, with pixtuoid's entries merged in, or
@@ -153,9 +170,6 @@ pub enum Primary {
         /// As `Config`'s, over the owned primary.
         verify_schema: fn(content: &str) -> crate::install::verify::SchemaParse,
         retired: Option<RetiredStub>,
-        /// Whether the CLI reloads the primary when it changes, so a rewrite
-        /// needs no restart notice.
-        reloads_on_change: bool,
     },
 }
 
@@ -187,16 +201,6 @@ impl Primary {
         }
     }
 
-    pub(crate) fn reloads_on_change(&self) -> bool {
-        matches!(
-            self,
-            Primary::Owned {
-                reloads_on_change: true,
-                ..
-            }
-        )
-    }
-
     pub(crate) fn owned_files(&self) -> Option<OwnedFiles> {
         match *self {
             Primary::Config { beside, .. } => beside.map(OwnedFiles::Beside),
@@ -226,9 +230,8 @@ pub struct HostRegistration {
     pub unregister: fn(config: &Path) -> Result<Unregistered>,
     /// Whether the CLI reports the plugin installed and enabled.
     pub is_registered: fn() -> Result<bool>,
-    /// What brings a rewrite of the plugin's files to the CLI: `None` when it picks
-    /// one up on its own.
-    pub pickup: Option<Pickup>,
+    /// What brings a rewrite of the plugin's files to the running CLI.
+    pub refresh: Refresh,
     /// Set only where what an older pixtuoid merged into the CLI's own config breaks
     /// the CLI when left.
     pub legacy: Option<LegacyConfig>,
@@ -236,15 +239,17 @@ pub struct HostRegistration {
 
 impl HostRegistration {
     pub(crate) fn copy(&self) -> Option<&PluginCopy> {
-        match &self.pickup {
-            Some(Pickup::Recopy(copy)) => Some(copy),
-            _ => None,
+        match &self.refresh {
+            Refresh::Recopy(copy) => Some(copy),
+            Refresh::NextStart | Refresh::Reload(_) => None,
         }
     }
 }
 
 #[derive(Debug)]
-pub enum Pickup {
+pub enum Refresh {
+    /// Its next start loads the files in place.
+    NextStart,
     Recopy(PluginCopy),
     /// The CLI loads the files in place but keeps what it loaded until told. The
     /// reload may re-enable a plugin the user disabled, so it runs only while
@@ -294,7 +299,6 @@ pub(crate) const CLAUDE: Target = Target {
         uninstall: crate::install::host_plugin::uninstall_hooks,
         verify_schema: crate::install::claude::verify_schema,
         retired: None,
-        reloads_on_change: false,
     },
     // Windows: the exec form embeds the absolute path, and a hook spawned without
     // a shell can't PATH-search, so an unresolvable binary is fatal there.
@@ -305,7 +309,7 @@ pub(crate) const CLAUDE: Target = Target {
     },
     presence_probe: crate::install::claude::detect_installed,
     post_install_hint: None,
-    host: Some(&crate::install::claude::HOST),
+    pickup: Pickup::Plugin(&crate::install::claude::HOST),
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -323,7 +327,6 @@ pub(crate) const CODEX: Target = Target {
         uninstall: crate::install::host_plugin::uninstall_hooks,
         verify_schema: crate::install::codex::verify_schema,
         retired: None,
-        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::codex::detect_installed,
@@ -332,7 +335,7 @@ pub(crate) const CODEX: Target = Target {
     post_install_hint: Some(
         "restart it and trust pixtuoid's hooks at its \"Hooks need review\" prompt",
     ),
-    host: Some(&crate::install::codex::HOST),
+    pickup: Pickup::Plugin(&crate::install::codex::HOST),
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -350,12 +353,11 @@ pub(crate) const REASONIX: Target = Target {
         uninstall: crate::install::reasonix::uninstall,
         verify_schema: crate::install::reasonix::verify_schema,
         retired: None,
-        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::reasonix::detect_installed,
     post_install_hint: None,
-    host: Some(&crate::install::reasonix::HOST),
+    pickup: Pickup::Plugin(&crate::install::reasonix::HOST),
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -378,7 +380,7 @@ pub(crate) const CODEWHALE: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::codewhale::detect_installed,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -404,15 +406,14 @@ pub(crate) const OPENCODE: Target = Target {
             was: crate::install::opencode::V1_REMOVED_STUB,
             now: crate::install::opencode::REMOVED_STUB,
         }),
-        // `packages/core/src/plugin/supervisor.ts:219` watches `plugins/`.
-        reloads_on_change: true,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     // A post-uninstall stub still exists, so detect on opencode's own dirs
     // rather than our plugin file.
     presence_probe: crate::install::opencode::detect_installed,
     post_install_hint: None,
-    host: None,
+    // `packages/core/src/plugin/supervisor.ts:219` watches `plugins/`.
+    pickup: Pickup::Watches,
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -430,12 +431,11 @@ pub(crate) const GROK: Target = Target {
         uninstall: crate::install::grok::uninstall,
         verify_schema: crate::install::grok::verify_schema,
         retired: None,
-        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::grok::detect_installed,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -458,7 +458,7 @@ pub(crate) const CURSOR: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::cursor::detect_installed,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -476,15 +476,12 @@ pub(crate) const HERMES: Target = Target {
         uninstall: crate::install::hermes::uninstall,
         verify_schema: crate::install::hermes::verify_schema,
         retired: None,
-        // The gateway discovers plugins once, and again only when told to
-        // (`hermes_cli/plugins_activation.py:118-121` at v0.22.5).
-        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     // The plugin is ours, so probe Hermes's own home dir instead.
     presence_probe: crate::install::hermes::detect_installed,
     post_install_hint: None,
-    host: Some(&crate::install::hermes::HOST),
+    pickup: Pickup::Plugin(&crate::install::hermes::HOST),
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -511,7 +508,7 @@ pub(crate) const OPENCLAW: Target = Target {
     // `plugins.load` is `kind: "restart"` upstream, so a RUNNING gateway does not
     // hot-load the plugin — the lobster appears on its next restart.
     post_install_hint: Some("restart the gateway to load it (openclaw gateway restart)"),
-    host: None,
+    pickup: Pickup::NextStart,
     #[cfg(test)]
     registers: || {
         [
@@ -540,7 +537,7 @@ pub(crate) const JCODE: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::jcode::detect_installed,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -565,7 +562,7 @@ pub(crate) const KIMI: Target = Target {
     // data root rather than the file we write.
     presence_probe: crate::install::kimi::detect_installed,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -593,7 +590,7 @@ pub(crate) const DSH: Target = Target {
     post_install_hint: Some(
         "running dsh sessions (except the web profile) must restart to load the plugin",
     ),
-    host: None,
+    pickup: Pickup::NextStart,
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -611,7 +608,6 @@ pub(crate) const OMP: Target = Target {
         uninstall: crate::install::omp::uninstall,
         verify_schema: crate::install::omp::verify_schema,
         retired: None,
-        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     // A post-uninstall stub still exists, so detect on omp's own agent dir
@@ -619,7 +615,7 @@ pub(crate) const OMP: Target = Target {
     presence_probe: crate::install::omp::detect_installed,
     // Extensions load once at startup (`discoverAndLoadExtensions`).
     post_install_hint: Some("already-running omp sessions must restart to load the bridge"),
-    host: None,
+    pickup: Pickup::NextStart,
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
@@ -637,12 +633,11 @@ pub(crate) const ANTIGRAVITY: Target = Target {
         uninstall: crate::install::antigravity::uninstall,
         verify_schema: crate::install::antigravity::verify_schema,
         retired: None,
-        reloads_on_change: false,
     },
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: crate::install::antigravity::detect_installed,
     post_install_hint: None,
-    host: Some(&crate::install::antigravity::HOST),
+    pickup: Pickup::Plugin(&crate::install::antigravity::HOST),
     #[cfg(test)]
     consumes: &[],
     #[cfg(test)]
