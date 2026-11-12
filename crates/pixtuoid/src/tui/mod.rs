@@ -1315,7 +1315,7 @@ mod apply_key_action_tests {
 
         /// Take in what lands next, a job or a save, as the loop's arm does.
         fn settle(&mut self) {
-            let deadline = std::time::Instant::now() + crate::panels::noted::LANDS_WITHIN;
+            let deadline = std::time::Instant::now() + crate::panels::noted::SETTLES_WITHIN;
             loop {
                 match self.landed.try_recv() {
                     Ok(arrived) => return crate::panels::land(&mut self.ui, arrived),

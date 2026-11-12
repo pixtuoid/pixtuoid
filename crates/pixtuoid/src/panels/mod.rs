@@ -489,7 +489,8 @@ pub(crate) struct JobDone {
     installed: Vec<&'static str>,
 }
 
-/// What a painter's loop takes back from work the panels started off it.
+/// What a painter's loop takes back from work started off it: a panel's job, or a
+/// [`Saves`] write.
 #[derive(Debug, Clone)]
 pub(crate) enum Landed {
     Job(JobDone),
@@ -577,7 +578,7 @@ fn start_job<H: Host>(cx: &mut KeyCtx<'_, H>, job: PanelJob) {
     }
 }
 
-/// The threads the panels started this run, for a quit to let them finish: a
+/// The threads a panel or a painter started this run, for a quit to let them finish: a
 /// killed CLI leaves its change a rollback to write, and closed [`Saves`] their
 /// queued writes.
 static PANEL_THREADS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
@@ -603,7 +604,7 @@ pub(crate) fn join_panel_threads() {
 
 /// The painter's config writes, on a thread of their own in the order they
 /// were made: a write can block on a stalled disk, which the painter's loop
-/// must not wait out, and two saves of one setting must land in that order,
+/// must not wait out, and two saves of one setting must be written in that order,
 /// which the [config](crate::config)'s own turns do not keep. A setting's
 /// outcome comes back as a [`Landed::Saved`].
 #[derive(Clone)]
@@ -2444,14 +2445,14 @@ pub(crate) mod noted {
     }
 
     /// Far past a job's or a save's own time on a loaded machine.
-    pub(crate) const LANDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+    pub(crate) const SETTLES_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
 
     /// The outcomes of every save `saves` had queued, landed.
     pub(crate) fn saved(
         saves: &super::Saves,
         landed: &mut tokio::sync::mpsc::UnboundedReceiver<super::Landed>,
     ) -> Vec<crate::config::SaveOutcome> {
-        assert!(saves.flush(LANDS_WITHIN), "the saves ran");
+        assert!(saves.flush(SETTLES_WITHIN), "the saves ran");
         std::iter::from_fn(|| landed.try_recv().ok())
             .map(|landed| match landed {
                 super::Landed::Saved(outcome) => outcome,
@@ -2508,7 +2509,7 @@ mod saves_tests {
             "the flush went on at its bound"
         );
         assert!(
-            saves.flush(noted::LANDS_WITHIN),
+            saves.flush(noted::SETTLES_WITHIN),
             "the save is written once the disk answers"
         );
         let saved = std::fs::read_to_string(&path).expect("the config");
