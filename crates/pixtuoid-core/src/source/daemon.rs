@@ -187,8 +187,9 @@ impl PresenceTtl {
 
 impl DaemonPresenceUpdate {
     /// The gateway pid this update arms the abrupt-down `ExitWatch` on, if any.
-    /// `apply_presence` may decline to adopt it (a pid already bound, a Down
-    /// daemon); that watch's exit then matches no `current_pid` and changes nothing.
+    /// `apply_presence` adopts a `PidSeen` pid only onto an unbound, live daemon;
+    /// the watch is armed regardless, and its exit acts only if that pid is the
+    /// `current_pid` when the exit lands.
     pub fn armable_pid(&self) -> Option<i32> {
         match self {
             DaemonPresenceUpdate::GatewayUp { pid } => *pid,

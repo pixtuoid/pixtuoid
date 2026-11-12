@@ -15,7 +15,8 @@ use tokio::sync::mpsc;
 mod wait;
 use wait::{collect_for, collect_until};
 
-/// Past any native watch setup, short of hanging CI: every wait's hang guard.
+/// Past any native watch setup, short of hanging CI: every wait's hang guard,
+/// and the held-open tests' verdict, so it stays under the sources' own poll.
 const DEADLINE: Duration = Duration::from_secs(30);
 
 /// How long a check listens past its positive event: the same read's events
@@ -78,13 +79,13 @@ async fn a_recreated_root_is_rewatched() {
 
     let first = "aa000000-0000-7000-8000-0000000000a1";
     write_session(&root, first).await;
-    session_started(&mut rx, first, "the root present at boot").await;
+    expect_session_start(&mut rx, first, "the root present at boot").await;
 
     tokio::fs::remove_dir_all(&root).await.unwrap();
     tokio::fs::create_dir(&root).await.unwrap();
     let second = "bb000000-0000-7000-8000-0000000000b2";
     write_session(&root, second).await;
-    session_started(&mut rx, second, "a session under the recreated root").await;
+    expect_session_start(&mut rx, second, "a session under the recreated root").await;
     assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
     handle.abort();
 }
@@ -113,7 +114,7 @@ async fn a_root_recreated_under_a_removed_empty_anchor_is_watched() {
     tokio::fs::create_dir_all(&root).await.unwrap();
     let uuid = "cc000000-0000-7000-8000-0000000000c3";
     write_session(&root, uuid).await;
-    session_started(&mut rx, uuid, "a session under the recreated root").await;
+    expect_session_start(&mut rx, uuid, "a session under the recreated root").await;
     assert!(!handle.is_finished(), "the watcher stopped: {handle:?}");
     handle.abort();
 }
@@ -419,7 +420,11 @@ async fn write_session(root: &std::path::Path, uuid: &str) {
 }
 
 /// Waits for `uuid`'s codex session to register.
-async fn session_started(rx: &mut mpsc::Receiver<(Transport, AgentEvent)>, uuid: &str, what: &str) {
+async fn expect_session_start(
+    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    uuid: &str,
+    what: &str,
+) {
     let want = AgentId::from_parts("codex", uuid);
     collect_until(rx, what, |e| is_start(e, &want)).await;
 }
