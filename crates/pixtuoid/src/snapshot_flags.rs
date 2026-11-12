@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::{Context, Result};
 use pixtuoid_scene::pet::PetKind;
 
-/// `--now-sec`'s bound: a second past it is the next hour's.
+/// `--now-sec`'s exclusive bound: from it on, a second is the next hour's.
 const HOUR_SECS: u64 = chrono::TimeDelta::hours(1).num_seconds().unsigned_abs();
 
 /// The instant a snapshot draws: an hour, and a day and a second read only
