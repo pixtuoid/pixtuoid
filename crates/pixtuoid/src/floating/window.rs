@@ -38,7 +38,7 @@ pub(crate) enum FloatingEvent {
     GpuFailed(String),
     /// A quit signal ([`QuitArms`](crate::runtime::QuitArms)): quit as the close button does.
     Quit,
-    /// Work the panels started off the loop landed.
+    /// Work a panel or a painter started off the loop landed.
     Landed(crate::panels::Landed),
 }
 

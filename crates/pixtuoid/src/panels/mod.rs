@@ -502,8 +502,8 @@ pub(crate) enum Landed {
 pub(crate) type LandedTx = tokio::sync::mpsc::UnboundedSender<Landed>;
 
 /// Run `input`'s job, with every step of it that can block: the config
-/// writes, the host CLIs a connect runs, and the rows' rebuild, whose
-/// `diagnose` can run a CLI too.
+/// writes, the host CLIs a connect runs, the rows' rebuild, whose `diagnose`
+/// can run a CLI too, and `sources::detect`'s presence probes.
 pub(crate) fn run_job(input: JobInput) -> JobDone {
     let JobInput {
         job,
@@ -592,7 +592,7 @@ fn panel_threads() -> std::sync::MutexGuard<'static, Vec<std::thread::JoinHandle
     threads
 }
 
-/// Wait for every thread the panels started this run to end.
+/// Wait for every thread a panel or a painter started this run to end.
 pub(crate) fn join_panel_threads() {
     // Taken out first: a `for` head's guard would hold the lock across the
     // joins, which a last `Saves` dropped meanwhile needs.
@@ -2327,8 +2327,9 @@ impl Office for NotedOffice {
 
 /// The desktop calls a test's click or key makes, noted in place of
 /// `crate::focus::focus_slot` and `crate::open_url`, and the panel job it
-/// starts, held in place of [`run_job`](super::run_job). The record is
-/// per thread because an injected `fn` captures nothing to note them in.
+/// starts, held in place of [`run_job`](super::run_job), plus the save tests'
+/// stalled-disk fixture and shared deadline. The record is per thread because an
+/// injected `fn` captures nothing to note them in.
 #[cfg(test)]
 pub(crate) mod noted {
     use std::cell::RefCell;
