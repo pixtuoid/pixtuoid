@@ -64,9 +64,47 @@ pub(crate) fn shell_hook_command(path: &str, source: &str) -> Result<String> {
     }
 }
 
+/// Whether `command` runs pixtuoid's shim, whichever release wrote it: the shim's
+/// name as a path's last component, or the [`SOURCE_ENV`] stamp only it reads.
+pub(crate) fn invokes_shim(command: &str) -> bool {
+    let edge = |c: Option<char>| c.is_none_or(|c| c.is_whitespace() || matches!(c, '\'' | '"'));
+    command.contains(&format!("{SOURCE_ENV}="))
+        || command
+            .match_indices(crate::install::io::HOOK_BIN)
+            .any(|(at, bin)| {
+                let rest = &command[at + bin.len()..];
+                let before = command[..at].chars().next_back();
+                (edge(before) || matches!(before, Some('/' | '\\')))
+                    && edge(rest.strip_prefix(".exe").unwrap_or(rest).chars().next())
+            })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_shape_a_release_wrote_invokes_the_shim_and_a_lookalike_does_not() {
+        for ours in [
+            "PIXTUOID_SOURCE=claude-code 'pixtuoid-hook'",
+            "pixtuoid-hook",
+            "PIXTUOID_SOURCE=reasonix '/Users/Jane Doe/bin/pixtuoid-hook'",
+            "'/opt/bin/pixtuoid-hook' --source hermes",
+            "PIXTUOID_SOURCE=antigravity '/opt/pixtuoid-hook' --event Stop",
+            r"C:\tools\pixtuoid-hook.exe --source claude-code",
+            r#""C:\Program Files\pixtuoid\pixtuoid-hook.exe""#,
+        ] {
+            assert!(invokes_shim(ours), "{ours}");
+        }
+        for theirs in [
+            "notify-send done",
+            "/opt/pixtuoid-hook-wrapper",
+            "my-pixtuoid-hook",
+            "echo pixtuoid-hooks",
+        ] {
+            assert!(!invokes_shim(theirs), "{theirs}");
+        }
+    }
 
     #[test]
     fn quotes_plain_path() {

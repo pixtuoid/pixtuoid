@@ -15,7 +15,7 @@ use saphyr::{MappingOwned, ScalarOwned, YamlOwned};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge::{self, SentinelPlugin};
-use crate::install::target::{HostRegistration, MergeOutcome, Refresh, Unregistered};
+use crate::install::target::{CliConfig, HostRegistration, MergeOutcome, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 
 pub(crate) const HOST: HostRegistration = HostRegistration {
@@ -26,6 +26,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     home,
     refresh: Refresh::Reload(reload),
     legacy: None,
+    shim_hooks: Some(CliConfig {
+        path: config_path,
+        strip: |content| merge::strip_shim_yaml(content, "config.yaml"),
+    }),
 };
 
 const CLI: io::HostCli = io::HostCli { command: "hermes" };
@@ -73,7 +77,7 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     Ok(home()?.join(PLUGINS).join(NAME).join(PLUGIN_FILE))
 }
 
-/// The `config.yaml` hermes keeps its plugin lists in.
+/// The `config.yaml` hermes keeps its plugin lists and shell hooks in.
 fn config_path() -> Result<PathBuf> {
     Ok(home()?.join("config.yaml"))
 }

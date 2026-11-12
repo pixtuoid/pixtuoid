@@ -235,8 +235,11 @@ pub struct HostRegistration {
     /// What brings a rewrite of the plugin's files to the CLI.
     pub refresh: Refresh,
     /// Set only where what an older pixtuoid merged into the CLI's own config breaks
-    /// the CLI when left.
-    pub legacy: Option<LegacyConfig>,
+    /// the CLI when left: connect and disconnect strip it.
+    pub legacy: Option<CliConfig>,
+    /// The CLI's own hook config, from which a disconnect removes every entry whose
+    /// command runs pixtuoid's shim, whichever release wrote it.
+    pub shim_hooks: Option<CliConfig>,
 }
 
 impl HostRegistration {
@@ -270,12 +273,11 @@ pub struct PluginCopy {
     pub recopy: fn() -> Result<()>,
 }
 
-/// A config of the CLI's own that an older pixtuoid merged its hooks into, and that
-/// connect and disconnect strip ([`HostRegistration::legacy`] says when).
+/// A config of the CLI's own that pixtuoid strips its entries from.
 #[derive(Debug)]
-pub struct LegacyConfig {
+pub struct CliConfig {
     pub path: fn() -> Result<PathBuf>,
-    /// Remove only the entries pixtuoid merged, as `Primary::Config`'s `merge_uninstall`.
+    /// Remove only pixtuoid's entries, as `Primary::Config`'s `merge_uninstall`.
     pub strip: fn(content: &str) -> Result<MergeOutcome>,
 }
 

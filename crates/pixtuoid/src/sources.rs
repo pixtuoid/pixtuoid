@@ -1028,6 +1028,7 @@ mod tests {
             },
         }),
         legacy: None,
+        shim_hooks: None,
     };
 
     /// Each launch re-copies a stale copy, so a re-copy that failed, or waited for the
@@ -1113,6 +1114,7 @@ mod tests {
             Ok(())
         }),
         legacy: None,
+        shim_hooks: None,
     };
 
     static RELOADING: Target = Target {

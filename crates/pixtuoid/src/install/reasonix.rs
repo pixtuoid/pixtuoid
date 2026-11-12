@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-use crate::install::target::{HostRegistration, MergeOutcome, Refresh, Unregistered};
+use crate::install::target::{CliConfig, HostRegistration, MergeOutcome, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 
 /// Events we register == events we decode, enforced by
@@ -65,6 +65,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     home,
     refresh: Refresh::NextStart,
     legacy: None,
+    shim_hooks: Some(CliConfig {
+        path: settings_path,
+        strip: merge::strip_shim_json,
+    }),
 };
 
 const CLI: io::HostCli = io::HostCli {
@@ -83,6 +87,11 @@ const HOOKS_AT: host_plugin::HooksAt = host_plugin::HooksAt {
 
 pub(crate) fn default_config_path() -> Result<PathBuf> {
     host_plugin::owned_path("reasonix-plugin", &[MANIFEST])
+}
+
+/// The global `settings.json` Reasonix reads hooks from.
+fn settings_path() -> Result<PathBuf> {
+    Ok(home()?.join("settings.json"))
 }
 
 /// Where Reasonix records its installed plugins and whether each is enabled

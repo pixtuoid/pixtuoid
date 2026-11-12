@@ -31,7 +31,7 @@ use target::{BinaryStrategy, Primary, Target};
 /// shared config — those targets key install/uninstall/detect on this, not the
 /// command shape. A plugin's own file is ours whole and carries none; for a host it
 /// names only what an older pixtuoid merged into the CLI's own config
-/// ([`target::LegacyConfig`]).
+/// ([`target::HostRegistration::legacy`]).
 pub(crate) const SENTINEL_KEY: &str = "_pixtuoid";
 
 /// Whether `t`'s config currently bears pixtuoid hooks — whether its source is
@@ -643,16 +643,16 @@ fn install_target_from(
 /// registration that fails after the strip leaves neither firing, which is what a
 /// failed connect reads as; a CLI that isn't on PATH failed it before any write.
 fn connect_host(host: &target::HostRegistration, primary: &std::path::Path) -> Result<()> {
-    strip_legacy(host)?;
+    strip_cli_config(host.legacy.as_ref())?;
     (host.register)(primary)
 }
 
-/// Whether it removed anything from the host's [`target::LegacyConfig`].
-fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
-    let Some(legacy) = &host.legacy else {
+/// Whether it removed anything from `config`, a config of the CLI's own.
+fn strip_cli_config(config: Option<&target::CliConfig>) -> Result<bool> {
+    let Some(config) = config else {
         return Ok(false);
     };
-    let path = (legacy.path)()?;
+    let path = (config.path)()?;
     // The CLI's own config resolves from its home, not the primary a test passes.
     #[cfg(test)]
     assert!(
@@ -660,7 +660,7 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
         "a test is about to strip {} — point the CLI's home at a TempDir first",
         path.display()
     );
-    strip_managed(legacy.strip, &path)
+    strip_managed(config.strip, &path)
 }
 
 /// Remove the entries `uninstall` recognizes from `path` under its lock; whether
@@ -784,7 +784,8 @@ pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<Un
         None => None,
     };
     if let Some(host) = t.host() {
-        removed |= strip_legacy(host)?;
+        removed |= strip_cli_config(host.legacy.as_ref())?;
+        removed |= strip_cli_config(host.shim_hooks.as_ref())?;
     }
     Ok(UninstallReport {
         outcome: if removed {

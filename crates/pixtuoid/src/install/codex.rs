@@ -5,7 +5,7 @@ use serde_json::json;
 
 use crate::install::host_plugin::{self, NAME};
 use crate::install::target::{
-    HostRegistration, LegacyConfig, MergeOutcome, PluginCopy, Refresh, Unregistered,
+    CliConfig, HostRegistration, MergeOutcome, PluginCopy, Refresh, Unregistered,
 };
 use crate::install::verify::{SchemaParse, ShimRef};
 use crate::install::{io, merge};
@@ -59,10 +59,11 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     // (`codex-rs/hooks/src/engine/discovery.rs:917-923`), but the startup hook review
     // returns on every launch because "continue without trusting" isn't saved
     // (`codex-rs/tui/src/startup_hooks_review.rs:144-146`, rust-v0.167.2).
-    legacy: Some(LegacyConfig {
+    legacy: Some(CliConfig {
         path: config_toml,
         strip: merge_uninstall,
     }),
+    shim_hooks: None,
 };
 
 const CLI: io::HostCli = io::HostCli { command: "codex" };

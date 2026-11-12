@@ -88,12 +88,8 @@ pub(crate) fn plugin_artifacts(hook_path: &str) -> Result<Vec<(PathBuf, String)>
     Ok(vec![(plugin_path()?, rendered)])
 }
 
-/// The patch file, held for edits in place. saphyr's strict parse gates it:
-/// yaml-edit's parser recovers from what dsh's loader refuses.
 fn patch_file(content: &str) -> Result<YamlFile> {
-    merge::single_yaml_doc(content, "cordis.patch.yml")?;
-    YamlFile::from_str(content)
-        .map_err(|e| anyhow::anyhow!("cordis.patch.yml does not parse as YAML: {e}"))
+    merge::yaml_file(content, "cordis.patch.yml")
 }
 
 /// The file's top-level patch list, `None` when it holds no document. A
@@ -715,7 +711,22 @@ mod tests {
         });
     }
 
-    /// A merge refuses a patch file it can't rewrite whole, a second document's
+    /// yaml-edit reads past what saphyr refuses, so only the strict parse keeps a
+    /// connect off a list dsh's loader would reject.
+    #[test]
+    fn the_strict_parse_gates_what_yaml_edit_would_read_past() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_var("DSH_HOME", Some(home.path()), || {
+            for bad in ["a: 1\n  b: 2\n", "- id: timer\nenabled: false\n"] {
+                assert!(YamlFile::from_str(bad).is_ok(), "{bad:?}");
+                assert!(merge::single_yaml_doc(bad, "c.yml").is_err(), "{bad:?}");
+                let err = format!("{:#}", merge_install(bad, "/unused").unwrap_err());
+                assert!(err.contains("does not parse as YAML"), "{bad:?}: {err}");
+            }
+        });
+    }
+
+    /// A merge refuses a patch file it can't edit, a second document's
     /// included; verify, which writes nothing, reports it broken without a refusal.
     #[test]
     fn a_patch_file_a_merge_refuses_reads_broken_to_verify() {

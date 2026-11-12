@@ -15,7 +15,7 @@ use crate::install::hook_cmd::HOOK_EVENT_FLAG;
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-use crate::install::target::{HostRegistration, MergeOutcome, Refresh, Unregistered};
+use crate::install::target::{CliConfig, HostRegistration, MergeOutcome, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef, assemble, shell_shim_ref};
 use pixtuoid_core::source::antigravity::{CLI_APP_DATA_DIR, SOURCE_NAME, gemini_dir};
 
@@ -27,6 +27,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     home: config_dir,
     refresh: Refresh::NextStart,
     legacy: None,
+    shim_hooks: Some(CliConfig {
+        path: shared_hooks_path,
+        strip: merge::strip_shim_json,
+    }),
 };
 
 const CLI: io::HostCli = io::HostCli { command: "agy" };
@@ -64,6 +68,12 @@ fn config_dir() -> Result<PathBuf> {
 
 pub(crate) fn default_config_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("plugins").join(NAME).join(HOOKS_FILE))
+}
+
+/// The global hooks file agy reads beside every plugin's (antigravity.google/docs/hooks.md,
+/// "Managing hooks in Antigravity CLI").
+fn shared_hooks_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join(HOOKS_FILE))
 }
 
 /// agy creates its app data dir on first run; `~/.gemini` alone is Gemini CLI's

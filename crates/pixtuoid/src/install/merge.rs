@@ -285,10 +285,143 @@ pub(crate) fn emit_json(content: &str, value: &Value) -> anyhow::Result<String> 
     ))
 }
 
+/// `content` with every hook entry whose `command` runs pixtuoid's shim removed
+/// ([`crate::install::hook_cmd::invokes_shim`]), and every list item, member or map
+/// that removal emptied, whatever shape the release that wrote it used.
+pub(crate) fn strip_shim_json(content: &str) -> anyhow::Result<MergeOutcome> {
+    flat_json_merge_outcome_uninstall(content, |mut doc| {
+        strip_shim_value(&mut doc);
+        doc
+    })
+}
+
+/// What stripping a node did: whether it removed anything, and whether it dropped
+/// a member that held only shim entries, so a list item left holds none of its own.
+#[derive(Default)]
+struct Stripped {
+    removed: bool,
+    hollowed: bool,
+}
+
+fn json_shim_entry(v: &Value) -> bool {
+    v.get("command")
+        .and_then(Value::as_str)
+        .is_some_and(crate::install::hook_cmd::invokes_shim)
+}
+
+fn json_emptied(v: &Value) -> bool {
+    matches!(v, Value::Array(a) if a.is_empty()) || matches!(v, Value::Object(m) if m.is_empty())
+}
+
+fn strip_shim_value(v: &mut Value) -> Stripped {
+    let mut done = Stripped::default();
+    match v {
+        Value::Array(items) => items.retain_mut(|item| {
+            if json_shim_entry(item) {
+                done.removed = true;
+                return false;
+            }
+            let inner = strip_shim_value(item);
+            done.removed |= inner.removed;
+            !(inner.removed && (inner.hollowed || json_emptied(item)))
+        }),
+        Value::Object(members) => members.retain(|_, child| {
+            let inner = strip_shim_value(child);
+            done.removed |= inner.removed;
+            let emptied = inner.removed && json_emptied(child);
+            done.hollowed |= emptied;
+            !emptied
+        }),
+        _ => {}
+    }
+    done
+}
+
+/// [`strip_shim_json`] for a YAML config, edited in place so every other byte
+/// stays as written; `file` names it in an error.
+pub(crate) fn strip_shim_yaml(content: &str, file: &str) -> anyhow::Result<MergeOutcome> {
+    let unchanged = || MergeOutcome {
+        content: content.to_string(),
+        changed: false,
+    };
+    let yaml = yaml_file(content, file).context("refusing to overwrite")?;
+    let Some(doc) = yaml.documents().next() else {
+        return Ok(unchanged());
+    };
+    let Some(root) = doc.as_mapping() else {
+        return Ok(unchanged());
+    };
+    if !strip_shim_node(&yaml_edit::YamlNode::Mapping(root)).removed {
+        return Ok(unchanged());
+    }
+    Ok(MergeOutcome {
+        content: yaml.to_string(),
+        changed: true,
+    })
+}
+
+fn yaml_shim_entry(node: &yaml_edit::YamlNode) -> bool {
+    node.as_mapping()
+        .and_then(|m| m.get("command"))
+        .is_some_and(|c| {
+            matches!(c, yaml_edit::YamlNode::Scalar(s)
+                if crate::install::hook_cmd::invokes_shim(&s.as_string()))
+        })
+}
+
+fn yaml_emptied(node: &yaml_edit::YamlNode) -> bool {
+    node.as_sequence()
+        .is_some_and(yaml_edit::Sequence::is_empty)
+        || node.as_mapping().is_some_and(yaml_edit::Mapping::is_empty)
+}
+
+fn strip_shim_node(node: &yaml_edit::YamlNode) -> Stripped {
+    let mut done = Stripped::default();
+    if let Some(items) = node.as_sequence() {
+        for i in (0..items.len()).rev() {
+            let Some(item) = items.get(i) else { continue };
+            let inner = if yaml_shim_entry(&item) {
+                Stripped {
+                    removed: true,
+                    hollowed: true,
+                }
+            } else {
+                strip_shim_node(&item)
+            };
+            done.removed |= inner.removed;
+            if inner.removed && (inner.hollowed || yaml_emptied(&item)) {
+                items.remove(i);
+            }
+        }
+    } else if let Some(members) = node.as_mapping() {
+        for key in members.keys().collect::<Vec<_>>() {
+            let Some(child) = members.get(&key) else {
+                continue;
+            };
+            let inner = strip_shim_node(&child);
+            done.removed |= inner.removed;
+            if inner.removed && yaml_emptied(&child) {
+                members.remove(&key);
+                done.hollowed = true;
+            }
+        }
+    }
+    done
+}
+
+/// `content` held for edits in place. saphyr's strict parse gates it, as
+/// yaml-edit's parser recovers from syntax errors (its README, "Error recovery").
+pub(crate) fn yaml_file(content: &str, file: &str) -> anyhow::Result<yaml_edit::YamlFile> {
+    single_yaml_doc(content, file)?;
+    <yaml_edit::YamlFile as std::str::FromStr>::from_str(content)
+        .map_err(|e| anyhow::anyhow!("{file} does not parse as YAML: {e}"))
+}
+
 /// `out` in `content`'s line ending, CRLF when `content` broke every line with one,
 /// and ending in a newline, as npm's `package.json` save does (npm/package-json
 /// `lib/index.js:249-257` @ v8.0.0); an empty `out` stays empty. Every config
-/// rewrite rides it, pixtuoid's own `config.toml` save included.
+/// rewrite but dsh's in-place yaml-edit rides it, pixtuoid's own `config.toml` save
+/// included.
 pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
@@ -304,6 +437,59 @@ pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every shape a release wrote, Claude Code's group with the sentinel its own
+    /// writer drops included, goes; a user's hook, mixed group and empty list stay.
+    #[test]
+    fn the_shim_strip_takes_every_releases_entry_and_leaves_the_users() {
+        let ours = |cmd: &str| json!({ "command": cmd });
+        let before = json!({
+            "theme": "dark",
+            "hooks": {
+                "Stop": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": "notify-send done"}]},
+                    {"matcher": ".*", "hooks": [{"type": "command", "command": "PIXTUOID_SOURCE=claude-code 'pixtuoid-hook'"}]},
+                    {"matcher": "x", "hooks": [{"command": "mine"}, ours("'/opt/pixtuoid-hook' --source claude-code")]},
+                    ours("PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'"),
+                ],
+                "PreToolUse": [ours("PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'")],
+                "Empty": [],
+            },
+            "lint": {"Stop": []},
+            "pixtuoid": {"Stop": [{"matcher": "*", "hooks": [ours("PIXTUOID_SOURCE=antigravity '/old/pixtuoid-hook' --event Stop")]}]},
+        });
+        let after = json!({
+            "theme": "dark",
+            "hooks": {
+                "Stop": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": "notify-send done"}]},
+                    {"matcher": "x", "hooks": [{"command": "mine"}]},
+                ],
+                "Empty": [],
+            },
+            "lint": {"Stop": []},
+        });
+        let pretty = |v: &Value| format!("{}\n", serde_json::to_string_pretty(v).unwrap());
+        let out = strip_shim_json(&pretty(&before)).unwrap();
+        assert!(out.changed);
+        assert_eq!(out.content, pretty(&after));
+        assert!(!strip_shim_json(&out.content).unwrap().changed);
+    }
+
+    /// The YAML strip edits in place: every byte but the shim's entries stays.
+    #[test]
+    fn the_yaml_shim_strip_leaves_every_other_byte() {
+        let user = "# mine\nmodel: gpt\ndisplay:\n  compact: off\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh   # kept\n";
+        let ours = "    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      timeout: 5\n      _pixtuoid: true\n  on_session_finalize:\n    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      timeout: 5\n";
+        for ending in ["\n", "\r\n"] {
+            let out =
+                strip_shim_yaml(&format!("{user}{ours}").replace('\n', ending), "c.yml").unwrap();
+            assert!(out.changed);
+            assert_eq!(out.content, user.replace('\n', ending));
+        }
+        assert!(!strip_shim_yaml(user, "c.yml").unwrap().changed);
+        assert!(strip_shim_yaml("- 1\nb: 2\n", "c.yml").is_err());
+    }
 
     /// An owner hook appended after ours: reinstalling moves ours to the end,
     /// and the next reinstall finds nothing to do.

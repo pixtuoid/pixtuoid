@@ -2424,6 +2424,79 @@ fn a_relative_home_override_refuses_every_file_it_moves() {
     });
 }
 
+/// A disconnect removes every entry whose command runs the shim from each host's
+/// own hook config, in the shape the release that wrote it used, Claude Code's
+/// without the sentinel its own writer drops; the user's hook beside it stays.
+#[test]
+fn a_disconnect_takes_every_shim_entry_out_of_the_clis_own_config() {
+    with_fake_hosts(|_| {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
+        let user = serde_json::json!({ "command": "notify-send done" });
+        let own = |t: &Target| (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+        let cc_group = |h| serde_json::json!({ "matcher": ".*", "hooks": [h] });
+        for (t, primary, before, after) in [
+            (
+                &CLAUDE,
+                Some(plugin_hooks_path(tmp.path())),
+                serde_json::json!({ "hooks": { "Stop": [cc_group(user.clone()), cc_group(serde_json::json!({ "type": "command", "command": "PIXTUOID_SOURCE=claude-code 'pixtuoid-hook'" }))] } }),
+                serde_json::json!({ "hooks": { "Stop": [cc_group(user.clone())] } }),
+            ),
+            (
+                &REASONIX,
+                Some(reasonix_manifest_path(tmp.path())),
+                serde_json::json!({ "hooks": { "Stop": [user.clone(), { SENTINEL_KEY: true, "command": "PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'" }] } }),
+                serde_json::json!({ "hooks": { "Stop": [user.clone()] } }),
+            ),
+            (
+                &ANTIGRAVITY,
+                None,
+                serde_json::json!({ "lint": { "Stop": [user.clone()] }, "pixtuoid": { "Stop": [cc_group(serde_json::json!({ "command": "PIXTUOID_SOURCE=antigravity '/old/pixtuoid-hook' --event Stop" }))] } }),
+                serde_json::json!({ "lint": { "Stop": [user.clone()] } }),
+            ),
+        ] {
+            install_target_from(t, primary.clone(), hook()).unwrap();
+            let at = own(t);
+            // Merged into what the host CLI's own commands left there.
+            let mut doc: serde_json::Value = std::fs::read_to_string(&at)
+                .ok()
+                .and_then(|c| serde_json::from_str(&c).ok())
+                .unwrap_or_else(|| serde_json::json!({}));
+            let with = |mut doc: serde_json::Value, add: &serde_json::Value| {
+                for (k, v) in add.as_object().unwrap() {
+                    doc[k] = v.clone();
+                }
+                doc
+            };
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(&at, with(doc.take(), &before).to_string()).unwrap();
+            uninstall_target(t, primary).unwrap();
+            let left: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(&at).unwrap()).unwrap();
+            for (k, v) in after.as_object().unwrap() {
+                assert_eq!(&left[k], v, "{}", t.name);
+            }
+            assert!(left.get("pixtuoid").is_none(), "{}: {left}", t.name);
+        }
+
+        install_target_from(&HERMES, None, hook()).unwrap();
+        let user_yaml = "model: gpt\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh\n";
+        let ours =
+            "    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      _pixtuoid: true\n";
+        let with = format!(
+            "{}{user_yaml}{ours}",
+            std::fs::read_to_string(hermes_config()).unwrap()
+        );
+        std::fs::write(hermes_config(), with).unwrap();
+        uninstall_target(&HERMES, None).unwrap();
+        let left = std::fs::read_to_string(hermes_config()).unwrap();
+        assert!(
+            left.ends_with(user_yaml) && !left.contains("pixtuoid-hook"),
+            "{left}"
+        );
+    });
+}
+
 #[test]
 fn antigravity_disconnect_removes_the_plugin_through_agy() {
     with_fake_hosts(|fake| {
