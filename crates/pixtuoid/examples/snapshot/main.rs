@@ -190,8 +190,8 @@ struct SnapshotArgs {
 
     /// Force a hover tooltip at terminal cell "x,y" (for screenshots / shadow
     /// visual checks), e.g. --hover 30,40.
-    #[arg(long, value_name = "X,Y", conflicts_with = "animation")]
-    hover: Option<String>,
+    #[arg(long, value_name = "X,Y", conflicts_with = "animation", value_parser = |cell: &str| pixtuoid::dev::parse_pair::<u16>(cell, ',', "X,Y cell"))]
+    hover: Option<(u16, u16)>,
 
     /// Add a wandering office pet to a renderer-driven --gif capture.
     #[arg(long, value_name = "KIND", requires = "gif", conflicts_with = "anim", value_parser = pixtuoid::dev::pet_parser())]
@@ -721,10 +721,7 @@ fn main() -> Result<()> {
         now,
         conditions,
     );
-    draw_ctx.mouse_pos = args.hover.as_deref().and_then(|s| {
-        let (x, y) = s.split_once(',')?;
-        Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
-    });
+    draw_ctx.mouse_pos = args.hover;
     draw_ctx.debug_walkable = args.debug_walkable;
     draw_ctx.footer = draw_ctx.footer.with_warning(warning_text.as_deref());
     draw_ctx.overlays = frames.overlays(pixtuoid::dev::popup_whole(args.popup), &[]);
@@ -1000,6 +997,19 @@ mod tests {
     fn max_desks_refuses_zero() {
         assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "0"]).is_err());
         assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "1"]).is_ok());
+    }
+
+    /// A malformed cell used to mean no hover, silently.
+    #[test]
+    fn a_hover_cell_parses_spaced_or_not_and_a_malformed_one_is_refused() {
+        let hover = |cell: &str| {
+            SnapshotArgs::try_parse_from(["snapshot", "--hover", cell]).map(|a| a.hover)
+        };
+        assert_eq!(hover("30,40").unwrap(), Some((30, 40)));
+        assert_eq!(hover("30, 40").unwrap(), Some((30, 40)));
+        for bad in ["30;40", "30,y"] {
+            assert!(hover(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

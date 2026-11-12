@@ -47,8 +47,9 @@ impl ClockArgs {
     }
 }
 
-/// Two `T`s joined by `sep`, the shape `want` names: a [`parse_size`], the
-/// floating snapshot's window points.
+/// Two `T`s joined by `sep`, the shape `want` names: a [`parse_size`], a
+/// window point, a hovered cell. Each side is trimmed, as the classic's
+/// `--insets` trims its units, so `"30, 40"` reads.
 ///
 /// # Errors
 ///
@@ -58,7 +59,7 @@ where
     T: std::str::FromStr,
     T::Err: std::fmt::Display,
 {
-    let side = |n: &str| n.parse::<T>().map_err(|e| format!("{n:?}: {e}"));
+    let side = |n: &str| n.trim().parse::<T>().map_err(|e| format!("{n:?}: {e}"));
     let (a, b) = s
         .split_once(sep)
         .ok_or_else(|| format!("{s:?}: want {want}"))?;
@@ -171,5 +172,10 @@ mod tests {
         for bad in ["960", "x640", "960x", "-1x2", "960x640x2"] {
             assert!(parse_size(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_pairs_sides_may_be_spaced() {
+        assert_eq!(parse_pair::<u16>(" 30 , 40 ", ',', "X,Y"), Ok((30, 40)));
     }
 }
