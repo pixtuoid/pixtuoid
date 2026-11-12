@@ -23,8 +23,8 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd, first_present_str,
-    generic_tool_display, non_empty,
+    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd,
+    first_non_blank_str, generic_tool_display, non_empty,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -900,7 +900,7 @@ fn omp_tool_detail(tool: &str, args: Option<&Value>, intent: Option<&str>) -> To
     // paraphrase of that path. It earns its place on the tools with no keyed
     // target at all (`edit`, `todo`, `job`, `hub`, …).
     const KEYS: &[&str] = &["command", "path", "pattern", "query"];
-    let target = args.and_then(|a| first_present_str(a, KEYS));
+    let target = args.and_then(|a| first_non_blank_str(a, KEYS));
     generic_tool_display(tool, target.or(intent))
 }
 
@@ -1787,7 +1787,7 @@ mod tests {
 
     #[test]
     fn an_ask_among_parallel_calls_names_its_own() {
-        let line = r#"{"type":"message","id":"mB","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK5","name":"ask","arguments":{"i":"Confirming scope"}},{"type":"toolCall","id":"t7","name":"bash","arguments":{"command":"cargo check"}}],"timestamp":1}}"#;
+        let line = r#"{"type":"message","id":"mB","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"tool_ASK5","name":"ask","arguments":{},"intent":"Confirming scope"},{"type":"toolCall","id":"t7","name":"bash","arguments":{"command":"cargo check"}}],"timestamp":1}}"#;
         match &decode(line)[..] {
             [
                 AgentEvent::ToolUseStart {

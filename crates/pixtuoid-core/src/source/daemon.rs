@@ -130,17 +130,32 @@ pub struct DecodedPresence {
     pub instance: DaemonInstanceId,
     /// The presence deltas the envelope implies (empty for a benign skip).
     pub updates: Vec<DaemonPresenceUpdate>,
+    /// The live gateway pid the envelope was stamped with, observed after its
+    /// updates as a [`DaemonPresenceUpdate::PidSeen`].
+    pub pid: Option<i32>,
 }
 
 #[cfg(any(feature = "native", feature = "harness"))]
 impl DecodedPresence {
-    /// Its deltas, each tagged with `source`'s instance they route to.
+    /// Its deltas, each tagged with `source`'s instance they route to, then a
+    /// `PidSeen` for its pid: after them, so a resurrecting update brings the
+    /// daemon up first, since a Down daemon adopts no pid; never beside a
+    /// `GatewayUp`, which binds its own, nor alone, which resurrects nothing.
     pub(crate) fn into_msgs(self, source: &str) -> impl Iterator<Item = PresenceMsg> {
         let key = DaemonInstanceKey::new(source, self.instance);
-        self.updates.into_iter().map(move |delta| PresenceMsg {
-            key: key.clone(),
-            delta,
-        })
+        let seen = self.pid.filter(|_| {
+            !self.updates.is_empty()
+                && !(self.updates.iter())
+                    .any(|u| matches!(u, DaemonPresenceUpdate::GatewayUp { .. }))
+        });
+        let seen = seen.map(|pid| DaemonPresenceUpdate::PidSeen { pid });
+        self.updates
+            .into_iter()
+            .chain(seen)
+            .map(move |delta| PresenceMsg {
+                key: key.clone(),
+                delta,
+            })
     }
 }
 
@@ -724,7 +739,7 @@ mod tests {
 
     #[test]
     fn pid_seen_neither_resurrects_nor_binds_a_down_daemon() {
-        // The decoder appends PidSeen to a state-bearing update, so resurrection
+        // `into_msgs` appends PidSeen to a state-bearing update, so resurrection
         // rides on that sibling, never on PidSeen alone.
         for src in SOURCES {
             let mut s = SceneState::default();
@@ -782,8 +797,31 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_decoded_pid_follows_its_updates_and_never_rides_a_gateway_up_or_nothing() {
+        use DaemonPresenceUpdate::*;
+        let deltas = |updates, pid| {
+            let decoded = DecodedPresence {
+                instance: inst("1"),
+                updates,
+                pid,
+            };
+            decoded
+                .into_msgs("openclaw")
+                .map(|m| m.delta)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            deltas(vec![SessionStarted], Some(7)),
+            vec![SessionStarted, PidSeen { pid: 7 }]
+        );
+        let up = GatewayUp { pid: Some(7) };
+        assert_eq!(deltas(vec![up.clone()], Some(7)), vec![up]);
+        assert_eq!(deltas(vec![], Some(7)), vec![]);
+    }
+
     /// A restart inside the Down window whose `gateway_start` was lost, each
-    /// update followed by the `PidSeen` its `_pid` decodes to.
+    /// update followed by the `PidSeen` `into_msgs` adds for its `_pid`.
     #[test]
     fn a_restart_after_a_clean_stop_outlives_the_old_gateways_exit() {
         use DaemonPresenceUpdate::*;

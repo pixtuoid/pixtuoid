@@ -17,10 +17,17 @@ use crate::{
     start_id, vouch_snapshot, write_lines,
 };
 
-/// A negative check's window here: several 100 ms probe polls past the short
+/// The probe poll these tests run the watcher at.
+const PROBE_POLL: Duration = Duration::from_millis(100);
+
+/// A negative check's window here: several [`PROBE_POLL`]s past the short
 /// negative-vouch spans these tests set, and past an exit receipt, so a wrong
 /// `SessionEnd` from either rung lands inside it.
-const QUIET: Duration = Duration::from_millis(1500);
+const QUIET: Duration = PROBE_POLL.saturating_mul(15);
+
+/// A negative-vouch span no wait here reaches, so only the instant-exit rung
+/// can end a session.
+const NO_VOUCH: Duration = Duration::from_secs(3600);
 
 #[tokio::test]
 async fn watcher_emits_proof_of_life_for_probe_live_ids() {
@@ -84,15 +91,14 @@ async fn poll_arm_refreshes_probe_snapshot_and_reemits_proof_of_life() {
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
     let watcher = codex_watcher(projects_root.clone())
         .with_initial_window(Duration::from_secs(60))
-        .with_poll_interval(Duration::from_millis(100))
+        .with_poll_interval(PROBE_POLL)
         .with_liveness_probe(Arc::new(move || {
             let ids = probe_view.lock().unwrap().clone();
             vouch_snapshot(&ids.iter().map(String::as_str).collect::<Vec<_>>())
         }));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
-    // Three of its 100 ms polls.
-    let held = collect_for(&mut rx, Duration::from_millis(300), "the empty-probe gate").await;
+    let held = collect_for(&mut rx, 3 * PROBE_POLL, "the empty-probe gate").await;
     assert!(
         !held.iter().any(|(_, ev)| matches!(
             ev,
@@ -149,7 +155,7 @@ async fn admitted_with_mutable_probe(
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
     let watcher = codex_watcher(projects_root)
         .with_initial_window(Duration::from_secs(60))
-        .with_poll_interval(Duration::from_millis(100))
+        .with_poll_interval(PROBE_POLL)
         .with_negative_vouch_min_span(min_span)
         .with_liveness_probe(std::sync::Arc::new(move || {
             probe_view.lock().unwrap().clone()
@@ -342,7 +348,9 @@ async fn probe_panic_changes_nothing() {
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
     let watcher = codex_watcher(projects_root)
         .with_initial_window(Duration::from_secs(60))
-        .with_poll_interval(Duration::from_millis(100))
+        .with_poll_interval(PROBE_POLL)
+        // Short, so a panic taken for an empty snapshot confirms inside `QUIET`.
+        .with_negative_vouch_min_span(Duration::from_millis(200))
         .with_liveness_probe(std::sync::Arc::new(move || {
             if probe_boom.load(Ordering::SeqCst) {
                 panic!("probe boom");
@@ -376,9 +384,9 @@ async fn probe_panic_changes_nothing() {
 
 /// A probe snapshot binds the vouched session id to the pid holding it; when
 /// that sole holder dies, the kernel watch (kqueue NOTE_EXIT / pidfd+poll) emits
-/// the SessionEnd within milliseconds. The 60s negative-vouch span this test
-/// passes dwarfs the 5s window, so a SessionEnd inside that window can ONLY have
-/// come from the instant-exit path.
+/// the SessionEnd within milliseconds. The [`NO_VOUCH`] span this test passes is
+/// past every wait, so a SessionEnd can ONLY have come from the instant-exit
+/// path.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[tokio::test]
 async fn instant_exit_emits_session_end_when_bound_pid_dies() {
@@ -392,15 +400,15 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
     let (probe_state, mut rx, transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        Duration::from_secs(60),
+        NO_VOUCH,
         vouch_snapshot_with_pids(&[uuid], &[pid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
 
     // Flip the probe FIRST — a real probe stops vouching a dead pid, and the
-    // re-vouch sweep would otherwise re-admit the ended session. With the 60s
-    // span the flip alone cannot produce a SessionEnd inside the window.
+    // re-vouch sweep would otherwise re-admit the ended session. Under
+    // `NO_VOUCH` the flip alone cannot produce a SessionEnd.
     *probe_state.lock().unwrap() = vouch_snapshot(&[]);
     let _ = child.kill();
     let _ = child.wait();
@@ -408,8 +416,7 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
     expect_session_end(
         &mut rx,
         expected,
-        "a bound pid dying must SessionEnd within seconds (instant exit), \
-         not wait out the 60s negative vouch",
+        "a bound pid dying must SessionEnd on its instant exit, not wait out the negative vouch",
     )
     .await;
 
@@ -495,7 +502,7 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
     let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        Duration::from_secs(60), // production span — the negative vouch stays out of the picture
+        NO_VOUCH,
         vouch_snapshot_with_pids(&[uuid], &[pid]),
     )
     .await;
@@ -542,15 +549,15 @@ async fn a_rebound_session_ends_with_its_new_pid_while_the_old_one_lives() {
     let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        Duration::from_secs(60), // production span — only the instant-exit rung is in play
+        NO_VOUCH,
         vouch_snapshot_with_pids(&[uuid], &[old_pid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
 
-    // Give the 100ms poll a few passes to fold the migration.
+    // Give the probe poll a few passes to fold the migration.
     *probe_state.lock().unwrap() = vouch_snapshot_with_pids(&[uuid], &[new_pid]);
-    tokio::time::sleep(Duration::from_millis(700)).await;
+    tokio::time::sleep(7 * PROBE_POLL).await;
 
     let _ = new.kill();
     let _ = new.wait();
@@ -587,15 +594,15 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
     let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        Duration::from_secs(60), // production span — only the instant-exit rung is in play
+        NO_VOUCH,
         vouch_snapshot_with_pids(&[uuid], &[first_pid, last_pid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
 
-    // Give the 100ms poll a few passes to fold both bindings; the probe still
+    // Give the probe poll a few passes to fold both bindings; the probe still
     // lists the first pid when its exit lands, as the kernel watch outruns a refresh.
-    tokio::time::sleep(Duration::from_millis(700)).await;
+    tokio::time::sleep(7 * PROBE_POLL).await;
     let _ = first.kill();
     let _ = first.wait();
     assert_no_session_end_within(

@@ -576,8 +576,8 @@ async fn omp_ended_transcript_is_gated_at_first_sight_and_a_live_one_seeds() {
         if expect_start {
             collect_until(&mut rx, &what, is_start).await;
         } else {
-            // Nothing to wait on: its first sight would land within the window.
-            let boot = collect_for(&mut rx, Duration::from_secs(1), &what).await;
+            // Nothing to wait on: a first sight lands on the boot scan.
+            let boot = collect_for(&mut rx, TRAIL, &what).await;
             assert!(!boot.iter().any(|(_, e)| is_start(e)), "{what}: {boot:?}");
         }
         handle.abort();

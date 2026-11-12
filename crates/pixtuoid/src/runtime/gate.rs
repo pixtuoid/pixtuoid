@@ -105,21 +105,32 @@ pub(crate) fn apply_gated_presence(
 mod tests {
     use super::*;
 
-    /// The recorded cursor tool run's payloads, stamped `_pixtuoid_source` as
-    /// the shim relays them (the only attribution the gate trusts): each one's
-    /// event name, and what `Drive` decodes it to.
-    fn cursor_payloads() -> Vec<(String, Vec<AgentEvent>)> {
-        use pixtuoid_core::harness::{Drive, fixtures_dir, sources_root};
-        let path = fixtures_dir(&sources_root(), "cursor").join("tool-run/hook-payloads.jsonl");
+    /// `source`'s recorded `scenario` payloads, stamped `_pixtuoid_source` as
+    /// the shim relays them (the only attribution the gate trusts).
+    fn recorded_lines(source: &str, scenario: &str) -> Vec<String> {
+        use pixtuoid_core::harness::{HOOK_PAYLOADS, fixtures_dir, sources_root};
+        let path = fixtures_dir(&sources_root(), source)
+            .join(scenario)
+            .join(HOOK_PAYLOADS);
         std::fs::read_to_string(&path)
             .expect("the recorded run")
             .lines()
             .filter(|l| !l.trim().is_empty())
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// The recorded cursor tool run's payloads: each one's event name, and what
+    /// `Drive` decodes it to.
+    fn cursor_payloads() -> Vec<(String, Vec<AgentEvent>)> {
+        recorded_lines("cursor", "tool-run")
+            .into_iter()
             .map(|l| {
                 let payload: serde_json::Value =
-                    serde_json::from_str(l).expect("a recorded payload is JSON");
+                    serde_json::from_str(&l).expect("a recorded payload is JSON");
                 let event = payload["hook_event_name"].as_str().expect("a named event");
-                (event.to_string(), Drive::hooks().lines([l]).events)
+                let events = pixtuoid_core::harness::Drive::hooks().lines([&l]).events;
+                (event.to_string(), events)
             })
             .collect()
     }
@@ -410,15 +421,7 @@ mod tests {
     /// The recorded openclaw clean stop's payloads, in order: `gateway_start`
     /// through the trailing `session_end`, each stamped with the gateway's pid.
     fn openclaw_clean_stop() -> Vec<String> {
-        use pixtuoid_core::harness::{fixtures_dir, sources_root};
-        let path =
-            fixtures_dir(&sources_root(), "openclaw").join("tool-run-hermetic/hook-payloads.jsonl");
-        std::fs::read_to_string(&path)
-            .expect("the recorded run")
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .map(str::to_owned)
-            .collect()
+        recorded_lines("openclaw", "tool-run-hermetic")
     }
 
     /// The recorded payload of type `ty`, and the pid it carries.
@@ -438,7 +441,7 @@ mod tests {
     }
 
     /// `reducer_task`'s presence arm: each line's deltas through the gate, each
-    /// armed pid bound to its daemon as the driver's `ExitWatch` binds it.
+    /// armed pid bound to its daemon as the driver's `PresenceExitWatch` binds it.
     struct PresenceRun {
         scene: SceneState,
         connected: ConnectedSources,

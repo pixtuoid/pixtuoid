@@ -5,6 +5,7 @@ mod sources;
 mod tailing;
 mod today;
 mod unclaim;
+mod wait;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
@@ -17,6 +18,8 @@ use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::jsonl::{JsonlWatcher, ProbeSnapshot, force_polling_backend_for_tests};
 use pixtuoid_core::source::{AgentEvent, Source, Transport};
 use pixtuoid_core::{Reducer, SceneState};
+
+use wait::{collect_for, collect_until};
 
 /// Run every watcher test's root watch on a fast `PollWatcher` backend instead
 /// of the native FSEvents/inotify watcher, whose stream setup/teardown
@@ -168,31 +171,6 @@ fn ag_step_line() -> serde_json::Value {
 /// [`collect_until`]'s bound on reaching its event: a hang guard, never a verdict.
 const DEADLINE: Duration = Duration::from_secs(15);
 
-/// Every event up to the first `done` accepts. `done` names an event the
-/// watcher sends after every event a test asserts on, and one read's events
-/// arrive in order, so a slow runner delays the verdict but never changes it.
-async fn collect_until(
-    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-    what: &str,
-    mut done: impl FnMut(&AgentEvent) -> bool,
-) -> Vec<(Transport, AgentEvent)> {
-    let deadline = tokio::time::Instant::now() + DEADLINE;
-    let mut events = Vec::new();
-    loop {
-        match tokio::time::timeout_at(deadline, rx.recv()).await {
-            Ok(Some(tagged)) => {
-                let reached = done(&tagged.1);
-                events.push(tagged);
-                if reached {
-                    return events;
-                }
-            }
-            Ok(None) => panic!("{what}: the stream closed"),
-            Err(_) => panic!("{what}: no end"),
-        }
-    }
-}
-
 /// The first `T` `pick` finds in what the watcher sends, by [`collect_until`].
 async fn first_of<T>(
     rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
@@ -208,7 +186,7 @@ async fn first_of<T>(
     found.expect("collect_until ends on its event")
 }
 
-/// [`first_of`]'s pick of a `SessionStart`'s id.
+/// A `SessionStart`'s id, `None` for any other event.
 fn start_id(event: &AgentEvent) -> Option<pixtuoid_core::AgentId> {
     match event {
         AgentEvent::SessionStart { agent_id, .. } => Some(*agent_id),
@@ -224,28 +202,10 @@ fn starts_call(id: &str) -> impl Fn(&AgentEvent) -> bool + '_ {
     }
 }
 
-/// How long a check listens past its positive event for what must not follow
-/// it: the same read's events are queued behind that one, a re-scan's within a
-/// few polls.
+/// How long a check listens past a moment it names (a positive event, the
+/// watcher's spawn) for what must not follow: the same read's events are
+/// queued behind it, a scan's within a few polls.
 const TRAIL: Duration = POLL.saturating_mul(20);
-
-/// Every event the watcher sends in the next `window`: nothing but listening
-/// proves an absence, and a closed stream proves nothing, so that panics.
-async fn collect_for(
-    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-    window: Duration,
-    what: &str,
-) -> Vec<(Transport, AgentEvent)> {
-    let until = tokio::time::Instant::now() + window;
-    let mut events = Vec::new();
-    loop {
-        match tokio::time::timeout_at(until, rx.recv()).await {
-            Ok(Some(tagged)) => events.push(tagged),
-            Ok(None) => panic!("{what}: the stream closed"),
-            Err(_) => return events,
-        }
-    }
-}
 
 #[tokio::test]
 #[should_panic(expected = "the stream closed")]

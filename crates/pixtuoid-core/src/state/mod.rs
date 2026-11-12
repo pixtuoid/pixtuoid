@@ -565,8 +565,9 @@ pub struct DaemonPresence {
     /// Concurrent sessions the gateway is multiplexing (bubble intensity).
     pub active_sessions: u32,
     /// Last time a proof-of-life presence event arrived — the presence-TTL
-    /// stale-down clock; under `Down`, the moment the gateway went Down, which
-    /// the removal sweep and the remote snapshot's `last_seen_ms` read.
+    /// stale-down clock; under `Down`, when it went Down or the latest such
+    /// event since, which the removal sweep and the remote snapshot's
+    /// `last_seen_ms` read.
     pub last_seen: SystemTime,
     /// When the gateway first appeared (absent/Down → up) — the enter-animation
     /// anchor and the steady wander clock.

@@ -528,6 +528,57 @@ fn overlapping_skill_calls_each_walk_their_child_out_on_return() {
     );
 }
 
+/// An inline skill returns beside a parallel subagent skill's live child. Its
+/// return names no call, so it walks that child out too; the child comes back
+/// on its next hook, and its own call's return walks it out.
+#[test]
+fn an_inline_skills_return_walks_a_live_sibling_child_out_until_its_next_hook() {
+    use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let at = |ms| t0 + Duration::from_millis(ms);
+    let child = AgentId::from_parts("reasonix", "root:subagent:call_a");
+    let mut feed = |event: (&str, &str, &str), t| feed_reasonix(&mut r, &mut scene, event, t);
+    feed(("SessionStart", "root", ""), at(0));
+    feed(("PreToolUse", "root", "read_only_skill"), at(100));
+    feed(("PreToolUse", "root", "read_only_skill"), at(200));
+    feed(("PreToolUse", "root:subagent:call_a", "read_file"), at(300));
+    let inline_return = at(400);
+    feed(("PostToolUse", "root", "read_only_skill"), inline_return);
+    let gone = inline_return + B1_CASCADE_GRACE + EXIT_GRACE_WINDOW + Duration::from_secs(1);
+    r.tick(&mut scene, inline_return + B1_CASCADE_GRACE);
+    r.tick(&mut scene, gone);
+    assert!(
+        !scene.agents.contains_key(&child),
+        "the inline return walked it out"
+    );
+
+    let back = gone + Duration::from_secs(1);
+    feed_reasonix(
+        &mut r,
+        &mut scene,
+        ("PreToolUse", "root:subagent:call_a", "read_file"),
+        back,
+    );
+    assert!(
+        scene.agents.contains_key(&child),
+        "its next hook brought it back"
+    );
+    let own_return = back + Duration::from_secs(1);
+    feed_reasonix(
+        &mut r,
+        &mut scene,
+        ("PostToolUse", "root", "read_only_skill"),
+        own_return,
+    );
+    r.tick(&mut scene, own_return + B1_CASCADE_GRACE);
+    assert!(
+        scene.agents[&child].exiting_at.is_some(),
+        "its own call's return walks it out"
+    );
+}
+
 fn returned_reasonix_dispatch(r: &mut Reducer, scene: &mut SceneState) -> SystemTime {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let at = |ms| t0 + Duration::from_millis(ms);

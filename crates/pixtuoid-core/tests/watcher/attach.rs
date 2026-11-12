@@ -194,19 +194,19 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
     };
 
     let (mut started, mut dispatched) = (false, false);
-    let mut events = collect_until(&mut rx, "the oversized session's start and dispatch", |e| {
-        started |= is_parent_start(e);
-        dispatched |= is_task_start(e);
-        started && dispatched
-    })
+    let mut events = collect_until(
+        &mut rx,
+        "the oversized delegating session's start at attach (#204 head read) and dispatch",
+        |e| {
+            started |= is_parent_start(e);
+            dispatched |= is_task_start(e);
+            started && dispatched
+        },
+    )
     .await;
     // The same pass may still queue a repeat dispatch behind them.
     events.extend(collect_for(&mut rx, TRAIL, "past the dispatch").await);
 
-    assert!(
-        events.iter().any(|(_, e)| is_parent_start(e)),
-        "the oversized delegating session must register at attach (#204 head read), got {events:?}"
-    );
     let task_starts: Vec<Transport> = events
         .iter()
         .filter(|(_, e)| is_task_start(e))

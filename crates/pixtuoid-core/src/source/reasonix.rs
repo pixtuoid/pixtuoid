@@ -86,12 +86,13 @@ const SUBAGENT_TOOLS: &[&str] = &[
 ];
 
 /// Reasonix's skill entry points: a `[subagent]` skill runs as a child through
-/// `explore`'s own runner, an inline one returns as a tool result
+/// a subagent runner, an inline one returns as a tool result
 /// (`internal/ext/skill/tools.go:116-127`, `:217-228`,
-/// `internal/assembly/boot/tool_wiring.go:139-143` @ v2.60.0). Their args
-/// don't say which, so only the return re-states their Task: an inline
-/// skill's cascades an empty subtree.
-const SKILL_TOOLS: &[&str] = &["run_skill", "read_only_skill"];
+/// `internal/assembly/boot/tool_wiring.go:139-140` @ v2.60.0). Their args
+/// don't say which, so only the return re-states their Task, and it names no
+/// call (`internal/ext/hook/runner.go:177-184` @ v2.60.0): an inline skill
+/// returning beside a live child walks that child out until its next hook.
+const SKILL_RUNNERS: &[&str] = &["run_skill", "read_only_skill"];
 
 /// A role's hooks carry its parent's session id suffixed `:<role>`
 /// (`internal/ext/hook/runner.go:57-66`), a subagent's `subagent:<call id>`
@@ -195,7 +196,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             if tool.is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, "PostToolUse", "toolName");
             }
-            if tool.is_some_and(|t| SUBAGENT_TOOLS.contains(&t) || SKILL_TOOLS.contains(&t)) {
+            if tool.is_some_and(|t| SUBAGENT_TOOLS.contains(&t) || SKILL_RUNNERS.contains(&t)) {
                 events.push(AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: None,
@@ -399,7 +400,7 @@ mod tests {
                 "{tool} must map to ToolDetail::Task"
             );
         }
-        for tool in SKILL_TOOLS {
+        for tool in SKILL_RUNNERS {
             let ev = decode(json!({
                 "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
                 "toolName": tool, "toolArgs": {"name": "lint"}

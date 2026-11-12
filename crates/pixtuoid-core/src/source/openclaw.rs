@@ -111,7 +111,7 @@ pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence>
     // PROCESS start, so a gateway already running when pixtuoid boots stays
     // invisible until it restarts. That is upstream's contract, not a hole to
     // "fix" with a poll.
-    let mut out = match event {
+    let updates = match event {
         "gateway_start" => vec![DaemonPresenceUpdate::GatewayUp { pid }],
         "gateway_stop" => vec![DaemonPresenceUpdate::GatewayDown],
         "session_start" => vec![DaemonPresenceUpdate::SessionStarted],
@@ -138,19 +138,10 @@ pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence>
             vec![]
         }
     };
-    // A `_pid` on a NON-`gateway_start` event bootstraps the abrupt-down exit watch
-    // for a mid-attached daemon; append it so a resurrecting update brings the
-    // daemon up before the pid is adopted, since a Down daemon adopts none. An
-    // unmapped event stays empty — a lone `PidSeen` would resurrect nothing.
-    if event != "gateway_start"
-        && !out.is_empty()
-        && let Some(pid) = pid
-    {
-        out.push(DaemonPresenceUpdate::PidSeen { pid });
-    }
     Ok(DecodedPresence {
         instance,
-        updates: out,
+        updates,
+        pid,
     })
 }
 
@@ -302,30 +293,30 @@ mod tests {
     }
 
     #[test]
-    fn non_gateway_start_event_with_pid_appends_pid_seen() {
+    fn a_non_gateway_start_event_carries_its_gateway_pid() {
+        let d = decode_full(json!({"type": "session_start", "sessionId": "s1", "_pid": 7777}));
         assert_eq!(
-            decode(json!({"type": "session_start", "sessionId": "s1", "_pid": 7777})),
-            vec![
-                DaemonPresenceUpdate::SessionStarted,
-                DaemonPresenceUpdate::PidSeen { pid: 7777 },
-            ]
+            (d.updates, d.pid),
+            (vec![DaemonPresenceUpdate::SessionStarted], Some(7777))
         );
+        let d = decode_full(json!({"type": "agent_end", "runId": "r", "_pid": 8888,
+                                   "success": false, "errored": true}));
         assert_eq!(
-            decode(json!({"type": "agent_end", "runId": "r", "_pid": 8888,
-                          "success": false, "errored": true})),
-            vec![
-                DaemonPresenceUpdate::TurnFailed {
+            (d.updates, d.pid),
+            (
+                vec![DaemonPresenceUpdate::TurnFailed {
                     turn: TurnKey::Id("r".into())
-                },
-                DaemonPresenceUpdate::PidSeen { pid: 8888 },
-            ]
+                }],
+                Some(8888)
+            )
         );
     }
 
     #[test]
     fn unmapped_event_with_pid_emits_nothing_not_a_lone_pid_seen() {
+        let d = decode_full(json!({"type": "model_call_started", "_pid": 5}));
         assert!(
-            decode(json!({"type": "model_call_started", "_pid": 5})).is_empty(),
+            d.into_msgs(SOURCE_NAME).next().is_none(),
             "no lone PidSeen for an unmapped event"
         );
     }

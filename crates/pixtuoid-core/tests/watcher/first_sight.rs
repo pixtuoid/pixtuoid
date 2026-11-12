@@ -44,9 +44,9 @@ async fn codex_watcher_registers_stale_rollout_when_probe_says_live() {
         .with_liveness_probe(std::sync::Arc::new(move || vouch_snapshot(&[uuid])));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
-    let start_id = first_of(&mut rx, "a probe-live stale rollout", start_id).await;
+    let registered = first_of(&mut rx, "a probe-live stale rollout", start_id).await;
     assert_eq!(
-        start_id,
+        registered,
         AgentId::from_parts("codex", uuid),
         "a probe-live stale rollout must register on startup, UUID-keyed"
     );

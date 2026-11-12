@@ -134,8 +134,7 @@ model = "guardian-model"
             turn: Turn::PROFILE,
         },
         // A `[subagent]` skill through each skill entry point, which runs it on
-        // `explore`'s own runner
-        // (`internal/assembly/boot/tool_wiring.go:139-143` @ v2.60.0).
+        // a subagent runner (`internal/assembly/boot/tool_wiring.go:139-140` @ v2.60.0).
         Scenario {
             name: "run-skill",
             shape: Shape::Subagent,
