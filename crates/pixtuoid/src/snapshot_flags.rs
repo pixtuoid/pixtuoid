@@ -12,6 +12,9 @@ const HOUR_SECS: u64 = chrono::TimeDelta::hours(1).num_seconds().unsigned_abs();
 /// The instant a snapshot draws: an hour, and a day and a second read only
 /// beside it.
 #[derive(Debug, Clone, Copy, clap::Args)]
+// Else clap makes the doc above the about of a command that flattens this one
+// and has none of its own.
+#[command(about = None, long_about = None)]
 pub struct ClockArgs {
     /// Override local hour-of-day (0–23) used by time-of-day lighting.
     #[arg(long)]
@@ -57,15 +60,13 @@ pub fn parse_size(s: &str) -> Result<(u16, u16), String> {
     Ok((side(w)?, side(h)?))
 }
 
-/// A pet kind by its `[[pets]]` name: the classic's `--pets`, the floating
-/// snapshot's `--pet`.
-///
-/// # Errors
-///
-/// When no kind has that name. The error lists none: `PetKind` exposes its
-/// kinds but not their names.
-pub fn parse_pet(s: &str) -> Result<PetKind, String> {
-    PetKind::from_config_name(s).ok_or_else(|| format!("{s:?}: not a pet kind"))
+/// A pet kind by its [`PetKind::config_name`], for the classic's `--pets` and
+/// the floating snapshot's `--pet`: the possible values clap's help and error
+/// list.
+pub fn pet_parser() -> impl clap::builder::TypedValueParser<Value = PetKind> {
+    use clap::builder::TypedValueParser as _;
+    clap::builder::PossibleValuesParser::new(PetKind::ALL.iter().map(|kind| kind.config_name()))
+        .try_map(|name| PetKind::from_config_name(&name).ok_or("each possible value is a kind's"))
 }
 
 #[cfg(test)]
@@ -98,6 +99,12 @@ mod tests {
         assert!(!parses(&["--now-sec", "30"]));
     }
 
+    #[test]
+    fn the_clock_lends_no_about() {
+        use clap::CommandFactory;
+        assert_eq!(Flags::command().get_about(), None);
+    }
+
     /// Day 1 is the clock's day 0, and the second lands past the hour.
     #[test]
     fn the_instant_is_the_hour_on_the_day_plus_the_second() {
@@ -108,20 +115,22 @@ mod tests {
         assert_eq!(clock(&[]).unwrap().instant().unwrap(), None);
     }
 
-    /// Every kind answers to its name, so a kind added without one fails here.
+    #[derive(Parser)]
+    struct Pets {
+        #[arg(long, value_parser = pet_parser())]
+        pet: PetKind,
+    }
+
+    /// The scene owns the names; this pins only the glue to them.
     #[test]
-    fn each_pet_kind_parses_by_name_and_no_other_name_does() {
-        let named = [("cat", PetKind::Cat), ("dog", PetKind::Dog)];
-        for (name, kind) in named {
-            assert_eq!(parse_pet(name), Ok(kind));
-        }
+    fn the_pet_parser_maps_a_name_and_lists_the_kinds_it_refuses_for() {
+        let pet = |name: &str| Pets::try_parse_from(["snapshot", "--pet", name]).map(|p| p.pet);
+        let dog = PetKind::Dog;
+        assert_eq!(pet(dog.config_name()).unwrap(), dog);
+        let refused = pet("bird").unwrap_err().to_string();
         for kind in PetKind::ALL {
-            assert!(
-                named.iter().any(|(_, k)| k == kind),
-                "{kind:?} has no name here"
-            );
+            assert!(refused.contains(kind.config_name()), "{refused}");
         }
-        assert!(parse_pet("bird").is_err());
     }
 
     #[test]

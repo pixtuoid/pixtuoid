@@ -194,7 +194,7 @@ struct SnapshotArgs {
     hover: Option<String>,
 
     /// Add a wandering office pet to a renderer-driven --gif capture.
-    #[arg(long, value_name = "KIND", requires = "gif", conflicts_with = "anim", value_parser = pixtuoid::dev::parse_pet)]
+    #[arg(long, value_name = "KIND", requires = "gif", conflicts_with = "anim", value_parser = pixtuoid::dev::pet_parser())]
     pets: Option<pixtuoid_scene::pet::PetKind>,
 
     /// Render with the agent-dashboard popup open over a representative mixed

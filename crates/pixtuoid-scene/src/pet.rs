@@ -44,13 +44,21 @@ impl PetKind {
     /// Every pet kind.
     pub const ALL: &'static [PetKind] = &[PetKind::Cat, PetKind::Dog];
 
-    /// Parses a `[[pets]]` `kind` string ("cat"/"dog") into a `PetKind`; `None` if unknown.
-    pub fn from_config_name(s: &str) -> Option<Self> {
-        match s {
-            "cat" => Some(PetKind::Cat),
-            "dog" => Some(PetKind::Dog),
-            _ => None,
+    /// Its `[[pets]]` `kind` string, the one name table: every flag and error
+    /// that names the kinds reads it.
+    pub fn config_name(self) -> &'static str {
+        match self {
+            PetKind::Cat => "cat",
+            PetKind::Dog => "dog",
         }
+    }
+
+    /// Parses a `[[pets]]` `kind` string into a `PetKind`; `None` if unknown.
+    pub fn from_config_name(s: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|kind| kind.config_name() == s)
     }
 
     /// Its walk.
@@ -142,11 +150,7 @@ mod tests {
     #[test]
     fn every_pet_kind_is_reachable_from_config() {
         for &kind in PetKind::ALL {
-            let name = match kind {
-                PetKind::Cat => "cat",
-                PetKind::Dog => "dog",
-            };
-            assert_eq!(PetKind::from_config_name(name), Some(kind));
+            assert_eq!(PetKind::from_config_name(kind.config_name()), Some(kind));
         }
     }
 

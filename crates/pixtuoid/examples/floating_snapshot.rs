@@ -116,7 +116,7 @@ struct FloatingArgs {
     agents: usize,
     #[arg(long, value_name = "X,Y", value_parser = parse_point)]
     hover: Option<Point>,
-    #[arg(long, value_name = "KIND", value_parser = pixtuoid::dev::parse_pet)]
+    #[arg(long, value_name = "KIND", value_parser = pixtuoid::dev::pet_parser())]
     pet: Option<pixtuoid_scene::pet::PetKind>,
     /// Press at the first window point and carry what it lifts to the second,
     /// drawing it in hand.
@@ -315,4 +315,37 @@ fn main() -> Result<()> {
         at.upscale()
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse(flags: &[&str]) -> Result<FloatingArgs, clap::Error> {
+        FloatingArgs::try_parse_from([&["floating_snapshot", "o.png"], flags].concat())
+    }
+
+    #[test]
+    fn no_flags_parse_as_the_defaults() {
+        let args = parse(&[]).unwrap();
+        assert_eq!((args.size, args.agents, args.zoom), (None, 0, 0));
+        assert_eq!((args.hover, args.drag, args.drop_after), (None, None, None));
+    }
+
+    /// A zoom out is a negative step, which clap would otherwise read as a flag.
+    #[test]
+    fn a_negative_zoom_parses() {
+        assert_eq!(parse(&["--zoom", "-1"]).unwrap().zoom, -1);
+    }
+
+    /// A drop is read only after a drag, so one alone would draw no drop, unasked.
+    #[test]
+    fn a_drop_needs_a_drag_and_a_drag_two_points() {
+        let dragged = parse(&["--drag", "1,2:3,4", "--drop-after", "300"]).unwrap();
+        assert_eq!(dragged.drag, Some(((1.0, 2.0), (3.0, 4.0))));
+        assert_eq!(dragged.drop_after, Some(300));
+        assert!(parse(&["--drop-after", "300"]).is_err());
+        assert!(parse(&["--drag", "1,2"]).is_err());
+        assert!(parse(&["--hover", "1,y"]).is_err());
+    }
 }
