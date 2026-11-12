@@ -315,13 +315,16 @@ mod tests {
                 ("XDG_DATA_HOME", None),
             ],
             || {
-                assert!(!detect_installed());
+                assert!(!(crate::install::target::OPENCODE.presence_probe)());
                 std::fs::create_dir_all(root.path().join(".local/share/opencode")).unwrap();
-                assert!(detect_installed());
+                assert!((crate::install::target::OPENCODE.presence_probe)());
                 temp_env::with_var("XDG_DATA_HOME", Some(&xdg), || {
-                    assert!(!detect_installed(), "XDG_DATA_HOME replaces the home arm");
+                    assert!(
+                        !(crate::install::target::OPENCODE.presence_probe)(),
+                        "XDG_DATA_HOME replaces the home arm"
+                    );
                     std::fs::create_dir_all(xdg.join("opencode")).unwrap();
-                    assert!(detect_installed());
+                    assert!((crate::install::target::OPENCODE.presence_probe)());
                 });
             },
         );

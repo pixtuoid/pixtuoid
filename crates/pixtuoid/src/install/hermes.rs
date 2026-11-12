@@ -390,6 +390,25 @@ mod tests {
     }
 
     #[test]
+    fn the_presence_probe_reads_hermes_home() {
+        let home = tempfile::TempDir::new().unwrap();
+        let dir = home.path().join("hermes");
+        temp_env::with_vars(
+            [
+                ("HERMES_HOME", Some(dir.as_path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::HERMES.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(&dir).unwrap();
+                assert!(probe());
+            },
+        );
+    }
+
+    #[test]
     fn is_registered_reads_hermes_own_enabled_list() {
         let home = tempfile::TempDir::new().unwrap();
         temp_env::with_var("HERMES_HOME", Some(home.path()), || {

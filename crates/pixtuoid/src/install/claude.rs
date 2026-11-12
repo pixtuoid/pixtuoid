@@ -274,6 +274,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_presence_probe_reads_claudes_config_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("claude");
+        temp_env::with_vars(
+            [
+                ("CLAUDE_CONFIG_DIR", Some(dir.as_path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::CLAUDE.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(&dir).unwrap();
+                assert!(probe());
+            },
+        );
+    }
+
+    #[test]
     fn settings_path_honors_claude_config_dir() {
         let fallback_suffix = PathBuf::from(".claude").join("settings.json");
 

@@ -333,6 +333,25 @@ mod tests {
     use super::*;
     use crate::install::SENTINEL_KEY;
 
+    #[test]
+    fn the_presence_probe_reads_reasonix_home() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("rx");
+        temp_env::with_vars(
+            [
+                ("REASONIX_HOME", Some(dir.as_path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::REASONIX.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(&dir).unwrap();
+                assert!(probe());
+            },
+        );
+    }
+
     fn json_merge_uninstall(doc: Value) -> Value {
         merge::flat_json_merge_uninstall(doc, SENTINEL_KEY)
     }

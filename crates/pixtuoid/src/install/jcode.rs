@@ -253,12 +253,23 @@ mod tests {
     #[test]
     fn jcode_config_path_uses_the_shared_home_and_reads_an_empty_one_as_unset() {
         let home = tempfile::tempdir().unwrap();
-        temp_env::with_var("JCODE_HOME", Some(home.path()), || {
-            assert_eq!(
-                default_config_path().unwrap(),
-                home.path().join("config.toml")
-            );
-            assert!(detect_installed());
+        let probe = crate::install::target::JCODE.presence_probe;
+        temp_env::with_vars(
+            [
+                ("JCODE_HOME", Some(home.path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                assert_eq!(
+                    default_config_path().unwrap(),
+                    home.path().join("config.toml")
+                );
+                assert!(probe());
+            },
+        );
+        temp_env::with_var("JCODE_HOME", Some(home.path().join("absent")), || {
+            assert!(!probe());
         });
         #[cfg(unix)]
         for unset in [None, Some("".as_ref())] {

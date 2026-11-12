@@ -176,9 +176,9 @@ mod tests {
                 ("CURSOR_CONFIG_DIR", Some(moved.as_path())),
             ],
             || {
-                assert!(!detect_installed());
+                assert!(!(crate::install::target::CURSOR.presence_probe)());
                 std::fs::create_dir(home.path().join(".cursor")).unwrap();
-                assert!(detect_installed());
+                assert!((crate::install::target::CURSOR.presence_probe)());
             },
         );
     }

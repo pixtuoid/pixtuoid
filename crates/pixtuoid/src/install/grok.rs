@@ -272,6 +272,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_presence_probe_reads_groks_sessions_root() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_vars(
+            [
+                ("GROK_HOME", Some(home.path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::GROK.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(home.path().join("sessions")).unwrap();
+                assert!(probe());
+            },
+        );
+    }
+
+    #[test]
     fn install_renders_every_registered_event_with_env_attribution() {
         let doc: Value =
             serde_json::from_str(&render_hooks("/opt/bin/pixtuoid-hook").unwrap()).unwrap();

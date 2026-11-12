@@ -246,6 +246,23 @@ mod tests {
     const CMD: &str = "PIXTUOID_SOURCE=antigravity '/opt/pixtuoid-hook'";
 
     #[test]
+    fn the_presence_probe_reads_agys_app_data_dir() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_vars(
+            [
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::ANTIGRAVITY.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir_all(gemini_dir().join(CLI_APP_DATA_DIR)).unwrap();
+                assert!(probe());
+            },
+        );
+    }
+
+    #[test]
     fn config_dir_sits_under_go_s_home_and_needs_its_variable() {
         let (own, other) = if cfg!(windows) {
             ("USERPROFILE", "HOME")

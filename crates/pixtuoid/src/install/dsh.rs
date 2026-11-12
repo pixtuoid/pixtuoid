@@ -358,6 +358,25 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_presence_probe_reads_dsh_home() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("dsh");
+        temp_env::with_vars(
+            [
+                ("DSH_HOME", Some(dir.as_path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::DSH.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(&dir).unwrap();
+                assert!(probe());
+            },
+        );
+    }
+
     /// The template's leading marker — uninstall keys on the entry's `id`
     /// (not this), so the sentinel is a recognizer for humans and this test
     /// only.

@@ -301,10 +301,13 @@ mod tests {
                     cw.join("config.toml"),
                     "trimmed"
                 );
+                let probe = crate::install::target::CODEWHALE.presence_probe;
                 assert!(
-                    !detect_installed(),
+                    !probe(),
                     "an explicit CODEWHALE_HOME is not found by its legacy sibling"
                 );
+                std::fs::create_dir(&cw).unwrap();
+                assert!(probe());
             },
         );
     }

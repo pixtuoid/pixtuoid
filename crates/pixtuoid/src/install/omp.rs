@@ -90,6 +90,27 @@ mod tests {
     use super::*;
     use crate::install::merge::HOOK_PLACEHOLDER;
 
+    #[test]
+    fn the_presence_probe_reads_omps_agent_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("agent");
+        temp_env::with_vars(
+            [
+                ("PI_CODING_AGENT_DIR", Some(dir.as_path())),
+                ("OMP_PROFILE", None),
+                ("PI_PROFILE", None),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::OMP.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(&dir).unwrap();
+                assert!(probe());
+            },
+        );
+    }
+
     /// The bridge must never hold a gate: omp's `tool_call` handlers fail
     /// CLOSED (a throw/timeout blocks the user's tool), so the extension may
     /// only ever observe, and its selftest holds what it registers to

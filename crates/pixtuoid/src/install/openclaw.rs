@@ -593,7 +593,7 @@ mod tests {
                     ("OPENCLAW_STATE_DIR", Some(state_str)),
                     ("OPENCLAW_HOME", None),
                 ],
-                detect_installed,
+                crate::install::target::OPENCLAW.presence_probe,
             )
         };
         assert!(!probe(), "no state dir yet");

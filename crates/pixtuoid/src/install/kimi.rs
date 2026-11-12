@@ -248,11 +248,14 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("kimi");
         temp_env::with_var("KIMI_CODE_HOME", Some(&root), || {
-            assert!(!detect_installed(), "an absent data root must not detect");
+            assert!(
+                !(crate::install::target::KIMI.presence_probe)(),
+                "an absent data root must not detect"
+            );
 
             std::fs::create_dir_all(&root).unwrap();
             assert!(
-                detect_installed(),
+                (crate::install::target::KIMI.presence_probe)(),
                 "an existing data root must detect even with no config.toml"
             );
         });
