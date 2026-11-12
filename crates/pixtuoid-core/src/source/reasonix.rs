@@ -75,8 +75,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 
 /// Reasonix tools that spawn a subagent, so the slot reads "Delegating" while
 /// it works (`internal/runtime/delegation/spawn.go:15`,
-/// `internal/ext/skill/tools.go:413-425` @ v2.60.0). `run_skill` is excluded:
-/// it is only sometimes a subagent and the args don't say which.
+/// `internal/ext/skill/tools.go:413-425` @ v2.60.0).
 const SUBAGENT_TOOLS: &[&str] = &[
     "spawn_agents",
     "explore",
@@ -85,6 +84,14 @@ const SUBAGENT_TOOLS: &[&str] = &[
     "review",
     "security_review",
 ];
+
+/// Reasonix's skill entry points: a `[subagent]` skill runs as a child through
+/// `explore`'s own runner, an inline one returns as a tool result
+/// (`internal/ext/skill/tools.go:116-127`, `:217-228`,
+/// `internal/assembly/boot/tool_wiring.go:139-143` @ v2.60.0). Their args
+/// don't say which, so only the return re-states their Task: an inline
+/// skill's cascades an empty subtree.
+const SKILL_TOOLS: &[&str] = &["run_skill", "read_only_skill"];
 
 /// A role's hooks carry its parent's session id suffixed `:<role>`
 /// (`internal/ext/hook/runner.go:57-66`), a subagent's `subagent:<call id>`
@@ -188,7 +195,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             if tool.is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, "PostToolUse", "toolName");
             }
-            if tool.is_some_and(|t| SUBAGENT_TOOLS.contains(&t)) {
+            if tool.is_some_and(|t| SUBAGENT_TOOLS.contains(&t) || SKILL_TOOLS.contains(&t)) {
                 events.push(AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: None,
@@ -392,14 +399,16 @@ mod tests {
                 "{tool} must map to ToolDetail::Task"
             );
         }
-        let ev = decode(json!({
-            "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
-            "toolName": "run_skill", "toolArgs": {"name": "lint"}
-        }));
-        assert!(
-            matches!(&ev, AgentEvent::ToolUseStart { detail: Some(d), .. } if !d.is_task()),
-            "run_skill must not map to ToolDetail::Task"
-        );
+        for tool in SKILL_TOOLS {
+            let ev = decode(json!({
+                "event": "PreToolUse", "sessionId": "s", "cwd": "/r",
+                "toolName": tool, "toolArgs": {"name": "lint"}
+            }));
+            assert!(
+                matches!(&ev, AgentEvent::ToolUseStart { detail: Some(d), .. } if !d.is_task()),
+                "{tool} must not map to ToolDetail::Task"
+            );
+        }
     }
 
     #[test]
@@ -420,7 +429,7 @@ mod tests {
                 json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/r", "toolName": tool}),
             )
         };
-        for tool in ["explore", "spawn_agents"] {
+        for tool in ["explore", "spawn_agents", "run_skill", "read_only_skill"] {
             assert!(
                 matches!(
                     post(tool).as_slice(),

@@ -369,6 +369,8 @@ pub const OUTSIDE_CONFORMANCE: &[(&str, &str)] = &[
     ("omp", "tool-run-hermetic"),
     ("opencode", "subagent-hermetic"),
     ("reasonix", "explore-hermetic"),
+    ("reasonix", "read-only-skill-hermetic"),
+    ("reasonix", "run-skill-hermetic"),
     ("reasonix", "subagent-hermetic"),
 ];
 

@@ -39,7 +39,7 @@ pub(crate) const PROFILE: Profile = Profile {
     invocation: &[
         "reasonix",
         "--allowed-tools",
-        "spawn_agents,explore",
+        "spawn_agents,explore,run_skill",
         "-p",
         Placeholder::Prompt.as_str(),
     ],
@@ -121,6 +121,37 @@ model = "guardian-model"
         },
         Scenario {
             name: "explore",
+            shape: Shape::Subagent,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            turn: Turn::PROFILE,
+        },
+        // A `[subagent]` skill through each skill entry point, which runs it on
+        // `explore`'s own runner
+        // (`internal/assembly/boot/tool_wiring.go:139-143` @ v2.60.0).
+        Scenario {
+            name: "run-skill",
+            shape: Shape::Subagent,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "PostToolUse",
+                "Stop",
+                "SessionEnd",
+            ],
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "read-only-skill",
             shape: Shape::Subagent,
             surface: Surface::Headless,
             expects: &[
