@@ -239,16 +239,22 @@ mod tests {
     fn only_steps_repeat() {
         use crate::panels::keys::{VOLUME_DOWN, VOLUME_UP};
         let none = ModifiersState::empty();
-        let typed = |code: KeyCode| Key::Character(code.as_char().unwrap().to_string().into());
-        for k in [
-            Key::Character("j".into()),
-            Key::Named(NamedKey::ArrowDown),
-            typed(VOLUME_UP),
-            typed(VOLUME_DOWN),
-            // Their Shift twins, as the dispatch reads them.
-            Key::Character("=".into()),
-            Key::Character("_".into()),
-        ] {
+        let named = [
+            NamedKey::ArrowUp,
+            NamedKey::ArrowDown,
+            NamedKey::ArrowLeft,
+            NamedKey::ArrowRight,
+            NamedKey::PageUp,
+            NamedKey::PageDown,
+        ]
+        .map(Key::Named);
+        let typed = [VOLUME_UP, VOLUME_DOWN]
+            .map(|code| code.as_char().unwrap())
+            .into_iter()
+            // The moves, and the volume keys' Shift twins as the dispatch reads them.
+            .chain(['j', 'k', 'h', 'l', '=', '_'])
+            .map(|c| Key::Character(c.to_string().into()));
+        for k in named.into_iter().chain(typed) {
             assert_eq!(key(&k, none, true), key(&k, none, false), "{k:?}");
             assert!(key(&k, none, true).is_some(), "{k:?}");
         }
