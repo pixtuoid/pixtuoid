@@ -574,8 +574,8 @@ pub struct DaemonPresence {
     pub entered_at: SystemTime,
     /// In-flight turns (running iff non-empty), each keyed by its correlation key
     /// and stamped with its LAST observation. The per-turn stamp is what makes
-    /// the running-decay honest: the daemon-wide `last_seen` is refreshed by ANY
-    /// event, so on a gateway still serving other traffic a turn whose
+    /// the running-decay honest: the daemon-wide `last_seen` is refreshed by EVERY
+    /// decoded event, so on a gateway still serving other traffic a turn whose
     /// `agent_end` was dropped would never age out and the mascot would latch
     /// Running forever.
     ///
