@@ -202,8 +202,8 @@ async fn a_subscriber_tees_child_ends() {
     subscriber.abort();
 }
 
-// An owner that never acknowledges is what an older pixtuoid looks like: its
-// hook plane stays out of reach, so the footer must say so.
+// An owner that never acknowledges keeps its hook plane out of reach, so the
+// footer must say so.
 #[tokio::test]
 async fn a_router_that_cannot_subscribe_reports_a_death() {
     let (_dir, at) = endpoint("refused");

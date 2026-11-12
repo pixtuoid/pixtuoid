@@ -413,7 +413,7 @@ async fn handle_conn(
                     // real identity before the activity event applies.
                     Ok(evs) => {
                         // Not beside the forward: an envelope that decodes to
-                        // nothing is a cross-fired duplicate, no sign of its CLI.
+                        // nothing is no sign of its CLI.
                         let source = hook_source(obj);
                         if let (Some(relay), Some(source)) =
                             (relay.as_ref().filter(|_| !evs.is_empty()), source)

@@ -60,13 +60,21 @@ mod tests {
 
     #[test]
     fn brain_root_is_the_cli_brain_under_dot_gemini() {
-        let p = AntigravitySource::default_paths().map(|s| s.brain_root);
-        let brain = PathBuf::from(".gemini")
-            .join("antigravity-cli")
-            .join("brain");
-        assert!(
-            p.as_ref().is_some_and(|p| p.ends_with(&brain)),
-            "brain_root must be <home>/.gemini/antigravity-cli/brain, got {p:?}"
-        );
+        let home = tempfile::tempdir().unwrap();
+        let pinned = [
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        temp_env::with_vars(pinned, || {
+            assert_eq!(
+                AntigravitySource::default_paths().map(|s| s.brain_root),
+                Some(
+                    home.path()
+                        .join(".gemini")
+                        .join("antigravity-cli")
+                        .join("brain")
+                )
+            );
+        });
     }
 }

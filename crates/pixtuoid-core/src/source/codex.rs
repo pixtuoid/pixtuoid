@@ -462,10 +462,11 @@ fn cell_tool(source: &str) -> Option<&str> {
 }
 
 /// The Codex home dir, matching codex's own precedence (`codex-rs`
-/// `find_codex_home`): `CODEX_HOME` if it's set to an EXISTING directory, else
-/// `<home>/.codex`, the home being `dirs::home_dir`'s, so
-/// [`dirs_home_dir`](crate::platform::dirs_home_dir), and none without a home,
-/// where upstream errs (`utils/home-dir/src/lib.rs:2,53-58` @ rust-v0.167.2).
+/// `find_codex_home` @ rust-v0.167.2): `CODEX_HOME` when set, and none unless it
+/// is a directory, upstream's fatal error (`utils/home-dir/src/lib.rs:24-51`);
+/// else `<home>/.codex`, the home being `dirs::home_dir`'s, so
+/// [`dirs_home_dir`](crate::platform::dirs_home_dir), and none without a home
+/// (`:2,53-58`).
 /// The installer reads Codex's `config.toml` through here too, so the watched
 /// sessions root and the plugin state it reads can never disagree.
 ///
@@ -480,8 +481,6 @@ pub fn codex_home() -> Option<PathBuf> {
 }
 
 /// Pure precedence core, separated so it's unit-testable without env mutation.
-/// A set `CODEX_HOME` that is no directory is upstream codex's FATAL error, so
-/// it names no home here either.
 fn resolve_codex_home(codex_home_env: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
     match codex_home_env {
         Some(p) => p.is_dir().then_some(p),

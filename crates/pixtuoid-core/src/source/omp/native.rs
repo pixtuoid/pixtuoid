@@ -273,11 +273,22 @@ mod tests {
 
     #[test]
     fn default_paths_points_at_the_agent_sessions_dir() {
-        let root = OmpSource::default_paths().map(|s| s.sessions_root);
-        assert!(
-            root.as_ref().is_some_and(|r| r.ends_with("sessions")),
-            "got {root:?}"
-        );
+        let home = tempfile::tempdir().unwrap();
+        let vars = [
+            ("PI_CONFIG_DIR", None),
+            ("OMP_PROFILE", None),
+            ("PI_PROFILE", None),
+            ("PI_CODING_AGENT_DIR", None),
+            ("XDG_DATA_HOME", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        temp_env::with_vars(vars, || {
+            assert_eq!(
+                OmpSource::default_paths().map(|s| s.sessions_root),
+                Some(home.path().join(".omp").join("agent").join("sessions"))
+            );
+        });
     }
 
     const STEM: &str = "2026-07-10T18-32-27-539Z_019f4d4d-6c93-7000-af7b-59b47b0e8111";

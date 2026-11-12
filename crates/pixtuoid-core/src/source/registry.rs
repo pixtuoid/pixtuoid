@@ -1040,14 +1040,21 @@ mod tests {
 
         // A named profile derives its own agent dir and IGNORES the override
         // (`dirs.ts`), so an exported OMP_PROFILE/PI_PROFILE reds this gate blaming
-        // the resolver. Scrub them.
-        let failures = temp_env::with_vars_unset(["OMP_PROFILE", "PI_PROFILE"], || {
+        // the resolver. Scrub them. omp ignores it with no home too.
+        let home = tempfile::tempdir().expect("tempdir");
+        let vars = [
+            ("OMP_PROFILE", None),
+            ("PI_PROFILE", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let failures = temp_env::with_vars(vars, || {
             // Collect rather than assert in-loop, so one run names every source
             // that fails.
             let mut failures: Vec<String> = Vec::new();
             for (name, var) in declared {
                 // A REAL dir: upstream `find_codex_home` gates `CODEX_HOME` on the path
-                // existing, so a bare string silently falls back.
+                // existing, so a bare string names no home.
                 let tmp = tempfile::tempdir().expect("tempdir");
                 let root_env = tmp.path().to_path_buf();
                 let resolved = temp_env::with_var(var, Some(&root_env), || {
@@ -1079,7 +1086,14 @@ mod tests {
     #[cfg(feature = "native")]
     #[test]
     fn a_source_root_does_not_wander_into_an_unset_overrides_directory() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
+        let home = tempfile::tempdir().expect("tempdir");
+        let vars = [
+            ("CLAUDE_CONFIG_DIR", None),
+            ("COPILOT_HOME", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        temp_env::with_vars(vars, || {
             let tmp = tempfile::tempdir().expect("tempdir");
             for (name, root) in [
                 (

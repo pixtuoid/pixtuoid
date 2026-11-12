@@ -434,6 +434,7 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 /// shared lifecycle arms do NOT: SessionStart carries identity, an end for an
 /// unknown id proves nothing, and on `Stop` an `Identity` would re-create a CC
 /// child past its cascade. A source's own arms (`source_owned_arms`) set their own.
+/// A payload without a [`SOURCE_STAMP`] names no CLI and decodes to no events.
 ///
 /// # Errors
 ///

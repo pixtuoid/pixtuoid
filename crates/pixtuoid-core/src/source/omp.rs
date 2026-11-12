@@ -2513,26 +2513,29 @@ mod tests {
     /// values.
     #[test]
     fn omp_sessions_dir_honors_non_empty_env_override() {
-        temp_env::with_var("PI_CODING_AGENT_DIR", Some("/custom/agent"), || {
-            assert_eq!(
-                omp_sessions_dir(),
-                Some(PathBuf::from("/custom/agent").join("sessions"))
-            );
-        });
+        let home = tempfile::tempdir().unwrap();
+        let fallback = Some(home.path().join(".omp").join("agent").join("sessions"));
+        let pinned = [
+            ("XDG_DATA_HOME", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        temp_env::with_vars(pinned, || {
+            temp_env::with_var("PI_CODING_AGENT_DIR", Some("/custom/agent"), || {
+                assert_eq!(
+                    omp_sessions_dir(),
+                    Some(PathBuf::from("/custom/agent").join("sessions"))
+                );
+            });
 
-        for blank in ["", "   "] {
-            let dflt = temp_env::with_var("PI_CODING_AGENT_DIR", Some(blank), omp_sessions_dir);
-            assert!(
-                dflt.as_ref()
-                    .is_some_and(|d| d.ends_with(Path::new(".omp/agent/sessions"))),
-                "blank override {blank:?} → ~/.omp/agent fallback, got {dflt:?}"
-            );
-        }
+            for blank in ["", "   "] {
+                let dflt = temp_env::with_var("PI_CODING_AGENT_DIR", Some(blank), omp_sessions_dir);
+                assert_eq!(dflt, fallback, "blank override {blank:?} → ~/.omp/agent");
+            }
 
-        temp_env::with_var_unset("PI_CODING_AGENT_DIR", || {
-            assert!(
-                omp_sessions_dir().is_some_and(|d| d.ends_with(Path::new(".omp/agent/sessions")))
-            );
+            temp_env::with_var_unset("PI_CODING_AGENT_DIR", || {
+                assert_eq!(omp_sessions_dir(), fallback);
+            });
         });
     }
 

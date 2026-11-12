@@ -71,7 +71,8 @@ fn codex_home() -> Result<PathBuf> {
     pixtuoid_core::source::codex::codex_home().ok_or_else(|| {
         match pixtuoid_core::platform::path_env("CODEX_HOME") {
             Some(set) => anyhow!(
-                "CODEX_HOME is {set:?}, which is no directory, so codex itself won't start; create it or unset CODEX_HOME, then reconnect"
+                "CODEX_HOME is {}, which is no directory, so codex itself won't start; create it or unset CODEX_HOME",
+                crate::display_path(&set)
             ),
             None => io::home_unset(
                 "Codex's home",

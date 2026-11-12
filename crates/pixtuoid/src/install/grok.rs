@@ -53,30 +53,18 @@ pub(crate) const GROK_EVENTS: &[&str] = &[
     "SessionEnd",
 ];
 
-/// `{grok_home}/hooks/pixtuoid.json`, via the SAME `grok_home()` resolution the
-/// watcher's sessions root and the liveness probe ride, so the three can never
-/// disagree. HARD error when neither GROK_HOME nor a home dir resolves: grok's
-/// hook discovery scans NOTHING in that environment, so writing into
-/// `grok_home()`'s degenerate fallback would land hooks grok never reads.
+/// `{user_grok_home}/hooks/pixtuoid.json`: grok's hook discovery scans only
+/// under `user_grok_home()`, so with neither GROK_HOME nor a home dir it scans
+/// NOTHING, and writing into `grok_home()`'s cwd fallback would land hooks grok
+/// never reads.
 pub(crate) fn default_config_path() -> Result<PathBuf> {
-    if !home_resolvable(
-        pixtuoid_core::platform::path_env("GROK_HOME").as_deref(),
-        pixtuoid_core::platform::user_home_opt().as_deref(),
-    ) {
-        return Err(io::home_unset(
+    let home = pixtuoid_core::source::grok::user_grok_home().ok_or_else(|| {
+        io::home_unset(
             "grok's home",
             &format!("GROK_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
-        ));
-    }
-    Ok(pixtuoid_core::source::grok::grok_home()
-        .join("hooks")
-        .join("pixtuoid.json"))
-}
-
-/// Mirrors upstream `user_grok_home()`'s resolvability gate — the condition under
-/// which grok's hook discovery actually scans `{grok_home}/hooks`.
-fn home_resolvable(grok_home_env: Option<&Path>, home: Option<&Path>) -> bool {
-    grok_home_env.is_some() || home.is_some()
+        )
+    })?;
+    Ok(home.join("hooks").join("pixtuoid.json"))
 }
 
 /// Presence probe for auto-detect: grok's OWN root or its canonical binary path,
@@ -337,17 +325,6 @@ mod tests {
             msg.contains(crate::install::io::HOOK_OVERRIDE_ENV),
             "the bail must name the escape hatch that works: {msg}"
         );
-    }
-
-    #[test]
-    fn config_path_requires_a_resolvable_home_or_grok_home() {
-        assert!(home_resolvable(Some(Path::new("/custom")), None));
-        assert!(home_resolvable(None, Some(Path::new("/home/u"))));
-        assert!(home_resolvable(
-            Some(Path::new("/custom")),
-            Some(Path::new("/home/u"))
-        ));
-        assert!(!home_resolvable(None, None));
     }
 
     #[test]

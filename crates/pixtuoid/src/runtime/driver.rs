@@ -695,11 +695,20 @@ mod tests {
         use pixtuoid_core::source::registry::{self, descriptor_for};
         use std::collections::BTreeSet;
 
-        let sources = build_source_set(
-            PathBuf::from("/tmp/pixtuoid-test.sock"),
-            None,
-            ConnectedSources::default(),
-        );
+        // A set CODEX_HOME that is no directory, or no home, leaves a source unbuilt.
+        let home = tempfile::tempdir().unwrap();
+        let vars = [
+            ("CODEX_HOME", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let sources = temp_env::with_vars(vars, || {
+            build_source_set(
+                PathBuf::from("/tmp/pixtuoid-test.sock"),
+                None,
+                ConnectedSources::default(),
+            )
+        });
         let built: BTreeSet<&str> = sources.iter().map(|s| s.name()).collect();
 
         // The HookRouter is infrastructure, not a registered CLI: it has no

@@ -65,22 +65,14 @@ impl ClaudeCodeSource {
         }
     }
 
-    /// Construct pointed at the default `~/.claude/projects` root, if CC's
-    /// config dir resolves.
+    /// Construct pointed at the default `~/.claude/projects` root, if
+    /// [`claude_config_dir`] resolves.
     pub fn default_paths() -> Option<Self> {
-        let config = config_root(claude_config_dir(), crate::platform::user_home_opt())?;
         Some(Self {
-            projects_root: config.join("projects"),
+            projects_root: claude_config_dir()?.join("projects"),
             child_end_unclaims: None,
         })
     }
-}
-
-/// CC's config dir: [`claude_config_dir`], else `<home>/.claude`, and none with
-/// neither, where CC's `os.homedir()` throws (Bun v1.4.4
-/// `src/runtime/node/node_os.rs:637-645`, the runtime of CC 2.1.322).
-fn config_root(config_dir: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
-    config_dir.or_else(|| Some(home?.join(".claude")))
 }
 
 impl Source for ClaudeCodeSource {
@@ -192,38 +184,28 @@ mod tests {
 
     #[test]
     fn default_paths_projects_root_honors_claude_config_dir() {
-        let fallback_suffix = PathBuf::from(".claude").join("projects");
+        let home = tempfile::tempdir().unwrap();
+        let fallback = Some(home.path().join(".claude").join("projects"));
         let projects_root = || ClaudeCodeSource::default_paths().map(|s| s.projects_root);
+        let pinned = [
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
 
-        temp_env::with_var_unset("CLAUDE_CONFIG_DIR", || {
-            let unset_root = projects_root();
-            assert!(
-                unset_root
-                    .as_ref()
-                    .is_some_and(|r| r.ends_with(&fallback_suffix)),
-                "projects_root must end with .claude/projects, got {unset_root:?}"
-            );
+        temp_env::with_vars(pinned, || {
+            temp_env::with_var_unset("CLAUDE_CONFIG_DIR", || {
+                assert_eq!(projects_root(), fallback, "unset CLAUDE_CONFIG_DIR");
+            });
+
+            let custom_dir = std::env::temp_dir().join("pixtuoid-claude-config-dir");
+            temp_env::with_var("CLAUDE_CONFIG_DIR", Some(&custom_dir), || {
+                assert_eq!(projects_root(), Some(custom_dir.join("projects")));
+            });
+
+            temp_env::with_var("CLAUDE_CONFIG_DIR", Some(""), || {
+                assert_eq!(projects_root(), fallback, "empty CLAUDE_CONFIG_DIR");
+            });
         });
-
-        let custom_dir = std::env::temp_dir().join("pixtuoid-claude-config-dir");
-        temp_env::with_var("CLAUDE_CONFIG_DIR", Some(&custom_dir), || {
-            assert_eq!(projects_root(), Some(custom_dir.join("projects")));
-        });
-
-        temp_env::with_var("CLAUDE_CONFIG_DIR", Some(""), || {
-            let empty_root = projects_root();
-            assert!(
-                empty_root
-                    .as_ref()
-                    .is_some_and(|r| r.ends_with(&fallback_suffix)),
-                "empty CLAUDE_CONFIG_DIR must fall back to .claude/projects, got {empty_root:?}"
-            );
-        });
-    }
-
-    #[test]
-    fn no_config_dir_and_no_home_is_no_config_root() {
-        assert_eq!(config_root(None, None), None);
     }
 
     #[cfg(unix)]

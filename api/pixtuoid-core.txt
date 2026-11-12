@@ -391,7 +391,7 @@ pub mod pixtuoid_core::source::antigravity
 pub struct pixtuoid_core::source::antigravity::AntigravitySource
 pub pixtuoid_core::source::antigravity::AntigravitySource::brain_root: std::path::PathBuf
 impl pixtuoid_core::source::antigravity::AntigravitySource
-pub fn pixtuoid_core::source::antigravity::AntigravitySource::default_paths() -> Self
+pub fn pixtuoid_core::source::antigravity::AntigravitySource::default_paths() -> core::option::Option<Self>
 impl core::fmt::Debug for pixtuoid_core::source::antigravity::AntigravitySource
 pub fn pixtuoid_core::source::antigravity::AntigravitySource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl pixtuoid_core::Source for pixtuoid_core::source::antigravity::AntigravitySource
@@ -407,13 +407,13 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::antigravity
 pub const pixtuoid_core::source::antigravity::CLI_APP_DATA_DIR: &str
 pub const pixtuoid_core::source::antigravity::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::antigravity::decode_ag_line(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
-pub fn pixtuoid_core::source::antigravity::gemini_dir() -> std::path::PathBuf
+pub fn pixtuoid_core::source::antigravity::gemini_dir() -> core::option::Option<std::path::PathBuf>
 pub mod pixtuoid_core::source::claude_code
 pub struct pixtuoid_core::source::claude_code::ClaudeCodeSource
 pub pixtuoid_core::source::claude_code::ClaudeCodeSource::child_end_unclaims: core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>
 pub pixtuoid_core::source::claude_code::ClaudeCodeSource::projects_root: std::path::PathBuf
 impl pixtuoid_core::source::claude_code::ClaudeCodeSource
-pub fn pixtuoid_core::source::claude_code::ClaudeCodeSource::default_paths() -> Self
+pub fn pixtuoid_core::source::claude_code::ClaudeCodeSource::default_paths() -> core::option::Option<Self>
 pub fn pixtuoid_core::source::claude_code::ClaudeCodeSource::default_socket_path() -> std::path::PathBuf
 impl core::fmt::Debug for pixtuoid_core::source::claude_code::ClaudeCodeSource
 pub fn pixtuoid_core::source::claude_code::ClaudeCodeSource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -440,7 +440,7 @@ pub struct pixtuoid_core::source::codex::CodexSource
 pub pixtuoid_core::source::codex::CodexSource::child_end_unclaims: core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>
 pub pixtuoid_core::source::codex::CodexSource::sessions_root: std::path::PathBuf
 impl pixtuoid_core::source::codex::CodexSource
-pub fn pixtuoid_core::source::codex::CodexSource::default_paths() -> Self
+pub fn pixtuoid_core::source::codex::CodexSource::default_paths() -> core::option::Option<Self>
 impl core::fmt::Debug for pixtuoid_core::source::codex::CodexSource
 pub fn pixtuoid_core::source::codex::CodexSource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl pixtuoid_core::Source for pixtuoid_core::source::codex::CodexSource
@@ -454,12 +454,12 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::codex::CodexSource
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::codex::CodexSource
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::codex::CodexSource
 pub const pixtuoid_core::source::codex::SOURCE_NAME: &str
-pub fn pixtuoid_core::source::codex::codex_home() -> std::path::PathBuf
+pub fn pixtuoid_core::source::codex::codex_home() -> core::option::Option<std::path::PathBuf>
 pub mod pixtuoid_core::source::copilot
 pub struct pixtuoid_core::source::copilot::CopilotSource
 pub pixtuoid_core::source::copilot::CopilotSource::sessions_root: std::path::PathBuf
 impl pixtuoid_core::source::copilot::CopilotSource
-pub fn pixtuoid_core::source::copilot::CopilotSource::default_paths() -> Self
+pub fn pixtuoid_core::source::copilot::CopilotSource::default_paths() -> core::option::Option<Self>
 impl core::fmt::Debug for pixtuoid_core::source::copilot::CopilotSource
 pub fn pixtuoid_core::source::copilot::CopilotSource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl pixtuoid_core::Source for pixtuoid_core::source::copilot::CopilotSource
@@ -762,6 +762,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::grok::Gr
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::grok::GrokSource
 pub const pixtuoid_core::source::grok::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::grok::grok_home() -> std::path::PathBuf
+pub fn pixtuoid_core::source::grok::user_grok_home() -> core::option::Option<std::path::PathBuf>
 pub mod pixtuoid_core::source::hermes
 pub const pixtuoid_core::source::hermes::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::hermes::hermes_home() -> core::option::Option<std::path::PathBuf>
@@ -997,7 +998,7 @@ pub mod pixtuoid_core::source::omp
 pub struct pixtuoid_core::source::omp::OmpSource
 pub pixtuoid_core::source::omp::OmpSource::profile_sessions_roots: alloc::vec::Vec<std::path::PathBuf>
 impl pixtuoid_core::source::omp::OmpSource
-pub fn pixtuoid_core::source::omp::OmpSource::default_paths() -> Self
+pub fn pixtuoid_core::source::omp::OmpSource::default_paths() -> core::option::Option<Self>
 impl core::fmt::Debug for pixtuoid_core::source::omp::OmpSource
 pub fn pixtuoid_core::source::omp::OmpSource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl pixtuoid_core::Source for pixtuoid_core::source::omp::OmpSource
@@ -1012,8 +1013,8 @@ impl !core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::omp::Om
 impl !core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::omp::OmpSource
 pub const pixtuoid_core::source::omp::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::omp::decode_omp_line(&str, &str, serde_json::value::Value) -> alloc::vec::Vec<pixtuoid_core::source::AgentEvent>
-pub fn pixtuoid_core::source::omp::omp_agent_dir() -> std::path::PathBuf
-pub fn pixtuoid_core::source::omp::omp_extensions_dir() -> std::path::PathBuf
+pub fn pixtuoid_core::source::omp::omp_agent_dir() -> core::option::Option<std::path::PathBuf>
+pub fn pixtuoid_core::source::omp::omp_extensions_dir() -> core::option::Option<std::path::PathBuf>
 pub fn pixtuoid_core::source::omp::omp_id_from_path(&std::path::Path) -> alloc::string::String
 pub mod pixtuoid_core::source::openclaw
 pub const pixtuoid_core::source::openclaw::SOURCE_NAME: &str

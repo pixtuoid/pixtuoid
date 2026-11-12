@@ -100,8 +100,9 @@ fn resolve_copilot_home(
             v,
         )),
         // copilot 1.0.109 cannot launch without a home: its loader lists its
-        // package dirs under Node's `os.homedir()`, which throws there (node
-        // v24.22.1 `lib/os.js:63-81`).
+        // package dirs under Node's `os.homedir()`
+        // (`@github/copilot-darwin-arm64@1.0.109` `sea-loader.js` `Ki()`), which
+        // throws there (node v24.22.1 `lib/os.js:63-81`).
         None => Some(home?.join(".copilot")),
     }
 }
@@ -989,33 +990,30 @@ mod tests {
     #[cfg(feature = "native")]
     #[test]
     fn copilot_home_honors_non_empty_env_override() {
-        temp_env::with_var("COPILOT_HOME", Some("/custom/cp"), || {
-            assert_eq!(
-                copilot_home(),
-                Some(PathBuf::from("/custom/cp")),
-                "a non-empty COPILOT_HOME is used verbatim"
-            );
-        });
+        let home = tempfile::tempdir().unwrap();
+        let fallback = Some(home.path().join(".copilot"));
+        let pinned = [
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        temp_env::with_vars(pinned, || {
+            temp_env::with_var("COPILOT_HOME", Some("/custom/cp"), || {
+                assert_eq!(
+                    copilot_home(),
+                    Some(PathBuf::from("/custom/cp")),
+                    "a non-empty COPILOT_HOME is used verbatim"
+                );
+            });
 
-        temp_env::with_var("COPILOT_HOME", Some(""), || {
-            assert!(
-                copilot_home().is_some_and(|home| home.ends_with(".copilot")),
-                "empty COPILOT_HOME → ~/.copilot fallback"
-            );
-        });
+            for blank in ["", "   "] {
+                temp_env::with_var("COPILOT_HOME", Some(blank), || {
+                    assert_eq!(copilot_home(), fallback, "COPILOT_HOME {blank:?}");
+                });
+            }
 
-        temp_env::with_var("COPILOT_HOME", Some("   "), || {
-            assert!(
-                copilot_home().is_some_and(|home| home.ends_with(".copilot")),
-                "whitespace-only COPILOT_HOME → ~/.copilot fallback"
-            );
-        });
-
-        temp_env::with_var_unset("COPILOT_HOME", || {
-            assert!(
-                copilot_home().is_some_and(|home| home.ends_with(".copilot")),
-                "unset COPILOT_HOME → ~/.copilot fallback"
-            );
+            temp_env::with_var_unset("COPILOT_HOME", || {
+                assert_eq!(copilot_home(), fallback, "unset COPILOT_HOME");
+            });
         });
     }
 
