@@ -10,6 +10,7 @@ use super::{
     SOURCE_NAME, omp_derive_label, omp_head_title, omp_id_from_path, omp_profile_sessions_dirs,
     omp_profiles_dir, omp_sessions_dir,
 };
+use crate::platform::NO_HOME;
 use crate::source::jsonl::{JsonlWatcher, Nudge, ProbeSnapshot, RootWatch, Wake, absolute_root};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{DEFAULT_POLL_INTERVAL, Source, TaggedSender};
@@ -54,15 +55,15 @@ impl std::fmt::Debug for OmpSource {
 
 impl OmpSource {
     /// Construct pointed at the default omp `sessions` root, plus every other
-    /// profile's.
-    pub fn default_paths() -> Self {
-        Self {
+    /// profile's, if omp's home resolves.
+    pub fn default_paths() -> Option<Self> {
+        Some(Self {
+            sessions_root: omp_sessions_dir()?,
             profile_sessions_roots: omp_profile_sessions_dirs(),
             rescan: Arc::new(omp_profile_sessions_dirs),
             rescan_interval: DEFAULT_POLL_INTERVAL,
-            sessions_root: omp_sessions_dir(),
             profiles_dir: omp_profiles_dir(),
-        }
+        })
     }
 
     /// A source over one root with no profile set — the test/replay shape.
@@ -249,11 +250,11 @@ pub(crate) const NATIVE: Native = Native {
 };
 
 fn sessions_root() -> Option<PathBuf> {
-    Some(OmpSource::default_paths().sessions_root)
+    OmpSource::default_paths().map(|s| s.sessions_root)
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
-    let s = OmpSource::default_paths();
+    let s = OmpSource::default_paths().ok_or(NO_HOME)?;
     Ok(std::iter::once(s.sessions_root)
         .chain(s.profile_sessions_roots)
         .collect())
@@ -272,11 +273,10 @@ mod tests {
 
     #[test]
     fn default_paths_points_at_the_agent_sessions_dir() {
-        let src = OmpSource::default_paths();
+        let root = OmpSource::default_paths().map(|s| s.sessions_root);
         assert!(
-            src.sessions_root.ends_with("sessions"),
-            "got {:?}",
-            src.sessions_root
+            root.as_ref().is_some_and(|r| r.ends_with("sessions")),
+            "got {root:?}"
         );
     }
 

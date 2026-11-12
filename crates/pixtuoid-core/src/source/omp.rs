@@ -104,7 +104,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// those files and then REBUILDS this resolver, so a var set only in `~/.env`
 /// moves the sessions dir and process env alone would watch an empty directory.
 #[cfg(feature = "native")]
-pub(crate) fn omp_sessions_dir() -> PathBuf {
+pub(crate) fn omp_sessions_dir() -> Option<PathBuf> {
     let env = overlaid_env();
     resolve_omp_sessions_dir(
         &env,
@@ -120,7 +120,7 @@ pub(crate) fn omp_sessions_dir() -> PathBuf {
 /// (`dirs.ts` applies XDG only per-category via `agentSubdir`), so a
 /// migrated-XDG user's extensions still load from here. Exported for the
 /// install target — a second resolver copy is the #880 drift class.
-pub fn omp_agent_dir() -> PathBuf {
+pub fn omp_agent_dir() -> Option<PathBuf> {
     let env = overlaid_env();
     resolve_omp_agent_dir(&env)
 }
@@ -132,8 +132,8 @@ pub(crate) const EXTENSIONS_SUBDIR: &str = "extensions";
 /// Where the bridge extension installs: [`omp_agent_dir`] +
 /// `EXTENSIONS_SUBDIR` (private: the name still greps; rustdoc denies links
 /// to non-public items).
-pub fn omp_extensions_dir() -> PathBuf {
-    omp_agent_dir().join(EXTENSIONS_SUBDIR)
+pub fn omp_extensions_dir() -> Option<PathBuf> {
+    Some(omp_agent_dir()?.join(EXTENSIONS_SUBDIR))
 }
 
 /// The process env under the `.env` overlay. The read is deliberately
@@ -246,6 +246,9 @@ fn omp_config_root(env: &OmpEnv, profile: Option<&str>) -> Option<PathBuf> {
         .as_deref()
         .filter(|s| !s.is_empty())
         .unwrap_or(".omp");
+    // omp cannot start without a home: it reads `os.homedir()` at load, which
+    // throws there (`packages/utils/src/dirs.ts:527` @ v18.19.0, Bun v1.4.4
+    // `src/runtime/node/node_os.rs:637-645`).
     let root = node_join(env.home.as_deref()?, name);
     Some(match profile {
         Some(p) => root.join(PROFILES_SUBDIR).join(p),
@@ -280,11 +283,8 @@ fn resolve_omp_agent_dir_parts(env: &OmpEnv) -> Option<(PathBuf, bool, Option<St
     }
 }
 
-fn resolve_omp_agent_dir(env: &OmpEnv) -> PathBuf {
-    resolve_omp_agent_dir_parts(env)
-        .map(|(d, _, _)| d)
-        // Keeps the pre-#880 shape: an unresolvable home is already `/tmp`-rooted.
-        .unwrap_or_else(|| crate::platform::user_home().join(".omp").join(AGENT_SUBDIR))
+fn resolve_omp_agent_dir(env: &OmpEnv) -> Option<PathBuf> {
+    resolve_omp_agent_dir_parts(env).map(|(d, _, _)| d)
 }
 
 /// `getSessionsDir()` = `agentSubdir(undefined, "sessions", "data")`.
@@ -293,16 +293,14 @@ fn resolve_omp_sessions_dir(
     env: &OmpEnv,
     xdg_platform: bool,
     exists: &dyn Fn(&Path) -> bool,
-) -> PathBuf {
-    let Some((agent_dir, is_default, profile)) = resolve_omp_agent_dir_parts(env) else {
-        return resolve_omp_agent_dir(env).join("sessions");
-    };
+) -> Option<PathBuf> {
+    let (agent_dir, is_default, profile) = resolve_omp_agent_dir_parts(env)?;
     let xdg = (xdg_platform && is_default)
         .then(|| xdg_app_root(env.xdg_data_home.as_deref(), profile.as_deref(), exists))
         .flatten();
     // The flatten lives here: with XDG the base REPLACES `<…>/agent`, it does
     // not sit under it.
-    xdg.unwrap_or(agent_dir).join("sessions")
+    Some(xdg.unwrap_or(agent_dir).join("sessions"))
 }
 
 /// Sessions dirs of every OTHER profile — the roots the primary
@@ -354,10 +352,12 @@ fn omp_profile_sessions_dirs_resolved(
     exists: &dyn Fn(&Path) -> bool,
     list_profiles: &dyn Fn(&Path) -> Vec<String>,
 ) -> Vec<PathBuf> {
-    let Some(profiles) = profiles_dir(env) else {
+    let (Some(profiles), Some(primary)) = (
+        profiles_dir(env),
+        resolve_omp_sessions_dir(env, xdg_platform, exists),
+    ) else {
         return Vec::new();
     };
-    let primary = resolve_omp_sessions_dir(env, xdg_platform, exists);
     // Through the same validator omp applies: a dir failing its name regex (or
     // a stray `default`) is one omp can never select, so watching it would
     // follow a root omp never writes.
@@ -1951,7 +1951,7 @@ mod tests {
             e
         };
         let never = |_: &Path| false;
-        let sessions = |e: &OmpEnv| resolve_omp_sessions_dir(e, true, &never);
+        let sessions = |e: &OmpEnv| resolve_omp_sessions_dir(e, true, &never).expect("a home");
 
         assert_eq!(
             sessions(&base(&|_| {})),
@@ -2036,12 +2036,12 @@ mod tests {
         };
         assert_eq!(
             resolve_omp_sessions_dir(&env, true, &|p| p == Path::new("/xdg/omp")),
-            PathBuf::from("/xdg/omp/sessions"),
+            Some(PathBuf::from("/xdg/omp/sessions")),
             "precondition: this env DOES flatten the sessions dir"
         );
         assert_eq!(
             resolve_omp_agent_dir(&env),
-            PathBuf::from("/home/u/.omp/agent")
+            Some(PathBuf::from("/home/u/.omp/agent"))
         );
         let overridden = OmpEnv {
             agent_dir: Some("/custom/agent".into()),
@@ -2049,7 +2049,7 @@ mod tests {
         };
         assert_eq!(
             resolve_omp_agent_dir(&overridden),
-            PathBuf::from("/custom/agent"),
+            Some(PathBuf::from("/custom/agent")),
             "PI_CODING_AGENT_DIR moves the extensions root"
         );
         let profiled = OmpEnv {
@@ -2058,9 +2058,24 @@ mod tests {
         };
         assert_eq!(
             resolve_omp_agent_dir(&profiled),
-            PathBuf::from("/home/u/.omp/profiles/work/agent"),
+            Some(PathBuf::from("/home/u/.omp/profiles/work/agent")),
             "a named profile derives its own agent dir"
         );
+    }
+
+    #[test]
+    fn with_no_home_no_omp_dir_resolves() {
+        let env = OmpEnv {
+            home: None,
+            config_dir_name: None,
+            omp_profile: None,
+            pi_profile: None,
+            pi_profile_live: None,
+            agent_dir: Some("/custom/agent".into()),
+            xdg_data_home: Some("/xdg".into()),
+        };
+        assert_eq!(resolve_omp_agent_dir(&env), None);
+        assert_eq!(resolve_omp_sessions_dir(&env, true, &|_| true), None);
     }
 
     #[test]
@@ -2152,11 +2167,11 @@ mod tests {
             xdg_data_home: xdg.map(PathBuf::from),
         };
         let exists = |want: &'static str| move |p: &Path| p == Path::new(want);
-        let home_default = PathBuf::from("/home/u/.omp/agent/sessions");
+        let home_default = Some(PathBuf::from("/home/u/.omp/agent/sessions"));
 
         assert_eq!(
             resolve_omp_sessions_dir(&env(Some("/xdg"), None, None), true, &exists("/xdg/omp")),
-            PathBuf::from("/xdg/omp/sessions"),
+            Some(PathBuf::from("/xdg/omp/sessions")),
             "the agent/ segment is FLATTENED, not prefixed"
         );
         assert_eq!(
@@ -2175,7 +2190,7 @@ mod tests {
                 true,
                 &exists("/xdg/omp")
             ),
-            PathBuf::from("/custom/agent/sessions"),
+            Some(PathBuf::from("/custom/agent/sessions")),
             "an agent-dir override makes isDefault false, which disables XDG"
         );
         assert_eq!(
@@ -2184,7 +2199,7 @@ mod tests {
                 true,
                 &exists("/xdg/omp/profiles/work")
             ),
-            PathBuf::from("/xdg/omp/profiles/work/sessions"),
+            Some(PathBuf::from("/xdg/omp/profiles/work/sessions")),
             "a profile keys the XDG choice on the PROFILE path, never the app root"
         );
         assert_eq!(
@@ -2193,7 +2208,7 @@ mod tests {
                 true,
                 &exists("/xdg/omp")
             ),
-            PathBuf::from("/home/u/.omp/profiles/work/agent/sessions"),
+            Some(PathBuf::from("/home/u/.omp/profiles/work/agent/sessions")),
             "the base app root existing is NOT enough for a named profile"
         );
         assert_eq!(
@@ -2237,6 +2252,7 @@ mod tests {
         resolve_omp_sessions_dir(&overlaid, true, &|p| {
             existing_xdg.is_some_and(|x| p == Path::new(x))
         })
+        .expect("a home")
     }
 
     /// The `.env` overlay's directory axes — `with_omp_dotenv` owns why a
@@ -2486,20 +2502,23 @@ mod tests {
         temp_env::with_var("PI_CODING_AGENT_DIR", Some("/custom/agent"), || {
             assert_eq!(
                 omp_sessions_dir(),
-                PathBuf::from("/custom/agent").join("sessions")
+                Some(PathBuf::from("/custom/agent").join("sessions"))
             );
         });
 
         for blank in ["", "   "] {
             let dflt = temp_env::with_var("PI_CODING_AGENT_DIR", Some(blank), omp_sessions_dir);
             assert!(
-                dflt.ends_with(Path::new(".omp/agent/sessions")),
+                dflt.as_ref()
+                    .is_some_and(|d| d.ends_with(Path::new(".omp/agent/sessions"))),
                 "blank override {blank:?} → ~/.omp/agent fallback, got {dflt:?}"
             );
         }
 
         temp_env::with_var_unset("PI_CODING_AGENT_DIR", || {
-            assert!(omp_sessions_dir().ends_with(Path::new(".omp/agent/sessions")));
+            assert!(
+                omp_sessions_dir().is_some_and(|d| d.ends_with(Path::new(".omp/agent/sessions")))
+            );
         });
     }
 

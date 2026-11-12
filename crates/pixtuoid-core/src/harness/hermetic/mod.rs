@@ -48,8 +48,7 @@ fn stream_reply() -> String {
 }
 
 /// A fact that differs between Unix and Windows. Both arms are plain data, so
-/// a test on any host reads both, as `platform::resolve_host_fallback` takes
-/// its `windows` flag.
+/// a test on any host reads both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PerOs<T> {
     /// macOS and Linux.

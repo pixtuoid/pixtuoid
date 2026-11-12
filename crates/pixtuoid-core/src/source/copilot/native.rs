@@ -15,11 +15,12 @@ pub struct CopilotSource {
 }
 
 impl CopilotSource {
-    /// Construct pointed at the default Copilot `session-state` root.
-    pub fn default_paths() -> Self {
-        Self {
-            sessions_root: copilot_home().join("session-state"),
-        }
+    /// Construct pointed at the default Copilot `session-state` root, if
+    /// `copilot_home` resolves.
+    pub fn default_paths() -> Option<Self> {
+        Some(Self {
+            sessions_root: copilot_home()?.join("session-state"),
+        })
     }
 }
 
@@ -49,5 +50,5 @@ pub(crate) const NATIVE: Native = Native {
 };
 
 fn sessions_root() -> Option<PathBuf> {
-    Some(CopilotSource::default_paths().sessions_root)
+    CopilotSource::default_paths().map(|s| s.sessions_root)
 }

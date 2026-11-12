@@ -56,27 +56,20 @@ fn is_blank(v: &OsStr) -> bool {
     v.to_string_lossy().trim().is_empty()
 }
 
-/// [`user_home_opt`], else [`or_host_fallback`]'s root.
-pub(crate) fn user_home() -> PathBuf {
-    or_host_fallback(user_home_opt())
-}
-
-/// `home`, else the host's temp root.
-pub(crate) fn or_host_fallback(home: Option<PathBuf>) -> PathBuf {
-    resolve_host_fallback(cfg!(windows), home, std::env::temp_dir())
-}
-
 /// `~` as a CLI on Node's `os.homedir` or Rust's `std::env::home_dir` resolves
-/// it, with no host-level fallback: `None` when nothing resolves, so a caller
-/// can supply its own. It is std's own: `USERPROFILE`, else the profile dir
-/// `GetUserProfileDirectoryW` reports, on Windows; `HOME`, else the passwd
-/// database, elsewhere (std 1.99.1 `sys/paths/windows.rs:174-179`,
+/// it, `None` when nothing resolves. It is std's own: `USERPROFILE`, else the
+/// profile dir `GetUserProfileDirectoryW` reports, on Windows; `HOME`, else the
+/// passwd database, elsewhere (std 1.99.1 `sys/paths/windows.rs:174-179`,
 /// `sys/paths/unix.rs:430-484`), the reads libuv's `uv_os_homedir` makes too
 /// (node v26.13.0 `deps/uv/src/win/util.c:970-990`,
 /// `deps/uv/src/unix/core.c:1265-1281`).
 pub fn user_home_opt() -> Option<PathBuf> {
     std::env::home_dir()
 }
+
+/// Why a CLI's home-rooted lookup names no path: no home resolves.
+#[cfg(feature = "native")]
+pub(crate) const NO_HOME: &str = "no home directory";
 
 /// The variable [`user_home_opt`] and [`go_user_home_dir`] both read, so the
 /// one an unresolved-home error names.
@@ -121,29 +114,12 @@ pub(crate) fn warn_if_relative_override(var: &str, dir: PathBuf) -> PathBuf {
     dir
 }
 
-/// Pure core of [`or_host_fallback`], separated so the Windows arm is
-/// unit-testable on any host.
-fn resolve_host_fallback(windows: bool, home: Option<PathBuf>, temp_dir: PathBuf) -> PathBuf {
-    home.unwrap_or_else(|| {
-        if windows {
-            temp_dir
-        } else {
-            PathBuf::from("/tmp")
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn s(v: &str) -> Option<PathBuf> {
         Some(PathBuf::from(v))
-    }
-
-    /// Stand-in for the host temp dir the Windows fallback uses.
-    fn t() -> PathBuf {
-        PathBuf::from("T")
     }
 
     /// A filesystem path is not required to be UTF-8 on Unix, and `env::var`
@@ -285,23 +261,9 @@ mod tests {
         temp_env::with_vars([(own, None), (other, Some("/other"))], || {
             let home = user_home_opt();
             assert!(home.is_some() && home != s("/other"), "{home:?}");
-            assert_ne!(home, Some(or_host_fallback(None)));
             #[cfg(windows)]
             assert_eq!(home, dirs_home_dir());
         });
-    }
-
-    #[test]
-    fn an_unresolved_home_falls_back_to_the_host_temp_root() {
-        assert_eq!(resolve_host_fallback(true, None, t()), t());
-        assert_eq!(
-            resolve_host_fallback(false, None, t()),
-            PathBuf::from("/tmp")
-        );
-        assert_eq!(
-            resolve_host_fallback(true, s(r"C:\Users\me"), t()),
-            PathBuf::from(r"C:\Users\me")
-        );
     }
 
     #[test]

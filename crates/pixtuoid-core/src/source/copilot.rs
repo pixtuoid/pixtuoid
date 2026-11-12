@@ -81,10 +81,28 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// Whitespace-only, `--config-dir` and XDG are the deliberate divergences: this
 /// mirrors copilot's own resolver, not a generic union of the CLIs' axes.
 #[cfg(feature = "native")]
-pub(crate) fn copilot_home() -> PathBuf {
-    match crate::platform::path_env("COPILOT_HOME") {
-        Some(v) => crate::platform::warn_if_relative_override("COPILOT_HOME", v),
-        None => crate::platform::user_home().join(".copilot"),
+pub(crate) fn copilot_home() -> Option<PathBuf> {
+    resolve_copilot_home(
+        crate::platform::path_env("COPILOT_HOME"),
+        crate::platform::user_home_opt(),
+    )
+}
+
+/// Pure precedence core, separated so it's unit-testable without env mutation.
+#[cfg(feature = "native")]
+fn resolve_copilot_home(
+    copilot_home_env: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    match copilot_home_env {
+        Some(v) => Some(crate::platform::warn_if_relative_override(
+            "COPILOT_HOME",
+            v,
+        )),
+        // copilot 1.0.109 cannot launch without a home: its loader lists its
+        // package dirs under Node's `os.homedir()`, which throws there (node
+        // v24.22.1 `lib/os.js:63-81`).
+        None => Some(home?.join(".copilot")),
     }
 }
 
@@ -974,30 +992,36 @@ mod tests {
         temp_env::with_var("COPILOT_HOME", Some("/custom/cp"), || {
             assert_eq!(
                 copilot_home(),
-                PathBuf::from("/custom/cp"),
+                Some(PathBuf::from("/custom/cp")),
                 "a non-empty COPILOT_HOME is used verbatim"
             );
         });
 
         temp_env::with_var("COPILOT_HOME", Some(""), || {
             assert!(
-                copilot_home().ends_with(".copilot"),
+                copilot_home().is_some_and(|home| home.ends_with(".copilot")),
                 "empty COPILOT_HOME → ~/.copilot fallback"
             );
         });
 
         temp_env::with_var("COPILOT_HOME", Some("   "), || {
             assert!(
-                copilot_home().ends_with(".copilot"),
+                copilot_home().is_some_and(|home| home.ends_with(".copilot")),
                 "whitespace-only COPILOT_HOME → ~/.copilot fallback"
             );
         });
 
         temp_env::with_var_unset("COPILOT_HOME", || {
             assert!(
-                copilot_home().ends_with(".copilot"),
+                copilot_home().is_some_and(|home| home.ends_with(".copilot")),
                 "unset COPILOT_HOME → ~/.copilot fallback"
             );
         });
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn copilot_home_is_none_with_no_home_and_no_override() {
+        assert_eq!(resolve_copilot_home(None, None), None);
     }
 }

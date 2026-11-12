@@ -43,11 +43,10 @@ pub(crate) fn spawn_source(
 ) -> JoinHandle<anyhow::Result<()>> {
     fast_watch();
     let source: Box<dyn DynSource> = match name {
-        "claude-code" => {
-            let mut src = ClaudeCodeSource::default_paths();
-            src.projects_root = root;
-            Box::new(src)
-        }
+        "claude-code" => Box::new(ClaudeCodeSource {
+            projects_root: root,
+            child_end_unclaims: None,
+        }),
         "codex" => Box::new(CodexSource {
             sessions_root: root,
             child_end_unclaims: None,

@@ -47,7 +47,9 @@ const EXTENSION: SentinelPlugin = SentinelPlugin {
 ///
 /// [`omp_extensions_dir`]: pixtuoid_core::source::omp::omp_extensions_dir
 pub(crate) fn default_config_path() -> Result<PathBuf> {
-    let dir = pixtuoid_core::source::omp::omp_extensions_dir();
+    let dir = pixtuoid_core::source::omp::omp_extensions_dir().ok_or_else(|| {
+        crate::install::io::home_unset("omp's agent dir", pixtuoid_core::platform::USER_HOME_VAR)
+    })?;
     if !dir.is_absolute() {
         bail!(
             "omp's agent dir resolved to the relative path {} — PI_CODING_AGENT_DIR \
@@ -62,7 +64,7 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
 /// extension file — keying on our own artifact would chicken-and-egg (omp
 /// could never be auto-detected until AFTER we'd installed into it).
 pub(crate) fn detect_installed() -> bool {
-    pixtuoid_core::source::omp::omp_agent_dir().exists()
+    pixtuoid_core::source::omp::omp_agent_dir().is_some_and(|dir| dir.exists())
 }
 
 /// omp runs extensions under Bun and spawns the shim by embedded path (no

@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 
 use super::{SOURCE_NAME, codex_home, codex_id_from_path};
+use crate::platform::NO_HOME;
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
@@ -50,12 +51,13 @@ pub struct CodexSource {
 }
 
 impl CodexSource {
-    /// Construct pointed at the default Codex `sessions` rollout root.
-    pub fn default_paths() -> Self {
-        Self {
-            sessions_root: codex_home().join("sessions"),
+    /// Construct pointed at the default Codex `sessions` rollout root, if
+    /// [`codex_home`] resolves.
+    pub fn default_paths() -> Option<Self> {
+        Some(Self {
+            sessions_root: codex_home()?.join("sessions"),
             child_end_unclaims: None,
-        }
+        })
     }
 }
 
@@ -92,11 +94,11 @@ pub(crate) const NATIVE: Native = Native {
 };
 
 fn sessions_root() -> Option<PathBuf> {
-    Some(CodexSource::default_paths().sessions_root)
+    CodexSource::default_paths().map(|s| s.sessions_root)
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
-    Ok(vec![CodexSource::default_paths().sessions_root])
+    sessions_root().map(|root| vec![root]).ok_or(NO_HOME)
 }
 
 /// The live session's pid, keyed by the rollout UUID (the slot's

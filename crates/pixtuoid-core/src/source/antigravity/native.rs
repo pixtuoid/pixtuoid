@@ -18,11 +18,11 @@ pub struct AntigravitySource {
 }
 
 impl AntigravitySource {
-    /// The Antigravity **CLI** (`agy`) brain dir.
-    pub fn default_paths() -> Self {
-        Self {
-            brain_root: gemini_dir().join(CLI_APP_DATA_DIR).join("brain"),
-        }
+    /// The Antigravity **CLI** (`agy`) brain dir, if [`gemini_dir`] resolves.
+    pub fn default_paths() -> Option<Self> {
+        Some(Self {
+            brain_root: gemini_dir()?.join(CLI_APP_DATA_DIR).join("brain"),
+        })
     }
 }
 
@@ -51,7 +51,7 @@ pub(crate) const NATIVE: Native = Native {
 };
 
 fn brain_root() -> Option<PathBuf> {
-    Some(AntigravitySource::default_paths().brain_root)
+    AntigravitySource::default_paths().map(|s| s.brain_root)
 }
 
 #[cfg(test)]
@@ -60,13 +60,12 @@ mod tests {
 
     #[test]
     fn brain_root_is_the_cli_brain_under_dot_gemini() {
-        let p = AntigravitySource::default_paths().brain_root;
+        let p = AntigravitySource::default_paths().map(|s| s.brain_root);
+        let brain = PathBuf::from(".gemini")
+            .join("antigravity-cli")
+            .join("brain");
         assert!(
-            p.ends_with(
-                PathBuf::from(".gemini")
-                    .join("antigravity-cli")
-                    .join("brain")
-            ),
+            p.as_ref().is_some_and(|p| p.ends_with(&brain)),
             "brain_root must be <home>/.gemini/antigravity-cli/brain, got {p:?}"
         );
     }

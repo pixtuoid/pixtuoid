@@ -66,10 +66,19 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     host_plugin::owned_path("codex-plugin", host_plugin::HOOKS_FILE)
 }
 
-/// Codex's own config, where it records the marketplace and the plugin's enablement.
 /// The SAME codex_home() the watcher uses, so the two can't disagree.
+fn codex_home() -> Result<PathBuf> {
+    pixtuoid_core::source::codex::codex_home().ok_or_else(|| {
+        io::home_unset(
+            "Codex's home",
+            &format!("CODEX_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
+        )
+    })
+}
+
+/// Codex's own config, where it records the marketplace and the plugin's enablement.
 fn config_toml() -> Result<PathBuf> {
-    Ok(pixtuoid_core::source::codex::codex_home().join("config.toml"))
+    Ok(codex_home()?.join("config.toml"))
 }
 
 /// Codex is present when its config is: an empty ~/.codex says nothing.
@@ -208,7 +217,7 @@ fn copy_is_stale(config: &Path) -> Result<bool> {
         .split('/')
         .chain([NAME, NAME, LOCAL_VERSION])
         .chain(host_plugin::HOOKS_FILE.iter().copied())
-        .fold(pixtuoid_core::source::codex::codex_home(), |p, c| p.join(c));
+        .fold(codex_home()?, |p, c| p.join(c));
     Ok(io::read_config(&copy)? != io::read_config(config)?)
 }
 

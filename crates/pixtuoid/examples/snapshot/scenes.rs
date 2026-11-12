@@ -9,17 +9,18 @@ use pixtuoid_core::{AgentId, AgentSlot, FloorDesk, Reducer, SceneState, Transpor
 use tokio::sync::{RwLock, mpsc};
 
 pub(crate) async fn capture_live_scene(
-    projects_root: &str,
+    projects_root: &Path,
     listen_secs: u64,
 ) -> Result<SceneState> {
     println!(
         "listening for real CC events under {} for {}s...",
-        projects_root, listen_secs
+        projects_root.display(),
+        listen_secs
     );
     let scene: Arc<RwLock<SceneState>> = Arc::new(RwLock::new(SceneState::uniform(12)));
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(1024);
     let tx_hook = tx.clone();
-    let root = PathBuf::from(projects_root);
+    let root = projects_root.to_path_buf();
     let mut watcher = pixtuoid_core::source::jsonl::JsonlWatcher::new(
         root.clone(),
         pixtuoid_core::source::claude_code::SOURCE_NAME.to_string(),

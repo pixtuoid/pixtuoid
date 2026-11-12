@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 
 use super::{SOURCE_NAME, cc_derive_label, claude_config_dir};
+use crate::platform::NO_HOME;
 use crate::source::cc_probe::cc_sessions_dir;
 pub use crate::source::cc_probe::live_cc_session_ids;
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher};
@@ -64,16 +65,22 @@ impl ClaudeCodeSource {
         }
     }
 
-    /// Construct pointed at the default `~/.claude/projects` root.
-    pub fn default_paths() -> Self {
-        let projects_root = claude_config_dir()
-            .unwrap_or_else(|| crate::platform::user_home().join(".claude"))
-            .join("projects");
-        Self {
-            projects_root,
+    /// Construct pointed at the default `~/.claude/projects` root, if CC's
+    /// config dir resolves.
+    pub fn default_paths() -> Option<Self> {
+        let config = config_root(claude_config_dir(), crate::platform::user_home_opt())?;
+        Some(Self {
+            projects_root: config.join("projects"),
             child_end_unclaims: None,
-        }
+        })
     }
+}
+
+/// CC's config dir: [`claude_config_dir`], else `<home>/.claude`, and none with
+/// neither, where CC's `os.homedir()` throws (Bun v1.4.4
+/// `src/runtime/node/node_os.rs:637-645`, the runtime of CC 2.1.322).
+fn config_root(config_dir: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+    config_dir.or_else(|| Some(home?.join(".claude")))
 }
 
 impl Source for ClaudeCodeSource {
@@ -113,11 +120,11 @@ pub(crate) const NATIVE: Native = Native {
 };
 
 fn projects_root() -> Option<PathBuf> {
-    Some(ClaudeCodeSource::default_paths().projects_root)
+    ClaudeCodeSource::default_paths().map(|s| s.projects_root)
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
-    registry_dir(&ClaudeCodeSource::default_paths().projects_root)
+    registry_dir(&projects_root().ok_or(NO_HOME)?)
         .map(|dir| vec![dir])
         .ok_or("non-standard projects root")
 }
@@ -186,32 +193,37 @@ mod tests {
     #[test]
     fn default_paths_projects_root_honors_claude_config_dir() {
         let fallback_suffix = PathBuf::from(".claude").join("projects");
+        let projects_root = || ClaudeCodeSource::default_paths().map(|s| s.projects_root);
 
         temp_env::with_var_unset("CLAUDE_CONFIG_DIR", || {
-            let unset_paths = ClaudeCodeSource::default_paths();
+            let unset_root = projects_root();
             assert!(
-                unset_paths.projects_root.ends_with(&fallback_suffix),
-                "projects_root must end with .claude/projects, got {:?}",
-                unset_paths.projects_root
+                unset_root
+                    .as_ref()
+                    .is_some_and(|r| r.ends_with(&fallback_suffix)),
+                "projects_root must end with .claude/projects, got {unset_root:?}"
             );
         });
 
         let custom_dir = std::env::temp_dir().join("pixtuoid-claude-config-dir");
         temp_env::with_var("CLAUDE_CONFIG_DIR", Some(&custom_dir), || {
-            assert_eq!(
-                ClaudeCodeSource::default_paths().projects_root,
-                custom_dir.join("projects")
-            );
+            assert_eq!(projects_root(), Some(custom_dir.join("projects")));
         });
 
         temp_env::with_var("CLAUDE_CONFIG_DIR", Some(""), || {
-            let empty_paths = ClaudeCodeSource::default_paths();
+            let empty_root = projects_root();
             assert!(
-                empty_paths.projects_root.ends_with(&fallback_suffix),
-                "empty CLAUDE_CONFIG_DIR must fall back to .claude/projects, got {:?}",
-                empty_paths.projects_root
+                empty_root
+                    .as_ref()
+                    .is_some_and(|r| r.ends_with(&fallback_suffix)),
+                "empty CLAUDE_CONFIG_DIR must fall back to .claude/projects, got {empty_root:?}"
             );
         });
+    }
+
+    #[test]
+    fn no_config_dir_and_no_home_is_no_config_root() {
+        assert_eq!(config_root(None, None), None);
     }
 
     #[cfg(unix)]
