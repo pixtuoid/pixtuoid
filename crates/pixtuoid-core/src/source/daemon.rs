@@ -65,10 +65,11 @@ pub enum DaemonPresenceUpdate {
         turn: TurnKey,
     },
     /// A live gateway pid OBSERVED on any event carrying `_pid` — adopted into
-    /// `current_pid` ONLY when it was `None`, so a MID-ATTACH or a
-    /// reconnect-while-alive can still arm the abrupt-down exit watch without
-    /// having seen `gateway_start`. A pure pid adoption: no `DaemonState` change,
-    /// and `GatewayUp` still owns restart-rebinds.
+    /// `current_pid` ONLY when it was `None` on a daemon that is not Down, so a
+    /// MID-ATTACH or a reconnect-while-alive can still arm the abrupt-down exit
+    /// watch without having seen `gateway_start`, while a stopped gateway's
+    /// trailing events can't bind its dying pid. A pure pid adoption: no
+    /// `DaemonState` change, and `GatewayUp` still owns restart-rebinds.
     PidSeen {
         /// The live gateway pid observed on the event.
         pid: i32,
@@ -300,7 +301,7 @@ pub fn apply_presence(
             p.liveness = DaemonLiveness::Up { degraded: true };
         }
         PidSeen { pid } => {
-            if p.current_pid.is_none() {
+            if p.current_pid.is_none() && p.liveness != DaemonLiveness::Down {
                 p.current_pid = Some(pid);
             }
         }
@@ -724,20 +725,19 @@ mod tests {
     }
 
     #[test]
-    fn pid_seen_is_pure_adoption_and_does_not_change_state() {
-        // The decoder ALWAYS prepends PidSeen to a state-bearing update, so
-        // resurrection rides on that sibling, never on PidSeen alone.
+    fn pid_seen_neither_resurrects_nor_binds_a_down_daemon() {
+        // The decoder appends PidSeen to a state-bearing update, so resurrection
+        // rides on that sibling, never on PidSeen alone.
         for src in SOURCES {
             let mut s = SceneState::default();
             apply(&mut s, src, DaemonPresenceUpdate::GatewayDown, ms(0));
             assert_eq!(st(&s, src), DaemonState::Down);
             apply(&mut s, src, DaemonPresenceUpdate::PidSeen { pid: 7 }, ms(1));
             assert_eq!(
-                st(&s, src),
-                DaemonState::Down,
-                "PidSeen is pure pid adoption — it does NOT resurrect by itself"
+                (st(&s, src), p(&s, src).current_pid),
+                (DaemonState::Down, None),
+                "a Down daemon has no live pid to bind"
             );
-            assert_eq!(p(&s, src).current_pid, Some(7));
         }
     }
 
@@ -768,8 +768,8 @@ mod tests {
             apply(&mut s, src, PidExited { pid: 100 }, ms(1)); // P1 dies → Down
             assert_eq!(st(&s, src), DaemonState::Down);
             // Reconnect as P2; gateway_start missed → only a normal event + PidSeen.
+            apply(&mut s, src, SessionStarted, ms(2)); // any event ⇒ up
             apply(&mut s, src, PidSeen { pid: 200 }, ms(2));
-            apply(&mut s, src, SessionStarted, ms(3)); // any event ⇒ up
             assert_eq!(
                 p(&s, src).current_pid,
                 Some(200),
@@ -781,6 +781,38 @@ mod tests {
                 DaemonState::Down,
                 "the second-cycle PidExited re-armed the instant abrupt-down rung"
             );
+        }
+    }
+
+    /// A restart inside the Down window whose `gateway_start` was lost, each
+    /// update followed by the `PidSeen` its `_pid` decodes to.
+    #[test]
+    fn a_restart_after_a_clean_stop_outlives_the_old_gateways_exit() {
+        use DaemonPresenceUpdate::*;
+        for src in SOURCES {
+            let mut s = SceneState::default();
+            up(&mut s, src, 100, 0);
+            for (i, update) in [GatewayDown, SessionEnded, SessionStarted]
+                .into_iter()
+                .enumerate()
+            {
+                let pid = if matches!(update, SessionStarted) {
+                    200
+                } else {
+                    100
+                };
+                let at = ms(1 + i as u64);
+                apply(&mut s, src, update, at);
+                apply(&mut s, src, PidSeen { pid }, at);
+            }
+            apply(&mut s, src, PidExited { pid: 100 }, ms(10));
+            assert_eq!(
+                (st(&s, src), p(&s, src).current_pid),
+                (DaemonState::Idle, Some(200)),
+                "the old gateway's exit must not take its live replacement down"
+            );
+            apply(&mut s, src, PidExited { pid: 200 }, ms(11));
+            assert_eq!(st(&s, src), DaemonState::Down);
         }
     }
 

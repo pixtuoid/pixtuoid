@@ -139,14 +139,14 @@ pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence>
         }
     };
     // A `_pid` on a NON-`gateway_start` event bootstraps the abrupt-down exit watch
-    // for a mid-attached daemon; prepend it so the pid is adopted before the state
-    // update applies. An unmapped event stays empty — a lone `PidSeen` would
-    // resurrect nothing.
+    // for a mid-attached daemon; append it so a resurrecting update brings the
+    // daemon up before the pid is adopted, since a Down daemon adopts none. An
+    // unmapped event stays empty — a lone `PidSeen` would resurrect nothing.
     if event != "gateway_start"
         && !out.is_empty()
         && let Some(pid) = pid
     {
-        out.insert(0, DaemonPresenceUpdate::PidSeen { pid });
+        out.push(DaemonPresenceUpdate::PidSeen { pid });
     }
     Ok(DecodedPresence {
         instance,
@@ -302,22 +302,22 @@ mod tests {
     }
 
     #[test]
-    fn non_gateway_start_event_with_pid_prepends_pid_seen() {
+    fn non_gateway_start_event_with_pid_appends_pid_seen() {
         assert_eq!(
             decode(json!({"type": "session_start", "sessionId": "s1", "_pid": 7777})),
             vec![
-                DaemonPresenceUpdate::PidSeen { pid: 7777 },
                 DaemonPresenceUpdate::SessionStarted,
+                DaemonPresenceUpdate::PidSeen { pid: 7777 },
             ]
         );
         assert_eq!(
             decode(json!({"type": "agent_end", "runId": "r", "_pid": 8888,
                           "success": false, "errored": true})),
             vec![
-                DaemonPresenceUpdate::PidSeen { pid: 8888 },
                 DaemonPresenceUpdate::TurnFailed {
                     turn: TurnKey::Id("r".into())
                 },
+                DaemonPresenceUpdate::PidSeen { pid: 8888 },
             ]
         );
     }
