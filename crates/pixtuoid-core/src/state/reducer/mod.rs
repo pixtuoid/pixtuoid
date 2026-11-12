@@ -64,6 +64,19 @@ fn child_end_inference(slot: &AgentSlot) -> ChildEndInference {
     caps_of(slot).map_or(ChildEndInference::TaskDrain, |c| c.child_end_inference)
 }
 
+fn shows_untracked_task(slot: &AgentSlot) -> bool {
+    matches!(
+        slot.state,
+        ActivityState::Running {
+            item: Some(ToolUse {
+                kind: ToolKind::Task,
+                tool_use_id: None,
+                ..
+            })
+        }
+    )
+}
+
 fn stale_threshold(slot: &AgentSlot) -> Duration {
     stale_threshold_with_caps(slot, caps_of(slot))
 }
@@ -259,9 +272,9 @@ pub struct Reducer {
     /// Parents whose last Task drained on a source that infers child ends from
     /// one, or whose id-less Task ended on an [`ChildEndInference::AnyTaskEnd`]
     /// one, awaiting the deferred b1 cascade
-    /// ([`B1_CASCADE_GRACE`]) — fired only if `tasks_in_flight` is STILL empty at
-    /// fire time, which is how a Task insert inside the grace defuses it
-    /// (#151).
+    /// ([`B1_CASCADE_GRACE`]) — fired only if no dispatch is in flight at fire
+    /// time ([`Self::fire_pending_b1_cascades`]), which is how a dispatch inside
+    /// the grace defuses it (#151).
     pending_b1_cascades: HashMap<AgentId, SystemTime>,
 
     next_label_n: u32,
@@ -879,18 +892,8 @@ impl Reducer {
         let settle_ctx = self.settle_ctx(&agent_id);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let ends_item = ends_item && matches!(slot.state, ActivityState::Running { .. });
-            let untracked_task = matches!(
-                slot.state,
-                ActivityState::Running {
-                    item: Some(ToolUse {
-                        kind: ToolKind::Task,
-                        tool_use_id: None,
-                        ..
-                    })
-                }
-            );
             if ends_item
-                && untracked_task
+                && shows_untracked_task(slot)
                 && child_end_inference(slot).dispatch_end_ends_child(false)
             {
                 self.pending_b1_cascades.insert(agent_id, now);
@@ -1550,10 +1553,10 @@ impl Reducer {
     }
 
     /// Fire deferred b1 cascades whose [`B1_CASCADE_GRACE`] elapsed (#151). The
-    /// fire-time emptiness check IS the cancel mechanism: a Task insert inside
-    /// the grace re-populates `tasks_in_flight`, so the due entry is discarded
-    /// instead of fired — no separate cancel-on-insert bookkeeping that could
-    /// drift out of sync with the ledger.
+    /// fire-time check IS the cancel mechanism: a dispatch inside the grace
+    /// re-populates `tasks_in_flight`, or shows as the parent's untracked Task,
+    /// so the due entry is discarded instead of fired — no separate
+    /// cancel-on-insert bookkeeping that could drift out of sync with the ledger.
     fn fire_pending_b1_cascades(&mut self, scene: &mut SceneState, now: SystemTime) {
         let due: Vec<AgentId> = self
             .pending_b1_cascades
@@ -1569,6 +1572,7 @@ impl Reducer {
                 .tasks_in_flight
                 .get(&id)
                 .is_some_and(|s| !s.is_empty())
+                || scene.agents.get(&id).is_some_and(shows_untracked_task)
             {
                 continue;
             }
