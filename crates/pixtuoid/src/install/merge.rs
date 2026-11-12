@@ -72,10 +72,10 @@ fn parse_toml(content: &str) -> anyhow::Result<toml::Table> {
 }
 
 /// The one YAML document `content` holds, `None` when it holds none; `file` names
-/// it in the error. A second is refused: the CLIs whose YAML pixtuoid rewrites
+/// it in the error. A second is refused: the CLIs whose YAML pixtuoid reads
 /// load exactly one and reject the file otherwise (dsh's js-yaml `load`,
 /// `lib/loader.js:1791-1799` @ 4.3.2; Hermes's ruamel `Composer.get_single_node`,
-/// `composer.py:65-83` @ 0.18.16), so a rewrite would drop every later document.
+/// `composer.py:65-83` @ 0.18.16).
 pub(crate) fn single_yaml_doc(content: &str, file: &str) -> anyhow::Result<Option<YamlOwned>> {
     let mut docs = YamlOwned::load_from_str(content)
         .map_err(|e| anyhow::anyhow!("{file} does not parse as YAML: {e}"))?;
@@ -291,18 +291,6 @@ pub(crate) fn emit_json(content: &str, value: &Value) -> anyhow::Result<String> 
         content,
         serde_json::to_string_pretty(value)?,
     ))
-}
-
-/// `doc` as YAML for the file `content` held, by [`end_lines_like`], `file` naming it
-/// in the error. The emitter's leading `---` goes: an explicit document is that marker
-/// before a bare one ([YAML 1.2.2 §9.1.4](https://yaml.org/spec/1.2.2/#914-explicit-documents)).
-pub(crate) fn emit_yaml(content: &str, doc: &YamlOwned, file: &str) -> anyhow::Result<String> {
-    let mut out = String::new();
-    saphyr::YamlEmitter::new(&mut out)
-        .dump(&saphyr::Yaml::from(doc))
-        .map_err(|e| anyhow::anyhow!("emitting {file}: {e}"))?;
-    let out = out.strip_prefix("---\n").map(str::to_string).unwrap_or(out);
-    Ok(end_lines_like(content, out))
 }
 
 /// `out` in `content`'s line ending, CRLF when `content` broke every line with one,

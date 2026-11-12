@@ -11,9 +11,10 @@
 //! and unmounted it is inert bytes.
 
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use anyhow::{Context, Result, bail};
-use saphyr::{MappingOwned, ScalarOwned, YamlOwned};
+use yaml_edit::{Document, Mapping, Sequence, YamlFile, YamlNode};
 
 use crate::install::merge;
 use crate::install::target::MergeOutcome;
@@ -84,52 +85,71 @@ pub(crate) fn plugin_artifacts(hook_path: &str) -> Result<Vec<(PathBuf, String)>
     Ok(vec![(plugin_path()?, rendered)])
 }
 
-fn ystr(s: &str) -> YamlOwned {
-    YamlOwned::Value(ScalarOwned::String(s.to_string()))
+/// The patch file, held for edits in place. saphyr's strict parse gates it:
+/// yaml-edit's parser recovers from what dsh's loader refuses.
+fn open(content: &str) -> Result<YamlFile> {
+    merge::single_yaml_doc(content, "cordis.patch.yml")?;
+    YamlFile::from_str(content)
+        .map_err(|e| anyhow::anyhow!("cordis.patch.yml does not parse as YAML: {e}"))
 }
 
-/// Parse the patch file as its top-level array; empty content is the empty
-/// document. A non-array top level is a config we must not touch.
-fn parse_rows(content: &str) -> Result<Vec<YamlOwned>> {
-    match merge::single_yaml_doc(content, "cordis.patch.yml")? {
-        None => Ok(Vec::new()),
-        Some(YamlOwned::Sequence(rows)) => Ok(rows),
-        Some(_) => bail!("cordis.patch.yml's top level is not a patch list"),
+/// The file's top-level patch list, `None` when it holds no document. A
+/// non-list top level is a config we must not touch.
+fn rows(file: &YamlFile) -> Result<Option<Sequence>> {
+    let Some(doc) = file.documents().next() else {
+        return Ok(None);
+    };
+    match doc.as_sequence() {
+        Some(rows) => Ok(Some(rows)),
+        None => bail!("cordis.patch.yml's top level is not a patch list"),
     }
 }
 
-/// [`parse_rows`] for a rewrite, which a malformed `insert:` refuses too.
-fn rows_to_rewrite(content: &str) -> Result<Vec<YamlOwned>> {
-    let rows = parse_rows(content).context("refusing to overwrite cordis.patch.yml")?;
-    refuse_malformed(&rows)?;
-    Ok(rows)
-}
-
-/// `rows` as the patch file `content` held.
-fn emit_rows(content: &str, rows: &[YamlOwned]) -> Result<String> {
-    // dsh reads an empty file as no array and refuses to boot; only a missing one is "no
-    // patches" (`parsePatchList`, `packages/boot/app-boot/src/index.ts:576-582` @ dsh-v0.2.2-rc.1).
-    if rows.is_empty() {
-        return Ok(merge::end_lines_like(content, "[]".into()));
+/// [`open`] and [`rows`] for a rewrite, which a malformed `insert:` refuses too.
+fn rows_to_rewrite(content: &str) -> Result<(YamlFile, Option<Sequence>)> {
+    let file = open(content).context("refusing to overwrite cordis.patch.yml")?;
+    let rows = rows(&file).context("refusing to overwrite cordis.patch.yml")?;
+    if rows.as_ref().is_some_and(malformed_insert) {
+        bail!(
+            "cordis.patch.yml has an `insert:` that is not a list — dsh's patch \
+             apply spreads it into an array push, so neither dsh nor pixtuoid \
+             can read the entries there; fix the row by hand first"
+        );
     }
-    merge::emit_yaml(
-        content,
-        &YamlOwned::Sequence(rows.to_vec()),
-        "cordis.patch.yml",
-    )
+    Ok((file, rows))
 }
 
-/// Our whole patch row: `- insert: [{id: pixtuoid, name: <plugin path>}]`.
-fn mount_row(plugin: &str) -> YamlOwned {
-    let mut entry = MappingOwned::new();
-    entry.insert(ystr("id"), ystr(PLUGIN_ID));
-    entry.insert(ystr("name"), ystr(plugin));
-    let mut row = MappingOwned::new();
-    row.insert(
-        ystr("insert"),
-        YamlOwned::Sequence(vec![YamlOwned::Mapping(entry)]),
-    );
-    YamlOwned::Mapping(row)
+/// Our whole patch row, `- insert: [{id: pixtuoid, name: <plugin path>}]`, as a
+/// list of its own; yaml-edit quotes the path as YAML needs.
+fn mount_list(plugin: &str) -> Result<Document> {
+    let list = Document::from_str(&format!(
+        "- insert:\n    - id: {PLUGIN_ID}\n      name: ''\n"
+    ))
+    .map_err(|e| anyhow::anyhow!("rendering the mount row: {e}"))?;
+    let entry = list
+        .as_sequence()
+        .and_then(|rows| rows.get(0))
+        .and_then(|row| mapping(&row)?.get("insert"))
+        .and_then(|insert| match insert {
+            YamlNode::Sequence(entries) => entries.get(0),
+            _ => None,
+        })
+        .and_then(|entry| mapping(&entry));
+    entry
+        .context("the mount row template holds no entry")?
+        .set("name", plugin);
+    Ok(list)
+}
+
+fn mapping(node: &YamlNode) -> Option<Mapping> {
+    match node {
+        YamlNode::Mapping(m) => Some(m.clone()),
+        _ => None,
+    }
+}
+
+fn insert_of(row: &YamlNode) -> Option<YamlNode> {
+    mapping(row)?.get("insert")
 }
 
 /// A row whose `insert:` is a truthy non-list: dsh's own patch apply
@@ -142,31 +162,17 @@ fn mount_row(plugin: &str) -> YamlOwned {
 /// gate skips it before the spread, an override row (`- id: x` +
 /// `enabled: false`) carries a null one legitimately, and no scalar can
 /// hide an entry.
-fn malformed_insert(rows: &[YamlOwned]) -> bool {
-    fn falsy(v: &YamlOwned) -> bool {
-        matches!(
-            v,
-            YamlOwned::Value(ScalarOwned::Null)
-                | YamlOwned::Value(ScalarOwned::Boolean(false))
-                | YamlOwned::Value(ScalarOwned::Integer(0))
-        ) || matches!(v, YamlOwned::Value(ScalarOwned::String(s)) if s.is_empty())
+fn malformed_insert(rows: &Sequence) -> bool {
+    fn falsy(v: &YamlNode) -> bool {
+        matches!(v, YamlNode::Scalar(s)
+            if s.is_null()
+                || s.as_bool() == Some(false)
+                || s.as_i64() == Some(0)
+                || (s.is_quoted() && s.as_string().is_empty()))
     }
-    rows.iter().any(|r| {
-        matches!(r, YamlOwned::Mapping(m)
-            if matches!(m.get(&ystr("insert")),
-                Some(v) if !matches!(v, YamlOwned::Sequence(_)) && !falsy(v)))
-    })
-}
-
-fn refuse_malformed(rows: &[YamlOwned]) -> Result<()> {
-    if malformed_insert(rows) {
-        bail!(
-            "cordis.patch.yml has an `insert:` that is not a list — dsh's patch \
-             apply spreads it into an array push, so neither dsh nor pixtuoid \
-             can read the entries there; fix the row by hand first"
-        );
-    }
-    Ok(())
+    rows.values()
+        .filter_map(|row| insert_of(&row))
+        .any(|insert| !matches!(insert, YamlNode::Sequence(_)) && !falsy(&insert))
 }
 
 /// Is this patch-list entry OUR mount entry (`id: pixtuoid`)?
@@ -174,58 +180,73 @@ fn refuse_malformed(rows: &[YamlOwned]) -> Result<()> {
 /// Ownership is an ENTRY, never a row: one `insert:` op may batch several
 /// plugins, so a row-granular rewrite or removal would silently eat a
 /// foreign entry a user hand-batched beside ours.
-fn is_our_entry(e: &YamlOwned) -> bool {
-    matches!(e, YamlOwned::Mapping(em) if em.get(&ystr("id")) == Some(&ystr(PLUGIN_ID)))
+fn is_our_entry(entry: &YamlNode) -> bool {
+    mapping(entry).is_some_and(
+        |m| matches!(m.get("id"), Some(YamlNode::Scalar(id)) if id.as_string() == PLUGIN_ID),
+    )
+}
+
+/// The plugin path an entry names, `None` when it names none.
+fn name_of(entry: &Mapping) -> Option<String> {
+    match entry.get("name") {
+        Some(YamlNode::Scalar(name)) if !name.is_null() => Some(name.as_string()),
+        _ => None,
+    }
 }
 
 /// Every `id: pixtuoid` entry across all `insert:` rows, in document order.
-fn our_entries(rows: &[YamlOwned]) -> Vec<&MappingOwned> {
-    rows.iter()
-        .filter_map(|r| match r {
-            YamlOwned::Mapping(m) => match m.get(&ystr("insert")) {
-                Some(YamlOwned::Sequence(entries)) => Some(entries),
-                _ => None,
-            },
+fn our_entries(rows: &Sequence) -> Vec<Mapping> {
+    rows.values()
+        .filter_map(|row| match insert_of(&row) {
+            Some(YamlNode::Sequence(entries)) => Some(entries),
             _ => None,
         })
-        .flatten()
-        .filter_map(|e| match e {
-            YamlOwned::Mapping(em) if em.get(&ystr("id")) == Some(&ystr(PLUGIN_ID)) => Some(em),
-            _ => None,
-        })
+        .flat_map(|entries| entries.values().collect::<Vec<_>>())
+        .filter(is_our_entry)
+        .filter_map(|entry| mapping(&entry))
         .collect()
 }
 
-/// Strip OUR entries from every `insert:` row; a foreign entry sharing a row
-/// stays in place, and a row vanishes only when ours were all it held.
-/// Returns the surviving rows and how many entries were removed.
-fn strip_our_entries(rows: &[YamlOwned]) -> (Vec<YamlOwned>, usize) {
+/// Whether `row` is our mount row alone, at `plugin`.
+fn is_mount_row(row: &YamlNode, plugin: &str) -> bool {
+    let Some(row) = mapping(row).filter(|m| m.len() == 1) else {
+        return false;
+    };
+    let Some(YamlNode::Sequence(entries)) = row.get("insert") else {
+        return false;
+    };
+    entries.len() == 1
+        && entries.get(0).is_some_and(|entry| {
+            is_our_entry(&entry)
+                && mapping(&entry)
+                    .is_some_and(|m| m.len() == 2 && name_of(&m).as_deref() == Some(plugin))
+        })
+}
+
+/// Strip OUR entries from every `insert:` row in place; a foreign entry sharing
+/// a row stays in it, and a row goes only when ours were all it held. How many
+/// entries it removed.
+fn strip_our_entries(rows: &Sequence) -> usize {
     let mut removed = 0;
-    let mut kept = Vec::new();
-    for row in rows {
-        let YamlOwned::Mapping(m) = row else {
-            kept.push(row.clone());
+    for r in (0..rows.len()).rev() {
+        let Some(row) = rows.get(r).as_ref().and_then(mapping) else {
             continue;
         };
-        let Some(YamlOwned::Sequence(entries)) = m.get(&ystr("insert")) else {
-            kept.push(row.clone());
+        let Some(YamlNode::Sequence(entries)) = row.get("insert") else {
             continue;
         };
-        let filtered: Vec<YamlOwned> = entries
-            .iter()
-            .filter(|e| !is_our_entry(e))
-            .cloned()
-            .collect();
-        removed += entries.len() - filtered.len();
-        if filtered.len() == entries.len() {
-            kept.push(row.clone());
-        } else if !filtered.is_empty() || m.len() > 1 {
-            let mut only_foreign = m.clone();
-            only_foreign.insert(ystr("insert"), YamlOwned::Sequence(filtered));
-            kept.push(YamlOwned::Mapping(only_foreign));
+        let held = entries.len();
+        for i in (0..held).rev() {
+            if entries.get(i).is_some_and(|e| is_our_entry(&e)) {
+                entries.remove(i);
+            }
+        }
+        removed += held - entries.len();
+        if entries.is_empty() && held > 0 && row.len() == 1 {
+            rows.remove(r);
         }
     }
-    (kept, removed)
+    removed
 }
 
 /// `changed` is a semantic diff: exactly one of our entries, already a row
@@ -236,36 +257,53 @@ fn strip_our_entries(rows: &[YamlOwned]) -> (Vec<YamlOwned>, usize) {
 pub(crate) fn merge_install(content: &str, _hook_cmd: &str) -> Result<MergeOutcome> {
     let plugin = plugin_path()?;
     let plugin = plugin.to_str().context("plugin path is not UTF-8")?;
-    let rows = rows_to_rewrite(content)?;
-    let wanted = mount_row(plugin);
-    if our_entries(&rows).len() == 1 && rows.contains(&wanted) {
+    let (file, rows) = rows_to_rewrite(content)?;
+    let mount = mount_list(plugin)?;
+    let Some(rows) = rows else {
+        // No list to edit in place: the file is empty or comments only.
+        let lead = if content.is_empty() || content.ends_with('\n') {
+            ""
+        } else {
+            "\n"
+        };
+        return Ok(MergeOutcome {
+            content: merge::end_lines_like(content, format!("{content}{lead}{mount}")),
+            changed: true,
+        });
+    };
+    if our_entries(&rows).len() == 1 && rows.values().any(|row| is_mount_row(&row, plugin)) {
         return Ok(MergeOutcome {
             content: content.to_string(),
             changed: false,
         });
     }
-    let (mut kept, _) = strip_our_entries(&rows);
-    kept.push(wanted);
+    strip_our_entries(&rows);
+    let row = mount
+        .as_sequence()
+        .and_then(|list| list.get(0))
+        .context("the mount row template holds no row")?;
+    rows.push(row);
     Ok(MergeOutcome {
-        content: emit_rows(content, &kept)?,
+        content: file.to_string(),
         changed: true,
     })
 }
 
 /// Remove only our ENTRIES; every foreign patch op — one batched into the
-/// same `insert:` row included — survives as data (comments do not survive
-/// saphyr — the hermes target's documented trade).
+/// same `insert:` row included — survives byte for byte.
 pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
-    let rows = rows_to_rewrite(content)?;
-    let (kept, removed) = strip_our_entries(&rows);
-    if removed == 0 {
+    let (file, rows) = rows_to_rewrite(content)?;
+    if !rows
+        .as_ref()
+        .is_some_and(|rows| strip_our_entries(rows) > 0)
+    {
         return Ok(MergeOutcome {
             content: content.to_string(),
             changed: false,
         });
     }
     Ok(MergeOutcome {
-        content: emit_rows(content, &kept)?,
+        content: file.to_string(),
         changed: true,
     })
 }
@@ -274,8 +312,9 @@ pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
 /// plugin file) — so `shim` stays `Unknown` here. The schema's own, stat-free half
 /// is the row-vs-home path match below.
 pub(crate) fn verify_schema(content: &str) -> SchemaParse {
-    let rows = match parse_rows(content) {
-        Ok(rows) => rows,
+    let rows = match open(content).and_then(|file| rows(&file)) {
+        Ok(Some(rows)) => rows,
+        Ok(None) => Sequence::new(),
         Err(e) => return SchemaParse::broken(e.to_string()),
     };
     let ours = our_entries(&rows);
@@ -300,11 +339,7 @@ pub(crate) fn verify_schema(content: &str) -> SchemaParse {
             .issues
             .push("no pixtuoid mount entry — dsh never loads the plugin".to_string()),
         1 => {
-            let name = ours[0].get(&ystr("name")).and_then(|n| match n {
-                YamlOwned::Value(ScalarOwned::String(s)) => Some(s.clone()),
-                _ => None,
-            });
-            match name {
+            match name_of(&ours[0]) {
                 // PURE over the content (`target.rs` schema contract): file
                 // existence is `verify_beside`'s stat and staleness
                 // `owned_state`'s, never checked here. The HOME match is
@@ -497,6 +532,47 @@ mod tests {
         );
     }
 
+    /// A connect appends our row and a disconnect takes our entries out, every
+    /// other byte as the user wrote it: dsh's `!!js` expressions, quoted strings
+    /// its JSON schema would read as numbers, comments and line endings.
+    #[test]
+    fn a_connect_then_a_disconnect_touch_no_byte_but_ours() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_var("DSH_HOME", Some(home.path()), || {
+            let plugin = plugin_path().unwrap();
+            let ours = format!(
+                "- insert:\n    - id: pixtuoid\n      name: {}\n",
+                plugin.display()
+            );
+            for ending in ["\n", "\r\n"] {
+                let user = "# my patches\n- id: shell\n  config:\n    home: !!js process.env.HOME   # kept\n    mode: \"0b101\"\n    day: \"2026-01-02\"\n"
+                    .replace('\n', ending);
+                let merged = merge_install(&user, "/unused").unwrap();
+                assert_eq!(
+                    merged.content,
+                    format!("{user}{}", ours.replace('\n', ending))
+                );
+                assert_eq!(merge_uninstall(&merged.content).unwrap().content, user);
+            }
+            let batched = "- insert:\n  - id: timer\n    name: t\n  - id: pixtuoid\n    name: /old/p.mjs\n# tail\n";
+            assert_eq!(
+                merge_uninstall(batched).unwrap().content,
+                "- insert:\n  - id: timer\n    name: t\n# tail\n"
+            );
+            for (before, after) in [
+                ("", ours.clone()),
+                ("# none yet", format!("# none yet\n{ours}")),
+            ] {
+                assert_eq!(merge_install(before, "/unused").unwrap().content, after);
+            }
+            let shared = "- id: shell\n  insert:\n    - id: pixtuoid\n      name: /old/p.mjs\n";
+            assert_eq!(
+                merge_uninstall(shared).unwrap().content,
+                "- id: shell\n  insert: []\n"
+            );
+        });
+    }
+
     #[test]
     fn uninstalling_the_only_row_leaves_an_empty_list() {
         let home = tempfile::tempdir().unwrap();
@@ -505,7 +581,11 @@ mod tests {
             let removed = merge_uninstall(&merged.content).unwrap();
             assert!(removed.changed);
             assert_eq!(removed.content, "[]\n");
-            assert!(parse_rows(&removed.content).unwrap().is_empty());
+            assert!(
+                rows(&open(&removed.content).unwrap())
+                    .unwrap()
+                    .is_some_and(|r| r.is_empty())
+            );
             assert!(
                 !merge_install(&removed.content, "/unused")
                     .unwrap()
@@ -548,8 +628,8 @@ mod tests {
         temp_env::with_var("DSH_HOME", Some(b.path()), || {
             let second = merge_install(&first.content, "/unused").unwrap();
             assert!(second.changed, "a stale mount path must be rewritten");
-            // Structural, not string: saphyr quote-escapes a Windows path in the
-            // emitted YAML, so a lossy-string `contains` passes only on Unix. A
+            // Structural, not string: YAML may quote-escape a path, so a
+            // lossy-string `contains` would pass only where it doesn't. A
             // re-merge under home B is a no-op exactly when the row already
             // carries B's plugin path.
             assert!(!merge_install(&second.content, "/unused").unwrap().changed);
