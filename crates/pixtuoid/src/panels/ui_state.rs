@@ -371,8 +371,8 @@ impl UiState {
     }
 
     /// Hold a failed save in the footer until a later save of its setting is written:
-    /// in TUI mode the alternate screen owns the terminal, so the warn-floor log
-    /// is not a user surface.
+    /// the warn-floor log is no user surface in either painter (the TUI's alternate
+    /// screen owns the terminal).
     pub(crate) fn note_save(&mut self, outcome: crate::config::SaveOutcome) {
         self.unsaved[outcome.setting] = !outcome.written;
     }

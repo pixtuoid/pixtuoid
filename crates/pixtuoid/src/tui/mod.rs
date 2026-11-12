@@ -1663,7 +1663,10 @@ mod apply_key_action_tests {
         h.apply(KeyAction::AppearanceCommit);
         h.settle();
         let footer = h.footer();
-        assert!(footer.contains(" mute not saved"), "{footer}");
+        assert!(
+            footer.contains("mute not saved") && !footer.contains("appearance"),
+            "{footer}"
+        );
         h.apply(KeyAction::ToggleAudioMute);
         h.settle();
         let footer = h.footer();
