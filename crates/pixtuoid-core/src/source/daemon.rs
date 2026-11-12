@@ -132,7 +132,7 @@ pub struct DecodedPresence {
     pub updates: Vec<DaemonPresenceUpdate>,
     /// The live gateway pid the envelope was stamped with, observed after its
     /// updates as a [`DaemonPresenceUpdate::PidSeen`].
-    pub pid: Option<i32>,
+    pub(crate) pid: Option<i32>,
 }
 
 #[cfg(any(feature = "native", feature = "harness"))]
