@@ -139,8 +139,8 @@ pub struct DecodedPresence {
 impl DecodedPresence {
     /// Its deltas, each tagged with `source`'s instance they route to, then a
     /// `PidSeen` for its pid: after them, so a resurrecting update brings the
-    /// daemon up first, since a Down daemon adopts no pid; never alone, which
-    /// resurrects nothing.
+    /// daemon up first, since a Down daemon adopts no pid; never alone: an unmapped
+    /// event would create an entry, or restamp a Down one's removal clock.
     pub(crate) fn into_msgs(self, source: &str) -> impl Iterator<Item = PresenceMsg> {
         let key = DaemonInstanceKey::new(source, self.instance);
         let seen = self.pid.filter(|_| !self.updates.is_empty());
@@ -209,7 +209,7 @@ impl DaemonPresence {
     /// `current_pid` is cleared because a Down daemon has no live gateway pid:
     /// leaving it set strands the adoption on the dead pid, so a reconnect as a new
     /// pid whose `gateway_start` is missed can't re-adopt via `PidSeen` (None-only)
-    /// and the instant abrupt-down rung silently disarms until the presence sweep.
+    /// and the new pid's exit stays a no-op until the presence sweep.
     ///
     /// `last_seen` is anchored to `now` HERE because the sweep removes a Down
     /// entry on that clock: on an abrupt death, where `last_seen` can be
@@ -771,7 +771,7 @@ mod tests {
     }
 
     #[test]
-    fn pid_seen_re_adopts_after_an_abrupt_down_so_the_second_cycle_arms() {
+    fn pid_seen_re_adopts_after_an_abrupt_down_so_the_second_cycle_acts() {
         use DaemonPresenceUpdate::*;
         for src in SOURCES {
             let mut s = SceneState::default();
@@ -790,13 +790,13 @@ mod tests {
             assert_eq!(
                 st(&s, src),
                 DaemonState::Down,
-                "the second-cycle PidExited re-armed the instant abrupt-down rung"
+                "the second-cycle PidExited took the re-adopted daemon down"
             );
         }
     }
 
     #[test]
-    fn a_decoded_pid_follows_its_updates_and_never_rides_a_gateway_up_or_nothing() {
+    fn a_decoded_pid_follows_its_updates_and_never_rides_alone() {
         use DaemonPresenceUpdate::*;
         let deltas = |updates, pid| {
             let decoded = DecodedPresence {
