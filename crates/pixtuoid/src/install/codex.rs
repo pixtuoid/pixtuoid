@@ -55,8 +55,10 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
         stale: copy_is_stale,
         recopy: add_plugin,
     }),
-    // A config.toml hook Codex holds untrusted brings up its hook review on every
-    // launch (`codex-rs/tui/src/startup_hooks_review.rs:144-146,290-292` @ rust-v0.167.2).
+    // Written through v0.19.0: an untrusted config.toml hook is skipped
+    // (`codex-rs/hooks/src/engine/discovery.rs:917-923`), but the startup hook review
+    // returns on every launch because "continue without trusting" isn't saved
+    // (`codex-rs/tui/src/startup_hooks_review.rs:144-146`, rust-v0.167.2).
     legacy: Some(LegacyConfig {
         path: config_toml,
         strip: merge_uninstall,

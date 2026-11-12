@@ -404,6 +404,8 @@ pub(crate) const OPENCODE: Target = Target {
         installed_shim: crate::install::verify::baked_shim,
         uninstall: crate::install::opencode::uninstall,
         verify_schema: crate::install::opencode::verify_schema,
+        // Written through v0.19.0: opencode 2 logs "failed to load plugin" and marks the
+        // plugin failed on every start (`packages/core/src/plugin/supervisor.ts:57-59`, v2.2.7).
         retired: Some(RetiredStub {
             was: crate::install::opencode::V1_REMOVED_STUB,
             now: crate::install::opencode::REMOVED_STUB,

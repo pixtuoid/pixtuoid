@@ -35,8 +35,7 @@ const PLUGIN: SentinelPlugin = SentinelPlugin {
     source: pixtuoid_core::source::opencode::SOURCE_NAME,
 };
 
-/// What pixtuoid's disconnect wrote before it supported opencode 2, which
-/// opencode 2 cannot load.
+/// What pixtuoid's disconnect wrote before it supported opencode 2.
 pub(crate) const V1_REMOVED_STUB: &str = "// pixtuoid opencode plugin removed by disconnecting opencode in pixtuoid's Sources panel (press s).\nexport {}\n";
 
 fn opencode_config_dir() -> Result<PathBuf> {
