@@ -2706,6 +2706,17 @@ mod tests {
             }
             other => panic!("unexpected: {other:?}"),
         }
+        // Neither, which only a drifted wire sends: the gate still names itself.
+        let evs = hook(serde_json::json!({
+            "type": "tool_approval_requested", "sessionFile": HOOK_ROOT,
+            "sessionId": "x", "cwd": "/repo", "toolCallId": "call_1",
+        }));
+        match &evs[..] {
+            [_, AgentEvent::UserActionRequest { reason, .. }] => {
+                assert_eq!(reason.as_deref(), Some("approval"))
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
     }
 
     #[test]
