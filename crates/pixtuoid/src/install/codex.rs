@@ -9,6 +9,7 @@ use crate::install::target::{
 };
 use crate::install::verify::{SchemaParse, ShimRef};
 use crate::install::{io, merge};
+use pixtuoid_core::source::codex::CodexHomeUnresolved;
 
 pub(crate) const CODEX_EVENTS: &[&str] = &[
     "SessionStart",
@@ -68,17 +69,15 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
 
 /// The SAME codex_home() the watcher uses, so the two can't disagree.
 fn codex_home() -> Result<PathBuf> {
-    pixtuoid_core::source::codex::codex_home().ok_or_else(|| {
-        match pixtuoid_core::source::codex::codex_home_env() {
-            Some(set) => anyhow!(
-                "CODEX_HOME is {}, which is no directory, so codex itself won't start; create it or unset CODEX_HOME",
-                crate::display_path(&set)
-            ),
-            None => io::home_unset(
-                "Codex's home",
-                &format!("CODEX_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
-            ),
-        }
+    pixtuoid_core::source::codex::codex_home().map_err(|unresolved| match unresolved {
+        CodexHomeUnresolved::NotADirectory(set) => anyhow!(
+            "CODEX_HOME is {}, which is no directory, so codex itself won't start; create it or unset CODEX_HOME",
+            crate::display_path(&set)
+        ),
+        CodexHomeUnresolved::NoHome => io::home_unset(
+            "Codex's home",
+            &format!("CODEX_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
+        ),
     })
 }
 
@@ -89,7 +88,11 @@ fn config_toml() -> Result<PathBuf> {
 
 /// Codex is present when its config is: an empty ~/.codex says nothing.
 pub(crate) fn detect_installed() -> bool {
-    config_toml().is_ok_and(|p| crate::install::target::config_present(&p))
+    match pixtuoid_core::source::codex::codex_home() {
+        // Its row stays connectable, and connect names the variable.
+        Err(CodexHomeUnresolved::NotADirectory(_)) => true,
+        _ => config_toml().is_ok_and(|p| crate::install::target::config_present(&p)),
+    }
 }
 
 /// The Codex hook `command`. Codex runs it under a shell (`/bin/sh -lc` on Unix,
@@ -352,6 +355,21 @@ _pixtuoid = true
         temp_env::with_var("CODEX_HOME", Some(&missing), || {
             let err = format!("{:#}", config_toml().unwrap_err());
             assert!(err.contains("which is no directory"), "{err}");
+        });
+    }
+
+    #[test]
+    fn a_codex_home_that_is_no_directory_reads_present() {
+        let probe = crate::install::target::CODEX.presence_probe;
+        let tmp = tempfile::tempdir().unwrap();
+        temp_env::with_var("CODEX_HOME", Some(tmp.path().join("codx")), || {
+            assert!(
+                probe(),
+                "its row must offer the connect that names CODEX_HOME"
+            );
+        });
+        temp_env::with_var("CODEX_HOME", Some(tmp.path()), || {
+            assert!(!probe(), "a CODEX_HOME holding no config.toml");
         });
     }
 

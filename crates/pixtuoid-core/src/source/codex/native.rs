@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
 
-use super::{SOURCE_NAME, codex_home, codex_home_env, codex_id_from_path};
-use crate::platform::NO_HOME;
+use super::{CodexHomeUnresolved, SOURCE_NAME, codex_home, codex_id_from_path};
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
@@ -55,7 +54,7 @@ impl CodexSource {
     /// [`codex_home`] resolves.
     pub fn default_paths() -> Option<Self> {
         Some(Self {
-            sessions_root: codex_home()?.join("sessions"),
+            sessions_root: sessions_root().ok()?,
             child_end_unclaims: None,
         })
     }
@@ -85,7 +84,7 @@ pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
 };
 
 pub(crate) const NATIVE: Native = Native {
-    root: Some(sessions_root),
+    root: Some(|| sessions_root().ok()),
     focus_probe: Some(FocusProbe {
         paths: probe_paths,
         present: Path::is_dir,
@@ -93,17 +92,14 @@ pub(crate) const NATIVE: Native = Native {
     }),
 };
 
-fn sessions_root() -> Option<PathBuf> {
-    CodexSource::default_paths().map(|s| s.sessions_root)
+fn sessions_root() -> std::result::Result<PathBuf, CodexHomeUnresolved> {
+    Ok(codex_home()?.join("sessions"))
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
-    let why = if codex_home_env().is_some() {
-        "CODEX_HOME is no directory"
-    } else {
-        NO_HOME
-    };
-    sessions_root().map(|root| vec![root]).ok_or(why)
+    sessions_root()
+        .map(|root| vec![root])
+        .map_err(|unresolved| unresolved.reason())
 }
 
 /// The live session's pid, keyed by the rollout UUID (the slot's

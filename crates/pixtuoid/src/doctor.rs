@@ -11,7 +11,7 @@
 mod delivery;
 
 use pixtuoid_core::source::registry::Hyphen;
-use pixtuoid_core::source::{drift, registry};
+use pixtuoid_core::source::{codex, drift, registry};
 
 #[derive(Default, Debug, PartialEq, Eq)]
 pub(crate) struct LogScanResult {
@@ -784,15 +784,19 @@ fn collect_roots() -> Vec<RootStatus> {
     registry::REGISTRY
         .iter()
         .filter_map(|d| {
-            // The SAME `path_env` the resolvers use, or the two disagree: `env::var` reads
-            // a non-UTF-8 override as UNSET, silencing the ⚠ when the root IS wrong (#172).
-            let set = d.home_env.and_then(pixtuoid_core::platform::path_env);
-            let env = d.home_env.map(|v| (v, set.is_some()));
+            let env = d
+                .home_env
+                // The SAME `path_env` the resolvers use, or the two disagree: `env::var` reads
+                // a non-UTF-8 override as UNSET, silencing the ⚠ when the root IS wrong (#172).
+                .map(|v| (v, pixtuoid_core::platform::path_env(v).is_some()));
             let root = match pixtuoid_core::source::resolved_source_root(d.name) {
                 Some(root) => root,
-                // A set override that is no directory resolves no root (`codex_home`),
-                // and is what the row alarms on.
-                None => set.filter(|value| !value.is_dir())?,
+                // The set override that resolves no root is what the row alarms on.
+                None if d.name == codex::SOURCE_NAME => match codex::codex_home() {
+                    Err(codex::CodexHomeUnresolved::NotADirectory(set)) => set,
+                    _ => return None,
+                },
+                None => return None,
             };
             let exists = root.is_dir();
             Some(RootStatus {

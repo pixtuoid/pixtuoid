@@ -588,9 +588,10 @@ fn percent_decode(s: &str) -> Option<String> {
 
 /// The grok home dir, matching grok-build's own `grok_home()` (`xai-dirs`
 /// `src/lib.rs:61-97` @ 2bdd1d6a63): [`user_grok_home`], else `<cwd>/.grok`
-/// (upstream's `default_grok_home`). The watcher and the liveness probe route through here,
-/// and the installer through [`user_grok_home`], so the watched root, the
-/// installed hooks file and the probed registry can never disagree.
+/// (upstream's `default_grok_home`). The watcher, the liveness probe and the
+/// installer's detection route through here; the installed hooks file through
+/// [`user_grok_home`], so the watched root, the installed hooks file and the
+/// probed registry can never disagree.
 ///
 /// Not mirrored: upstream `dunce::canonicalize`s the DEFAULT home before joining
 /// `.grok` (never `$GROK_HOME`), so under a SYMLINKED `$HOME` its path string

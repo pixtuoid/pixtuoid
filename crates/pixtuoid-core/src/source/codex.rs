@@ -462,33 +462,57 @@ fn cell_tool(source: &str) -> Option<&str> {
 }
 
 /// The Codex home dir, matching codex's own precedence (`codex-rs`
-/// `find_codex_home` @ rust-v0.167.2): `CODEX_HOME` when set, and none unless it
-/// is a directory, upstream's fatal error (`utils/home-dir/src/lib.rs:24-51`);
-/// else `<home>/.codex`, the home being `dirs::home_dir`'s, so
-/// [`dirs_home_dir`](crate::platform::dirs_home_dir), and none without a home
-/// (`:2,53-58`).
+/// `find_codex_home` @ rust-v0.167.2): `CODEX_HOME` when set, else
+/// `<home>/.codex`, the home being `dirs::home_dir`'s, so
+/// [`dirs_home_dir`](crate::platform::dirs_home_dir).
 /// The installer reads Codex's `config.toml` through here too, so the watched
 /// sessions root and the plugin state it reads can never disagree.
 ///
 /// Not mirrored: upstream `canonicalize`s the ENV value (the default branch it
 /// leaves alone) — the inverse scoping of [`super::grok::grok_home`]'s, and
 /// unobservable for the same reason.
-pub fn codex_home() -> Option<PathBuf> {
-    resolve_codex_home(codex_home_env(), crate::platform::dirs_home_dir())
+///
+/// # Errors
+///
+/// Upstream's own: [`CodexHomeUnresolved::NotADirectory`] for a set `CODEX_HOME`
+/// that is no directory (`utils/home-dir/src/lib.rs:24-51`), and
+/// [`CodexHomeUnresolved::NoHome`] with neither (`:2,53-58`).
+pub fn codex_home() -> std::result::Result<PathBuf, CodexHomeUnresolved> {
+    resolve_codex_home(
+        crate::platform::path_env("CODEX_HOME"),
+        crate::platform::dirs_home_dir(),
+    )
 }
 
-/// `CODEX_HOME` as [`codex_home`] reads it. Internal cross-crate helper, not a
-/// stable API.
-#[doc(hidden)]
-pub fn codex_home_env() -> Option<PathBuf> {
-    crate::platform::path_env("CODEX_HOME")
+/// Why [`codex_home`] names none: each is an error of codex's own.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CodexHomeUnresolved {
+    /// No `CODEX_HOME`, and no home.
+    NoHome,
+    /// The set `CODEX_HOME`, which is no directory.
+    NotADirectory(PathBuf),
+}
+
+impl CodexHomeUnresolved {
+    /// Why a lookup under Codex's home names no path.
+    #[cfg(feature = "native")]
+    pub(crate) fn reason(&self) -> &'static str {
+        match self {
+            Self::NoHome => crate::platform::NO_HOME,
+            Self::NotADirectory(_) => "CODEX_HOME is no directory",
+        }
+    }
 }
 
 /// Pure precedence core, separated so it's unit-testable without env mutation.
-fn resolve_codex_home(codex_home_env: Option<PathBuf>, home: Option<PathBuf>) -> Option<PathBuf> {
+fn resolve_codex_home(
+    codex_home_env: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> std::result::Result<PathBuf, CodexHomeUnresolved> {
     match codex_home_env {
-        Some(p) => p.is_dir().then_some(p),
-        None => Some(home?.join(".codex")),
+        Some(p) if p.is_dir() => Ok(p),
+        Some(p) => Err(CodexHomeUnresolved::NotADirectory(p)),
+        None => Ok(home.ok_or(CodexHomeUnresolved::NoHome)?.join(".codex")),
     }
 }
 
@@ -502,16 +526,19 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         assert_eq!(
             resolve_codex_home(Some(tmp.path().to_path_buf()), None),
-            Some(tmp.path().to_path_buf())
+            Ok(tmp.path().to_path_buf())
         );
     }
 
     #[test]
     fn codex_home_is_dot_codex_when_env_unset() {
         let home = Some(PathBuf::from("/home/u"));
-        let expected = Some(PathBuf::from("/home/u").join(".codex"));
+        let expected = Ok(PathBuf::from("/home/u").join(".codex"));
         assert_eq!(resolve_codex_home(None, home), expected);
-        assert_eq!(resolve_codex_home(None, None), None);
+        assert_eq!(
+            resolve_codex_home(None, None),
+            Err(CodexHomeUnresolved::NoHome)
+        );
     }
 
     #[test]
@@ -519,7 +546,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let missing = tmp.path().join("missing");
         let home = Some(PathBuf::from("/home/u"));
-        assert_eq!(resolve_codex_home(Some(missing), home), None);
+        assert_eq!(
+            resolve_codex_home(Some(missing.clone()), home),
+            Err(CodexHomeUnresolved::NotADirectory(missing))
+        );
     }
 
     #[cfg(windows)]
@@ -533,8 +563,8 @@ mod tests {
             ],
             || {
                 let profile = crate::platform::dirs_home_dir().expect("Windows profile folder");
-                assert_eq!(codex_home(), Some(profile.join(".codex")));
-                assert!(codex_home().is_some_and(|home| !home.starts_with(spoof.path())));
+                assert_eq!(codex_home(), Ok(profile.join(".codex")));
+                assert!(codex_home().is_ok_and(|home| !home.starts_with(spoof.path())));
             },
         );
     }

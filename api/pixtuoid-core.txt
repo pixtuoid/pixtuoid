@@ -436,6 +436,22 @@ pub fn pixtuoid_core::source::claude_code::registry_dir(&std::path::Path) -> cor
 pub mod pixtuoid_core::source::codewhale
 pub const pixtuoid_core::source::codewhale::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::codex
+pub enum pixtuoid_core::source::codex::CodexHomeUnresolved
+pub pixtuoid_core::source::codex::CodexHomeUnresolved::NoHome
+pub pixtuoid_core::source::codex::CodexHomeUnresolved::NotADirectory(std::path::PathBuf)
+impl core::cmp::Eq for pixtuoid_core::source::codex::CodexHomeUnresolved
+impl core::cmp::PartialEq for pixtuoid_core::source::codex::CodexHomeUnresolved
+pub fn pixtuoid_core::source::codex::CodexHomeUnresolved::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_core::source::codex::CodexHomeUnresolved
+pub fn pixtuoid_core::source::codex::CodexHomeUnresolved::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_core::source::codex::CodexHomeUnresolved
+impl core::marker::Freeze for pixtuoid_core::source::codex::CodexHomeUnresolved
+impl core::marker::Send for pixtuoid_core::source::codex::CodexHomeUnresolved
+impl core::marker::Sync for pixtuoid_core::source::codex::CodexHomeUnresolved
+impl core::marker::Unpin for pixtuoid_core::source::codex::CodexHomeUnresolved
+impl core::marker::UnsafeUnpin for pixtuoid_core::source::codex::CodexHomeUnresolved
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::codex::CodexHomeUnresolved
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::codex::CodexHomeUnresolved
 pub struct pixtuoid_core::source::codex::CodexSource
 pub pixtuoid_core::source::codex::CodexSource::child_end_unclaims: core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>
 pub pixtuoid_core::source::codex::CodexSource::sessions_root: std::path::PathBuf
@@ -454,7 +470,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::codex::CodexSource
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::codex::CodexSource
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::codex::CodexSource
 pub const pixtuoid_core::source::codex::SOURCE_NAME: &str
-pub fn pixtuoid_core::source::codex::codex_home() -> core::option::Option<std::path::PathBuf>
+pub fn pixtuoid_core::source::codex::codex_home() -> core::result::Result<std::path::PathBuf, pixtuoid_core::source::codex::CodexHomeUnresolved>
 pub mod pixtuoid_core::source::copilot
 pub struct pixtuoid_core::source::copilot::CopilotSource
 pub pixtuoid_core::source::copilot::CopilotSource::sessions_root: std::path::PathBuf
