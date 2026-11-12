@@ -95,30 +95,16 @@ struct CutawayArgs {
     agents: usize,
     #[arg(long, default_value = "tokyo-night")]
     theme: String,
-    #[arg(long, value_name = "WxH", value_parser = parse_logical)]
+    #[arg(long, value_name = "WxH", value_parser = pixtuoid::dev::parse_size)]
     logical: Option<(u16, u16)>,
-    #[arg(long)]
-    now_hour: Option<u32>,
-    /// 1 = `pixtuoid_scene::localclock`'s day 0, as the classic snapshot's `--now-day`.
-    #[arg(long, default_value_t = 1, requires = "now_hour", value_parser = clap::value_parser!(u32).range(1..))]
-    now_day: u32,
-    /// Seconds past `--now-hour`, fine enough to sample a weather transition.
-    #[arg(long, default_value_t = 0, requires = "now_hour", value_parser = clap::value_parser!(u64).range(0..3600))]
-    now_sec: u64,
+    #[command(flatten)]
+    clock: pixtuoid::dev::ClockArgs,
     #[arg(long)]
     weather: Option<String>,
     #[arg(long, value_delimiter = ',', default_values_t = pixtuoid_scene::DEMO_REPOS[..pixtuoid_scene::DEMO_TEAMS].iter().map(|r| r.to_string()))]
     repos: Vec<String>,
     #[arg(long, default_value_t = 0)]
     floor: usize,
-}
-
-fn parse_logical(s: &str) -> Result<(u16, u16), String> {
-    let side = |n: &str| n.parse::<u16>().map_err(|e| format!("{n:?}: {e}"));
-    let (w, h) = s
-        .split_once('x')
-        .ok_or_else(|| format!("{s:?}: want WxH"))?;
-    Ok((side(w)?, side(h)?))
 }
 
 fn main() -> Result<()> {
@@ -128,9 +114,7 @@ fn main() -> Result<()> {
         agents,
         theme: theme_name,
         logical,
-        now_hour,
-        now_day,
-        now_sec,
+        clock,
         weather,
         repos,
         floor,
@@ -151,12 +135,9 @@ fn main() -> Result<()> {
                 valid.join(" | ")
             )
         })?;
-    let now = match now_hour {
-        Some(h) => pixtuoid_scene::localclock::try_on_day(now_day - 1, h)
-            .with_context(|| format!("invalid --now-day/--now-hour {now_day}:{h}"))?,
-        None => SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000),
-    };
-    let now = now + Duration::from_secs(now_sec);
+    let now = clock
+        .instant()?
+        .unwrap_or(SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000));
     let conditions = Conditions::default().with_weather(policy);
 
     let desks = pixtuoid::dev::floor_caps_for_buffer(lw, lh);
@@ -218,21 +199,4 @@ fn main() -> Result<()> {
             .count()
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The day is read only beside an hour, so a day alone would render the
-    /// default instant's sky, unasked.
-    #[test]
-    fn now_day_refuses_zero_and_wants_now_hour() {
-        let parses = |flags: &[&str]| {
-            CutawayArgs::try_parse_from([&["cutaway", "o.png"], flags].concat()).is_ok()
-        };
-        assert!(parses(&["--now-hour", "22", "--now-day", "1"]));
-        assert!(!parses(&["--now-hour", "22", "--now-day", "0"]));
-        assert!(!parses(&["--now-day", "5"]));
-    }
 }

@@ -25,6 +25,7 @@ pub(crate) mod run_log;
 pub(crate) mod runtime;
 #[cfg(feature = "serve")]
 pub(crate) mod serve;
+pub(crate) mod snapshot_flags;
 pub(crate) mod sources;
 pub(crate) mod term;
 pub(crate) mod tui;
@@ -56,6 +57,7 @@ pub mod dev {
     };
     pub use crate::panels::welcome::{OnboardingFrame, WelcomeRow, dim_opening};
     pub use crate::panels::widgets::grid_of;
+    pub use crate::snapshot_flags::{ClockArgs, parse_size};
     pub use crate::sources::{ConnState, ConnectionRow};
     #[cfg(unix)]
     pub use crate::term::{QUERY_TIMEOUT, TTY_READ_CHUNK};

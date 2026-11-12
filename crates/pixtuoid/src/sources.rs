@@ -117,7 +117,9 @@ impl OutcomeRow {
             ),
             Err(e) => (
                 WireOutcome::Failed,
-                Some(crate::strip_control_chars(&format!("{e:#}"))),
+                Some(crate::strip_control_chars(
+                    &crate::install::io::failure_reason(e),
+                )),
             ),
         };
         OutcomeRow {
@@ -2079,6 +2081,21 @@ mod tests {
                 .message
                 .as_deref(),
             Some(clean)
+        );
+    }
+
+    /// The command can be run again, so a busy config's row says it works.
+    #[test]
+    fn outcome_row_tells_a_busy_configs_asker_to_retry() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let cfg = tmp.path().join("config.toml");
+        let _held = crate::install::io::lock_config(&cfg).unwrap();
+        let busy = crate::install::io::lock_config(&cfg).unwrap_err();
+        let row = OutcomeRow::new("codex", &Err(busy));
+        let message = row.message.unwrap_or_default();
+        assert!(
+            message.ends_with("; try again once it finishes"),
+            "{message}"
         );
     }
 

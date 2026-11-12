@@ -3,12 +3,7 @@
 //! overlay layers and `composition` the live window presents, drawn by the CPU
 //! compositor the window's GPU frames are held to.
 //!
-//! Usage:
-//!   `cargo run --release --example floating_snapshot -- <out.png> [WxH] [--theme <name>] [--agents N] [--hover X,Y] [--pet cat|dog] [--drag X0,Y0:X1,Y1 [--drop-after MS]] [--panel help|dashboard|sources|theme] [--zoom N]`
-//! `--drag` presses at the first window point and carries what it lifts to the second,
-//! drawing it in hand; with `--drop-after` it releases there and draws `MS` later.
-//! `--panel` opens that panel over the office, as its key does; `--zoom` zooms
-//! the office N density steps from the automatic scale, as the zoom keys do.
+//! Usage: `cargo run --release --example floating_snapshot -- <out.png> [WxH] [OPTIONS]`,
 //! e.g. `... -- /tmp/f.png --agents 6` (`config::FLOATING_DEFAULT_{W,H}` × `RETINA_SCALE_FACTOR`),
 //! `... -- /tmp/f.png 960x640`.
 
@@ -17,6 +12,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, anyhow};
+use clap::Parser;
 use image::{Rgb as ImgRgb, RgbImage};
 use pixtuoid::dev::{OfficeRenderer, WindowFrame, XrgbSurface, window_geometry};
 use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
@@ -106,114 +102,85 @@ fn populate_demo_agents(scene: &mut SceneState, now: SystemTime, n: usize) {
     }
 }
 
-fn main() -> Result<()> {
-    let mut args = std::env::args().skip(1);
-    let out = args.next().ok_or_else(|| {
-        anyhow!("usage: floating_snapshot <out.png> [WxH] [--theme <name>] [--agents N]")
-    })?;
+/// A window point, in px.
+type Point = (f64, f64);
 
+#[derive(Debug, Parser)]
+struct FloatingArgs {
+    out: PathBuf,
+    #[arg(value_name = "WxH", value_parser = pixtuoid::dev::parse_size)]
+    size: Option<(u16, u16)>,
+    #[arg(long, default_value = "normal")]
+    theme: String,
+    #[arg(long, default_value_t = 0)]
+    agents: usize,
+    #[arg(long, value_name = "X,Y", value_parser = parse_point)]
+    hover: Option<Point>,
+    #[arg(long, value_name = "cat|dog", value_parser = parse_pet)]
+    pet: Option<pixtuoid_scene::pet::PetKind>,
+    /// Press at the first window point and carry what it lifts to the second,
+    /// drawing it in hand.
+    #[arg(long, value_name = "X0,Y0:X1,Y1", value_parser = parse_drag)]
+    drag: Option<(Point, Point)>,
+    /// Release the drag there and draw MS later.
+    #[arg(long, value_name = "MS", requires = "drag")]
+    drop_after: Option<u64>,
+    /// Open that panel over the office, as its key does.
+    #[arg(long, value_name = "help|dashboard|sources|theme")]
+    panel: Option<String>,
+    /// Zoom the office N density steps from the automatic scale, as the zoom
+    /// keys do.
+    #[arg(
+        long,
+        value_name = "N",
+        default_value_t = 0,
+        allow_negative_numbers = true
+    )]
+    zoom: i8,
+}
+
+fn parse_point(s: &str) -> Result<Point, String> {
+    let px = |n: &str| n.parse::<f64>().map_err(|e| format!("{n:?}: {e}"));
+    let (x, y) = s
+        .split_once(',')
+        .ok_or_else(|| format!("{s:?}: want X,Y window px"))?;
+    Ok((px(x)?, px(y)?))
+}
+
+fn parse_drag(s: &str) -> Result<(Point, Point), String> {
+    let (from, to) = s
+        .split_once(':')
+        .ok_or_else(|| format!("{s:?}: want X0,Y0:X1,Y1"))?;
+    Ok((parse_point(from)?, parse_point(to)?))
+}
+
+fn parse_pet(s: &str) -> Result<pixtuoid_scene::pet::PetKind, String> {
+    pixtuoid_scene::pet::PetKind::from_config_name(s)
+        .ok_or_else(|| format!("{s:?}: want cat or dog"))
+}
+
+fn main() -> Result<()> {
+    let FloatingArgs {
+        out,
+        size,
+        theme: theme_name,
+        agents: n_agents,
+        hover,
+        pet,
+        drag,
+        drop_after,
+        panel,
+        zoom,
+    } = FloatingArgs::parse();
     const RETINA_SCALE_FACTOR: u32 = 2;
-    let mut size = (
-        u16::try_from(pixtuoid::dev::FLOATING_DEFAULT_W * RETINA_SCALE_FACTOR)?,
-        u16::try_from(pixtuoid::dev::FLOATING_DEFAULT_H * RETINA_SCALE_FACTOR)?,
-    );
-    let mut theme_name = "normal".to_string();
-    let mut n_agents = 0usize;
-    let mut hover: Option<(f64, f64)> = None;
-    let mut pet: Option<pixtuoid_scene::pet::PetKind> = None;
-    let mut drag: Option<((f64, f64), (f64, f64))> = None;
-    let mut drop_after: Option<u64> = None;
-    let mut panel: Option<String> = None;
-    let mut zoom = pixtuoid::dev::Zoom::default();
-    let point = |v: &str, flag: &str| -> Result<(f64, f64)> {
-        let (x, y) = v
-            .split_once(',')
-            .ok_or_else(|| anyhow!("{flag} needs X,Y window px"))?;
-        Ok((x.parse().context("bad x")?, y.parse().context("bad y")?))
+    let size = match size {
+        Some(size) => size,
+        None => (
+            u16::try_from(pixtuoid::dev::FLOATING_DEFAULT_W * RETINA_SCALE_FACTOR)?,
+            u16::try_from(pixtuoid::dev::FLOATING_DEFAULT_H * RETINA_SCALE_FACTOR)?,
+        ),
     };
-    let rest: Vec<String> = args.collect();
-    let mut i = 0;
-    while i < rest.len() {
-        match rest[i].as_str() {
-            "--theme" => {
-                theme_name = rest
-                    .get(i + 1)
-                    .cloned()
-                    .ok_or_else(|| anyhow!("--theme needs a value"))?;
-                i += 2;
-            }
-            "--hover" => {
-                let (x, y) = rest
-                    .get(i + 1)
-                    .and_then(|v| v.split_once(','))
-                    .ok_or_else(|| anyhow!("--hover needs X,Y window px"))?;
-                hover = Some((
-                    x.parse().context("bad --hover x")?,
-                    y.parse().context("bad --hover y")?,
-                ));
-                i += 2;
-            }
-            "--pet" => {
-                pet = Some(match rest.get(i + 1).map(String::as_str) {
-                    Some("cat") => pixtuoid_scene::pet::PetKind::Cat,
-                    Some("dog") => pixtuoid_scene::pet::PetKind::Dog,
-                    _ => return Err(anyhow!("--pet needs cat or dog")),
-                });
-                i += 2;
-            }
-            "--drag" => {
-                let (from, to) = rest
-                    .get(i + 1)
-                    .and_then(|v| v.split_once(':'))
-                    .ok_or_else(|| anyhow!("--drag needs X0,Y0:X1,Y1"))?;
-                drag = Some((point(from, "--drag")?, point(to, "--drag")?));
-                i += 2;
-            }
-            "--panel" => {
-                panel = Some(
-                    rest.get(i + 1)
-                        .cloned()
-                        .ok_or_else(|| anyhow!("--panel needs a name"))?,
-                );
-                i += 2;
-            }
-            "--drop-after" => {
-                drop_after = Some(
-                    rest.get(i + 1)
-                        .ok_or_else(|| anyhow!("--drop-after needs ms"))?
-                        .parse()
-                        .context("bad --drop-after")?,
-                );
-                i += 2;
-            }
-            "--zoom" => {
-                zoom = pixtuoid::dev::Zoom::new(
-                    rest.get(i + 1)
-                        .ok_or_else(|| anyhow!("--zoom needs a step count"))?
-                        .parse()
-                        .context("bad --zoom")?,
-                );
-                i += 2;
-            }
-            "--agents" => {
-                n_agents = rest
-                    .get(i + 1)
-                    .ok_or_else(|| anyhow!("--agents needs a value"))?
-                    .parse()
-                    .context("bad --agents")?;
-                i += 2;
-            }
-            s if s.contains('x') => {
-                let (w, h) = s.split_once('x').unwrap();
-                size = (
-                    w.parse().context("bad width")?,
-                    h.parse().context("bad height")?,
-                );
-                i += 1;
-            }
-            other => return Err(anyhow!("unexpected arg: {other}")),
-        }
-    }
+    let zoom = pixtuoid::dev::Zoom::new(zoom);
 
     let theme =
         theme_by_name(&theme_name).ok_or_else(|| anyhow!("unknown --theme {theme_name:?}"))?;
@@ -345,9 +312,11 @@ fn main() -> Result<()> {
             );
         }
     }
-    img.save(&out).with_context(|| format!("writing {out}"))?;
+    img.save(&out)
+        .with_context(|| format!("writing {}", out.display()))?;
     eprintln!(
-        "wrote {out} ({win_w}x{win_h}, office buffer {bw}x{bh} upscaled {}x, {n_agents} agents)",
+        "wrote {} ({win_w}x{win_h}, office buffer {bw}x{bh} upscaled {}x, {n_agents} agents)",
+        out.display(),
         at.upscale()
     );
     Ok(())

@@ -383,7 +383,7 @@ impl FloatingApp {
     /// A pressed key, through the TUI's dispatch and its panels; whether it
     /// asked to quit.
     fn key(&mut self, event: &winit::event::KeyEvent) -> bool {
-        let Some(key) = super::input::key(&event.logical_key, self.modifiers, event.repeat) else {
+        let Some(key) = super::input::key(&event.logical_key, self.modifiers) else {
             return false;
         };
         let Some(snapshot) = self.live.as_ref().map(|l| Arc::clone(&l.scene_rx.borrow())) else {
@@ -392,6 +392,7 @@ impl FloatingApp {
         let now = self.ui.now();
         super::input::press_key(
             key,
+            event.repeat,
             &mut crate::panels::KeyCtx {
                 ui: &mut self.ui,
                 host: &mut super::input::WindowHost {

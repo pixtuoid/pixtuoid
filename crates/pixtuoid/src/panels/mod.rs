@@ -632,7 +632,7 @@ fn result_line(
 ) -> String {
     match done {
         Ok(changed) => changed.line(name),
-        Err(e) => connection::format_failure(op, name, &format!("{e:#}")),
+        Err(e) => connection::format_failure(op, name, &crate::install::io::failure_reason(e)),
     }
 }
 
@@ -1990,6 +1990,7 @@ mod dispatch_tests {
         let res = set_connected(&cfg, &connected, "copilot", "Copilot CLI", false).line;
         drop(held);
         assert!(res.contains("disconnect failed"), "result: {res}");
+        assert!(res.ends_with("; try again once it finishes"), "{res}");
         assert!(
             connected.is_connected("copilot"),
             "still flagged on disk, so still connected"

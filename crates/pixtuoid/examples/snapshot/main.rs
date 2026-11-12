@@ -152,18 +152,8 @@ struct SnapshotArgs {
     #[arg(long, value_delimiter = ',')]
     openclaw_ports: Vec<String>,
 
-    /// Override local hour-of-day (0–23) used by time-of-day lighting.
-    #[arg(long)]
-    now_hour: Option<u32>,
-
-    /// Override the local day (1 = `pixtuoid_scene::localclock`'s day 0) used by time-of-day.
-    #[arg(long, default_value_t = 1, requires = "now_hour", value_parser = clap::value_parser!(u32).range(1..))]
-    now_day: u32,
-
-    /// Seconds past `--now-hour` (0–3599), fine enough to sample a weather
-    /// transition.
-    #[arg(long, default_value_t = 0, requires = "now_hour", value_parser = clap::value_parser!(u64).range(0..3600))]
-    now_sec: u64,
+    #[command(flatten)]
+    clock: pixtuoid::dev::ClockArgs,
 
     /// Force a specific weather, bypassing the clock-based 10-minute cycle.
     /// One of: clear | rain | storm | snow | fog | overcast | windy | smog.
@@ -420,14 +410,7 @@ fn main() -> Result<()> {
         ),
     };
 
-    let now = match args.now_hour {
-        Some(h) => {
-            pixtuoid_scene::localclock::try_on_day(args.now_day - 1, h)
-                .with_context(|| format!("invalid --now-day/--now-hour {}:{h}", args.now_day))?
-                + std::time::Duration::from_secs(args.now_sec)
-        }
-        None => SystemTime::now(),
-    };
+    let now = args.clock.instant()?.unwrap_or_else(SystemTime::now);
     let cols = args.cols.unwrap_or(COLS);
     let rows = args.rows.unwrap_or(ROWS);
     let mut skip_ms = 0u64;
@@ -1034,16 +1017,6 @@ mod tests {
     fn max_desks_refuses_zero() {
         assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "0"]).is_err());
         assert!(SnapshotArgs::try_parse_from(["snapshot", "--max-desks", "1"]).is_ok());
-    }
-
-    /// The day is read only beside an hour, so a day alone would render the
-    /// default instant's sky, unasked.
-    #[test]
-    fn now_day_refuses_zero_and_wants_now_hour() {
-        let parses = |argv: &[&str]| SnapshotArgs::try_parse_from(argv).is_ok();
-        assert!(parses(&["snapshot", "--now-hour", "22", "--now-day", "1"]));
-        assert!(!parses(&["snapshot", "--now-hour", "22", "--now-day", "0"]));
-        assert!(!parses(&["snapshot", "--now-day", "5"]));
     }
 
     #[test]
