@@ -200,10 +200,14 @@ mod tests {
             decode(json!({"type": "gateway_start", "_pid": 0})),
             vec![DaemonPresenceUpdate::GatewayUp { pid: None }]
         );
-        assert_eq!(
-            decode(json!({"type": "session_start", "sessionId": "s1", "_pid": -1})),
-            vec![DaemonPresenceUpdate::SessionStarted]
-        );
+        for pid in [-1, 0] {
+            let d = decode_full(json!({"type": "session_start", "sessionId": "s1", "_pid": pid}));
+            assert_eq!(
+                (d.updates, d.pid),
+                (vec![DaemonPresenceUpdate::SessionStarted], None),
+                "_pid {pid}"
+            );
+        }
     }
 
     #[test]

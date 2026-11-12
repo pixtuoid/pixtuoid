@@ -28,7 +28,7 @@ const QUIET: Duration = PROBE_POLL.saturating_mul(15);
 /// A negative-vouch span no wait here reaches, so only the instant-exit rung
 /// can end a session.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-const NO_VOUCH: Duration = Duration::from_secs(3600);
+const UNREACHED_VOUCH_SPAN: Duration = Duration::from_secs(3600);
 
 #[tokio::test]
 async fn watcher_emits_proof_of_life_for_probe_live_ids() {
@@ -385,7 +385,7 @@ async fn probe_panic_changes_nothing() {
 
 /// A probe snapshot binds the vouched session id to the pid holding it; when
 /// that sole holder dies, the kernel watch (kqueue NOTE_EXIT / pidfd+poll) emits
-/// the SessionEnd within milliseconds. The [`NO_VOUCH`] span this test passes is
+/// the SessionEnd within milliseconds. The [`UNREACHED_VOUCH_SPAN`] span this test passes is
 /// past every wait, so a SessionEnd can ONLY have come from the instant-exit
 /// path.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -401,7 +401,7 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
     let (probe_state, mut rx, transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        NO_VOUCH,
+        UNREACHED_VOUCH_SPAN,
         vouch_snapshot_with_pids(&[uuid], &[pid]),
     )
     .await;
@@ -409,7 +409,7 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
 
     // Flip the probe FIRST — a real probe stops vouching a dead pid, and the
     // re-vouch sweep would otherwise re-admit the ended session. Under
-    // `NO_VOUCH` the flip alone cannot produce a SessionEnd.
+    // `UNREACHED_VOUCH_SPAN` the flip alone cannot produce a SessionEnd.
     *probe_state.lock().unwrap() = vouch_snapshot(&[]);
     let _ = child.kill();
     let _ = child.wait();
@@ -503,7 +503,7 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
     let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        NO_VOUCH,
+        UNREACHED_VOUCH_SPAN,
         vouch_snapshot_with_pids(&[uuid], &[pid]),
     )
     .await;
@@ -550,7 +550,7 @@ async fn a_rebound_session_ends_with_its_new_pid_while_the_old_one_lives() {
     let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        NO_VOUCH,
+        UNREACHED_VOUCH_SPAN,
         vouch_snapshot_with_pids(&[uuid], &[old_pid]),
     )
     .await;
@@ -595,7 +595,7 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
     let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        NO_VOUCH,
+        UNREACHED_VOUCH_SPAN,
         vouch_snapshot_with_pids(&[uuid], &[first_pid, last_pid]),
     )
     .await;

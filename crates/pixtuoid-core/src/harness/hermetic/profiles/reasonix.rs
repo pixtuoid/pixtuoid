@@ -1,4 +1,4 @@
-//! reasonix's cites are `esengine/DeepSeek-Reasonix` at `v2.44.0`.
+//! reasonix's cites are `esengine/DeepSeek-Reasonix`, at `v2.44.0` unless a cite names its tag.
 
 use super::event_field;
 use crate::harness::hermetic::{

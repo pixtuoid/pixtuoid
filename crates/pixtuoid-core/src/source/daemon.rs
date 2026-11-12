@@ -187,8 +187,8 @@ impl PresenceTtl {
 
 impl DaemonPresenceUpdate {
     /// The gateway pid this update arms the abrupt-down `ExitWatch` on, if any.
-    /// The variant→pid mapping lives HERE (one place) so the driver's watch-arm
-    /// and `apply_presence`'s `current_pid` adoption can't drift.
+    /// `apply_presence` may decline to adopt it (a pid already bound, a Down
+    /// daemon); that watch's exit then matches no `current_pid` and changes nothing.
     pub fn armable_pid(&self) -> Option<i32> {
         match self {
             DaemonPresenceUpdate::GatewayUp { pid } => *pid,
@@ -972,7 +972,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_presence_down_arms_the_walkout_idempotently() {
+    fn mark_presence_down_anchors_the_removal_clock_idempotently() {
         for src in SOURCES {
             let mut s = SceneState::default();
             up(&mut s, src, 1, 0);
