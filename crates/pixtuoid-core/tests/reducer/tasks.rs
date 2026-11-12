@@ -625,24 +625,27 @@ fn an_untracked_dispatch_at_the_grace_boundary_defers_the_pending_cascade() {
     );
 }
 
-/// The hold is a dispatch's alone: any other call at the boundary fires it.
+/// Only the parent's own dispatch holds its cascade: its plain call, or
+/// another session's dispatch, at the boundary fires it.
 #[test]
-fn a_plain_call_at_the_grace_boundary_fires_the_pending_cascade() {
-    let mut scene = SceneState::uniform(8);
-    let mut r = Reducer::new();
-    let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
-    let first_return = returned_reasonix_dispatch(&mut r, &mut scene);
+fn only_the_parents_own_dispatch_at_the_grace_boundary_holds_its_cascade() {
+    for (session, tool) in [("root", "read_file"), ("other", "explore")] {
+        let mut scene = SceneState::uniform(8);
+        let mut r = Reducer::new();
+        let first_child = AgentId::from_parts("reasonix", "root:subagent:call_a");
+        let first_return = returned_reasonix_dispatch(&mut r, &mut scene);
 
-    feed_reasonix(
-        &mut r,
-        &mut scene,
-        ("PreToolUse", "root", "read_file"),
-        first_return + B1_CASCADE_GRACE,
-    );
-    assert!(
-        scene.agents[&first_child].exiting_at.is_some(),
-        "a plain call at the boundary held the first return's cascade"
-    );
+        feed_reasonix(
+            &mut r,
+            &mut scene,
+            ("PreToolUse", session, tool),
+            first_return + B1_CASCADE_GRACE,
+        );
+        assert!(
+            scene.agents[&first_child].exiting_at.is_some(),
+            "{session}'s {tool} at the boundary held root's cascade"
+        );
+    }
 }
 
 /// Two shims a few ms apart can be decoded in either order (#242): a Task's
