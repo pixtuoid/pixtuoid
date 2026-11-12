@@ -253,8 +253,8 @@ mod tests {
                 buf.get(chair.x, chair.y)
             );
             // Scan from the CHAIR (== production `desk_approach_cell`), not the desk corner.
-            // A cell beside the chair sits under the SEAT blob painted last, so its
-            // blob's far row is what shows green.
+            // A cell beside the chair sits under the SEAT blob painted last, so the
+            // green shows one step further along the scan, at its blob's far edge.
             let far_green = |c: Point, (dx, dy): (i32, i32)| {
                 let x = u16::try_from(i32::from(c.x) + dx).unwrap();
                 let y = u16::try_from(i32::from(c.y) + dy).unwrap();
