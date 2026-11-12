@@ -1,6 +1,7 @@
-//! Runtime wiring: `RunConfig` (the startup inputs), the boot-capacity math, and the
-//! headless summary formatter. The untestable async glue (tokio runtime, reducer task,
-//! source spawn, Ctrl-C loop) lives in `driver.rs`, which is excluded from coverage.
+//! Runtime wiring: `RunConfig` (the startup inputs), how a command that arms its
+//! quit signals starts and ends its runtime ([`on_runtime`]), the boot-capacity math,
+//! and the headless summary formatter. The untestable async glue (reducer task, source spawn, Ctrl-C
+//! loop) lives in `driver.rs`, which is excluded from coverage.
 
 pub(crate) mod driver;
 pub(crate) mod gate;
@@ -31,6 +32,26 @@ pub(crate) type SceneRx = watch::Receiver<Arc<SceneState>>;
 
 /// Fallback desk capacity when the terminal cannot be queried (e.g. headless mode).
 pub(crate) const FALLBACK_DESKS: usize = 16;
+
+/// Run `body` on a new multi-thread runtime, then end it, waiting at most
+/// [`EXIT_WAIT`](crate::EXIT_WAIT) for its blocking work, which its drop would wait
+/// for without end (<https://docs.rs/tokio/latest/tokio/runtime/struct.Runtime.html#shutdown>):
+/// a read a stalled disk holds must not hold a quit whose signal the run's own
+/// handler now takes.
+///
+/// # Errors
+///
+/// If the runtime cannot be built.
+pub(crate) fn on_runtime<T>(body: impl FnOnce(&tokio::runtime::Runtime) -> T) -> anyhow::Result<T> {
+    use anyhow::Context as _;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("building the tokio runtime")?;
+    let done = body(&runtime);
+    runtime.shutdown_timeout(crate::EXIT_WAIT);
+    Ok(done)
+}
 
 /// The startup inputs `build_run_config` resolves once for `run`, `floating` and
 /// `serve`. The `theme` is already resolved (`config::resolve_theme` validates the CLI
@@ -1095,6 +1116,30 @@ mod tests {
         );
         assert!(cap_capacities(base, Some(1)).iter().all(|&c| c <= 1));
         assert_eq!(cap_capacities(base, None), base);
+    }
+
+    /// A read still running when a quit comes is left behind, not waited for.
+    #[test]
+    fn a_quit_leaves_blocking_work_behind() {
+        /// Past [`EXIT_WAIT`](crate::EXIT_WAIT), so a quit that waits for this
+        /// work fails, not hangs.
+        const HELD: std::time::Duration = std::time::Duration::from_secs(10);
+        let (_release, held) = std::sync::mpsc::channel::<()>();
+        let (done, is_done) = std::sync::mpsc::channel();
+        on_runtime(|rt| {
+            rt.block_on(async {
+                let (up, is_up) = tokio::sync::oneshot::channel();
+                tokio::task::spawn_blocking(move || {
+                    let _ = up.send(());
+                    let _ = done.send(held.recv_timeout(HELD));
+                });
+                is_up.await.expect("it runs");
+            });
+        })
+        .expect("a runtime");
+        let waited = is_done.try_recv();
+        let running = Err(std::sync::mpsc::TryRecvError::Empty);
+        assert_eq!(waited, running, "the quit waited for its blocking work");
     }
 
     #[test]

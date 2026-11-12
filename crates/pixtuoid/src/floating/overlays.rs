@@ -649,7 +649,7 @@ mod tests {
                 crate::doctor::DriftSeen::default(),
             );
             if popup {
-                ui.open_version_popup(&std::collections::HashSet::new(), &[]);
+                ui.open_version_popup(&std::collections::HashSet::new());
             }
             ui
         };

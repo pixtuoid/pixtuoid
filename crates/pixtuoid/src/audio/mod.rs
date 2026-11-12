@@ -104,10 +104,10 @@ pub(crate) fn apply_audio_action(
 /// volume key writes once, not per repeat), flushed on shutdown.
 pub(crate) struct AudioController {
     ui: AudioUi,
-    config_path: std::path::PathBuf,
+    saves: crate::panels::Saves,
     volume_dirty: bool,
     /// When the `♩ N%` readout was armed. Doubles as the debounce clock: the
-    /// volume save lands once this window elapses.
+    /// volume save is queued once this window elapses.
     flash_at: Option<std::time::Instant>,
 }
 
@@ -117,8 +117,8 @@ impl AudioController {
     /// [`Self::stop`], with `Drop` as the net for every other exit path. Each
     /// painter builds it AFTER its fallible boot steps, so no device thread can
     /// exist before its Drop-owner.
-    pub(crate) fn new(cfg: crate::config::AudioConfig, config_path: std::path::PathBuf) -> Self {
-        Self::new_with(cfg, config_path, respawn)
+    pub(crate) fn new(cfg: crate::config::AudioConfig, saves: crate::panels::Saves) -> Self {
+        Self::new_with(cfg, saves, respawn)
     }
 
     /// [`Self::new`] with the boot-spawn injected, so a test can build an UNMUTED
@@ -126,7 +126,7 @@ impl AudioController {
     /// key-action tests need one.
     pub(crate) fn new_with(
         cfg: crate::config::AudioConfig,
-        config_path: std::path::PathBuf,
+        saves: crate::panels::Saves,
         respawn: impl FnOnce(&AudioHandle, f32),
     ) -> Self {
         let crate::config::AudioConfig { muted, volume } = cfg;
@@ -140,31 +140,33 @@ impl AudioController {
                 muted,
                 volume,
             },
-            config_path,
+            saves,
             volume_dirty: false,
             flash_at: None,
         }
     }
 
     /// Run one gesture: the shared transition, then persist — mute NOW, volume
-    /// debounced. The save it ran now, if any.
-    #[must_use = "a failed save must reach the footer"]
+    /// debounced.
     pub(crate) fn apply(
         &mut self,
         action: AudioAction,
         paused: bool,
         now: std::time::Instant,
         respawn: impl FnOnce(&AudioHandle, f32),
-    ) -> Option<SaveOutcome> {
+    ) {
         let persist = apply_audio_action(&mut self.ui, action, paused, respawn);
         if persist.volume_nudged {
             self.volume_dirty = true;
             self.flash_at = Some(now);
         }
-        persist.muted.then(|| {
-            let save = crate::config::save_audio_muted(&self.config_path, self.ui.muted);
-            SaveOutcome::of(Setting::Mute, save)
-        })
+        if persist.muted {
+            let muted = self.ui.muted;
+            self.saves.save(move |path| {
+                let save = crate::config::save_audio_muted(path, muted);
+                Some(SaveOutcome::of(Setting::Mute, save))
+            });
+        }
     }
 
     fn flashing(&self, now: std::time::Instant) -> bool {
@@ -179,23 +181,27 @@ impl AudioController {
     }
 
     /// Per frame: flush the debounced volume save once its window has elapsed,
-    /// which it returns.
-    #[must_use = "a failed save must reach the footer"]
-    pub(crate) fn tick(&mut self, now: std::time::Instant) -> Option<SaveOutcome> {
-        (self.volume_dirty && !self.flashing(now)).then(|| self.save_volume())
+    /// and return the `♩ N%` readout to draw.
+    pub(crate) fn tick(&mut self, now: std::time::Instant) -> Option<u8> {
+        if self.volume_dirty && !self.flashing(now) {
+            self.save_volume();
+        }
+        self.volume_flash(now)
     }
 
     fn flush_on_exit(&mut self) {
         if self.volume_dirty {
-            // The run ends: the log is all that's left to tell.
-            let _ = self.save_volume();
+            self.save_volume();
         }
     }
 
-    fn save_volume(&mut self) -> SaveOutcome {
+    fn save_volume(&mut self) {
         self.volume_dirty = false;
-        let save = crate::config::save_audio_volume(&self.config_path, self.ui.volume);
-        SaveOutcome::of(Setting::Volume, save)
+        let volume = self.ui.volume;
+        self.saves.save(move |path| {
+            let save = crate::config::save_audio_volume(path, volume);
+            Some(SaveOutcome::of(Setting::Volume, save))
+        });
     }
 
     pub(crate) fn set_paused(&mut self, paused: bool) {
@@ -206,8 +212,11 @@ impl AudioController {
         &self.ui.handle
     }
 
-    /// The ONE exit verb for BOTH halves of the audio protocol: PERSIST a
-    /// pending debounced volume, THEN stop the device thread. Both run
+    /// The ONE exit verb for BOTH halves of the audio protocol: QUEUE a
+    /// pending debounced volume's save, which the quit's
+    /// [`join_off_loop_threads`](crate::panels::join_off_loop_threads) or the
+    /// window's teardown writes within [`EXIT_WAIT`](crate::EXIT_WAIT), THEN
+    /// stop the device thread. Both run
     /// unconditionally, so a Ctrl-C / terminate / error can't lose a nudge that
     /// landed inside the debounce window. Both halves are panic-free, so this
     /// is safe to run during unwind. Idempotent, so a painter can run it ahead
@@ -231,46 +240,79 @@ impl Drop for AudioController {
 mod controller_tests {
     use super::*;
     use crate::config::AudioConfig;
+    use crate::panels::{Landed, Saves};
     use std::time::{Duration, Instant};
 
-    fn ctl(muted: bool, volume: f32) -> (AudioController, tempfile::TempDir) {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(&path, "theme = \"normal\"\n").unwrap();
-        // A no-op boot-spawn: the fixture must never open a real device.
-        let c = AudioController::new_with(AudioConfig { muted, volume }, path, |_, _| {});
-        (c, dir)
+    /// A controller over a config of its own, and where its saves land.
+    struct Ctl {
+        c: AudioController,
+        saves: Saves,
+        landed: tokio::sync::mpsc::UnboundedReceiver<Landed>,
+        path: std::path::PathBuf,
+        _dir: tempfile::TempDir,
+    }
+
+    impl Ctl {
+        fn new(muted: bool, volume: f32) -> Self {
+            Self::with(AudioConfig { muted, volume }, |_, _| {})
+        }
+
+        /// A controller booted with `respawn`, which must never open a real device.
+        fn with(cfg: AudioConfig, respawn: impl FnOnce(&AudioHandle, f32)) -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("config.toml");
+            std::fs::write(&path, "theme = \"normal\"\n").unwrap();
+            let (tx, landed) = tokio::sync::mpsc::unbounded_channel();
+            let saves = Saves::spawn(path.clone(), tx).expect("a save thread");
+            Self {
+                c: AudioController::new_with(cfg, saves.clone(), respawn),
+                saves,
+                landed,
+                path,
+                _dir: dir,
+            }
+        }
+
+        /// The outcomes of every save queued so far, landed.
+        fn saved(&mut self) -> Vec<SaveOutcome> {
+            crate::panels::noted::saved(&self.saves, &mut self.landed)
+        }
+
+        fn file(&self) -> String {
+            std::fs::read_to_string(&self.path).unwrap()
+        }
+    }
+
+    fn saved_ok(setting: Setting) -> SaveOutcome {
+        SaveOutcome {
+            setting,
+            written: true,
+        }
     }
 
     #[test]
     fn new_boot_spawns_only_when_unmuted_and_drop_joins_the_device_thread() {
         use std::sync::atomic::Ordering;
 
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(&path, "theme = \"normal\"\n").unwrap();
-
         let muted_spawned = std::cell::Cell::new(false);
-        let c = AudioController::new_with(
+        let k = Ctl::with(
             AudioConfig {
                 muted: true,
                 volume: 0.4,
             },
-            path.clone(),
             |_, _| muted_spawned.set(true),
         );
         assert!(!muted_spawned.get(), "a muted boot spawns no device thread");
-        assert!(!c.handle().is_enabled());
-        drop(c);
+        assert!(!k.c.handle().is_enabled());
+        drop(k);
 
         let done = std::cell::OnceCell::new();
         let got_vol = std::cell::Cell::new(0.0f32);
-        let c = AudioController::new_with(
+        let k = Ctl::with(
             AudioConfig {
                 muted: false,
                 volume: 0.6,
             },
-            path,
             |h, v| {
                 got_vol.set(v);
                 let _ = done.set(install_slow_fake_device(h));
@@ -281,9 +323,9 @@ mod controller_tests {
             0.6,
             "an unmuted boot spawns at the kept volume"
         );
-        assert!(c.handle().is_enabled());
+        assert!(k.c.handle().is_enabled());
 
-        drop(c);
+        drop(k);
         assert!(
             done.get().unwrap().load(Ordering::SeqCst),
             "dropping the controller must JOIN the boot-spawned device thread so \
@@ -291,160 +333,168 @@ mod controller_tests {
         );
     }
 
-    /// `stop` persists and joins once; the drop after it, which production runs
+    /// `stop` queues the save and joins once; the drop after it, which production runs
     /// at every floating quit, does nothing more and does not panic.
     #[test]
-    fn stop_then_drop_persists_and_joins_once() {
+    fn stop_then_drop_queues_and_joins_once() {
         use std::sync::atomic::Ordering;
 
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(&path, "theme = \"normal\"\n").unwrap();
         let done = std::cell::OnceCell::new();
-        let mut c = AudioController::new_with(
+        let Ctl {
+            mut c,
+            saves,
+            mut landed,
+            path,
+            _dir,
+        } = Ctl::with(
             AudioConfig {
                 muted: false,
                 volume: 0.5,
             },
-            path.clone(),
             |h, _| {
                 let _ = done.set(install_slow_fake_device(h));
             },
         );
-        let _ = c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
+        c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         c.stop();
         assert!(done.get().unwrap().load(Ordering::SeqCst), "stop joins");
+        let saved = |landed: &mut _| crate::panels::noted::saved(&saves, landed);
+        assert_eq!(saved(&mut landed), [saved_ok(Setting::Volume)]);
         assert!(
             std::fs::read_to_string(&path).unwrap().contains("volume"),
-            "stop persists the pending nudge"
+            "stop queues the pending nudge, and the drain writes it"
         );
-        std::fs::write(&path, "theme = \"normal\"\n").unwrap();
         drop(c);
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            "theme = \"normal\"\n",
-            "the drop after stop writes nothing"
-        );
+        assert_eq!(saved(&mut landed), [], "the drop after stop writes nothing");
     }
 
     #[test]
-    fn mute_persists_immediately_and_does_not_arm_the_volume_flash() {
-        let (mut c, _d) = ctl(false, 0.4);
+    fn mute_saves_immediately_and_does_not_arm_the_volume_flash() {
+        let mut k = Ctl::new(false, 0.4);
         let t0 = Instant::now();
-        assert_eq!(
-            c.apply(AudioAction::ToggleMute, false, t0, |_, _| {}),
-            Some(SaveOutcome {
-                setting: Setting::Mute,
-                landed: true
-            })
-        );
+        k.c.apply(AudioAction::ToggleMute, false, t0, |_, _| {});
+        assert_eq!(k.saved(), [saved_ok(Setting::Mute)]);
         assert!(
-            std::fs::read_to_string(&c.config_path)
-                .unwrap()
-                .contains("muted = true"),
-            "mute toggled on AND persists NOW (like a theme commit)"
+            k.file().contains("muted = true"),
+            "mute toggled on AND its save queued NOW (like a theme commit)"
         );
-        assert_eq!(c.volume_flash(t0), None, "mute does not flash ♩ N%");
+        assert_eq!(k.c.volume_flash(t0), None, "mute does not flash ♩ N%");
     }
 
     #[test]
     fn volume_flashes_now_and_debounces_the_save_until_the_window_elapses() {
-        let (mut c, _d) = ctl(false, 0.50);
+        let mut k = Ctl::new(false, 0.50);
         let t0 = Instant::now();
-        let saved = |c: &AudioController| std::fs::read_to_string(&c.config_path).unwrap();
+        k.c.apply(AudioAction::Volume(true), false, t0, |_, _| {});
+        assert_eq!(k.c.volume_flash(t0), Some(55), "readout armed immediately");
         assert_eq!(
-            c.apply(AudioAction::Volume(true), false, t0, |_, _| {}),
-            None
+            k.saved(),
+            [],
+            "volume save NOT queued mid-flash (debounced, not per-repeat)"
         );
-        assert_eq!(c.volume_flash(t0), Some(55), "readout armed immediately");
-        assert!(
-            !saved(&c).contains("volume"),
-            "volume NOT persisted mid-flash (debounced, not per-repeat)"
+        assert_eq!(
+            k.c.tick(t0 + Duration::from_millis(VOLUME_FLASH_MS as u64 / 2)),
+            Some(55)
         );
-        assert_eq!(c.tick(t0 + Duration::from_millis(500)), None);
-        assert!(
-            !saved(&c).contains("volume"),
-            "still within the window → no flush"
-        );
+        assert_eq!(k.saved(), [], "still within the window → no flush");
         let after = t0 + Duration::from_millis(VOLUME_FLASH_MS as u64 + 50);
-        assert_eq!(
-            c.tick(after),
-            Some(SaveOutcome {
-                setting: Setting::Volume,
-                landed: true
-            })
-        );
+        assert_eq!(k.c.tick(after), None, "readout expired");
+        assert_eq!(k.saved(), [saved_ok(Setting::Volume)]);
         assert!(
-            saved(&c).contains("volume"),
+            k.file().contains("volume"),
             "window elapsed → debounced save flushes"
         );
-        assert_eq!(c.volume_flash(after), None, "readout expired");
     }
 
     /// A config the save refuses to rewrite fails each save, which says so.
     #[test]
-    fn a_refused_save_says_it_did_not_land() {
-        let (mut c, _d) = ctl(false, 0.50);
-        std::fs::write(&c.config_path, "not = [valid").unwrap();
-        let failed = |setting| {
-            Some(SaveOutcome {
-                setting,
-                landed: false,
-            })
+    fn a_refused_save_says_it_was_not_written() {
+        let mut k = Ctl::new(false, 0.50);
+        std::fs::write(&k.path, "not = [valid").unwrap();
+        let failed = |setting| SaveOutcome {
+            setting,
+            written: false,
         };
         let t0 = Instant::now();
-        assert_eq!(
-            c.apply(AudioAction::Volume(false), false, t0, |_, _| {}),
-            None
-        );
+        k.c.apply(AudioAction::Volume(false), false, t0, |_, _| {});
         let after = t0 + Duration::from_millis(VOLUME_FLASH_MS as u64 + 50);
-        assert_eq!(c.tick(after), failed(Setting::Volume));
+        k.c.tick(after);
+        assert_eq!(k.saved(), [failed(Setting::Volume)]);
+        k.c.apply(AudioAction::ToggleMute, false, after, |_, _| {});
+        assert_eq!(k.saved(), [failed(Setting::Mute)]);
+    }
+
+    #[test]
+    fn flush_on_exit_queues_a_pending_nudge() {
+        let mut k = Ctl::new(false, 0.50);
+        k.c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
+        k.c.flush_on_exit();
+        assert_eq!(k.saved(), [saved_ok(Setting::Volume)]);
+        assert!(
+            k.file().contains("volume"),
+            "a nudge-then-quit queues its save on exit, and the drain writes it"
+        );
+    }
+
+    #[test]
+    fn drop_queues_a_pending_nudge_even_without_the_quit_path() {
+        let Ctl {
+            mut c,
+            saves,
+            mut landed,
+            path,
+            _dir,
+        } = Ctl::new(false, 0.50);
+        c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         assert_eq!(
-            c.apply(AudioAction::ToggleMute, false, after, |_, _| {}),
-            failed(Setting::Mute)
-        );
-    }
-
-    #[test]
-    fn flush_on_exit_writes_a_pending_nudge() {
-        let (mut c, _d) = ctl(false, 0.50);
-        let _ = c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
-        c.flush_on_exit();
-        assert!(
-            std::fs::read_to_string(&c.config_path)
-                .unwrap()
-                .contains("volume"),
-            "a nudge-then-quit persists on exit"
-        );
-    }
-
-    #[test]
-    fn drop_persists_a_pending_nudge_even_without_the_quit_path() {
-        let (mut c, _dir) = ctl(false, 0.50);
-        let path = c.config_path.clone();
-        let _ = c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
-        assert!(
-            !std::fs::read_to_string(&path).unwrap().contains("volume"),
-            "not yet persisted — still inside the debounce window"
+            crate::panels::noted::saved(&saves, &mut landed),
+            [],
+            "not yet queued — still inside the debounce window"
         );
         drop(c); // the ONLY exit signal: no quit key, no explicit flush_on_exit()
-        assert!(
-            std::fs::read_to_string(&path).unwrap().contains("volume"),
-            "AudioController::drop must persist a pending nudge (the #752 Ctrl-C fix)"
+        assert_eq!(
+            crate::panels::noted::saved(&saves, &mut landed),
+            [saved_ok(Setting::Volume)],
+            "AudioController::drop must queue a pending nudge's save (the #752 Ctrl-C fix)"
         );
+        assert!(std::fs::read_to_string(&path).unwrap().contains("volume"));
     }
 
     #[test]
     fn a_clean_drop_does_not_rewrite_the_config() {
-        let (c, _dir) = ctl(false, 0.50);
-        let path = c.config_path.clone();
-        let before = std::fs::read_to_string(&path).unwrap();
+        let Ctl {
+            c,
+            saves,
+            mut landed,
+            ..
+        } = Ctl::new(false, 0.50);
         drop(c);
         assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            before,
+            crate::panels::noted::saved(&saves, &mut landed),
+            [],
             "an un-dirtied drop must not touch the user's config"
         );
+    }
+
+    /// The quit's join waits for the saves still queued when the last handle on
+    /// them goes, the exit's flush included, a stalled one too; the quit itself
+    /// bounds that join by [`EXIT_WAIT`](crate::EXIT_WAIT).
+    #[cfg(unix)]
+    #[test]
+    fn the_quit_join_waits_for_the_queued_saves() {
+        let Ctl {
+            mut c, path, _dir, ..
+        } = Ctl::new(false, 0.50);
+        let release = crate::panels::noted::stall(&path);
+        c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
+        drop(c);
+        crate::panels::join_off_loop_threads();
+        assert!(
+            std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()),
+            "the quit left its queued save unwritten"
+        );
+        assert!(std::fs::read_to_string(&path).unwrap().contains("volume"));
+        release.join().expect("the stall ends");
     }
 }
 

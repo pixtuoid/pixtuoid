@@ -159,12 +159,12 @@ impl Setting {
     }
 }
 
-/// A save of `setting`, and whether it `landed`: one that didn't leaves the
+/// A save of `setting`, and whether it was `written`: one that wasn't leaves the
 /// run's choice to revert at the next launch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct SaveOutcome {
     pub(crate) setting: Setting,
-    pub(crate) landed: bool,
+    pub(crate) written: bool,
 }
 
 impl SaveOutcome {
@@ -182,7 +182,7 @@ impl SaveOutcome {
         }
         Self {
             setting,
-            landed: save.is_ok(),
+            written: save.is_ok(),
         }
     }
 }

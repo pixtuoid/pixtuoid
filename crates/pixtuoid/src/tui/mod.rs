@@ -501,6 +501,9 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         audio_cfg,
     } = session;
     let arms = QuitArms::arm();
+    let (landing, mut landed) = tokio::sync::mpsc::unbounded_channel();
+    // Before the terminal is set up, which a failure past it leaves raw.
+    let saves = crate::panels::Saves::spawn(config_path.clone(), landing.clone())?;
     // Asked before raw mode is on: the query takes the terminal's own for
     // its reply.
     let out = FrameOut::new(stdout(), crate::term::query_sync_output());
@@ -512,7 +515,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     renderer.present_through(out);
     // A LOCAL so EVERY exit (q / Ctrl-C / terminate / error) drops it and joins
     // the device thread it owns.
-    let mut audio_ctl = crate::audio::AudioController::new(audio_cfg, config_path.clone());
+    let mut audio_ctl = crate::audio::AudioController::new(audio_cfg, saves.clone());
     renderer.set_audio(audio_ctl.handle().clone());
     let mut ui = ui_state::UiState::boot(ui_state::Boot {
         theme,
@@ -526,7 +529,6 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
     });
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
     let mut cap_sweep = FloorCapacitySweep::new();
-    let (job_tx, mut job_done) = tokio::sync::mpsc::unbounded_channel();
 
     let mut fired = None;
     let result: Result<()> = (async {
@@ -545,11 +547,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     now = ui.now();
                     snapshot = scene_rx.borrow_and_update().clone();
                     let health = source_health.borrow_and_update().clone();
-                    let volume_flash = crate::panels::tick_audio(
-                        &mut ui,
-                        &mut audio_ctl,
-                        std::time::Instant::now(),
-                    );
+                    let volume_flash = audio_ctl.tick(std::time::Instant::now());
                     renderer.set_frames(ui.build_frames(now, &snapshot, &health), now);
                     renderer.set_volume_flash(volume_flash);
                     renderer.render(&snapshot, now)?;
@@ -578,9 +576,9 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                                 snapshot: &snapshot,
                                 now,
                                 respawn: crate::audio::respawn,
-                                installed: crate::sources::detect,
+                                saves: &saves,
                                 focus: crate::focus::focus_slot,
-                                job_tx: &job_tx,
+                                job_tx: &landing,
                                 run_job: crate::panels::run_job,
                             },
                         );
@@ -601,7 +599,7 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
                     ),
                     _ => {}
                 },
-                Some(done) = job_done.recv() => crate::panels::finish_job(&mut ui, done),
+                Some(arrived) = landed.recv() => crate::panels::land(&mut ui, arrived),
                 signal = &mut quit => {
                     fired = Some(signal);
                     break;
@@ -1222,11 +1220,11 @@ mod apply_key_action_tests {
         audio_ctl: crate::audio::AudioController,
         connected: crate::runtime::ConnectedSources,
         snapshot: pixtuoid_core::state::SceneState,
-        installed: fn() -> Vec<&'static str>,
         _tmp: tempfile::TempDir,
         config_path: std::path::PathBuf,
-        job_tx: crate::panels::JobTx,
-        job_done: tokio::sync::mpsc::UnboundedReceiver<crate::panels::JobDone>,
+        saves: crate::panels::Saves,
+        landing: crate::panels::LandedTx,
+        landed: tokio::sync::mpsc::UnboundedReceiver<crate::panels::Landed>,
         run_job: fn(crate::panels::JobInput) -> crate::panels::JobDone,
     }
 
@@ -1234,7 +1232,9 @@ mod apply_key_action_tests {
         fn new() -> Self {
             let tmp = tempfile::tempdir().expect("tempdir");
             let config_path = tmp.path().join("config.toml");
-            let (job_tx, job_done) = tokio::sync::mpsc::unbounded_channel();
+            let (landing, landed) = tokio::sync::mpsc::unbounded_channel();
+            let saves = crate::panels::Saves::spawn(config_path.clone(), landing.clone())
+                .expect("a save thread");
             Self {
                 ui: super::ui_state::UiState::new(
                     &theme::NORMAL,
@@ -1258,16 +1258,16 @@ mod apply_key_action_tests {
                         muted: false,
                         volume: 1.0,
                     },
-                    config_path.clone(),
+                    saves.clone(),
                     no_respawn,
                 ),
                 connected: crate::runtime::ConnectedSources::new(HashSet::new()),
                 snapshot: pixtuoid_core::state::SceneState::uniform(4),
-                installed: Vec::new,
                 _tmp: tmp,
                 config_path,
-                job_tx,
-                job_done,
+                saves,
+                landing,
+                landed,
                 run_job: crate::panels::noted::gated_job,
             }
         }
@@ -1305,28 +1305,26 @@ mod apply_key_action_tests {
                     snapshot: &self.snapshot,
                     now: SystemTime::UNIX_EPOCH,
                     respawn: no_respawn,
-                    installed: self.installed,
+                    saves: &self.saves,
                     focus: crate::panels::noted::focus,
-                    job_tx: &self.job_tx,
+                    job_tx: &self.landing,
                     run_job: self.run_job,
                 },
             )
         }
 
-        /// Take in the job that ends next, as the loop's arm does.
+        /// Take in what lands next, a job or a save, as the loop's arm does.
         fn settle(&mut self) {
-            /// Far past a job's own time on a loaded machine.
-            const LANDS_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
-            let deadline = std::time::Instant::now() + LANDS_WITHIN;
+            let deadline = std::time::Instant::now() + crate::panels::noted::SETTLES_WITHIN;
             loop {
-                match self.job_done.try_recv() {
-                    Ok(done) => return crate::panels::finish_job(&mut self.ui, done),
+                match self.landed.try_recv() {
+                    Ok(arrived) => return crate::panels::land(&mut self.ui, arrived),
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty)
                         if std::time::Instant::now() < deadline =>
                     {
                         std::thread::sleep(std::time::Duration::from_millis(5));
                     }
-                    Err(e) => panic!("no job landed: {e}"),
+                    Err(e) => panic!("nothing landed: {e}"),
                 }
             }
         }
@@ -1524,11 +1522,8 @@ mod apply_key_action_tests {
             std::thread::sleep(std::time::Duration::from_millis(100));
             crate::panels::noted::open_gate(&config, false);
         });
-        crate::panels::join_jobs();
-        assert!(
-            h.job_done.try_recv().is_ok(),
-            "the wait ended before the job"
-        );
+        crate::panels::join_off_loop_threads();
+        assert!(h.landed.try_recv().is_ok(), "the wait ended before the job");
     }
 
     /// The panel opens at once on rows no probe has read, and reads them off
@@ -1644,29 +1639,36 @@ mod apply_key_action_tests {
     }
 
     /// A choice the config refuses still shows this run, and the footer says it
-    /// reverts at the next launch until a later save of it lands.
+    /// reverts at the next launch until a later save of it is written.
     #[test]
-    fn a_refused_save_shows_in_the_footer_until_one_lands() {
+    fn a_refused_save_shows_in_the_footer_until_one_is_written() {
         let mut h = Harness::new();
         std::fs::write(&h.config_path, "not = [valid").unwrap();
         h.apply(KeyAction::OpenAppearance);
         h.apply(KeyAction::ThemePreview(1));
         h.apply(KeyAction::AppearanceCommit);
+        h.settle();
         let footer = h.footer();
         assert!(
             footer.contains("appearance not saved \u{2014} reverts at the next launch (see log)"),
             "{footer}"
         );
         h.apply(KeyAction::ToggleAudioMute);
+        h.settle();
         let footer = h.footer();
         assert!(footer.contains("appearance, mute not saved"), "{footer}");
 
         std::fs::write(&h.config_path, "").unwrap();
         h.apply(KeyAction::OpenAppearance);
         h.apply(KeyAction::AppearanceCommit);
+        h.settle();
         let footer = h.footer();
-        assert!(footer.contains(" mute not saved"), "{footer}");
+        assert!(
+            footer.contains("mute not saved") && !footer.contains("appearance"),
+            "{footer}"
+        );
         h.apply(KeyAction::ToggleAudioMute);
+        h.settle();
         let footer = h.footer();
         assert!(!footer.contains("not saved"), "{footer}");
     }
@@ -1680,26 +1682,69 @@ mod apply_key_action_tests {
         h.apply(KeyAction::AdjustVolume(false));
         let faded = std::time::Instant::now()
             + std::time::Duration::from_millis(crate::audio::VOLUME_FLASH_MS as u64 + 50);
-        assert_eq!(
-            crate::panels::tick_audio(&mut h.ui, &mut h.audio_ctl, faded),
-            None,
-            "the readout has faded"
-        );
+        assert_eq!(h.audio_ctl.tick(faded), None, "the readout has faded");
+        h.settle();
         let footer = h.footer();
         assert!(footer.contains("volume not saved"), "{footer}");
     }
 
+    /// A save the config's disk holds up leaves the loop live: the commit, the
+    /// mute key and the volume's flush each return at once, and what they
+    /// saved is written once the disk answers.
+    #[cfg(unix)]
+    #[test]
+    fn a_save_on_a_stalled_config_leaves_the_loop_live() {
+        /// What a save is called, and the keys that make it.
+        type Saving = (&'static str, fn(&mut Harness));
+        let saves: [Saving; 3] = [
+            ("the commit", |h| {
+                h.apply(KeyAction::OpenAppearance);
+                h.apply(KeyAction::AppearanceCommit);
+            }),
+            ("the mute key", |h| {
+                h.apply(KeyAction::ToggleAudioMute);
+            }),
+            ("the volume's flush", |h| {
+                h.apply(KeyAction::AdjustVolume(false));
+                let faded =
+                    std::time::Duration::from_millis(crate::audio::VOLUME_FLASH_MS as u64 + 50);
+                h.audio_ctl.tick(std::time::Instant::now() + faded);
+            }),
+        ];
+        for (save, make) in saves {
+            let mut h = Harness::new();
+            let release = crate::panels::noted::stall(&h.config_path);
+            let started = std::time::Instant::now();
+            make(&mut h);
+            assert!(
+                started.elapsed() < crate::panels::noted::STALL,
+                "the loop waited on a stalled save: {save}"
+            );
+            h.settle();
+            let footer = h.footer();
+            assert!(!footer.contains("not saved"), "{save}: {footer}");
+            release.join().expect("the stall ends");
+        }
+    }
+
     /// [`keys::VERSION`](crate::panels::keys::VERSION) reopens the popup with the
-    /// notices due against the LIVE connections: a host connected since boot is
-    /// not named.
+    /// notices due against the LIVE connections and the CLIs a panel job last
+    /// read, probing none itself: a host connected since boot is not named.
     #[test]
     fn v_reopens_the_popup_with_the_notices_still_due() {
         let mut h = Harness::new();
         h.ui = super::ui_state::UiState::upgraded_from("0.19.0", &semver::Version::new(0, 20, 0));
         h.connected = crate::runtime::ConnectedSources::new(HashSet::from(["codex".to_string()]));
-        h.installed = || vec!["codex", "reasonix"];
         assert!(!h.apply(KeyAction::OpenVersionPopup));
         assert!(h.ui.modal().version_popup_open);
+        assert!(h.ui.version_notices().is_empty(), "no CLI read yet");
+        h.apply(KeyAction::DismissVersionPopup);
+
+        h.apply(KeyAction::ToggleConnection);
+        h.open_gate(false);
+        h.settle();
+        h.apply(KeyAction::ConnectionClose);
+        assert!(!h.apply(KeyAction::OpenVersionPopup));
         let shown = h.ui.version_notices();
         assert!(
             shown
@@ -1828,6 +1873,7 @@ mod apply_key_action_tests {
         h.apply(KeyAction::OpenAppearance);
         h.apply(KeyAction::ThemePreview(1));
         h.apply(KeyAction::AppearanceCommit);
+        h.settle();
         let saved = std::fs::read_to_string(&h.config_path).expect("config written");
         assert!(
             saved.contains(theme::ALL_THEMES[1].name),

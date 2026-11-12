@@ -138,6 +138,9 @@ struct Notices {
     /// onboarding could hold the popup back.
     upgraded: bool,
     terminal_cutaway: bool,
+    /// The agent CLIs on this machine as last read: the boot's probe when its
+    /// popup is due, then each panel job's.
+    installed: Vec<&'static str>,
     shown: Arc<[String]>,
 }
 
@@ -216,8 +219,12 @@ impl UiState {
         ui.notices.upgraded = decision.should_show_popup;
         ui.notices.terminal_cutaway = boot.look == Some(LookKind::Cutaway);
         ui.saved.look = boot.look;
+        // The onboarding can hold the popup back, leaving its notices to `v`.
+        if decision.should_show_popup {
+            ui.notices.installed = installed();
+        }
         if pops_up {
-            ui.open_version_popup(boot.connected, &installed());
+            ui.open_version_popup(boot.connected);
         }
         ui
     }
@@ -310,15 +317,12 @@ impl UiState {
         self.version_popup_open = false;
     }
 
-    /// Open the version popup with the notices due while `connected` holds
-    /// and the agent CLIs `installed` here are.
-    pub(crate) fn open_version_popup(
-        &mut self,
-        connected: &HashSet<String>,
-        installed: &[&'static str],
-    ) {
+    /// Open the version popup with the notices due while `connected` holds,
+    /// on the agent CLIs last read here: its loop probes nothing, a stalled
+    /// home being no reason to freeze it.
+    pub(crate) fn open_version_popup(&mut self, connected: &HashSet<String>) {
         let facts = crate::version::Facts {
-            installed,
+            installed: &self.notices.installed,
             connected,
             terminal_cutaway: self.notices.terminal_cutaway,
         };
@@ -348,6 +352,11 @@ impl UiState {
         }
     }
 
+    /// Take in the agent CLIs a panel job found here.
+    pub(crate) fn note_installed(&mut self, installed: Vec<&'static str>) {
+        self.notices.installed = installed;
+    }
+
     /// Enter in the picker: close, keeping what it showed, which it returns.
     pub(crate) fn commit_appearance(&mut self) -> Option<AppearancePick> {
         let committed = self.appearance.take()?;
@@ -361,11 +370,11 @@ impl UiState {
         self.saved
     }
 
-    /// Hold a failed save in the footer until a later save of its setting lands:
-    /// in TUI mode the alternate screen owns the terminal, so the warn-floor log
-    /// is not a user surface.
+    /// Hold a failed save in the footer until a later save of its setting is written:
+    /// the warn-floor log is no user surface in either painter (the TUI's alternate
+    /// screen owns the terminal).
     pub(crate) fn note_save(&mut self, outcome: crate::config::SaveOutcome) {
-        self.unsaved[outcome.setting] = !outcome.landed;
+        self.unsaved[outcome.setting] = !outcome.written;
     }
 
     pub(crate) fn toggle_dashboard(&mut self, scene: &SceneState) {
@@ -1053,7 +1062,8 @@ mod tests {
             previous: semver::Version::new(0, 19, 0),
             current: semver::Version::new(0, 20, 0),
         });
-        ui.open_version_popup(&HashSet::new(), &["codex"]);
+        ui.notices.installed = vec!["codex"];
+        ui.open_version_popup(&HashSet::new());
         assert!(ui.modal().version_popup_open);
         let shown = ui.version_notices().to_vec();
         assert!(shown.iter().any(|n| n.contains("Codex")), "{shown:?}");
@@ -1068,7 +1078,7 @@ mod tests {
         );
 
         let connected = HashSet::from(["codex".to_string()]);
-        ui.open_version_popup(&connected, &["codex"]);
+        ui.open_version_popup(&connected);
         assert!(ui.modal().version_popup_open);
         assert!(
             ui.version_notices().is_empty(),
@@ -1088,7 +1098,8 @@ mod tests {
             previous: semver::Version::new(0, 19, 0),
             current: semver::Version::new(0, 20, 0),
         });
-        ui.open_version_popup(&HashSet::new(), &["codex"]);
+        ui.notices.installed = vec!["codex"];
+        ui.open_version_popup(&HashSet::new());
         let screen = (120, 44);
         let bounds = ratatui::layout::Rect::new(0, 0, screen.0, screen.1);
         let bare = version_popup_url_rect(bounds, &[], 1.0).expect("a link");
@@ -1121,7 +1132,7 @@ mod tests {
                 crate::config::save_version(&path, seed).expect("seed a version");
             }
             let mut ui = boot_at(&path, welcome, &semver::Version::new(0, 20, 0));
-            ui.open_version_popup(&HashSet::new(), &[]);
+            ui.open_version_popup(&HashSet::new());
             let frames = ui.build_frames(SystemTime::now(), &SceneState::new([0; 10]), &[]);
             frames.version_popup.upgraded
         };
@@ -1146,5 +1157,23 @@ mod tests {
             !upgraded("down.toml", Some("0.21.0"), WelcomeUi::from_detected(&[])),
             "a downgrade"
         );
+    }
+
+    /// The onboarding holds the popup back, never its notices: the `v` after
+    /// it names each host the boot found, though no panel job read one yet.
+    #[test]
+    fn a_popup_the_onboarding_held_back_names_the_hosts_the_boot_found() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        crate::config::save_version(&path, "0.19.0").expect("seed a version");
+        let welcome = WelcomeUi::from_ids(&["codex"]);
+        let mut ui = boot_at(&path, welcome, &semver::Version::new(0, 20, 0));
+        assert!(
+            !ui.modal().version_popup_open,
+            "the onboarding held it back"
+        );
+        ui.open_version_popup(&HashSet::new());
+        let shown = ui.version_notices();
+        assert!(shown.iter().any(|n| n.contains("Codex")), "{shown:?}");
     }
 }
