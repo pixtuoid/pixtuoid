@@ -90,8 +90,12 @@ pub fn run() -> Result<()> {
     // A quit by key, or an error, can leave a panel job running on its own
     // thread, whose CLI nothing holds to its limit once this process is gone.
     crate::install::io::kill_running();
-    // A killed CLI's change still restores what it wrote.
-    crate::within("panel-jobs-end", crate::EXIT_WAIT, crate::panels::join_jobs);
+    // A killed CLI's change still restores what it wrote, and queued saves are written.
+    crate::within(
+        "off-loop-threads-end",
+        crate::EXIT_WAIT,
+        crate::panels::join_off_loop_threads,
+    );
     // Before the re-raise, which ends the process with the queue unwritten.
     drop(log_flush);
     // After every Drop the run held: the unwind is done, so the signal can now

@@ -119,14 +119,14 @@ pub(super) fn collect(rows: &[DoctorSourceRow]) -> anyhow::Result<Delivery> {
             Err(e) => unlocated = Some(format!("{e:#}")),
         }
     }
+    let endpoint = ClaudeCodeSource::default_socket_path();
     let shims = named
         .into_iter()
         .map(|path| {
-            let probed = runtime.block_on(probe(&path, EXIT_DEADLINE));
+            let probed = runtime.block_on(probe(&path, &endpoint, EXIT_DEADLINE));
             (ShownPath::new(path), probed)
         })
         .collect();
-    let endpoint = ClaudeCodeSource::default_socket_path();
     Ok(Delivery {
         shims,
         unlocated,
@@ -148,11 +148,11 @@ fn named_as_the_shim(path: &Path) -> bool {
     })
 }
 
-/// Run `shim` as a hook would, against a listener only it knows about. The real
-/// listener and decoder on purpose. The path must be absolute and named as the
-/// shim before anything runs: a hand-edited config can name anything, and this
-/// feeds it an invented event.
-async fn probe(shim: &Path, exit_deadline: Duration) -> ShimProbe {
+/// Run `shim` as a hook would, against a listener beside `endpoint` only it
+/// knows about. The real listener and decoder on purpose. The path must be
+/// absolute and named as the shim before anything runs: a hand-edited config can
+/// name anything, and this feeds it an invented event.
+async fn probe(shim: &Path, endpoint: &Path, exit_deadline: Duration) -> ShimProbe {
     if !shim.is_absolute() {
         return ShimProbe::NotTested(
             "its path is relative, so what runs depends on where the CLI runs it".into(),
@@ -162,12 +162,12 @@ async fn probe(shim: &Path, exit_deadline: Duration) -> ShimProbe {
         let name = crate::install::io::hook_sibling_name();
         return ShimProbe::NotTested(format!("it is not named {name}"));
     }
-    let dir = match tempfile::Builder::new().prefix("px").tempdir() {
+    let dir = match throwaway_beside(endpoint) {
         Ok(dir) => dir,
-        Err(e) => return ShimProbe::NotTested(format!("no temp dir: {e}")),
+        Err(e) => return ShimProbe::NotTested(format!("no temp dir: {e:#}")),
     };
-    let endpoint = hook::private_endpoint(dir.path(), "p");
-    let listener = match HookSocketListener::bind(&endpoint).await {
+    let throwaway = hook::private_endpoint(dir.path(), "p");
+    let listener = match HookSocketListener::bind(&throwaway).await {
         Ok(listener) => listener,
         Err(e) => return ShimProbe::NotTested(format!("no throwaway endpoint: {e:#}")),
     };
@@ -175,7 +175,7 @@ async fn probe(shim: &Path, exit_deadline: Duration) -> ShimProbe {
     let serving = tokio::spawn(listener.run(tx));
     let mut verdict = ShimProbe::Failed("it exited 0 and delivered nothing".into());
     for _ in 0..ATTEMPTS {
-        match run_once(shim, &endpoint, exit_deadline).await {
+        match run_once(shim, &throwaway, exit_deadline).await {
             Err(why) => {
                 verdict = ShimProbe::Failed(why);
                 break;
@@ -193,6 +193,33 @@ async fn probe(shim: &Path, exit_deadline: Duration) -> ShimProbe {
     }
     serving.abort();
     verdict
+}
+
+/// A temp dir where `endpoint` binds, so the throwaway endpoint meets its
+/// conditions (that dir, its owner, its room in `sun_path`) rather than TMPDIR's.
+#[cfg(unix)]
+fn throwaway_beside(endpoint: &Path) -> anyhow::Result<tempfile::TempDir> {
+    throwaway_vetted(endpoint, hook::vet_owned_tmp_path)
+}
+
+/// [`throwaway_beside`] with the owned fallback dir's guard injected, so a
+/// test needn't touch the real one.
+#[cfg(unix)]
+fn throwaway_vetted(
+    endpoint: &Path,
+    vet: impl FnOnce(&Path) -> anyhow::Result<()>,
+) -> anyhow::Result<tempfile::TempDir> {
+    use anyhow::Context as _;
+    // Made as the office's bind makes it, where the endpoint is the owned fallback.
+    vet(endpoint)?;
+    let parent = endpoint.parent().context("the endpoint names no file")?;
+    Ok(tempfile::Builder::new().prefix("px").tempdir_in(parent)?)
+}
+
+/// [`hook::private_endpoint`] makes the dir only a pipe's name here.
+#[cfg(windows)]
+fn throwaway_beside(_: &Path) -> anyhow::Result<tempfile::TempDir> {
+    Ok(tempfile::Builder::new().prefix("px").tempdir()?)
 }
 
 /// One run to a clean exit, which the shim's contract promises, so anything else
@@ -583,7 +610,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         for name in ["log-hook.sh", "pixtuoid-hook.sh", "pixtuoid-hook.bak"] {
             assert!(matches!(
-                probe(&dir.path().join(name), EVENT_WAIT).await,
+                probe(&dir.path().join(name), &beside(dir.path()), EVENT_WAIT).await,
                 ShimProbe::NotTested(why) if why.contains("not named")
             ));
         }
@@ -593,9 +620,28 @@ mod tests {
     async fn a_relative_path_is_never_run() {
         let relative = Path::new("bin").join(crate::install::io::hook_sibling_name());
         assert!(matches!(
-            probe(&relative, EVENT_WAIT).await,
+            probe(&relative, &beside(Path::new("bin")), EVENT_WAIT).await,
             ShimProbe::NotTested(why) if why.contains("relative")
         ));
+    }
+
+    /// Where the endpoint is the owned fallback a fresh machine never made, as
+    /// under brew's `test do`, the probe makes it as the office's bind would.
+    #[cfg(unix)]
+    #[test]
+    fn a_probe_beside_a_fresh_owned_fallback_makes_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        let owned = tmp.path().join("pixtuoid-42");
+        let uid = rustix::process::getuid().as_raw();
+        let vet = |path: &Path| hook::vet_owned_tmp_path_in(path, &owned, uid);
+        let dir =
+            throwaway_vetted(&owned.join("pixtuoid.sock"), vet).expect("a dir beside the endpoint");
+        assert_eq!(dir.path().parent(), Some(owned.as_path()));
+    }
+
+    /// An endpoint in `dir`, so no probe here touches the real one's dir.
+    fn beside(dir: &Path) -> PathBuf {
+        hook::private_endpoint(dir, "real")
     }
 
     /// A stand-in named as the shim is, so the name check passes it.
@@ -612,7 +658,12 @@ mod tests {
     #[tokio::test]
     async fn a_shim_that_ends_badly_fails_at_once() {
         let dir = tempfile::tempdir().unwrap();
-        let verdict = probe(&stand_in(dir.path(), "exit 3"), EXIT_DEADLINE).await;
+        let verdict = probe(
+            &stand_in(dir.path(), "exit 3"),
+            &beside(dir.path()),
+            EXIT_DEADLINE,
+        )
+        .await;
         assert!(
             matches!(&verdict, ShimProbe::Failed(why) if why.contains('3')),
             "{verdict:?}"
@@ -625,7 +676,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let runs = dir.path().join("runs");
         let body = format!("echo >> '{}'", runs.display());
-        let verdict = probe(&stand_in(dir.path(), &body), EXIT_DEADLINE).await;
+        let verdict = probe(
+            &stand_in(dir.path(), &body),
+            &beside(dir.path()),
+            EXIT_DEADLINE,
+        )
+        .await;
         assert!(
             matches!(&verdict, ShimProbe::Failed(why) if why.contains("delivered nothing")),
             "{verdict:?}"
@@ -641,7 +697,12 @@ mod tests {
     async fn a_shim_that_hangs_is_killed_at_the_deadline() {
         const SHORT: Duration = Duration::from_millis(100);
         let dir = tempfile::tempdir().unwrap();
-        let verdict = probe(&stand_in(dir.path(), "exec sleep 600"), SHORT).await;
+        let verdict = probe(
+            &stand_in(dir.path(), "exec sleep 600"),
+            &beside(dir.path()),
+            SHORT,
+        )
+        .await;
         assert!(
             matches!(&verdict, ShimProbe::Failed(why) if why.contains("did not exit")),
             "{verdict:?}"
@@ -655,7 +716,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = stand_in(dir.path(), "exit 0");
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        let verdict = probe(&path, EXIT_DEADLINE).await;
+        let verdict = probe(&path, &beside(dir.path()), EXIT_DEADLINE).await;
         assert!(
             matches!(&verdict, ShimProbe::Failed(why) if why.contains("would not run")),
             "{verdict:?}"
@@ -666,7 +727,7 @@ mod tests {
     async fn a_shim_that_is_gone_fails() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(crate::install::io::hook_sibling_name());
-        let verdict = probe(&path, EXIT_DEADLINE).await;
+        let verdict = probe(&path, &beside(dir.path()), EXIT_DEADLINE).await;
         assert!(
             matches!(&verdict, ShimProbe::Failed(why) if why.contains("would not run")),
             "{verdict:?}"

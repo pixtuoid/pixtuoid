@@ -485,14 +485,25 @@ pub(crate) struct JobDone {
     onboarding: bool,
     notices: Vec<ChangeNotice>,
     rows: Vec<connection::ConnectionRow>,
+    /// The agent CLIs on this machine, which the version popup reads.
+    installed: Vec<&'static str>,
 }
 
-/// Where a painter's loop receives each [`JobDone`].
-pub(crate) type JobTx = tokio::sync::mpsc::UnboundedSender<JobDone>;
+/// What a painter's loop takes back from work started off it: a panel's job, or a
+/// [`Saves`] write.
+#[derive(Debug, Clone)]
+pub(crate) enum Landed {
+    Job(JobDone),
+    /// A [`Saves`] write of a setting the footer tracks.
+    Saved(crate::config::SaveOutcome),
+}
+
+/// Where a painter's loop receives each [`Landed`].
+pub(crate) type LandedTx = tokio::sync::mpsc::UnboundedSender<Landed>;
 
 /// Run `input`'s job, with every step of it that can block: the config
-/// writes, the host CLIs a connect runs, and the rows' rebuild, whose
-/// `diagnose` can run a CLI too.
+/// writes, the host CLIs a connect runs, the rows' rebuild, whose `diagnose`
+/// can run a CLI too, and `sources::detect`'s presence probes.
 pub(crate) fn run_job(input: JobInput) -> JobDone {
     let JobInput {
         job,
@@ -523,6 +534,7 @@ pub(crate) fn run_job(input: JobInput) -> JobDone {
         onboarding,
         notices,
         rows,
+        installed: crate::sources::detect(),
     }
 }
 
@@ -546,16 +558,16 @@ fn start_job<H: Host>(cx: &mut KeyCtx<'_, H>, job: PanelJob) {
         log: cx.ui.log().cloned(),
     };
     let (run, job_tx) = (cx.run_job, cx.job_tx.clone());
-    // Not `spawn_blocking`: a runtime's drop waits for its blocking work
-    // (tokio's `Runtime` docs), so a quit mid-job would wait out the CLI.
+    // Not `spawn_blocking`: the runtime ends before the quit kills the CLI
+    // (`app::run`), which would leave the job unjoined and its rollback unwritten.
     let started = std::thread::Builder::new()
         .name("panel-job".into())
         .spawn(move || {
-            let _ = job_tx.send(run(input));
+            let _ = job_tx.send(Landed::Job(run(input)));
         });
     match started {
         Ok(thread) => {
-            job_threads().push(thread);
+            off_loop_threads().push(thread);
             // The line a change before it left would stand for this one.
             if job != PanelJob::Refresh {
                 cx.ui.connection.last_result = None;
@@ -566,34 +578,126 @@ fn start_job<H: Host>(cx: &mut KeyCtx<'_, H>, job: PanelJob) {
     }
 }
 
-/// The threads of the panel's jobs started this run, for a quit to let them
-/// finish: a killed CLI leaves its change a rollback to write.
-static JOB_THREADS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+/// The threads a panel or a painter started this run, for a quit to let them finish: a
+/// killed CLI leaves its change a rollback to write, and closed [`Saves`] their
+/// queued writes.
+static OFF_LOOP_THREADS: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
     std::sync::Mutex::new(Vec::new());
 
-fn job_threads() -> std::sync::MutexGuard<'static, Vec<std::thread::JoinHandle<()>>> {
-    let mut threads = JOB_THREADS
+fn off_loop_threads() -> std::sync::MutexGuard<'static, Vec<std::thread::JoinHandle<()>>> {
+    let mut threads = OFF_LOOP_THREADS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     threads.retain(|thread| !thread.is_finished());
     threads
 }
 
-/// Wait for every panel job started this run to end.
-pub(crate) fn join_jobs() {
-    for thread in std::mem::take(&mut *job_threads()) {
+/// Wait for every thread a panel or a painter started this run to end.
+pub(crate) fn join_off_loop_threads() {
+    // Taken out first: a `for` head's guard would hold the lock across the
+    // joins, which a last `Saves` dropped meanwhile needs.
+    let threads = std::mem::take(&mut *off_loop_threads());
+    for thread in threads {
         let _ = thread.join();
+    }
+}
+
+/// The painter's config writes, on a thread of their own in the order they
+/// were made: a write can block on a stalled disk, which the painter's loop
+/// must not wait out, and two saves of one setting must be written in that order:
+/// one thread draining one channel keeps it, std's mpsc delivering "in the same
+/// order as it was sent" (`library/std/src/sync/mpsc.rs:488-489`), where a thread
+/// per save would not (opinion). A setting's outcome comes back as a
+/// [`Landed::Saved`].
+#[derive(Clone)]
+pub(crate) struct Saves(std::sync::Arc<SavesThread>);
+
+/// One write of the config at the path handed to it, and what the footer
+/// hears of it.
+type Save = Box<dyn FnOnce(&std::path::Path) -> Option<crate::config::SaveOutcome> + Send>;
+
+struct SavesThread {
+    queue: std::sync::mpsc::Sender<Save>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Saves {
+    /// The thread that writes the config at `config_path`, its outcomes sent
+    /// to `landing`.
+    ///
+    /// # Errors
+    ///
+    /// If the thread cannot start.
+    pub(crate) fn spawn(
+        config_path: std::path::PathBuf,
+        landing: LandedTx,
+    ) -> std::io::Result<Self> {
+        let (queue, saves) = std::sync::mpsc::channel::<Save>();
+        // Not `spawn_blocking`, for `start_job`'s reason: the quit joins it
+        // after the runtime ends.
+        let thread = std::thread::Builder::new()
+            .name("config-saves".into())
+            .spawn(move || {
+                for save in saves {
+                    if let Some(outcome) = save(&config_path) {
+                        let _ = landing.send(Landed::Saved(outcome));
+                    }
+                }
+            })?;
+        Ok(Self(std::sync::Arc::new(SavesThread {
+            queue,
+            thread: Some(thread),
+        })))
+    }
+
+    pub(crate) fn save(
+        &self,
+        save: impl FnOnce(&std::path::Path) -> Option<crate::config::SaveOutcome> + Send + 'static,
+    ) {
+        let _ = self.0.queue.send(Box::new(save));
+    }
+
+    /// Wait at most `bound` for the thread to run every save queued so far,
+    /// whatever each outcome; whether it did. A save queued after them is the
+    /// mark, since they run in order.
+    pub(crate) fn flush(&self, bound: std::time::Duration) -> bool {
+        let (mark, marked) = std::sync::mpsc::channel();
+        self.save(move |_| {
+            let _ = mark.send(());
+            None
+        });
+        marked.recv_timeout(bound).is_ok()
+    }
+}
+
+impl Drop for SavesThread {
+    /// Hands the thread to the quit's [`join_off_loop_threads`] only once the queue closes,
+    /// so that join waits for it to write what is queued rather than for good.
+    fn drop(&mut self) {
+        if let Some(thread) = self.thread.take() {
+            off_loop_threads().push(thread);
+        }
+    }
+}
+
+/// Take in what landed: a job, or a save's outcome for the footer.
+pub(crate) fn land(ui: &mut ui_state::UiState, landed: Landed) {
+    match landed {
+        Landed::Job(done) => finish_job(ui, done),
+        Landed::Saved(outcome) => ui.note_save(outcome),
     }
 }
 
 /// Take a finished job into the panels: its mark cleared, the onboarding's
 /// card closed if it was its job and still shows, and its notices shown.
-pub(crate) fn finish_job(ui: &mut ui_state::UiState, done: JobDone) {
+fn finish_job(ui: &mut ui_state::UiState, done: JobDone) {
     let JobDone {
         onboarding,
         notices,
         rows,
+        installed,
     } = done;
+    ui.note_installed(installed);
     // The refusal it caused ends with it; a line it did not cause stays.
     if let Some(job) = ui.running_job.take()
         && ui.connection.last_result.as_ref() == Some(&job.busy_line())
@@ -780,30 +884,6 @@ fn set_look<H: Host>(host: &mut H, look: pixtuoid_scene::look::LookKind) {
     }
 }
 
-/// Run an audio gesture, noting the save it ran for the footer.
-fn audio<H: Host>(cx: &mut KeyCtx<'_, H>, action: crate::audio::AudioAction) {
-    let paused = cx.ui.paused();
-    if let Some(outcome) = cx
-        .audio_ctl
-        .apply(action, paused, Instant::now(), cx.respawn)
-    {
-        cx.ui.note_save(outcome);
-    }
-}
-
-/// A painter's frame of audio: flush the debounced volume save, noting it for the
-/// footer, and return the `♩ N%` readout to draw.
-pub(crate) fn tick_audio(
-    ui: &mut ui_state::UiState,
-    audio_ctl: &mut crate::audio::AudioController,
-    now: Instant,
-) -> Option<u8> {
-    if let Some(outcome) = audio_ctl.tick(now) {
-        ui.note_save(outcome);
-    }
-    audio_ctl.volume_flash(now)
-}
-
 /// Modal precedence, highest first, is the body's early-return order.
 pub(crate) fn dispatch_key(
     code: KeyCode,
@@ -945,14 +1025,12 @@ pub(crate) struct KeyCtx<'a, H: Host> {
     /// Injected because the real `crate::audio::respawn` opens an output device, so a
     /// test firing an audio arm would grab the machine's sound hardware.
     pub(crate) respawn: fn(&crate::audio::AudioHandle, f32),
-    /// The agent CLIs installed here, injected because the real
-    /// `crate::sources::detect` reads the developer's own machine.
-    pub(crate) installed: fn() -> Vec<&'static str>,
+    pub(crate) saves: &'a Saves,
     /// Injected because the real `crate::focus::focus_slot` raises a terminal,
     /// so a test's focus key would drive the developer's desktop.
     pub(crate) focus: fn(&AgentSlot),
     /// Where a started job sends its [`JobDone`] back to the loop.
-    pub(crate) job_tx: &'a JobTx,
+    pub(crate) job_tx: &'a LandedTx,
     /// Injected because the real [`run_job`] runs host CLIs and rewrites
     /// other CLIs' configs, so a test's toggle would reach the developer's own.
     pub(crate) run_job: fn(JobInput) -> JobDone,
@@ -974,9 +1052,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::ToggleHelp => cx.ui.toggle_help(),
         KeyAction::CloseHelp => cx.ui.close_help(),
         KeyAction::DismissVersionPopup => cx.ui.dismiss_version_popup(),
-        KeyAction::OpenVersionPopup => cx
-            .ui
-            .open_version_popup(&cx.connected.snapshot(), &(cx.installed)()),
+        KeyAction::OpenVersionPopup => cx.ui.open_version_popup(&cx.connected.snapshot()),
         KeyAction::OpenAppearance => cx.ui.open_appearance(),
         KeyAction::ThemePreview(i) => {
             cx.ui.preview_theme(i);
@@ -989,11 +1065,13 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::AppearanceCommit => {
             if let Some(committed) = cx.ui.commit_appearance() {
                 let name = theme::ALL_THEMES[committed.theme].name;
-                let save = crate::config::save_appearance(cx.config_path, name, committed.look);
-                cx.ui.note_save(crate::config::SaveOutcome::of(
-                    crate::config::Setting::Appearance,
-                    save,
-                ));
+                cx.saves.save(move |path| {
+                    let save = crate::config::save_appearance(path, name, committed.look);
+                    Some(crate::config::SaveOutcome::of(
+                        crate::config::Setting::Appearance,
+                        save,
+                    ))
+                });
             }
         }
         KeyAction::AppearanceCancel => {
@@ -1006,8 +1084,18 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::NavigateFloor(target) => {
             cx.host.navigate_floor(target, cx.now);
         }
-        KeyAction::ToggleAudioMute => audio(cx, crate::audio::AudioAction::ToggleMute),
-        KeyAction::AdjustVolume(up) => audio(cx, crate::audio::AudioAction::Volume(up)),
+        KeyAction::ToggleAudioMute => cx.audio_ctl.apply(
+            crate::audio::AudioAction::ToggleMute,
+            cx.ui.paused(),
+            Instant::now(),
+            cx.respawn,
+        ),
+        KeyAction::AdjustVolume(up) => cx.audio_ctl.apply(
+            crate::audio::AudioAction::Volume(up),
+            cx.ui.paused(),
+            Instant::now(),
+            cx.respawn,
+        ),
         KeyAction::ToggleDashboard => cx.ui.toggle_dashboard(cx.snapshot),
         KeyAction::DashboardClose => cx.ui.close_dashboard(),
         KeyAction::DashboardUp => cx.ui.dashboard_move(cx.snapshot, -1),
@@ -2038,8 +2126,28 @@ mod dispatch_tests {
             })
         };
 
-        let refreshed = run(PanelJob::Refresh);
+        // A home holding Claude Code's dir alone, so the CLIs it finds are known.
+        let home = tempfile::TempDir::new().unwrap();
+        std::fs::create_dir(home.path().join(".claude")).unwrap();
+        let refreshed = temp_env::with_vars(
+            [
+                (
+                    pixtuoid_core::platform::USER_HOME_VAR,
+                    Some(home.path().as_os_str()),
+                ),
+                ("CLAUDE_CONFIG_DIR", None),
+                ("CODEX_HOME", None),
+            ],
+            || run(PanelJob::Refresh),
+        );
         assert!(refreshed.notices.is_empty() && !refreshed.onboarding);
+        // Copilot has no install target, so no probe lists it.
+        let found = |id| refreshed.installed.contains(&id);
+        assert!(
+            found("claude-code") && !found("codex") && !found("copilot"),
+            "the CLIs the probe finds: {:?}",
+            refreshed.installed
+        );
         assert_eq!(copilot_on(&refreshed), Some(true));
         assert!(
             refreshed.rows.iter().any(|r| r.config_path.is_some()),
@@ -2221,8 +2329,10 @@ impl Office for NotedOffice {
 
 /// The desktop calls a test's click or key makes, noted in place of
 /// `crate::focus::focus_slot` and `crate::open_url`, and the panel job it
-/// starts, held in place of [`run_job`](super::run_job). The record is
-/// per thread because an injected `fn` captures nothing to note them in.
+/// starts, held in place of [`run_job`](super::run_job), plus the save tests'
+/// `saved` drain and stalled-disk fixture, and the deadline the job and save tests
+/// share. The record is per thread because an injected `fn` captures nothing to
+/// note them in.
 #[cfg(test)]
 pub(crate) mod noted {
     use std::cell::RefCell;
@@ -2320,8 +2430,12 @@ pub(crate) mod noted {
             rows: rows(|id| {
                 !fails && input.job.op_for(id) == Some(super::connection::SourceOp::Connect)
             }),
+            installed: INSTALLED.to_vec(),
         }
     }
+
+    /// The agent CLIs [`gated_job`] finds here.
+    pub(crate) const INSTALLED: [&str; 2] = ["codex", "reasonix"];
 
     /// The [placeholder rows](super::connection::placeholder_rows) with each
     /// source connected where `connected` says.
@@ -2332,6 +2446,81 @@ pub(crate) mod noted {
             .map(|source| source.name.to_owned())
             .collect();
         super::connection::placeholder_rows(&set)
+    }
+
+    /// Far past a job's or a save's own time on a loaded machine.
+    pub(crate) const SETTLES_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
+
+    /// The outcomes of every save `saves` had queued, landed.
+    pub(crate) fn saved(
+        saves: &super::Saves,
+        landed: &mut tokio::sync::mpsc::UnboundedReceiver<super::Landed>,
+    ) -> Vec<crate::config::SaveOutcome> {
+        assert!(saves.flush(SETTLES_WITHIN), "the saves ran");
+        std::iter::from_fn(|| landed.try_recv().ok())
+            .map(|landed| match landed {
+                super::Landed::Saved(outcome) => outcome,
+                super::Landed::Job(done) => panic!("a job landed: {done:?}"),
+            })
+            .collect()
+    }
+
+    /// How long [`stall`] holds a read: far past a call that returns at once.
+    #[cfg(unix)]
+    pub(crate) const STALL: std::time::Duration = std::time::Duration::from_secs(2);
+
+    /// Make `path` a FIFO whose opens for reading wait, as a stalled disk's
+    /// reads do, until the returned thread opens it for writing [`STALL`] from
+    /// now (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html>,
+    /// "When opening a FIFO"); its close then ends their reads empty
+    /// (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html>,
+    /// "an empty pipe or FIFO").
+    #[cfg(unix)]
+    pub(crate) fn stall(path: &std::path::Path) -> std::thread::JoinHandle<()> {
+        use std::os::unix::ffi::OsStrExt;
+        let _ = std::fs::remove_file(path);
+        let at = std::ffi::CString::new(path.as_os_str().as_bytes()).expect("no NUL");
+        // SAFETY: `at` is a NUL-terminated path the test owns.
+        assert_eq!(unsafe { libc::mkfifo(at.as_ptr(), 0o600) }, 0, "mkfifo");
+        let path = path.to_path_buf();
+        std::thread::spawn(move || {
+            std::thread::sleep(STALL);
+            drop(std::fs::OpenOptions::new().write(true).open(&path));
+        })
+    }
+}
+
+#[cfg(all(test, unix))]
+mod saves_tests {
+    use super::{Saves, noted};
+
+    /// A flush waits for what is queued while the disk answers within its
+    /// bound, and goes on at the bound when it does not: the window's
+    /// teardown neither loses its last saves nor hangs on them.
+    #[test]
+    fn a_flush_waits_for_the_queue_up_to_its_bound() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().join("config.toml");
+        let landing = tokio::sync::mpsc::unbounded_channel().0;
+        let saves = Saves::spawn(path.clone(), landing).expect("a save thread");
+        let release = noted::stall(&path);
+        saves.save(|path| {
+            let _ = crate::config::save_audio_muted(path, true);
+            None
+        });
+        let started = std::time::Instant::now();
+        assert!(!saves.flush(noted::STALL / 4), "a stalled save outlasts it");
+        assert!(
+            started.elapsed() < noted::STALL,
+            "the flush went on at its bound"
+        );
+        assert!(
+            saves.flush(noted::SETTLES_WITHIN),
+            "the save is written once the disk answers"
+        );
+        let saved = std::fs::read_to_string(&path).expect("the config");
+        assert!(saved.contains("muted = true"), "{saved:?}");
+        release.join().expect("the stall ends");
     }
 }
 

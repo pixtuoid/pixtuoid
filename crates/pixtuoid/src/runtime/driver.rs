@@ -1,4 +1,4 @@
-//! The async runtime glue: builds the tokio runtime, spawns the reducer
+//! The async runtime glue: on [`super::on_runtime`]'s runtime, spawns the reducer
 //! task + sources, binds the hook socket, and drives either the TUI or the
 //! headless summary loop until a quit signal ([`super::QuitArms`]) or, headless,
 //! until the summary's reader leaves.
@@ -48,10 +48,7 @@ pub(crate) fn run(cfg: RunConfig) -> Result<Option<QuitSignal>> {
     } else {
         Some(boot_tui(&cfg)?)
     };
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    rt.block_on(async move { run_async(cfg, tui).await })
+    super::on_runtime(|rt| rt.block_on(run_async(cfg, tui)))?
 }
 
 /// The TUI's pack, the plan for painting it, and how its office moves in
@@ -653,34 +650,32 @@ mod tests {
         assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(2));
     }
 
-    /// `run` drops its runtime as `run_async` returns, cancelling the reducer's
+    /// `run` ends its runtime as `run_async` returns, cancelling the reducer's
     /// task where it parks, with no line after its loop to reach. A tick's write
-    /// comes first, so the throttle leaves the last count to that drop.
+    /// comes first, so the throttle leaves the last count to that end, which
+    /// its bound still waits for.
     #[test]
-    fn a_runtime_dropped_at_quit_still_saves_the_count() {
+    fn a_runtime_ended_at_quit_still_saves_the_count() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("today.json");
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .enable_all()
-            .build()
-            .expect("a runtime");
-        let tx = rt.block_on(async {
-            let (tx, rx) = tokio::sync::mpsc::channel(8);
-            let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
-            tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
-            tx.send(session_start()).await.expect("it queues");
-            tx.send(hook_call("first")).await.expect("it queues");
-            saved_by_a_tick(&path, 1).await;
-            tx.send(hook_call("last")).await.expect("it queues");
-            scene
-                .wait_for(|scene| scene.today.is_some_and(|today| today.tool_calls == 2))
-                .await
-                .expect("the reducer publishes");
-            tx
-        });
-        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
-        drop(rt);
+        let tx = super::super::on_runtime(|rt| {
+            rt.block_on(async {
+                let (tx, rx) = tokio::sync::mpsc::channel(8);
+                let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
+                tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
+                tx.send(session_start()).await.expect("it queues");
+                tx.send(hook_call("first")).await.expect("it queues");
+                saved_by_a_tick(&path, 1).await;
+                tx.send(hook_call("last")).await.expect("it queues");
+                scene
+                    .wait_for(|scene| scene.today.is_some_and(|today| today.tool_calls == 2))
+                    .await
+                    .expect("the reducer publishes");
+                assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
+                tx
+            })
+        })
+        .expect("a runtime");
         drop(tx);
         assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(2));
     }

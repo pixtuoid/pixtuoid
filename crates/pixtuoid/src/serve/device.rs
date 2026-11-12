@@ -767,11 +767,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_change_reaches_a_device_ahead_of_the_heartbeat() {
         let fixture = fixture();
-        let token = paired(&fixture);
-        let mut peer = Peer::connect(&fixture.devices);
-        peer.hello(&Hello::Resume { token }).await;
-        assert_eq!(peer.reply().await, Reply::Resumed);
-        peer.line().await;
+        let mut peer = streaming(&fixture).await;
 
         fixture
             .scene
@@ -828,11 +824,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_quiet_office_still_sends_its_line() {
         let fixture = fixture();
-        let token = paired(&fixture);
-        let mut peer = Peer::connect(&fixture.devices);
-        peer.hello(&Hello::Resume { token }).await;
-        peer.reply().await;
-        peer.line().await;
+        let mut peer = streaming(&fixture).await;
 
         let beat = timeout(HEARTBEAT * 2, peer.line()).await;
 
@@ -842,11 +834,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_reset_reaches_a_live_stream_within_a_heartbeat() {
         let fixture = fixture();
-        let token = paired(&fixture);
-        let mut peer = Peer::connect(&fixture.devices);
-        peer.hello(&Hello::Resume { token }).await;
-        peer.reply().await;
-        peer.line().await;
+        let peer = streaming(&fixture).await;
 
         fixture.store.reset().expect("it resets");
 
@@ -877,15 +865,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn two_devices_stream_side_by_side() {
         let fixture = fixture();
-        let (one, two) = (paired(&fixture), paired(&fixture));
-        let mut first = Peer::connect(&fixture.devices);
-        first.hello(&Hello::Resume { token: one }).await;
-        first.reply().await;
-        first.line().await;
-        let mut second = Peer::connect(&fixture.devices);
-        second.hello(&Hello::Resume { token: two }).await;
-        second.reply().await;
-        second.line().await;
+        let mut first = streaming(&fixture).await;
+        let mut second = streaming(&fixture).await;
 
         fixture
             .scene

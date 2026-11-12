@@ -188,10 +188,9 @@ pub fn report_fatal(e: &anyhow::Error) {
     }
 }
 
-/// How long an exit gives each piece of its outside work (a log flush, the
-/// fatal report, a panel job's rollback) before it goes on without it: a
-/// stalled sink would hold it for good, and a sink that keeps up needs far
-/// less for any of them, so the exit outranks what is left.
+/// How long an exit gives each piece of its outside work before it goes on
+/// without it: a stalled sink would hold it for good, and a sink that keeps up
+/// needs far less, so the exit outranks what is left.
 pub(crate) const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// Run `work` on a thread of its own named `name`, and wait for it at most

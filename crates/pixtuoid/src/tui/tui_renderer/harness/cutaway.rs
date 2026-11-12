@@ -1969,12 +1969,14 @@ fn press(
             in_transition: false,
         },
     );
+    let (landing, mut landed) = tokio::sync::mpsc::unbounded_channel();
+    let saves = crate::panels::Saves::spawn(path.to_path_buf(), landing).expect("a save thread");
     let mut audio_ctl = crate::audio::AudioController::new_with(
         crate::config::AudioConfig {
             muted: true,
             volume: 1.0,
         },
-        path.to_path_buf(),
+        saves.clone(),
         no_respawn,
     );
     crate::panels::apply_key_action(
@@ -1988,7 +1990,7 @@ fn press(
             snapshot: &SceneState::uniform(4),
             now: t0(),
             respawn: no_respawn,
-            installed: Vec::new,
+            saves: &saves,
             focus: |_| panic!("a look key focuses nothing"),
             job_tx: &tokio::sync::mpsc::unbounded_channel().0,
             run_job: |_| panic!("a look key changes no source"),
@@ -1996,6 +1998,9 @@ fn press(
     );
     // The stand-in panics on its own thread, which fails no test.
     assert!(ui.running_job.is_none(), "a look key starts no job");
+    for outcome in crate::panels::noted::saved(&saves, &mut landed) {
+        ui.note_save(outcome);
+    }
 }
 
 /// Esc reverts the look the picker previewed: a cutaway run back in the
