@@ -295,9 +295,16 @@ pub(crate) fn lock_config(path: &Path) -> Result<ConfigLock> {
     let lock_path = sibling(&target, "lock");
     let file = open_lock_sidecar(&lock_path)
         .with_context(|| format!("opening {}", lock_path.display()))?;
-    file.try_lock()
-        .map_err(|e| anyhow!("could not lock {}: {e}", lock_path.display()))?;
-    Ok(ConfigLock { target, file })
+    match file.try_lock() {
+        Ok(()) => Ok(ConfigLock { target, file }),
+        Err(std::fs::TryLockError::WouldBlock) => Err(anyhow!(
+            "another pixtuoid is changing {}; try again once it finishes",
+            target.display()
+        )),
+        Err(std::fs::TryLockError::Error(e)) => {
+            Err(e).with_context(|| format!("could not lock {}", lock_path.display()))
+        }
+    }
 }
 
 fn create_parent(target: &Path) -> Result<()> {
@@ -1189,7 +1196,13 @@ mod tests {
         let p = dir.path().join("settings.json");
         let guard = lock_config(&p).unwrap();
         let err = lock_config(&p).expect_err("a second lock on the same config must fail");
-        assert!(err.to_string().contains("could not lock"), "got: {err:#}");
+        assert_eq!(
+            format!("{err:#}"),
+            format!(
+                "another pixtuoid is changing {}; try again once it finishes",
+                p.display()
+            )
+        );
         drop(guard);
         lock_config(&p).expect("the lock is released when the guard drops");
     }

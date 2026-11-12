@@ -401,7 +401,10 @@ fn install_target_fails_fast_while_the_config_lock_is_held() {
         Some(PathBuf::from("/fake/pixtuoid-hook")),
     )
     .unwrap_err();
-    assert!(err.to_string().contains("could not lock"), "got: {err:#}");
+    assert!(
+        err.to_string().contains("another pixtuoid is changing"),
+        "got: {err:#}"
+    );
 }
 
 #[test]
@@ -417,7 +420,10 @@ fn uninstall_target_fails_fast_while_the_config_lock_is_held() {
 
     let _guard = io::lock_config(&cfg).unwrap();
     let err = uninstall_target(&CLAUDE_FILE, Some(cfg.clone())).unwrap_err();
-    assert!(err.to_string().contains("could not lock"), "got: {err:#}");
+    assert!(
+        err.to_string().contains("another pixtuoid is changing"),
+        "got: {err:#}"
+    );
 }
 
 #[test]
