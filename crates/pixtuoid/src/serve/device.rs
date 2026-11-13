@@ -354,13 +354,13 @@ mod tests {
     use crate::serve::{Admission, MAX_CONNS, NotAdmitted};
 
     /// Each change the fixture's devices made: the device, the source and `on`.
-    type Made = Arc<Mutex<Vec<(String, String, bool)>>>;
+    type Recorded = Arc<Mutex<Vec<(String, String, bool)>>>;
 
     struct Fixture {
         store: Store,
         devices: Devices,
         scene: watch::Sender<Arc<SceneState>>,
-        made: Made,
+        recorded: Recorded,
         _dir: tempfile::TempDir,
     }
 
@@ -384,12 +384,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let store = Store::at(dir.path().join("remote.json"));
         let (scene, scene_rx) = watch::channel(Arc::new(SceneState::uniform(4)));
-        let made = Made::default();
-        let making = Arc::clone(&made);
+        let recorded = Recorded::default();
+        let recording = Arc::clone(&recorded);
         let change: MakeChange = Arc::new(move |who, source, on| {
             before();
             let entry = (who.to_owned(), source.to_owned(), on);
-            making.lock().expect("not poisoned").push(entry);
+            recording.lock().expect("not poisoned").push(entry);
             let (id, outcome) = match source {
                 "copilot" if on => ("copilot", Outcome::Connected),
                 "copilot" => ("copilot", Outcome::Disconnected),
@@ -408,7 +408,7 @@ mod tests {
             ),
             store,
             scene,
-            made,
+            recorded,
             _dir: dir,
         }
     }
@@ -420,8 +420,8 @@ mod tests {
         }
     }
 
-    fn made(fixture: &Fixture) -> Vec<(String, String, bool)> {
-        fixture.made.lock().expect("not poisoned").clone()
+    fn recorded(fixture: &Fixture) -> Vec<(String, String, bool)> {
+        fixture.recorded.lock().expect("not poisoned").clone()
     }
 
     /// Past any test's wait: a read on the runtime's own thread then fails its
@@ -1115,7 +1115,7 @@ mod tests {
             panic!("a change's answer");
         };
         assert_eq!(changed.outcome(), Outcome::Connected);
-        let [(who, source, on)] = made(&fixture).try_into().expect("one change");
+        let [(who, source, on)] = recorded(&fixture).try_into().expect("one change");
         assert_eq!((source.as_str(), on), ("copilot", true));
         assert_eq!(who, Hashed::of(&token).short());
 
@@ -1132,7 +1132,7 @@ mod tests {
 
         forgotten.ask(&change("copilot", true)).await;
         assert!(forgotten.ended().await.is_err());
-        assert!(made(&fixture).is_empty(), "{:?}", made(&fixture));
+        assert!(recorded(&fixture).is_empty(), "{:?}", recorded(&fixture));
 
         let mut paired = streaming(&fixture).await;
         let asked = Instant::now();
@@ -1164,7 +1164,7 @@ mod tests {
         held.release.send(()).expect("it waits");
         assert!(matches!(peer.answer().await, Answer::Changed(_)));
         let device = Hashed::of(&token).short().to_owned();
-        assert_eq!(made(&fixture), [(device, "copilot".to_owned(), true)]);
+        assert_eq!(recorded(&fixture), [(device, "copilot".to_owned(), true)]);
     }
 
     /// `first`'s answer, once a write asked as soon as it came has run within
@@ -1182,13 +1182,13 @@ mod tests {
         peer.ask(&change("copilot", true)).await;
         sleep_until(began + MIN_WRITE_GAP - EDGE).await;
         assert_eq!(
-            made(&fixture).len(),
+            recorded(&fixture).len(),
             1,
             "the second write ran inside the gap"
         );
         let second = timeout_at(began + MIN_WRITE_GAP + EDGE, peer.answer()).await;
         assert!(matches!(second, Ok(Answer::Changed(_))), "{second:?}");
-        assert_eq!(made(&fixture).len(), 2);
+        assert_eq!(recorded(&fixture).len(), 2);
         answer
     }
 
@@ -1227,7 +1227,10 @@ mod tests {
         // blocking work runs (https://docs.rs/tokio/latest/tokio/time/fn.pause.html),
         // so a write past the gate has been made by then.
         sleep(Duration::from_millis(1)).await;
-        assert!(made(&fixture).is_empty(), "the write ran beside the read");
+        assert!(
+            recorded(&fixture).is_empty(),
+            "the write ran beside the read"
+        );
 
         drop(read);
         let written = write.await.expect("it runs");

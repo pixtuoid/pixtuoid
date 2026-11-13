@@ -15,6 +15,7 @@ fn display_safe_some<'de, D: Deserializer<'de>>(text: D) -> Result<Option<String
 /// [`Ask::Change`](super::Ask::Change) included. A failure's reason stays with
 /// the machine that made the change: it can quote another CLI's config.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Changed {
     #[serde(deserialize_with = "display_safe_text")]
     source: String,
@@ -155,6 +156,7 @@ pub fn not_detected(display_name: &str) -> String {
 
 /// What a change came to, as the binary's `--json` tokens spell it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Outcome {
     /// Now connected.
@@ -166,7 +168,7 @@ pub enum Outcome {
     /// It failed; the server keeps why.
     Failed,
     /// An outcome from a newer server.
-    #[serde(other)]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 

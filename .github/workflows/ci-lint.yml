@@ -102,6 +102,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - run: just ci-observability
       - run: just wire-frozen
+      - run: just wire-frozen-selftest
       - run: just links
       - run: just ruff
       - run: just pyright

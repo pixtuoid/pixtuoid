@@ -119,7 +119,7 @@ tempfile = { workspace = true }
 toml = { workspace = true }
 dunce = { workspace = true }
 temp-env = { workspace = true }
-schemars = { workspace = true }
+schemars = { workspace = true, features = ["chrono04"] }
 portable-pty = { workspace = true }
 vt100 = { workspace = true }
 process-wrap = { workspace = true }

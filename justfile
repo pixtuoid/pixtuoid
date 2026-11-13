@@ -211,7 +211,7 @@ ci-observability:
 # An App or CLI reads what a released build wrote, so a change never edits a
 # sample its base holds. CI's base is HEAD^1: a PR merge commit's first parent
 # (path-changed's rule), or the commit a push follows.
-[doc("Fail when a change edits or deletes a v1 wire sample its base holds")]
+[doc("Fail when a change edits or deletes a v1 wire sample its base holds, or adds a sample of a hello kind its base's samples lack")]
 [group('rust')]
 wire-frozen:
     #!/usr/bin/env bash
@@ -219,6 +219,54 @@ wire-frozen:
     if [[ -n "${GITHUB_ACTIONS:-}" ]]; then base=HEAD^1; else base="$(git merge-base HEAD origin/main)"; fi
     git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.v1.golden.json fuzz/seeds/remote ||
         { echo "a v1 break: bump remote::VERSION and start a v2 golden" >&2; exit 1; }
+    # A v1 server answers a hello kind it doesn't name with silence, so a sample
+    # of a new one would hide the break `remote`'s v1 sample test reports.
+    export LC_ALL=C
+    kind() { jq -rRs 'fromjson? | objects | .hello // empty'; }
+    held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
+        while IFS= read -r f; do git show "$base:$f" | kind; done | sort -u)"
+    added="$(git diff --name-only --diff-filter=A "$base" -- fuzz/seeds/remote |
+        while IFS= read -r f; do kind <"$f"; done | sort -u)"
+    new="$(comm -23 <(printf '%s\n' "$added") <(printf '%s\n' "$held"))"
+    [[ -z "$new" ]] || { echo "a new hello kind bumps remote::VERSION: $new" >&2; exit 1; }
+
+[doc('Prove wire-frozen reds on an added sample of a hello kind its base lacks, pretty-printed too, and passes one of a kind it holds')]
+[group('meta')]
+wire-frozen-selftest:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+    # A developer's signing or hooks would fail its commits for reasons not the gate's.
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+    seeds=fuzz/seeds/remote
+    mkdir -p "$d/$seeds" "$d/crates/pixtuoid-core/src"
+    printf '{}' >"$d/crates/pixtuoid-core/src/remote.v1.golden.json"
+    printf '{"v":1,"hello":"pair","code":"C"}' >"$d/$seeds/hello"
+    g() { git -C "$d" -c user.name=selftest -c user.email=selftest@example.invalid "$@"; }
+    g init -q
+    g add -- crates "$seeds"
+    g commit -qm base
+    g tag base
+    fail=0
+    # Each case commits one file onto the base, as CI's HEAD^1 reads a PR.
+    expect() {
+        local path=$1 text=$2 want=$3 got=0
+        g reset -q --hard base
+        printf '%s' "$text" >"$d/$path"
+        g add -- "$path"
+        g commit -qm case
+        (cd "$d" && GITHUB_ACTIONS=1 just -f "{{ justfile() }}" -d "$d" wire-frozen) >/dev/null 2>&1 || got=1
+        if [[ "$got" != "$want" ]]; then
+            echo "wire-frozen-selftest: FAIL — adding $path exited $got, want $want" >&2
+            fail=1
+        fi
+    }
+    expect README 'no sample' 0
+    expect "$seeds/ping" '{"v":1,"hello":"ping"}' 1
+    expect "$seeds/ping" $'{\n  "v": 1,\n  "hello": "ping"\n}\n' 1
+    expect "$seeds/hello-named" '{"v":1,"hello":"pair","code":"C","name":"studio"}' 0
+    [[ "$fail" -eq 0 ]] || exit 1
+    echo "wire-frozen-selftest: OK (a new hello kind reds, pretty-printed too; a held kind passes)"
 
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link
@@ -377,6 +425,7 @@ lint: (_npm ".")
     run zizmor  just zizmor              & pids+=($!)
     run ci-obs  just ci-observability     & pids+=($!)
     run wire    just wire-frozen          & pids+=($!)
+    run wireself just wire-frozen-selftest & pids+=($!)
     run links   just links               & pids+=($!)
     run ruff    just ruff                & pids+=($!)
     run pyright just pyright             & pids+=($!)
