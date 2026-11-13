@@ -79,8 +79,7 @@ The components that handle untrusted or privileged input, and how they're bounde
    and connect and disconnect remove from Claude Code's, Codex's, Reasonix's, Hermes's and Antigravity's
    own config every hook whose command runs pixtuoid's shim, hand-written ones included, a shim renamed through `PIXTUOID_HOOK` only where the hook carries the `PIXTUOID_SOURCE` stamp). Past an explicit connect/disconnect,
    a launch only rewrites the plugin files pixtuoid owns and loads them through a
-   connected CLI's own subcommand where it has one (`converge_owned`), and an interactive
-   one installs the hooks of a source an older release connected by flag (`adopt_flagged_targets`).
+   connected CLI's own subcommand where it has one (`converge_owned`).
 
 4. **`pixtuoid serve`**, the only network listener, binds IPv4 on every interface
    and, before any TLS, drops a peer that isn't private, link-local or loopback,

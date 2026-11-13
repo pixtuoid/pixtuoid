@@ -524,7 +524,7 @@ mod tests {
             None,
             crate::doctor::DriftSeen::default(),
         );
-        k.ui.open_version_popup(&std::collections::HashSet::new());
+        k.ui.open_version_popup();
         assert!(k.ui.modal().version_popup_open);
         assert!(!k.press(KeyCode::Esc), "Esc quit");
         assert!(!k.ui.modal().version_popup_open, "the popup is still up");

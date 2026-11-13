@@ -232,7 +232,6 @@ impl FloatingApp {
             socket_path: boot.socket_path.clone(),
             log,
             drift,
-            connected: &boot.connected.snapshot(),
             look: None,
         });
         let connected = boot.connected.clone();

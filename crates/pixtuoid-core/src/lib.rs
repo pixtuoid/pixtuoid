@@ -45,6 +45,10 @@
 /// The offline decode→reduce driver every test/tool that feeds real wire bytes
 /// through the production path rides.
 #[cfg(feature = "harness")]
+// cargo-semver-checks checks this feature too, and skips a path docs hide:
+// https://github.com/obi1kenobi/cargo-semver-checks/blob/8d698931b16aa7f753e7d022888863d53542df99/README.md#L171
+// https://github.com/obi1kenobi/trustfall-rustdoc-adapter/blob/b24088502d1cc1fcdbdb5037407e3a90c4e33b18/src/rustdoc_schema.graphql#L1360-L1365
+#[doc(hidden)]
 pub mod harness;
 /// Agent identity: the `AgentId` session key and its path/parts derivations.
 pub mod id;

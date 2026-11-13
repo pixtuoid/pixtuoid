@@ -705,7 +705,6 @@ fn main() -> Result<()> {
         version_popup: pixtuoid::dev::VersionPopupFrame {
             open: args.popup,
             upgraded: true,
-            ..Default::default()
         },
         help_open: args.help_open,
         dashboard: dashboard_frame,

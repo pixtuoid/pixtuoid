@@ -171,7 +171,6 @@ pub enum pixtuoid_core::remote::PairLinkError
 pub pixtuoid_core::remote::PairLinkError::Incompatible
 pub pixtuoid_core::remote::PairLinkError::Incompatible::v: u32
 pub pixtuoid_core::remote::PairLinkError::NotALink
-pub pixtuoid_core::remote::PairLinkError::Outdated
 impl core::cmp::Eq for pixtuoid_core::remote::PairLinkError
 impl core::cmp::PartialEq for pixtuoid_core::remote::PairLinkError
 pub fn pixtuoid_core::remote::PairLinkError::eq(&self, &Self) -> bool

@@ -39,9 +39,7 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 /// state. Any break, in a line or the link, bumps it, and every pairing or
 /// reconnect across it ends in a precise "update" on the side that can act
 /// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]). The promise counts
-/// from the first release a device can pair with: an older server's
-/// `pixtuoid://` link is one [`PairLink`]'s parse refuses
-/// ([`PairLinkError::Outdated`]).
+/// from the first release a device can pair with.
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office: a device takes
@@ -425,10 +423,6 @@ const PIN_BYTES: usize = 32;
 /// the rest of the URI prior to a dereference" (RFC 3986 §3.5).
 const PAIR_LINK_PREFIX: &str = concat!(env!("CARGO_PKG_HOMEPAGE"), "/pair/#");
 
-/// What every link began with before [`PAIR_LINK_PREFIX`], none of which a
-/// device can pair with.
-const OLDER_PAIR_LINK_PREFIX: &str = "pixtuoid://pair?";
-
 const VERSION_KEY: &str = "v";
 const HOST: &str = "host";
 const PORT: &str = "port";
@@ -490,13 +484,9 @@ pub fn is_host(host: &str) -> bool {
 /// A string that isn't a [`PairLink`] this build pairs with.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PairLinkError {
-    /// No link a server writes.
+    /// No link a server since the first release a device can pair with writes.
     #[error("not a pixtuoid pairing link")]
     NotALink,
-    /// A `pixtuoid://` link, which only a server from before the first release a
-    /// device can pair with wrote.
-    #[error("a pairing link from an older pixtuoid: update it on the computer, then pair again")]
-    Outdated,
     /// A link a server speaking wire version `v` wrote, read no further: whichever
     /// of it and [`VERSION`] is older names the side to update.
     #[error("a pairing link for wire version {v}, where this build speaks {VERSION}")]
@@ -510,9 +500,6 @@ impl FromStr for PairLink {
     type Err = PairLinkError;
 
     fn from_str(text: &str) -> Result<Self, Self::Err> {
-        if text.starts_with(OLDER_PAIR_LINK_PREFIX) {
-            return Err(PairLinkError::Outdated);
-        }
         let fragment = text
             .strip_prefix(PAIR_LINK_PREFIX)
             .ok_or(PairLinkError::NotALink)?;
@@ -1349,25 +1336,10 @@ mod tests {
         assert_eq!(office.machine(), None);
     }
 
-    /// Any link under an older server's scheme says so, whole or cut, so a
-    /// device can ask for an update; any other link a server never wrote is no link.
+    /// A link cut short, or under another scheme, is no link: only a version
+    /// this build doesn't speak reads as more.
     #[test]
-    fn an_older_servers_link_is_told_apart() {
-        let PairLink { spki, code, .. } = link();
-        let older = format!(
-            "{OLDER_PAIR_LINK_PREFIX}{HOST}=studio.local&{PORT}=47820&{SPKI_KEY}={spki}&{CODE}={code}"
-        );
-        for older in [
-            older.as_str(),
-            &older[..OLDER_PAIR_LINK_PREFIX.len()],
-            &format!("{OLDER_PAIR_LINK_PREFIX}{VERSION_KEY}={VERSION}&{HOST}=studio.local"),
-        ] {
-            assert_eq!(
-                older.parse::<PairLink>(),
-                Err(PairLinkError::Outdated),
-                "{older}"
-            );
-        }
+    fn a_cut_or_rehomed_link_is_no_link() {
         let newer = link().to_string();
         let expires = newer.find(&format!("&{EXPIRES}=")).expect("an expiry");
         let to_code = newer[expires..].find(&format!("&{CODE}=")).expect("a code");
@@ -1375,6 +1347,7 @@ mod tests {
         let before_code = newer.find(&format!("&{CODE}=")).expect("a code");
         let after = |key: &str| newer.find(&format!("{key}=")).expect("a key") + key.len() + 1;
         for text in [
+            &newer.replacen(PAIR_LINK_PREFIX, "pixtuoid://pair?", 1),
             &newer[..before_code],
             &newer[..before_code + CODE.len() + 2 + SECRET_BYTES],
             &newer[..after(EXPIRES)],
