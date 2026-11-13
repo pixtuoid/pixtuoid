@@ -222,7 +222,7 @@ wire-frozen:
     # A v1 server answers a hello kind it doesn't name with silence, so a sample
     # of a new one would hide the break `remote`'s v1 sample test reports.
     export LC_ALL=C
-    kind() { jq -rR 'fromjson? | objects | .hello // empty'; }
+    kind() { jq -rRs 'fromjson? | objects | .hello // empty'; }
     held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
         while IFS= read -r f; do git show "$base:$f" | kind; done | sort -u)"
     added="$(git diff --name-only --diff-filter=A "$base" -- fuzz/seeds/remote |
