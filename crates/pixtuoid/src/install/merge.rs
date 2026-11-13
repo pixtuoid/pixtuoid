@@ -566,11 +566,12 @@ mod tests {
         );
     }
 
-    /// Every shape a release wrote, Claude Code's group without the `_pixtuoid` key its
-    /// own writer drops and its exec form included, goes; a user's hook, mixed group and
-    /// empty list stay, as does a spaced path with no `args`, which no shell runs whole.
+    /// The JSON strip's own shapes go, Claude Code's group without the `_pixtuoid` key its
+    /// own writer drops and its exec form included; a user's hook, mixed group and empty
+    /// list stay, as does a spaced path with no `args`, which no shell runs whole. The
+    /// census of every release's command is `hook_cmd`'s predicate test.
     #[test]
-    fn the_shim_strip_takes_every_releases_entry_and_leaves_the_users() {
+    fn the_shim_strip_takes_its_json_shapes_and_leaves_the_users() {
         let ours = |cmd: &str| json!({ "command": cmd });
         let before = json!({
             "theme": "dark",
