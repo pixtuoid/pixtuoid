@@ -3,7 +3,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
-use super::{PanelGeometry, borderless_panel, to_color, truncate};
+use super::{PanelGeometry, borderless_panel, to_color, truncate, wrap_options};
 
 use pixtuoid_scene::hit::REPO_URL;
 
@@ -81,11 +81,7 @@ fn notice_rows(bounds: Rect, notices: &[String]) -> Vec<String> {
         return Vec::new();
     };
     let width = usize::from(inner.width).saturating_sub(INDENT.len());
-    // Named, not defaulted: textwrap's defaults follow its features, which
-    // feature unification can widen.
-    let wrap = textwrap::Options::new(width)
-        .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit)
-        .word_separator(textwrap::WordSeparator::AsciiSpace)
+    let wrap = wrap_options(width)
         .initial_indent(BULLET)
         .subsequent_indent(HANG);
     let mut rows: Vec<String> = notices

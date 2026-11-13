@@ -4,7 +4,9 @@
 
 use std::time::{Duration, SystemTime};
 
-use super::{Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_span, to_color};
+use super::{
+    Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_span, to_color, wrap_options,
+};
 
 use crate::panels::connection::{
     ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, no_action_hint,
@@ -25,6 +27,8 @@ const NAME_FIT: usize = NAME_W - GAP.len();
 /// The CLI column: the badge, its gap and the name's cell.
 const CLI_W: usize = "[cc]".len() + GAP.len() + NAME_W;
 const CONN_W: usize = 15;
+/// The left indent of the panel's text rows; the detail's right margin mirrors it.
+const INDENT: &str = "  ";
 
 /// The column header, kept as one fn so the "Live" position can't drift from the
 /// data row. The two trailing spaces before "Live" mirror the fixed 2-col
@@ -51,7 +55,7 @@ pub(crate) fn paint_connection_panel(
     } = frame;
     let dim = Style::default().fg(to_color(theme.ui.label_idle));
 
-    // The detail marquee's width budget needs the inner WIDTH before the row count
+    // The detail's width budget needs the inner WIDTH before the row count
     // (hence the height) is known — the height-independent two-phase seam. `None`
     // ⇒ the terminal is too narrow to render at all.
     let Some(inner_w) = Panel::inner_width(bounds, CONNECTION_POPUP_W) else {
@@ -59,7 +63,7 @@ pub(crate) fn paint_connection_panel(
     };
 
     let above = vec![
-        Line::from(Span::styled(format!("  {socket_line}"), dim)),
+        Line::from(Span::styled(format!("{INDENT}{socket_line}"), dim)),
         Line::from(""),
         Line::from(Span::styled(column_header(), dim)),
     ];
@@ -70,17 +74,48 @@ pub(crate) fn paint_connection_panel(
         .map(|(i, (row, live))| connection_line(row, live, selected == i, now, theme))
         .collect();
 
+    let title = format!("Sources \u{2014} {}/esc close", keys::SOURCES);
+    // Built before the detail so the result's room counts the rows `below` adds.
+    let around = [
+        Line::from(""),
+        Line::from(Span::styled(
+            format!(
+                "{INDENT}j/k move \u{00b7} {} toggle \u{00b7} {}/esc close",
+                keys::SOURCE_TOGGLE,
+                keys::SOURCES
+            ),
+            dim,
+        )),
+    ];
+
+    // The indent and its mirrored right margin, so no scrolled or wrapped row runs
+    // flush to the panel edge.
+    let detail_w = usize::from(inner_w).saturating_sub(2 * INDENT.len());
+    let scroll = |s: &str| vec![marquee_window(s, detail_w, now)];
     let detail = if let Some(ci) = confirm {
         let name = rows.get(ci).map_or("", |(r, _)| r.display_name);
-        format!(
+        scroll(&format!(
             "\u{26a0} disconnect {name}? ({}/{})",
             keys::CONFIRM,
             keys::DECLINE
-        )
+        ))
     } else if let Some(res) = result {
-        res.clone()
+        // A result is read whole, wrapped, where the shed list leaves it the rows;
+        // else it scrolls in one, keeping its head and the hint where one row would.
+        let room = Panel::max_inner_height(bounds, CONNECTION_POPUP_W, Some(&title))
+            .map_or(0, usize::from)
+            .saturating_sub(above.len() + around.len());
+        let wrapped: Vec<String> = textwrap::wrap(res, wrap_options(detail_w))
+            .into_iter()
+            .map(std::borrow::Cow::into_owned)
+            .collect();
+        if wrapped.len() <= room {
+            wrapped
+        } else {
+            scroll(res)
+        }
     } else if let Some((row, live)) = rows.get(selected) {
-        if let Some(op) = live.in_flight {
+        scroll(&if let Some(op) = live.in_flight {
             format!("{} \u{2026}", op.progress_word())
         } else if let Some(h) = &row.health {
             h.clone()
@@ -100,29 +135,19 @@ pub(crate) fn paint_connection_panel(
                 }
                 ConnState::NoCli { .. } => no_action_hint(row),
             }
-        }
+        })
     } else {
-        String::new()
+        scroll("")
     };
-    // Reserves the 2-space left indent + a symmetric 2-col right margin, so a
-    // full-width scroll never runs flush to the panel edge.
-    let detail_w = (inner_w as usize).saturating_sub(4);
-    let below = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            format!("  {}", marquee_window(&detail, detail_w, now)),
-            dim,
-        )),
-        Line::from(Span::styled(
-            format!(
-                "  j/k move \u{00b7} {} toggle \u{00b7} {}/esc close",
-                keys::SOURCE_TOGGLE,
-                keys::SOURCES
-            ),
-            dim,
-        )),
-    ];
-    let title = format!("Sources \u{2014} {}/esc close", keys::SOURCES);
+    let [gap, hint] = around;
+    let below = std::iter::once(gap)
+        .chain(
+            detail
+                .into_iter()
+                .map(|d| Line::from(Span::styled(format!("{INDENT}{d}"), dim))),
+        )
+        .chain([hint])
+        .collect();
 
     Panel {
         title: Some(&title),
@@ -572,5 +597,122 @@ mod tests {
             "selected scrolling name must not ellipsize: {n0:?}"
         );
         assert_ne!(n0, n1, "selected name must animate across time");
+    }
+
+    /// A real Codex connect failure (`format_failure`), long enough to wrap to several detail rows.
+    fn codex_off_path() -> String {
+        crate::panels::connection::format_failure(
+            crate::panels::connection::SourceOp::Connect,
+            "Codex CLI",
+            "`codex` is not on PATH; pixtuoid installs its hooks as a plugin \
+             through it \u{2014} put it on PATH and reconnect",
+        )
+    }
+
+    /// The panel painted alone on a `w`×`h` terminal, by row, at the marquee's head.
+    fn painted(frame: &ConnectionFrame, w: u16, h: u16) -> Vec<String> {
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+        term.draw(|f| {
+            paint_connection_panel(f, frame, SystemTime::UNIX_EPOCH, f.area(), &NORMAL);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        (0..h)
+            .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect())
+            .collect()
+    }
+
+    fn squash(s: &str) -> String {
+        s.split_whitespace().collect()
+    }
+
+    /// Fifteen rows, about the roster, with `result` the panel's result line.
+    fn with_result(result: &str) -> ConnectionFrame {
+        let r = row("codex", "cx", ConnState::Disconnected);
+        ConnectionFrame {
+            open: true,
+            rows: vec![(r, LiveInfo::default()); 15],
+            result: Some(result.to_owned()),
+            ..Default::default()
+        }
+    }
+
+    /// A result is read whole at every height that still shows a row: the list
+    /// sheds rows for it, and nothing paints on the footer row.
+    #[test]
+    fn a_long_result_shows_whole_while_any_row_shows() {
+        let result = codex_off_path();
+        let frame = with_result(&result);
+        let mut shed_for_it = false;
+        for h in 1..=30 {
+            let screen = painted(&frame, 100, h);
+            let footer = usize::from(h.saturating_sub(crate::panels::FOOTER_ROWS));
+            assert!(
+                screen[footer..].concat().trim().is_empty(),
+                "{h} rows paint the footer:\n{}",
+                screen.join("\n")
+            );
+            let shown = screen.iter().filter(|l| l.contains("[cx]")).count();
+            if shown > 0 {
+                assert!(
+                    squash(&screen.concat()).contains(&squash(&result)),
+                    "{h} rows cut the result:\n{}",
+                    screen.join("\n")
+                );
+                shed_for_it |= shown < frame.rows.len();
+            }
+        }
+        assert!(
+            shed_for_it,
+            "no height made the list shed rows for the result"
+        );
+    }
+
+    /// Onboarding joins every failure into one result. Where even the shed list
+    /// leaves it too few rows, it scrolls in one, keeping the key hint a one-row
+    /// result keeps.
+    #[test]
+    fn a_result_the_bounds_cannot_hold_scrolls_and_keeps_the_hint() {
+        let failures = vec![codex_off_path(); 6].join("  \u{b7}  ");
+        let (mut wrapped, mut scrolled) = (false, false);
+        for h in 1..=60 {
+            if !painted(&with_result("done"), 100, h)
+                .concat()
+                .contains("j/k move")
+            {
+                continue;
+            }
+            let screen = painted(&with_result(&failures), 100, h);
+            let text = screen.concat();
+            assert!(
+                text.contains("j/k move") && text.contains("Codex CLI: connect failed"),
+                "{h} rows lose the hint or the result:\n{}",
+                screen.join("\n")
+            );
+            let whole = squash(&text).contains(&squash(&failures));
+            wrapped |= whole;
+            scrolled |= !whole;
+        }
+        assert!(
+            wrapped && scrolled,
+            "wrapped at some height: {wrapped}, scrolled: {scrolled}"
+        );
+    }
+
+    /// What the selection shows keeps its one scrolling row, so the panel's
+    /// height never depends on which row is selected.
+    #[test]
+    fn a_long_selection_detail_scrolls_in_one_row() {
+        let detail = codex_off_path();
+        let mut r = row("codex", "cx", ConnState::Connected);
+        r.health = Some(detail.clone());
+        let frame = ConnectionFrame {
+            open: true,
+            rows: vec![(r, LiveInfo::default())],
+            ..Default::default()
+        };
+        let screen = painted(&frame, 100, 30).concat();
+        assert!(screen.contains("Codex CLI: connect failed"), "{screen}");
+        assert!(!squash(&screen).contains(&squash(&detail)), "{screen}");
     }
 }
