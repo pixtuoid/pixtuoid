@@ -27,9 +27,10 @@ use crate::install::{io, merge};
 use pixtuoid_core::source::kimi::SOURCE_NAME;
 
 /// Events we register == events we decode, enforced by
-/// `every_registered_kimi_event_decodes`. The two `*Failure` variants close a
-/// failed tool/turn via the source's custom `Extend` decoder — a failed tool
-/// fires `PostToolUseFailure`, which must still end the activity.
+/// `every_registered_kimi_event_decodes`. The two `*Failure` variants and
+/// `Interrupt` close a failed tool/turn or a cancelled turn via the source's
+/// custom `Extend` decoder — a failed tool fires `PostToolUseFailure`, which
+/// must still end the activity.
 pub(crate) const KIMI_EVENTS: &[&str] = &[
     "SessionStart",
     "PreToolUse",
@@ -38,6 +39,7 @@ pub(crate) const KIMI_EVENTS: &[&str] = &[
     "PermissionRequest",
     "Stop",
     "StopFailure",
+    "Interrupt",
     "SessionEnd",
 ];
 
@@ -476,8 +478,8 @@ command = "terminal-notifier -message done"
     }
 
     // MEMBERSHIP pin — the completeness half `every_registered_kimi_event_decodes`
-    // can't see; the two `*Failure` variants are serviced ONLY by the custom
-    // Extend decoder, so update this pin deliberately.
+    // can't see; the two `*Failure` variants and `Interrupt` are serviced ONLY
+    // by the custom Extend decoder, so update this pin deliberately.
     #[test]
     fn kimi_events_pins_the_exact_registered_set() {
         crate::install::assert_event_roster(
@@ -491,6 +493,7 @@ command = "terminal-notifier -message done"
                 "PermissionRequest",
                 "Stop",
                 "StopFailure",
+                "Interrupt",
                 "SessionEnd",
             ],
         );

@@ -24,6 +24,7 @@ fn a_turn_end_alone_registers_its_session() {
     for (scenario, event) in [
         ("tool-run-hermetic", "Stop"),
         ("model-error-hermetic", "StopFailure"),
+        ("cancel-hermetic", "Interrupt"),
     ] {
         let line = payload(scenario, event);
         let session: Value = serde_json::from_str(&line).expect("JSON");

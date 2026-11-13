@@ -22,7 +22,10 @@ const TUI: tui::Tui = tui::Tui {
         keys: &[tui::Key::Esc],
         dwell: std::time::Duration::ZERO,
     }],
-    cancel: &[],
+    // Esc cancels a streaming turn
+    // (`apps/kimi-code/src/tui/controllers/editor-keyboard.ts:259-262` at
+    // `@moonshot-ai/kimi-code@2.5.3`).
+    cancel: &[tui::Key::Esc],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     conpty: tui::ConPty::Renders,
 };
@@ -80,6 +83,13 @@ pub(crate) const PROFILE: Profile = Profile {
                 "Stop",
                 "SessionEnd",
             ],
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "cancel",
+            shape: Shape::Cancel,
+            surface: Surface::Tui { row: &TUI },
+            expects: &["SessionStart", "Interrupt", "SessionEnd"],
             turn: Turn::PROFILE,
         },
         Scenario {
