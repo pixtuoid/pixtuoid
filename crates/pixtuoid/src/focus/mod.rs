@@ -20,7 +20,7 @@ use pixtuoid_core::source::registry;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
-pub(crate) use linux::{HYPRLAND_ENV, SWAY_ENV};
+pub(crate) use linux::detect_channel;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(windows)]
