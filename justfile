@@ -211,7 +211,7 @@ ci-observability:
 # An App or CLI reads what a released build wrote, so a change never edits a
 # sample its base holds. CI's base is HEAD^1: a PR merge commit's first parent
 # (path-changed's rule), or the commit a push follows.
-[doc("Fail when a change edits or deletes a v1 wire sample its base holds, or adds a hello kind")]
+[doc("Fail when a change edits or deletes a v1 wire sample its base holds, or adds a sample of a hello kind its base's samples lack")]
 [group('rust')]
 wire-frozen:
     #!/usr/bin/env bash
@@ -223,6 +223,9 @@ wire-frozen:
     # of a new one would hide the break `remote`'s v1 sample test reports.
     export LC_ALL=C
     kind() { jq -rRs 'fromjson? | objects | .hello // empty'; }
+    # A reader that finds no kind would pass every sample, a new kind's too.
+    [[ "$(printf '{\n  "hello": "ping"\n}' | kind)" == ping ]] ||
+        { echo "WIRE-FROZEN SELFTEST: no kind read from a multi-line hello" >&2; exit 1; }
     held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
         while IFS= read -r f; do git show "$base:$f" | kind; done | sort -u)"
     added="$(git diff --name-only --diff-filter=A "$base" -- fuzz/seeds/remote |

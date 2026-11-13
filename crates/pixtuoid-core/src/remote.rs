@@ -1442,8 +1442,9 @@ mod tests {
         }
     }
 
-    /// What a v1 reader can read: a property at `path` of the `$defs` type that
-    /// owns it, `[]` standing for every index, or with `tag` a value it fixes.
+    /// A place this build or a v1 sample puts a value: a property at `path` of
+    /// its owner (a `$defs` name, or the root's title), `[]` standing for every
+    /// index, or with `tag` a value it fixes.
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     struct Key {
         owner: String,
@@ -1566,11 +1567,16 @@ mod tests {
     }
 
     impl Sample {
-        fn of(name: &'static str, sample: &Value, schema: &Value) -> Self {
+        /// The sample `name`, once `new`, what this build writes as a `W` in its
+        /// place, writes everything a v1 reader reads of it.
+        fn kept<W: schemars::JsonSchema>(name: &'static str, sample: &str, new: &str) -> Self {
+            let old: Value = serde_json::from_str(sample).expect(name);
+            assert_keeps(&old, &serde_json::from_str(new).expect(name), name);
+            let schema = written::<W>();
             let owner = schema["title"].as_str().expect("a title");
             let [mut holds, mut writes] = [BTreeSet::new(), BTreeSet::new()];
-            collect(schema, schema, Some(sample), owner, "", &mut holds);
-            collect(schema, schema, None, owner, "", &mut writes);
+            collect(&schema, &schema, Some(&old), owner, "", &mut holds);
+            collect(&schema, &schema, None, owner, "", &mut writes);
             Self {
                 name,
                 holds,
@@ -1579,20 +1585,12 @@ mod tests {
         }
     }
 
-    /// What a v1 peer wrote of each exchange, of the line's `machine` and of a
-    /// line `GOLDEN` lacks, one sample per file; frozen as `GOLDEN` is.
+    /// What a v1 peer wrote beside `GOLDEN`, one sample per file; frozen as
+    /// `GOLDEN` is.
     const V1_SAMPLES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
 
     fn v1_sample(name: &str) -> String {
         std::fs::read_to_string(Path::new(V1_SAMPLES).join(name)).expect(name)
-    }
-
-    /// `new`, what this build writes as a `W` in place of the sample `name`,
-    /// writes everything a v1 reader reads of it.
-    fn assert_kept<W: schemars::JsonSchema>(name: &'static str, sample: &str, new: &str) -> Sample {
-        let old: Value = serde_json::from_str(sample).expect(name);
-        assert_keeps(&old, &serde_json::from_str(new).expect(name), name);
-        Sample::of(name, &old, &written::<W>())
     }
 
     /// `text`, the line sample `name`, still applies, and is kept by `scene`,
@@ -1600,7 +1598,7 @@ mod tests {
     fn assert_line(name: &'static str, text: &str, scene: &SceneState) -> Sample {
         let mut office = RemoteOffice::new(caps(4));
         office.apply(text.as_bytes(), at(AT)).expect(name);
-        assert_kept::<Versioned<'_, Snapshot>>(name, text, &sent(scene))
+        Sample::kept::<Versioned<'_, Snapshot>>(name, text, &sent(scene))
     }
 
     /// `name`'s sample reads as `value`, the value it was written from, and is
@@ -1614,7 +1612,7 @@ mod tests {
         let sample = v1_sample(name);
         let read = read(sample.as_bytes());
         assert_eq!(read.as_ref(), Some(&value), "{name} reads as another value");
-        assert_kept::<W>(name, &sample, &write(&value).expect("it encodes"))
+        Sample::kept::<W>(name, &sample, &write(&value).expect("it encodes"))
     }
 
     /// Every property and tag this build writes is in a frozen sample too: an App

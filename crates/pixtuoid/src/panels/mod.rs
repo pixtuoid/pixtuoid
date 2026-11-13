@@ -716,12 +716,12 @@ fn set_connected(
 /// [`Changed::line`](pixtuoid_core::remote::Changed::line)'s, which a paired device
 /// shows too, or on a failure of `op` its reason.
 fn result_line(
-    done: &anyhow::Result<pixtuoid_core::remote::Changed>,
+    done: &anyhow::Result<crate::sources::Made>,
     op: connection::SourceOp,
     name: &str,
 ) -> String {
     match done {
-        Ok(changed) => changed.line(name),
+        Ok(made) => made.changed.line(name),
         Err(e) => connection::format_failure(op, name, &crate::install::io::failure_reason(e)),
     }
 }
@@ -741,7 +741,7 @@ struct ChangeNotice {
 impl ChangeNotice {
     fn of(
         source_id: &'static str,
-        done: &anyhow::Result<pixtuoid_core::remote::Changed>,
+        done: &anyhow::Result<crate::sources::Made>,
         op: connection::SourceOp,
         name: &str,
     ) -> Self {
@@ -751,7 +751,7 @@ impl ChangeNotice {
             failed: done.is_err(),
             quiet: done
                 .as_ref()
-                .is_ok_and(|changed| changed.notes().is_empty()),
+                .is_ok_and(|made| made.changed.notes().is_empty()),
         }
     }
 }
@@ -2152,16 +2152,16 @@ mod dispatch_tests {
     /// panel's own words; a change with nothing to say stays quiet.
     #[test]
     fn onboarding_reports_each_failure_and_each_step() {
-        use pixtuoid_core::remote::{Changed, Outcome};
+        use crate::sources::{Made, WireOutcome};
         let step = crate::sources::post_install_hint("openclaw").expect("openclaw declares one");
         let reason = "settings is valid JSON but not an object";
         let outcomes = vec![
             (
                 "openclaw",
-                Ok(Changed::new(
+                Ok(Made::new(
                     "openclaw",
                     true,
-                    Outcome::Connected,
+                    WireOutcome::Connected,
                     false,
                     Some(step),
                     None,
@@ -2170,10 +2170,10 @@ mod dispatch_tests {
             ("cursor", Err(anyhow::anyhow!(reason))),
             (
                 "antigravity",
-                Ok(Changed::new(
+                Ok(Made::new(
                     "antigravity",
                     true,
-                    Outcome::Connected,
+                    WireOutcome::Connected,
                     false,
                     None,
                     None,
@@ -2363,7 +2363,7 @@ pub(crate) mod noted {
     /// Its rows are the registry's, each source it changed connected unless
     /// it failed.
     pub(crate) fn gated_job(input: super::JobInput) -> super::JobDone {
-        use pixtuoid_core::remote::{Changed, Outcome};
+        use crate::sources::{Made, WireOutcome};
         let gate = gate(&input.config_path);
         let fails = loop {
             match std::fs::read_to_string(&gate) {
@@ -2373,14 +2373,14 @@ pub(crate) mod noted {
         };
         let done = |id, on| {
             let outcome = if on {
-                Outcome::Connected
+                WireOutcome::Connected
             } else {
-                Outcome::Disconnected
+                WireOutcome::Disconnected
             };
             if fails {
                 Err(anyhow::anyhow!("the gate said so"))
             } else {
-                Ok(Changed::new(id, on, outcome, false, None, None))
+                Ok(Made::new(id, on, outcome, false, None, None))
             }
         };
         let (onboarding, notices) = match &input.job {

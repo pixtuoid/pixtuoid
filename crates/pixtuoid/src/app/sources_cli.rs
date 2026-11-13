@@ -8,9 +8,8 @@ use std::io::Write;
 use std::path::Path;
 
 use crate::config;
-use crate::sources::{self, SourceChange};
+use crate::sources::{self, Made, SourceChange};
 use anyhow::Result;
-use pixtuoid_core::remote::Changed;
 
 /// `pixtuoid setup [--yes]` — the headless onboarding twin. Without `--yes` it is
 /// a DRY RUN: writing to another tool's config is opt-in. Exits non-zero if any
@@ -91,7 +90,7 @@ pub(crate) fn run_sources_set(ids: &[String], json: bool) -> Result<()> {
 pub(crate) fn run_change(
     ids: &[String],
     json: bool,
-    op: impl Fn(&Path, &str) -> Result<Changed>,
+    op: impl Fn(&Path, &str) -> Result<Made>,
 ) -> Result<()> {
     let cfg = config::config_path();
     let sids: Vec<&'static str> = ids
@@ -148,7 +147,7 @@ fn text_lines(rows: &[SourceChange]) -> Vec<String> {
             Some(m) => format!("{}: {}: {m}", row.id, row.outcome),
             None => format!("{}: {}", row.id, row.outcome),
         });
-        for note in done.iter().flat_map(Changed::notes) {
+        for note in done.iter().flat_map(|made| made.changed.notes()) {
             lines.push(format!("  \u{21b3} {note}"));
         }
     }
@@ -161,7 +160,7 @@ fn json_notes(rows: &[SourceChange]) -> Vec<String> {
     rows.iter()
         .flat_map(|(id, done)| {
             done.iter()
-                .flat_map(Changed::notes)
+                .flat_map(|made| made.changed.notes())
                 .map(move |note| format!("{id}: {note}"))
         })
         .collect()
@@ -170,11 +169,11 @@ fn json_notes(rows: &[SourceChange]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pixtuoid_core::remote::Outcome;
+    use crate::sources::WireOutcome;
 
     #[test]
     fn outcome_envelope_is_the_id_outcome_raycast_contract() {
-        let connected = Changed::new("codewhale", true, Outcome::Connected, false, None, None);
+        let connected = Made::new("codewhale", true, WireOutcome::Connected, false, None, None);
         let rows = vec![
             sources::OutcomeRow::new("codewhale", &Ok(connected)),
             sources::OutcomeRow::new("cursor", &Err(anyhow::anyhow!("boom"))),
@@ -194,10 +193,10 @@ mod tests {
         let rows: Vec<SourceChange> = vec![
             (
                 "openclaw",
-                Ok(Changed::new(
+                Ok(Made::new(
                     "openclaw",
                     true,
-                    Outcome::Connected,
+                    WireOutcome::Connected,
                     true,
                     Some(step),
                     None,
@@ -205,10 +204,10 @@ mod tests {
             ),
             (
                 "codex",
-                Ok(Changed::new(
+                Ok(Made::new(
                     "codex",
                     false,
-                    Outcome::Disconnected,
+                    WireOutcome::Disconnected,
                     false,
                     None,
                     Some("codex"),
@@ -244,10 +243,10 @@ mod tests {
         let rows: Vec<SourceChange> = vec![
             (
                 "openclaw",
-                Ok(Changed::new(
+                Ok(Made::new(
                     "openclaw",
                     true,
-                    Outcome::NoOp,
+                    WireOutcome::NoOp,
                     false,
                     None,
                     None,
@@ -255,10 +254,10 @@ mod tests {
             ),
             (
                 "claude-code",
-                Ok(Changed::new(
+                Ok(Made::new(
                     "claude-code",
                     true,
-                    Outcome::Connected,
+                    WireOutcome::Connected,
                     false,
                     None,
                     None,
