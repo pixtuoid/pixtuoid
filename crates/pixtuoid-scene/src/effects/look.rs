@@ -5,7 +5,6 @@ use crate::sprite::{HeadView, Rgb};
 
 use super::{Cap, Effect, EffectKind, HEART_LIFE_MS, SLEEP_Z_RISE_MS, STEAM_CYCLE_MS};
 use crate::composite::WHITE;
-use crate::layout::chrome::Glyph;
 use crate::layout::{Point, WALKING_Y_OFF};
 use crate::theme::Theme;
 
@@ -48,6 +47,53 @@ pub(crate) fn plot_effect(e: &Effect, inks: &Inks, plot: &mut impl FnMut(u16, u1
         EffectKind::SteamPuff => plot_steam_puff(plot, e.at, e.phase, inks),
         EffectKind::MascotBubble => plot_mascot_bubble(plot, e.at, e.phase),
         EffectKind::SubagentCap(cap) => plot_subagent_cap(plot, e.at, cap),
+    }
+}
+
+/// Rows of art pixels, every row as wide as the first: `.` a gap, and any
+/// other character ink.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Glyph {
+    rows: &'static [&'static str],
+}
+
+impl Glyph {
+    /// `rows` as a glyph: a row not ASCII or not as wide as the first fails
+    /// the build of the const it is made in.
+    pub(crate) const fn new(rows: &'static [&'static str]) -> Self {
+        let mut i = 0;
+        while i < rows.len() {
+            assert!(
+                rows[i].is_ascii() && rows[i].len() == rows[0].len(),
+                "a glyph's rows are ASCII and as wide as its first"
+            );
+            i += 1;
+        }
+        Self { rows }
+    }
+
+    /// Its width, in art pixels.
+    pub(crate) const fn width(self) -> u16 {
+        match self.rows.first() {
+            Some(row) => row.len() as u16,
+            None => 0,
+        }
+    }
+
+    /// Its height, in art pixels.
+    pub(crate) const fn height(self) -> u16 {
+        self.rows.len() as u16
+    }
+
+    /// Its inked pixels, as offsets from its top-left: the one rule every
+    /// painter draws a glyph by.
+    pub(crate) fn inked(self) -> impl Iterator<Item = (u16, u16)> {
+        (0u16..).zip(self.rows).flat_map(|(dy, row)| {
+            (0u16..)
+                .zip(row.chars())
+                .filter(|&(_, c)| c != '.')
+                .map(move |(dx, _)| (dx, dy))
+        })
     }
 }
 
