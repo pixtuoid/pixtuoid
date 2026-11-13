@@ -25,8 +25,8 @@ categories   = ["command-line-utilities", "visualization"]
 # here; CI's `cargo clippy -- -D warnings` makes it a hard gate.
 #
 # `missing_docs` is NOT here on purpose: it is a PUBLIC-API gate, so it lives
-# per-crate as `#![warn(missing_docs)]` in the two PUBLISHED crates' `lib.rs`,
-# scoped identically to the semver-checks + api-surface gates.
+# per-crate as `#![warn(missing_docs)]` in the `lib.rs` of each of the justfile's
+# `PUBLISHED_CRATES`, the scope of its api-surface gate and of release-plz's semver check.
 [workspace.lints.rust]
 unreachable_pub = "warn"
 missing_debug_implementations = "warn"
