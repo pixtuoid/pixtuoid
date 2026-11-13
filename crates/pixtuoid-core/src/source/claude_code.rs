@@ -173,15 +173,29 @@ fn subagent_session(wire_agent_id: &str) -> String {
     }
 }
 
-/// Resolve `CLAUDE_CONFIG_DIR`. Upstream (read out of the 2.1.226 binary) is
+/// Claude Code's config dir. Upstream (read out of the 2.1.226 binary, and the
+/// 2.1.322 one's `Be`) is
 /// `(env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude")).normalize("NFC")` —
-/// nothing else layers on, no XDG / `%APPDATA%` / profile / legacy dir. The two
-/// deliberate divergences are `""`/`"  "` treated as unset, and NFC dropped.
-/// Internal cross-crate helper, not a stable API.
+/// nothing else layers on, no XDG / `%APPDATA%` / profile / legacy dir — and
+/// none with neither, where Bun's `os.homedir()` throws (Bun v1.4.4
+/// `src/runtime/node/node_os.rs:637-645`). The two deliberate divergences are
+/// `""`/`"  "` treated as unset, and NFC dropped. Internal cross-crate helper,
+/// not a stable API.
 #[doc(hidden)]
 pub fn claude_config_dir() -> Option<PathBuf> {
-    crate::platform::path_env("CLAUDE_CONFIG_DIR")
-        .map(|d| crate::platform::warn_if_relative_override("CLAUDE_CONFIG_DIR", d))
+    resolve_claude_config_dir(
+        crate::platform::path_env("CLAUDE_CONFIG_DIR")
+            .map(|d| crate::platform::warn_if_relative_override("CLAUDE_CONFIG_DIR", d)),
+        crate::platform::user_home_opt(),
+    )
+}
+
+/// Pure precedence core, separated so it's unit-testable without env mutation.
+fn resolve_claude_config_dir(
+    config_dir_env: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    config_dir_env.or_else(|| Some(home?.join(".claude")))
 }
 
 const ASSISTANT: &str = "assistant";
@@ -493,6 +507,18 @@ mod tests {
     use super::*;
     use crate::source::decoder::test_obj;
     use serde_json::json;
+
+    #[test]
+    fn the_config_dir_is_the_override_else_dot_claude_else_none() {
+        let home = Some(PathBuf::from("/home/u"));
+        let custom = Some(PathBuf::from("/srv/cc"));
+        assert_eq!(resolve_claude_config_dir(custom.clone(), None), custom);
+        assert_eq!(
+            resolve_claude_config_dir(None, home),
+            Some(PathBuf::from("/home/u").join(".claude"))
+        );
+        assert_eq!(resolve_claude_config_dir(None, None), None);
+    }
 
     #[test]
     fn parsed_tail_lines_yields_only_parseable_lines() {

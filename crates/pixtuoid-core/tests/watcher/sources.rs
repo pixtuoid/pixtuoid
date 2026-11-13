@@ -107,8 +107,7 @@ async fn claude_code_source_run_emits_session_start_from_jsonl() {
     let transcript = project_dir.join("ses-cc.jsonl");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let mut src = ClaudeCodeSource::default_paths();
-    src.projects_root = projects_root;
+    let src = ClaudeCodeSource { projects_root };
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -153,8 +152,7 @@ async fn claude_code_source_run_emits_usage_from_jsonl() {
     let transcript = project_dir.join("ses-cu.jsonl");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let mut src = ClaudeCodeSource::default_paths();
-    src.projects_root = projects_root;
+    let src = ClaudeCodeSource { projects_root };
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;

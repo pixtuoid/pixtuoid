@@ -457,7 +457,7 @@ mod tests {
     fn config_path_errors_when_no_home_and_no_override() {
         let err = resolve_config_path(None, None, None, None, |_| false).unwrap_err();
         assert!(
-            err.to_string().ends_with("unset); set one and reconnect"),
+            err.to_string().ends_with("unset); set one"),
             "no home + no override must surface the actionable error: {err}"
         );
     }

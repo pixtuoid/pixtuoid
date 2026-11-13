@@ -1040,14 +1040,21 @@ mod tests {
 
         // A named profile derives its own agent dir and IGNORES the override
         // (`dirs.ts`), so an exported OMP_PROFILE/PI_PROFILE reds this gate blaming
-        // the resolver. Scrub them.
-        let failures = temp_env::with_vars_unset(["OMP_PROFILE", "PI_PROFILE"], || {
+        // the resolver. Scrub them. omp ignores it with no home too.
+        let home = tempfile::tempdir().expect("tempdir");
+        let vars = [
+            ("OMP_PROFILE", None),
+            ("PI_PROFILE", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let failures = temp_env::with_vars(vars, || {
             // Collect rather than assert in-loop, so one run names every source
             // that fails.
             let mut failures: Vec<String> = Vec::new();
             for (name, var) in declared {
                 // A REAL dir: upstream `find_codex_home` gates `CODEX_HOME` on the path
-                // existing, so a bare string silently falls back.
+                // existing, so a bare string names no home.
                 let tmp = tempfile::tempdir().expect("tempdir");
                 let root_env = tmp.path().to_path_buf();
                 let resolved = temp_env::with_var(var, Some(&root_env), || {
@@ -1074,27 +1081,38 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
-    /// Negative control: without an override, no root may land under the temp
-    /// dir — else `starts_with` above could pass for an unrelated reason.
+    /// An override steers its root only while set: pointed at `tmp` the root is
+    /// under `tmp`, and unset it is under the home, not `tmp` — else
+    /// `starts_with` above could pass for an unrelated reason.
     #[cfg(feature = "native")]
     #[test]
     fn a_source_root_does_not_wander_into_an_unset_overrides_directory() {
-        temp_env::with_vars(Vec::<(&str, Option<&str>)>::new(), || {
-            let tmp = tempfile::tempdir().expect("tempdir");
-            for (name, root) in [
-                (
-                    "claude-code",
-                    crate::source::resolved_source_root("claude-code").unwrap(),
-                ),
-                (
-                    "copilot",
-                    crate::source::resolved_source_root("copilot").unwrap(),
-                ),
+        let home = tempfile::tempdir().expect("tempdir");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pinned = [
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        temp_env::with_vars(pinned, || {
+            for (name, var) in [
+                ("claude-code", "CLAUDE_CONFIG_DIR"),
+                ("copilot", "COPILOT_HOME"),
             ] {
+                let root = |value: Option<&std::path::Path>| {
+                    temp_env::with_var(var, value, || crate::source::resolved_source_root(name))
+                        .expect("a root")
+                };
+                let steered = root(Some(tmp.path()));
                 assert!(
-                    !root.starts_with(tmp.path()),
-                    "{name}: resolved {} under a directory nothing pointed at",
-                    root.display()
+                    steered.starts_with(tmp.path()),
+                    "{name}: ${var} did not steer the root, got {}",
+                    steered.display()
+                );
+                let unset = root(None);
+                assert!(
+                    !unset.starts_with(tmp.path()) && unset.starts_with(home.path()),
+                    "{name}: with ${var} unset the root is {}, not under the home",
+                    unset.display()
                 );
             }
         });

@@ -44,14 +44,17 @@ const EXTENSION: SentinelPlugin = SentinelPlugin {
 ///
 /// [`omp_extensions_dir`]: pixtuoid_core::source::omp::omp_extensions_dir
 pub(crate) fn default_config_path() -> Result<PathBuf> {
-    Ok(pixtuoid_core::source::omp::omp_extensions_dir().join("pixtuoid.ts"))
+    let dir = pixtuoid_core::source::omp::omp_extensions_dir().ok_or_else(|| {
+        crate::install::io::home_unset("omp's agent dir", pixtuoid_core::platform::USER_HOME_VAR)
+    })?;
+    Ok(dir.join("pixtuoid.ts"))
 }
 
 /// Presence probe for auto-detect: probe omp's OWN agent dir, NOT our
 /// extension file — keying on our own artifact would chicken-and-egg (omp
 /// could never be auto-detected until AFTER we'd installed into it).
 pub(crate) fn detect_installed() -> bool {
-    pixtuoid_core::source::omp::omp_agent_dir().exists()
+    pixtuoid_core::source::omp::omp_agent_dir().is_some_and(|dir| dir.exists())
 }
 
 /// omp runs extensions under Bun and spawns the shim by embedded path (no
@@ -221,8 +224,18 @@ mod tests {
     /// The one string deciding whether omp ever LOADS what install writes.
     #[test]
     fn default_path_is_the_extension_under_the_agent_dirs_extensions() {
-        let p = default_config_path().expect("resolvable in a dev environment");
-        assert!(p.ends_with("extensions/pixtuoid.ts"), "got {}", p.display());
+        let home = tempfile::tempdir().unwrap();
+        let vars = [
+            ("PI_CODING_AGENT_DIR", None),
+            ("PI_CONFIG_DIR", None),
+            ("OMP_PROFILE", None),
+            ("PI_PROFILE", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let p = temp_env::with_vars(vars, default_config_path).expect("a home resolves");
+        let agent = home.path().join(".omp").join("agent");
+        assert_eq!(p, agent.join("extensions").join("pixtuoid.ts"));
     }
 
     #[test]

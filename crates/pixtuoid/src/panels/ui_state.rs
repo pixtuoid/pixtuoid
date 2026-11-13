@@ -137,7 +137,6 @@ struct Notices {
     /// [`crate::version::BootDecision::should_show_popup`], before the
     /// onboarding could hold the popup back.
     upgraded: bool,
-    terminal_cutaway: bool,
     /// The agent CLIs on this machine as last read: the boot's probe when its
     /// popup is due, then each panel job's.
     installed: Vec<&'static str>,
@@ -217,7 +216,6 @@ impl UiState {
         );
         ui.notices.versions = decision.versions;
         ui.notices.upgraded = decision.should_show_popup;
-        ui.notices.terminal_cutaway = boot.look == Some(LookKind::Cutaway);
         ui.saved.look = boot.look;
         // The onboarding can hold the popup back, leaving its notices to `v`.
         if decision.should_show_popup {
@@ -324,7 +322,6 @@ impl UiState {
         let facts = crate::version::Facts {
             installed: &self.notices.installed,
             connected,
-            terminal_cutaway: self.notices.terminal_cutaway,
         };
         self.notices.shown = crate::version::due(self.notices.versions.as_ref(), &facts).into();
         self.version_popup_open = true;
@@ -1013,8 +1010,8 @@ mod tests {
     }
 
     /// The popup an upgrade boots with lists the notices due from the version
-    /// the config recorded to the one running, against the boot's connections,
-    /// the CLIs installed and the TUI's cutaway.
+    /// the config recorded to the one running, against the boot's connections
+    /// and the CLIs installed.
     #[test]
     fn an_upgrade_boots_the_popup_with_its_notices() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -1022,29 +1019,20 @@ mod tests {
         let across = crate::version::across_every_notice();
         crate::config::save_version(&path, &across.previous.to_string())
             .expect("seed the release before");
-        let booted = |look| {
-            boot_into(
-                &path,
-                WelcomeUi::from_detected(&[]),
-                &across.current,
-                &HashSet::from(["codex".to_string()]),
-                look,
-            )
-        };
-        let ui = booted(Some(LookKind::Cutaway));
+        let ui = boot_into(
+            &path,
+            WelcomeUi::from_detected(&[]),
+            &across.current,
+            &HashSet::from(["codex".to_string()]),
+            Some(LookKind::Classic),
+        );
         assert!(ui.modal().version_popup_open);
         let shown = ui.version_notices();
-        assert_eq!(shown.len(), 2, "{shown:?}");
+        assert_eq!(shown.len(), 1, "{shown:?}");
         assert!(
             shown[0].contains("Claude Code and Reasonix as"),
             "the connected Codex is not named: {shown:?}"
         );
-        assert!(shown[1].contains("cutaway"), "{shown:?}");
-        crate::config::save_version(&path, &across.previous.to_string())
-            .expect("seed the release before");
-        let ui = booted(Some(LookKind::Classic));
-        let shown = ui.version_notices();
-        assert_eq!(shown.len(), 1, "a run starting in the classic: {shown:?}");
         assert_eq!(
             ui.saved.look,
             Some(LookKind::Classic),

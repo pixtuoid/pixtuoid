@@ -37,6 +37,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
         &hooks,
         [
             json!({
+                "_pixtuoid_source": "claude-code",
                 "hook_event_name": "SessionStart",
                 "session_id": "parent",
                 "transcript_path": PARENT_PATH,
@@ -45,6 +46,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
             // Real CC names the dispatch tool "Agent", not "Task" — Task-detection
             // must still fire so the reducer records a task in flight.
             json!({
+                "_pixtuoid_source": "claude-code",
                 "hook_event_name": "PreToolUse",
                 "session_id": "parent",
                 "transcript_path": PARENT_PATH,
@@ -88,6 +90,7 @@ fn cc_subagent_links_renames_and_cascades_on_parent_exit() {
     fold.feed(
         &hooks,
         [json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SessionEnd",
             "session_id": "parent",
             "transcript_path": PARENT_PATH
