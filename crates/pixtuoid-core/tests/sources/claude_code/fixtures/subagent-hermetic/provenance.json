@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.322 (Claude Code)",
-  "captured": "2026-11-11",
+  "version": "2.1.323 (Claude Code)",
+  "captured": "2026-11-13",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -31,14 +31,14 @@
     }
   },
   "sentinel_reads": {
-    "8c541b66-564f-4bf8-b1e5-b599de44da61.jsonl": [
+    "agent-aa43cdf9e205ae30f.jsonl": [
+      "14:/message/usage/cache_creation_input_tokens",
+      "20:/message/usage/cache_creation_input_tokens"
+    ],
+    "e79b9c66-b6df-46c6-aae3-37bd74cc0661.jsonl": [
       "19:/message/usage/cache_creation_input_tokens",
       "25:/message/usage/cache_creation_input_tokens",
       "33:/message/usage/cache_creation_input_tokens"
-    ],
-    "agent-a97002aa4c9d25c61.jsonl": [
-      "14:/message/usage/cache_creation_input_tokens",
-      "20:/message/usage/cache_creation_input_tokens"
     ],
     "hook-payloads.jsonl": [
       "7:/agent_transcript_path"
