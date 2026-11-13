@@ -75,7 +75,7 @@ pub(crate) fn paint_connection_panel(
         .collect();
 
     let title = format!("Sources \u{2014} {}/esc close", keys::SOURCES);
-    // What frames the detail: a blank row above it, the key hint below.
+    // Built before the detail so the result's room counts the rows `below` adds.
     let around = [
         Line::from(""),
         Line::from(Span::styled(
@@ -100,9 +100,8 @@ pub(crate) fn paint_connection_panel(
             keys::DECLINE
         ))
     } else if let Some(res) = result {
-        // An action's outcome is read whole, wrapped, wherever the bounds hold it
-        // with the list shed; past that it scrolls in one row, as what the selection
-        // shows always does, so the clip never takes its tail or the key hint.
+        // A result is read whole, wrapped, where the shed list leaves it the rows;
+        // else it scrolls in one, keeping its head and the hint where one row would.
         let room = Panel::max_inner_height(bounds, CONNECTION_POPUP_W, Some(&title))
             .map_or(0, usize::from)
             .saturating_sub(above.len() + around.len());
@@ -600,7 +599,7 @@ mod tests {
         assert_ne!(n0, n1, "selected name must animate across time");
     }
 
-    /// The error the walk saw cut, as the toggle words it.
+    /// A real Codex connect failure (`format_failure`), long enough to wrap to several detail rows.
     fn codex_off_path() -> String {
         crate::panels::connection::format_failure(
             crate::panels::connection::SourceOp::Connect,
@@ -627,7 +626,7 @@ mod tests {
         s.split_whitespace().collect()
     }
 
-    /// Fifteen rows, about the roster, with `result` the last action's outcome.
+    /// Fifteen rows, about the roster, with `result` the panel's result line.
     fn with_result(result: &str) -> ConnectionFrame {
         let r = row("codex", "cx", ConnState::Disconnected);
         ConnectionFrame {
@@ -638,8 +637,8 @@ mod tests {
         }
     }
 
-    /// An action's outcome is read whole at every height that still shows a
-    /// row: the list sheds rows for it, and nothing paints on the footer row.
+    /// A result is read whole at every height that still shows a row: the list
+    /// sheds rows for it, and nothing paints on the footer row.
     #[test]
     fn a_long_result_shows_whole_while_any_row_shows() {
         let result = codex_off_path();
@@ -669,11 +668,11 @@ mod tests {
         );
     }
 
-    /// Onboarding joins every failure into one outcome. Where even the shed list
+    /// Onboarding joins every failure into one result. Where even the shed list
     /// leaves it too few rows, it scrolls in one, keeping the key hint a one-row
-    /// outcome keeps.
+    /// result keeps.
     #[test]
-    fn an_outcome_the_terminal_cannot_hold_scrolls_and_keeps_the_hint() {
+    fn a_result_the_bounds_cannot_hold_scrolls_and_keeps_the_hint() {
         let failures = vec![codex_off_path(); 6].join("  \u{b7}  ");
         let (mut wrapped, mut scrolled) = (false, false);
         for h in 1..=60 {
@@ -687,7 +686,7 @@ mod tests {
             let text = screen.concat();
             assert!(
                 text.contains("j/k move") && text.contains("Codex CLI: connect failed"),
-                "{h} rows lose the hint or the outcome:\n{}",
+                "{h} rows lose the hint or the result:\n{}",
                 screen.join("\n")
             );
             let whole = squash(&text).contains(&squash(&failures));

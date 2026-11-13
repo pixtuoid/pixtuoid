@@ -244,7 +244,9 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 /// How a panel word-wraps its prose to `width` columns. Named, not defaulted:
-/// textwrap's defaults follow its features, which feature unification can widen.
+/// `Options::new` takes OptimalFit under textwrap's `smawk` feature and Unicode
+/// breaks under `unicode-linebreak` (0.16.4 `src/options.rs:97-98`), which
+/// feature unification can turn on.
 fn wrap_options(width: usize) -> textwrap::Options<'static> {
     textwrap::Options::new(width)
         .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit)
