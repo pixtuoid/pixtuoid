@@ -793,7 +793,9 @@ fn collect_roots() -> Vec<RootStatus> {
                 Some(root) => root,
                 // Codex's set CODEX_HOME that is no directory keeps its row, so the $CODEX_HOME alarm fires.
                 None if d.name == codex::SOURCE_NAME => match codex::codex_home() {
-                    Err(codex::CodexHomeUnresolved::NotADirectory(set)) => set,
+                    Err(codex::CodexHomeUnresolved::NotADirectory(set)) => {
+                        set.join(codex::SESSIONS_DIR)
+                    }
                     _ => return None,
                 },
                 None => return None,
@@ -2259,24 +2261,29 @@ mod tests {
     #[test]
     fn a_codex_home_that_is_no_directory_keeps_its_root_row_and_alarm() {
         let home = tempfile::tempdir().unwrap();
-        let missing = home.path().join("codx");
-        let vars = [
-            ("CODEX_HOME", Some(missing.as_os_str())),
-            ("HOME", Some(home.path().as_os_str())),
-            ("USERPROFILE", Some(home.path().as_os_str())),
-        ];
-        let roots = temp_env::with_vars(vars, collect_roots);
-        let codex = roots
-            .iter()
-            .find(|r| r.source == "codex")
-            .expect("a codex row");
-        assert!(!codex.exists);
-        let row = format_root_row(codex, &Ink { on: false });
-        assert!(row.contains(&ShownPath::new(&missing).to_string()), "{row}");
-        assert!(
-            row.contains("$CODEX_HOME is set but that root does not exist"),
-            "{row}"
-        );
+        let file = home.path().join("config.toml");
+        std::fs::write(&file, "").unwrap();
+        // A missing path, and a file: neither is a directory, and neither holds sessions.
+        for set in [home.path().join("codx"), file] {
+            let vars = [
+                ("CODEX_HOME", Some(set.as_os_str())),
+                ("HOME", Some(home.path().as_os_str())),
+                ("USERPROFILE", Some(home.path().as_os_str())),
+            ];
+            let roots = temp_env::with_vars(vars, collect_roots);
+            let codex = roots
+                .iter()
+                .find(|r| r.source == "codex")
+                .expect("a codex row");
+            assert!(!codex.exists);
+            let row = format_root_row(codex, &Ink { on: false });
+            let root = set.join("sessions");
+            assert!(row.contains(&ShownPath::new(&root).to_string()), "{row}");
+            assert!(
+                row.contains("$CODEX_HOME is set but that root does not exist"),
+                "{row}"
+            );
+        }
     }
 
     #[test]

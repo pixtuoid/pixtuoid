@@ -93,7 +93,7 @@ pub(crate) const NATIVE: Native = Native {
 };
 
 fn sessions_root() -> std::result::Result<PathBuf, CodexHomeUnresolved> {
-    Ok(codex_home()?.join("sessions"))
+    Ok(codex_home()?.join(super::SESSIONS_DIR))
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {

@@ -442,7 +442,10 @@ pub pixtuoid_core::source::codex::CodexHomeUnresolved::NotADirectory(std::path::
 impl core::cmp::Eq for pixtuoid_core::source::codex::CodexHomeUnresolved
 impl core::cmp::PartialEq for pixtuoid_core::source::codex::CodexHomeUnresolved
 pub fn pixtuoid_core::source::codex::CodexHomeUnresolved::eq(&self, &Self) -> bool
+impl core::error::Error for pixtuoid_core::source::codex::CodexHomeUnresolved
 impl core::fmt::Debug for pixtuoid_core::source::codex::CodexHomeUnresolved
+pub fn pixtuoid_core::source::codex::CodexHomeUnresolved::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for pixtuoid_core::source::codex::CodexHomeUnresolved
 pub fn pixtuoid_core::source::codex::CodexHomeUnresolved::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for pixtuoid_core::source::codex::CodexHomeUnresolved
 impl core::marker::Freeze for pixtuoid_core::source::codex::CodexHomeUnresolved
@@ -469,6 +472,7 @@ impl core::marker::Unpin for pixtuoid_core::source::codex::CodexSource
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::codex::CodexSource
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::codex::CodexSource
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::codex::CodexSource
+pub const pixtuoid_core::source::codex::SESSIONS_DIR: &str
 pub const pixtuoid_core::source::codex::SOURCE_NAME: &str
 pub fn pixtuoid_core::source::codex::codex_home() -> core::result::Result<std::path::PathBuf, pixtuoid_core::source::codex::CodexHomeUnresolved>
 pub mod pixtuoid_core::source::copilot

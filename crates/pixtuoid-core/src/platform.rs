@@ -68,7 +68,6 @@ pub fn user_home_opt() -> Option<PathBuf> {
 }
 
 /// Why a CLI's home-rooted lookup names no path: no home resolves.
-#[cfg(feature = "native")]
 pub(crate) const NO_HOME: &str = "no home directory";
 
 /// The variable [`user_home_opt`] and [`go_user_home_dir`] both read, so the

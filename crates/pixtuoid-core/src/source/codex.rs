@@ -484,8 +484,12 @@ pub fn codex_home() -> std::result::Result<PathBuf, CodexHomeUnresolved> {
     )
 }
 
+/// The directory under [`codex_home`] that holds Codex's rollouts.
+pub const SESSIONS_DIR: &str = "sessions";
+
 /// Why [`codex_home`] names none: each is an error of codex's own.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error("{}", self.reason())]
 pub enum CodexHomeUnresolved {
     /// No `CODEX_HOME`, and no home.
     NoHome,
@@ -495,7 +499,6 @@ pub enum CodexHomeUnresolved {
 
 impl CodexHomeUnresolved {
     /// Why a lookup under Codex's home names no path.
-    #[cfg(feature = "native")]
     pub(crate) fn reason(&self) -> &'static str {
         match self {
             Self::NoHome => crate::platform::NO_HOME,

@@ -67,7 +67,8 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     host_plugin::owned_path("codex-plugin", host_plugin::HOOKS_FILE)
 }
 
-/// The SAME codex_home() the watcher uses, so the two can't disagree.
+/// Core's [`codex_home`](pixtuoid_core::source::codex::codex_home), the watcher's,
+/// with each unresolved cause worded as its remedy.
 fn codex_home() -> Result<PathBuf> {
     pixtuoid_core::source::codex::codex_home().map_err(|unresolved| match unresolved {
         CodexHomeUnresolved::NotADirectory(set) => anyhow!(
