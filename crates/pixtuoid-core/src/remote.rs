@@ -1443,7 +1443,7 @@ mod tests {
             match name.split('-').next() {
                 Some("link") => assert_eq!(text.parse::<PairLink>().expect(name).to_string(), text),
                 Some("version") => {
-                    assert_eq!(version_reply().expect("it encodes").trim_end(), text)
+                    assert_eq!(version_reply().expect("it encodes"), format!("{text}\n"))
                 }
                 Some("machine") => {
                     keeps(serde_json::to_string(
@@ -1940,28 +1940,6 @@ mod tests {
         assert_eq!(office.scene().agents.len(), 1);
     }
 
-    /// The handshake's wire, frozen as the snapshot's golden freezes its own.
-    #[test]
-    fn handshake_lines_keep_their_shape() {
-        let wire = |hello: &Hello| hello.line().expect("it encodes");
-        assert_eq!(
-            wire(&Hello::Pair { code: "c".into() }),
-            "{\"v\":1,\"hello\":\"pair\",\"code\":\"c\"}\n"
-        );
-        assert_eq!(
-            wire(&Hello::Resume { token: "t".into() }),
-            "{\"v\":1,\"hello\":\"resume\",\"token\":\"t\"}\n"
-        );
-        let reply = |line: &str| Reply::from_line(line.as_bytes()).expect("it decodes");
-        assert_eq!(
-            reply(r#"{"v":1,"reply":"paired","token":"t"}"#),
-            Reply::Paired { token: "t".into() }
-        );
-        assert_eq!(reply(r#"{"v":1,"reply":"resumed"}"#), Reply::Resumed);
-        assert_eq!(reply(r#"{"v":1,"reply":"refused"}"#), Reply::Refused);
-        assert_eq!(version_reply().expect("it encodes"), "{\"v\":1}\n");
-    }
-
     #[test]
     fn a_hello_and_a_reply_survive_their_line() {
         for hello in [
@@ -2032,59 +2010,6 @@ mod tests {
     fn a_reply_this_build_does_not_know_is_no_refusal() {
         let line = br#"{"v":1,"reply":"from_the_future","extra":1}"#;
         assert_eq!(Reply::from_line(line).expect("it decodes"), Reply::Unknown);
-    }
-
-    /// An ask's wire, frozen as the handshake's is.
-    #[test]
-    fn asks_and_answers_keep_their_shape() {
-        fn wire(value: &impl Serialize) -> String {
-            serde_json::to_string(value).expect("it encodes")
-        }
-        let line = wire(&Ask::Sources);
-        assert_eq!(line, r#"{"ask":"sources"}"#);
-        assert_eq!(serde_json::from_str::<Ask>(&line).unwrap(), Ask::Sources);
-
-        let rows = || {
-            vec![
-                SourceRow::new("codex", "Codex", SourceState::Connected, false),
-                SourceRow::new("cursor", "Cursor", SourceState::Disconnected, true),
-                SourceRow::new(
-                    "grok",
-                    "Grok",
-                    SourceState::NoCli { connected: true },
-                    false,
-                ),
-                SourceRow::new(
-                    "kimi",
-                    "Kimi",
-                    SourceState::NoCli { connected: false },
-                    false,
-                ),
-            ]
-        };
-        let line = wire(&Answer::Sources { rows: rows() });
-        assert_eq!(
-            line,
-            concat!(
-                r#"{"answer":"sources","rows":["#,
-                r#"{"id":"codex","display_name":"Codex","state":{"kind":"connected"},"attention":false},"#,
-                r#"{"id":"cursor","display_name":"Cursor","state":{"kind":"disconnected"},"attention":true},"#,
-                r#"{"id":"grok","display_name":"Grok","state":{"kind":"no_cli","connected":true},"attention":false},"#,
-                r#"{"id":"kimi","display_name":"Kimi","state":{"kind":"no_cli","connected":false},"attention":false}"#,
-                "]}"
-            )
-        );
-        assert_eq!(
-            Answer::from_line(line.as_bytes()),
-            Some(Answer::Sources { rows: rows() })
-        );
-
-        let line = wire(&Answer::Unsupported);
-        assert_eq!(line, r#"{"answer":"unsupported"}"#);
-        assert_eq!(
-            Answer::from_line(line.as_bytes()),
-            Some(Answer::Unsupported)
-        );
     }
 
     #[test]
