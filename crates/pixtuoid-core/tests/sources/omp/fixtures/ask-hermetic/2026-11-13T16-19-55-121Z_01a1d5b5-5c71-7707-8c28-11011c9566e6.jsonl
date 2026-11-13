@@ -1,0 +1,16 @@
+{"type":"title","v":0,"title":"Hermetic","source":"","updatedAt":"","pad":""}
+{"type":"session","version":0,"id":"","timestamp":"","cwd":"/tmp/pixtuoid-capture/proj"}
+{}
+{"type":"thinking_level_change","id":"","parentId":"","timestamp":"","runtime":{},"thinkingLevel":"high","configured":null}
+{}
+{}
+{}
+{"type":"message","id":"ad1bd275","parentId":"","timestamp":"2026-11-13T16:20:01.053Z","runtime":{},"message":{"role":"assistant","content":[{"type":"toolCall","id":"call_cRZMk26wNCfgVc4a","name":"ask","arguments":{},"partialArgs":"","streamIndex":0,"intent":"Asking which file to read"}],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2350,"output":65,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{}
+{"type":"message","id":"","parentId":"","timestamp":"","runtime":{},"message":{"role":"toolResult","toolCallId":"call_cRZMk26wNCfgVc4a","toolName":"","content":[],"details":{},"isError":false,"timestamp":0}}
+{"type":"model_usage","id":"a1b0a79e","parentId":"","timestamp":"2026-11-13T16:20:02.736Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":2834,"output":65,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","activeLeafId":""}
+{"type":"model_usage","id":"d4d6d107","parentId":"","timestamp":"2026-11-13T16:20:02.746Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":403,"output":6,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":""}
+{"type":"message","id":"4c338df6","parentId":"","timestamp":"2026-11-13T16:20:03.462Z","runtime":{},"message":{"role":"assistant","content":[],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2360,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{}
+{"type":"title_change","id":"","parentId":"","timestamp":"","runtime":{},"title":"Hermetic","source":""}
+{"type":"custom","customType":"session_exit","data":{},"id":"","parentId":"","timestamp":"","runtime":{}}
