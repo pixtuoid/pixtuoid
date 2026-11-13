@@ -9,7 +9,7 @@ use anyhow::{Context as _, Result};
 use super::{SOURCE_NAME, cc_derive_label, claude_config_dir};
 use crate::source::cc_probe::cc_sessions_dir;
 pub use crate::source::cc_probe::live_cc_session_ids;
-use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher};
+use crate::source::jsonl::JsonlWatcher;
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
 
@@ -20,10 +20,6 @@ use crate::source::{Source, TaggedSender};
 pub struct ClaudeCodeSource {
     /// The watched `~/.claude/projects` transcript root.
     pub projects_root: PathBuf,
-    /// The #246 child-end un-claim side-channel — CONSUMER only (releases CC
-    /// child-transcript claims on the rare blocked-stop continuation; the
-    /// PRODUCER tee lives on the `HookRouter`). `None` disables it.
-    pub child_end_unclaims: Option<ChildEndUnclaims>,
 }
 
 impl ClaudeCodeSource {
@@ -69,10 +65,7 @@ impl ClaudeCodeSource {
         let projects_root = claude_config_dir()
             .unwrap_or_else(|| crate::platform::user_home().join(".claude"))
             .join("projects");
-        Self {
-            projects_root,
-            child_end_unclaims: None,
-        }
+        Self { projects_root }
     }
 }
 
@@ -88,9 +81,6 @@ impl Source for ClaudeCodeSource {
             watcher = watcher.with_liveness_probe(std::sync::Arc::new(move || {
                 live_cc_session_ids(&sessions_dir)
             }));
-        }
-        if let Some(unclaims) = &self.child_end_unclaims {
-            watcher = watcher.with_child_end_unclaims(unclaims.clone());
         }
         watcher.run(tx).await
     }

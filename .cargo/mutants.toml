@@ -36,7 +36,6 @@ exclude_globs = [
 # regex would hide both.
 exclude_re = [
     # Equivalent mutants — each verified UNOBSERVABLE by hand, not merely untested.
-    'unclaim\.rs.*replace < with <= in ChildEndUnclaims',       # same-instant monotonic reads
     'compute\.rs.*plant_ground_in_bounds',                      # targeted retain == clear-all in range
     'jsonl/mod\.rs.*replace no_cwd_from_path ->',               # sole caller collapses both spellings
     # The empty-vs-comment early return in omp's dotenv line parser. `&&` is

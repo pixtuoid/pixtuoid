@@ -410,7 +410,6 @@ pub fn pixtuoid_core::source::antigravity::decode_ag_line(&str, &str, serde_json
 pub fn pixtuoid_core::source::antigravity::gemini_dir() -> std::path::PathBuf
 pub mod pixtuoid_core::source::claude_code
 pub struct pixtuoid_core::source::claude_code::ClaudeCodeSource
-pub pixtuoid_core::source::claude_code::ClaudeCodeSource::child_end_unclaims: core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>
 pub pixtuoid_core::source::claude_code::ClaudeCodeSource::projects_root: std::path::PathBuf
 impl pixtuoid_core::source::claude_code::ClaudeCodeSource
 pub fn pixtuoid_core::source::claude_code::ClaudeCodeSource::default_paths() -> Self
@@ -437,7 +436,6 @@ pub mod pixtuoid_core::source::codewhale
 pub const pixtuoid_core::source::codewhale::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::codex
 pub struct pixtuoid_core::source::codex::CodexSource
-pub pixtuoid_core::source::codex::CodexSource::child_end_unclaims: core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>
 pub pixtuoid_core::source::codex::CodexSource::sessions_root: std::path::PathBuf
 impl pixtuoid_core::source::codex::CodexSource
 pub fn pixtuoid_core::source::codex::CodexSource::default_paths() -> Self
@@ -743,7 +741,6 @@ pub mod pixtuoid_core::source::dsh
 pub const pixtuoid_core::source::dsh::SOURCE_NAME: &str
 pub mod pixtuoid_core::source::grok
 pub struct pixtuoid_core::source::grok::GrokSource
-pub pixtuoid_core::source::grok::GrokSource::child_end_unclaims: core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>
 pub pixtuoid_core::source::grok::GrokSource::sessions_root: std::path::PathBuf
 impl pixtuoid_core::source::grok::GrokSource
 pub fn pixtuoid_core::source::grok::GrokSource::default_paths() -> Self
@@ -808,7 +805,6 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::hook::Conne
 pub struct pixtuoid_core::source::hook::HookRouter
 impl pixtuoid_core::source::hook::HookRouter
 pub fn pixtuoid_core::source::hook::HookRouter::new(std::path::PathBuf) -> Self
-pub fn pixtuoid_core::source::hook::HookRouter::with_child_end_unclaims(self, core::option::Option<pixtuoid_core::source::jsonl::ChildEndUnclaims>) -> Self
 pub fn pixtuoid_core::source::hook::HookRouter::with_connected(self, pixtuoid_core::source::hook::ConnectedSources) -> Self
 pub fn pixtuoid_core::source::hook::HookRouter::with_presence_tx(self, core::option::Option<pixtuoid_core::source::daemon::PresenceSender>) -> Self
 impl core::fmt::Debug for pixtuoid_core::source::hook::HookRouter
@@ -899,24 +895,6 @@ impl core::marker::Unpin for pixtuoid_core::source::decoder::TailActivity
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::decoder::TailActivity
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::decoder::TailActivity
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::decoder::TailActivity
-pub struct pixtuoid_core::source::jsonl::ChildEndUnclaims
-impl pixtuoid_core::source::jsonl::ChildEndUnclaims
-pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::new() -> Self
-pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::push(&self, pixtuoid_core::id::AgentId)
-pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::take_matching(&self, impl core::ops::function::FnMut(&pixtuoid_core::id::AgentId) -> bool) -> alloc::vec::Vec<pixtuoid_core::id::AgentId>
-impl core::clone::Clone for pixtuoid_core::source::jsonl::ChildEndUnclaims
-pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::clone(&self) -> Self
-impl core::default::Default for pixtuoid_core::source::jsonl::ChildEndUnclaims
-pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::default() -> Self
-impl core::fmt::Debug for pixtuoid_core::source::jsonl::ChildEndUnclaims
-pub fn pixtuoid_core::source::jsonl::ChildEndUnclaims::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for pixtuoid_core::source::jsonl::ChildEndUnclaims
-impl core::marker::Send for pixtuoid_core::source::jsonl::ChildEndUnclaims
-impl core::marker::Sync for pixtuoid_core::source::jsonl::ChildEndUnclaims
-impl core::marker::Unpin for pixtuoid_core::source::jsonl::ChildEndUnclaims
-impl core::marker::UnsafeUnpin for pixtuoid_core::source::jsonl::ChildEndUnclaims
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::jsonl::ChildEndUnclaims
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::jsonl::ChildEndUnclaims
 pub struct pixtuoid_core::source::jsonl::JsonlWatcher
 impl pixtuoid_core::source::jsonl::JsonlWatcher
 pub fn pixtuoid_core::source::jsonl::JsonlWatcher::new(std::path::PathBuf, alloc::string::String) -> core::option::Option<Self>

@@ -11,8 +11,8 @@ use tokio::net::UnixStream;
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 
-use pixtuoid_core::source::hook::{HookRouter, HookSocketListener, SOCKET_ENV, SOCKET_FLAG};
-use pixtuoid_core::source::{AgentEvent, Source, Transport};
+use pixtuoid_core::source::hook::{HookSocketListener, SOCKET_ENV, SOCKET_FLAG};
+use pixtuoid_core::source::{AgentEvent, Transport};
 
 #[tokio::test]
 async fn listener_parses_line_and_emits_event() {
@@ -538,68 +538,6 @@ async fn listener_handles_concurrent_connections() {
         "all 5 concurrent connections should produce events"
     );
     handle.abort();
-}
-
-// A SubagentStop on the shared socket must reach the downstream channel
-// unchanged AND land its child id in the one shared un-claim handle, for
-// EVERY source (stamped codex here).
-#[tokio::test]
-async fn hook_router_tee_captures_child_ends_from_the_shared_socket() {
-    use pixtuoid_core::AgentId;
-    use pixtuoid_core::source::jsonl::ChildEndUnclaims;
-
-    let dir = TempDir::new_in(socket_root()).unwrap();
-    let sock = dir.path().join("pixtuoid.sock");
-
-    let unclaims = ChildEndUnclaims::new();
-    let router = HookRouter::new(sock.clone()).with_child_end_unclaims(Some(unclaims.clone()));
-    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let task = tokio::spawn(async move { Box::new(router).run(tx).await });
-    sleep(Duration::from_millis(50)).await;
-
-    let child_uuid = "0d000000-0000-7000-8000-0000000000d1";
-    let expected = AgentId::from_parts("codex", child_uuid);
-    let payload = serde_json::json!({
-        "hook_event_name": "SubagentStop",
-        "session_id": "parent-sess",
-        "agent_id": child_uuid,
-        "_pixtuoid_source": "codex",
-    });
-    let mut s = UnixStream::connect(&sock).await.unwrap();
-    let mut line = serde_json::to_vec(&payload).unwrap();
-    line.push(b'\n');
-    s.write_all(&line).await.unwrap();
-    s.shutdown().await.unwrap();
-
-    let (transport, ev) = tokio::time::timeout(Duration::from_secs(10), async {
-        loop {
-            let (transport, ev) = rx.recv().await.expect("router must stay alive");
-            if matches!(ev, AgentEvent::SessionEnd { .. }) {
-                return (transport, ev);
-            }
-        }
-    })
-    .await
-    .expect("the SubagentStop must reach the downstream channel through the tee");
-    assert_eq!(
-        transport,
-        Transport::Hook,
-        "the Transport tag flows through"
-    );
-    assert_eq!(
-        ev,
-        AgentEvent::SessionEnd {
-            agent_id: expected,
-            as_child: true
-        },
-        "event parity: the decoded end is forwarded unchanged"
-    );
-    assert_eq!(
-        unclaims.take_matching(|id| *id == expected),
-        vec![expected],
-        "the child id must land in the shared un-claim handle"
-    );
-    task.abort();
 }
 
 // The lock says who holds an endpoint, whatever a connect finds: a tmp cleaner took

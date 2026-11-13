@@ -22,7 +22,6 @@ use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::daemon::{self, PresenceMsg};
 use pixtuoid_core::source::grok::GrokSource;
 use pixtuoid_core::source::hook::HookRouter;
-use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::omp::OmpSource;
 use pixtuoid_core::state::MAX_FLOORS;
 use pixtuoid_core::{Reducer, SceneState, TaggedReceiver};
@@ -142,46 +141,25 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
 }
 
 /// Build the runtime source set `run_async` spawns — the ONE place that set is
-/// constructed. Imperative rather than a registry-driven loop: cc, codex and
-/// grok share one `ChildEndUnclaims` the others don't take. Hook-only sources + the daemon (OpenClaw) are absent by
+/// constructed. Hook-only sources + the daemon (OpenClaw) are absent by
 /// design — they ride the router's shared socket.
 pub(crate) fn build_source_set(
     socket_path: PathBuf,
     presence_tx: Option<daemon::PresenceSender>,
     connected: ConnectedSources,
 ) -> Vec<Box<dyn DynSource>> {
-    let mut cc_src = ClaudeCodeSource::default_paths();
-    let ag_src = AntigravitySource::default_paths();
-    let copilot_src = CopilotSource::default_paths();
-    let omp_src = OmpSource::default_paths();
-
-    let mut codex_src = CodexSource::default_paths();
-
-    // The hook tee is the sole PRODUCER, and each watcher drains only ids whose
-    // transcripts it claims (AgentId is source-namespaced), so a Codex child waits
-    // for the Codex watcher even though the router decoded its hook.
-    let child_end_unclaims = ChildEndUnclaims::new();
-    cc_src.child_end_unclaims = Some(child_end_unclaims.clone());
-    codex_src.child_end_unclaims = Some(child_end_unclaims.clone());
-
-    // grok consumes too: its subagent_stop/end hooks decode to Hook-transport
-    // `SessionEnd{as_child:true}`, the tee's trigger.
-    let mut grok_src = GrokSource::default_paths();
-    grok_src.child_end_unclaims = Some(child_end_unclaims.clone());
-
     let hook_router = HookRouter::new(socket_path)
-        .with_child_end_unclaims(Some(child_end_unclaims))
         .with_presence_tx(presence_tx)
         .with_connected(connected);
 
     vec![
         Box::new(hook_router) as Box<dyn DynSource>,
-        Box::new(cc_src),
-        Box::new(ag_src),
-        Box::new(codex_src),
-        Box::new(copilot_src),
-        Box::new(omp_src),
-        Box::new(grok_src),
+        Box::new(ClaudeCodeSource::default_paths()),
+        Box::new(AntigravitySource::default_paths()),
+        Box::new(CodexSource::default_paths()),
+        Box::new(CopilotSource::default_paths()),
+        Box::new(OmpSource::default_paths()),
+        Box::new(GrokSource::default_paths()),
     ]
 }
 

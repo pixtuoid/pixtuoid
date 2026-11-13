@@ -35,7 +35,7 @@ tests/
 │                        (lifecycle · activity · tasks · liveness · display ·
 │                        child_ledger · today · snapshot.rs, the full-scene insta golden #279)
 ├── watcher/main.rs      JsonlWatcher behavior; the poll-seam harness in main.rs
-│                        (tailing · first_sight · liveness · unclaim · attach ·
+│                        (tailing · first_sight · liveness · reregister · attach ·
 │                        sources.rs — ALL SIX transcript sources bind+spawn, keep all
 │                        six (#828), + a fixture→Reducer fold · today.rs, that fold per
 │                        source: the replay `harness::Drive`, with no tailer, can't see)

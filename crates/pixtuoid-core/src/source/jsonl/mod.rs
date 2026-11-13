@@ -17,12 +17,10 @@ mod liveness;
 mod root_watch;
 #[cfg(test)]
 mod tests;
-mod unclaim;
 mod walk;
 
 pub use liveness::LivenessProbe;
 pub use liveness::ProbeSnapshot;
-pub use unclaim::ChildEndUnclaims;
 
 use follow::Follower;
 pub(crate) use health::FailureLatch;
@@ -31,7 +29,6 @@ use liveness::{
     refresh_probe_snapshot,
 };
 pub(crate) use root_watch::{Nudge, Reconciled, RootWatch, Wake, absolute_root};
-use unclaim::drain_child_end_unclaims;
 use walk::{RootRead, scan_root, walk_jsonl};
 
 use crate::source::decoder::LineDecoder;
@@ -86,7 +83,7 @@ struct SourceDecoders {
 /// Every id in the watcher must be derived from a path folded through
 /// [`walk::id_path`], or the consumer computes it in a different id-space than
 /// the producer. The fn pointer lives in a module the sibling
-/// `walk`/`liveness`/`unclaim` modules are not inside, so an un-folded
+/// `walk`/`liveness` modules are not inside, so an un-folded
 /// derivation is a compile error rather than a review catch.
 mod folded {
     use std::path::Path;
@@ -157,7 +154,6 @@ pub struct JsonlWatcher {
     liveness_probe: Option<LivenessProbe>,
     poll_interval: Duration,
     negative_vouch_min_span: Duration,
-    child_end_unclaims: Option<ChildEndUnclaims>,
     writer_holds_open: bool,
 }
 
@@ -212,7 +208,6 @@ impl JsonlWatcher {
             liveness_probe: None,
             poll_interval: DEFAULT_POLL_INTERVAL,
             negative_vouch_min_span: NEGATIVE_VOUCH_MIN_SPAN,
-            child_end_unclaims: None,
             writer_holds_open: false,
         })
     }
@@ -272,27 +267,14 @@ impl JsonlWatcher {
         self.with_liveness_probe(Arc::new(move || probe(&root)))
     }
 
-    /// Attach the child-end un-claim side-channel (see [`ChildEndUnclaims`]).
-    /// The watcher becomes the CONSUMER: on each pass it drains the handle's
-    /// ids that match its own claimed transcripts and ends those claims
-    /// ([`Sight::Ended`]).
-    pub(crate) fn with_child_end_unclaims(mut self, unclaims: ChildEndUnclaims) -> Self {
-        self.child_end_unclaims = Some(unclaims);
-        self
-    }
-
     /// The initial seed, the `DEFAULT_POLL_INTERVAL` poll and the pass after a
-    /// nudge re-attaches the watch root all run this SAME sequence; only the seed
-    /// skips the un-claim drain (`drain = false` — nothing has been pushed at
-    /// startup).
+    /// nudge re-attaches the watch root all run this SAME sequence.
     async fn run_scan_pass(
         &self,
         ctx: &WatchCtx<'_>,
         scan_state: &mut ScanState,
         exit_watch: Option<&ExitWatch>,
-        unclaims: Option<&ChildEndUnclaims>,
         decoders: SourceDecoders,
-        drain: bool,
     ) {
         let healthy = refresh_probe_snapshot(
             self.liveness_probe.as_ref(),
@@ -302,9 +284,6 @@ impl JsonlWatcher {
             ctx,
         )
         .await;
-        if drain {
-            drain_child_end_unclaims(unclaims, decoders, ctx).await;
-        }
         scan_root(&self.root, decoders, ctx, &mut scan_state.root_read).await;
         if healthy {
             if let Some(follower) = ctx.follower {
@@ -412,7 +391,6 @@ impl JsonlWatcher {
         root_watch.reconcile(Wake::Poll).await?;
 
         let source_arc: Arc<str> = Arc::from(self.source_name.as_str());
-        let unclaims = self.child_end_unclaims.clone();
         let decoders = self.decoders;
 
         // The initial seed rides the same `scan_root` → `walk_jsonl` path every
@@ -428,15 +406,8 @@ impl JsonlWatcher {
                 live: &live,
                 follower: follower.as_ref(),
             };
-            self.run_scan_pass(
-                &ctx,
-                &mut scan_state,
-                exit_watch.as_ref(),
-                unclaims.as_ref(),
-                decoders,
-                false,
-            )
-            .await;
+            self.run_scan_pass(&ctx, &mut scan_state, exit_watch.as_ref(), decoders)
+                .await;
         }
 
         // An INTERVAL hoisted outside the loop, not a per-iteration sleep: a sleep
@@ -463,26 +434,17 @@ impl JsonlWatcher {
                 Some(()) = nudges.recv() => {
                     if root_watch.reconcile_logged(Wake::Nudge).await == Reconciled::Attached {
                         // What was written before the watch existed.
-                        self.run_scan_pass(
-                            &ctx, &mut scan_state,
-                            exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
-                        ).await;
+                        self.run_scan_pass(&ctx, &mut scan_state, exit_watch.as_ref(), decoders)
+                            .await;
                     }
                 }
                 Some(path) = notify_rx.recv() => {
-                    // Drain BEFORE the walk (not only on scan passes), so the
-                    // un-claim lands on the first notify after the hook Stop instead
-                    // of waiting out the 60s poll while turn-N+1 bytes stream past
-                    // as unknown-id no-ops.
-                    drain_child_end_unclaims(unclaims.as_ref(), decoders, &ctx).await;
                     walk_jsonl(&path, decoders, &ctx, false).await;
                 }
                 _ = poll.tick() => {
                     root_watch.reconcile_logged(Wake::Poll).await;
-                    self.run_scan_pass(
-                        &ctx, &mut scan_state,
-                        exit_watch.as_ref(), unclaims.as_ref(), decoders, true,
-                    ).await;
+                    self.run_scan_pass(&ctx, &mut scan_state, exit_watch.as_ref(), decoders)
+                        .await;
                 }
                 Some(pid) = exit_rx.recv() => {
                     // `pid_died` translates through the pid→ids binding AND disarms

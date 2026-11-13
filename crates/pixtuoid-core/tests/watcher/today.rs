@@ -35,7 +35,7 @@ fn utc_day(now: SystemTime) -> NaiveDate {
         .date_naive()
 }
 
-/// Transcript source `name` over `root`, short of production's unclaims and omp's profiles.
+/// Transcript source `name` over `root`, short of omp's profiles.
 pub(crate) fn spawn_source(
     name: &str,
     root: PathBuf,
@@ -43,21 +43,17 @@ pub(crate) fn spawn_source(
 ) -> JoinHandle<anyhow::Result<()>> {
     fast_watch();
     let source: Box<dyn DynSource> = match name {
-        "claude-code" => {
-            let mut src = ClaudeCodeSource::default_paths();
-            src.projects_root = root;
-            Box::new(src)
-        }
+        "claude-code" => Box::new(ClaudeCodeSource {
+            projects_root: root,
+        }),
         "codex" => Box::new(CodexSource {
             sessions_root: root,
-            child_end_unclaims: None,
         }),
         "copilot" => Box::new(CopilotSource {
             sessions_root: root,
         }),
         "grok" => Box::new(GrokSource {
             sessions_root: root,
-            child_end_unclaims: None,
         }),
         "omp" => Box::new(OmpSource::single_root(root)),
         "antigravity" => Box::new(AntigravitySource { brain_root: root }),

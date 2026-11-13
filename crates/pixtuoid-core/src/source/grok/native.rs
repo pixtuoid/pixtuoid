@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 
 use super::{SOURCE_NAME, grok_cwd_from_path, grok_home};
-use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
+use crate::source::jsonl::{JsonlWatcher, ProbeSnapshot};
 #[cfg(unix)]
 use crate::source::proc_start::{Start, StartPins};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
@@ -170,10 +170,6 @@ fn grok_probe_root_resolved(sessions_root: &Path, home: &Path) -> Option<PathBuf
 pub struct GrokSource {
     /// The watched grok session-transcript root; per-session `updates.jsonl` lives under it.
     pub sessions_root: PathBuf,
-    /// The child-end un-claim side-channel: releases an ended child's
-    /// flat-sibling transcript claim so a `resume_from` / late-append revival
-    /// re-registers cleanly. `None` disables it (bare test construction).
-    pub child_end_unclaims: Option<ChildEndUnclaims>,
 }
 
 impl GrokSource {
@@ -181,7 +177,6 @@ impl GrokSource {
     pub fn default_paths() -> Self {
         Self {
             sessions_root: grok_home().join("sessions"),
-            child_end_unclaims: None,
         }
     }
 }
@@ -197,9 +192,6 @@ impl Source for GrokSource {
         if let Some(root) = grok_probe_root(&self.sessions_root) {
             watcher = watcher
                 .with_liveness_probe(std::sync::Arc::new(move || live_grok_session_ids(&root)));
-        }
-        if let Some(unclaims) = &self.child_end_unclaims {
-            watcher = watcher.with_child_end_unclaims(unclaims.clone());
         }
         watcher.run(tx).await
     }

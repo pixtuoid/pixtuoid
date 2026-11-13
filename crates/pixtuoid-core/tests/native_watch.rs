@@ -358,7 +358,6 @@ mod held_open {
         let root = root_for(&dir, &codex());
         let source = CodexSource {
             sessions_root: root.clone(),
-            child_end_unclaims: None,
         };
         an_append_decodes_while_held_open(source, &root, codex()).await;
     }
@@ -382,7 +381,6 @@ mod held_open {
         let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
         let source = CodexSource {
             sessions_root: root.clone(),
-            child_end_unclaims: None,
         };
         let handle = tokio::spawn(Box::new(source).run(tx));
         live_canary(&root, &wire, &mut rx).await;
