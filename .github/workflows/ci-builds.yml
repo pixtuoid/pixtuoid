@@ -86,19 +86,17 @@ jobs:
   packaging-linux:
     name: packaging-build (ubuntu-latest)
     if: ${{ inputs.full }}
-    # The only clean `cargo install --locked`, default-features build on both
-    # Homebrew bottle platforms: it catches stale lockfiles and new system
-    # dependencies before an external autobump does.
+    # Homebrew's own build and test on both bottle platforms, sandboxes
+    # included: a stale lockfile, a new system dependency or a `test do` this
+    # tree breaks reds here before an external autobump does.
     runs-on: ubuntu-latest
-    # Two cold release installs use cargo-install target dirs, which the shared
-    # cache only partially covers.
+    # Homebrew builds cold, on toolchain bottles no cache of ours holds.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Packaging does not invoke just, so its setup is narrower than the shared
-      # Rust+just action while keeping the same cache namespace.
+      # Homebrew brings the toolchain the formula names, so no Rust or just setup.
       - uses: ./.github/actions/packaging-build
 
   packaging-macos:

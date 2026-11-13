@@ -20,11 +20,11 @@ comments on the lines it governs, before changing it.
 
 **A third consumer lives outside this repo**: homebrew-core's `pixtuoid`
 formula asserts exact CLI output (`test do`) and needs `pixtuoid man` /
-`completions <shell>` on clean stdout — breakage surfaces in THEIR CI on an
-autobump we never see, while our suite stays green (it asserts the same
-strings as goldens). The asserted rows carry a "homebrew-core contract"
-comment; release-side consequences
-in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#releasing).
+`completions <shell>` on clean stdout. packaging-build runs Homebrew's own
+`brew install` and `brew test` of the formula we hold them to
+([`pixtuoid.rb`](.github/actions/packaging-build/pixtuoid.rb)); the asserted
+rows carry a "homebrew-core contract" comment, and release-side consequences
+are in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#releasing).
 
 <!-- org-rules:begin -->
 ## Org rules

@@ -68,7 +68,7 @@ fn completions_emit_a_clean_script_for_every_supported_shell() {
     }
 }
 
-/// The homebrew `Utils.safe_popen_read` capture greps `^.TH`.
+/// homebrew-core's formula writes this stdout as its man page (`Utils.safe_popen_read`).
 #[test]
 fn man_emits_clean_roff_to_stdout() {
     let out = run(&["man"]);
@@ -83,7 +83,9 @@ fn man_emits_clean_roff_to_stdout() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        String::from_utf8_lossy(&out.stdout).contains(".TH"),
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .any(|line| line.starts_with(".TH")),
         "man output is not roff (.TH header missing)"
     );
 }

@@ -207,7 +207,6 @@
   covers: Swatinem/rust-cache@
   file:
     - .github/actions/setup-cargo-just/action.yml
-    - .github/actions/packaging-build/action.yml
     - .github/workflows/ci-builds.yml
     - .github/workflows/ci-lint.yml
   expected: ${{ github.ref == 'refs/heads/main' }}

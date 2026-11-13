@@ -250,9 +250,9 @@ async fn run_once(shim: &Path, endpoint: &Path, exit_deadline: Duration) -> Resu
 fn shim_row((path, probed): &(ShownPath, ShimProbe), ink: &Ink) -> String {
     let outcome = match probed {
         // homebrew-core contract: the formula's `test do` matches this text in
-        // `pixtuoid doctor`'s stdout, which packaging-build replays, so a reword
-        // owes a test update there after the release that ships it
-        // (CONTRIBUTING.md#releasing).
+        // `pixtuoid doctor`'s stdout, so a reword changes packaging-build's
+        // pixtuoid.rb with it, and homebrew-core's copy after the release that
+        // ships it (CONTRIBUTING.md#releasing).
         ShimProbe::Delivered => "delivered a test event".to_string(),
         ShimProbe::Failed(why) => ink.bad(&format!("failed: {}", sanitize(why))),
         ShimProbe::NotTested(why) => ink.warn(&format!("not tested: {}", sanitize(why))),
@@ -627,8 +627,8 @@ mod tests {
         ));
     }
 
-    /// Where the endpoint is the owned fallback a fresh machine never made, as
-    /// under brew's `test do`, the probe makes it as the office's bind would.
+    /// Where the endpoint is the owned fallback a fresh machine never made, the
+    /// probe makes it as the office's bind would.
     #[cfg(unix)]
     #[test]
     fn a_probe_beside_a_fresh_owned_fallback_makes_it() {
