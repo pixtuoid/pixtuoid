@@ -8,7 +8,7 @@ use toml::{Table, Value};
 use super::hook_cmd::{SOURCE_FLAG, shell_single_quote};
 use super::merge::{hook_path_str, install_toml_table, open_toml_table, toml_merge_outcome};
 use super::target::MergeOutcome;
-use super::verify::{SchemaParse, ShimRef, assemble, posix_unquote};
+use super::verify::{SchemaParse, ShimRef, assemble};
 use pixtuoid_core::source::jcode::SOURCE_NAME;
 
 /// No `session_start`: each client connection fires one for a provisional
@@ -53,7 +53,8 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 
 fn managed_path(command: &str) -> Option<PathBuf> {
     let quoted = command.strip_suffix(&format!("{SOURCE_FLAG}{SOURCE_NAME}"))?;
-    let path = PathBuf::from(posix_unquote(quoted));
+    let [path] = <[String; 1]>::try_from(shell_words::split(quoted).ok()?).ok()?;
+    let path = PathBuf::from(path);
     // Round-trip equality excludes prefixes, suffixes and shell fragments without
     // narrowing explicit shim overrides to one basename.
     (hook_command(&path, true).ok().as_deref() == Some(command)).then_some(path)
@@ -253,12 +254,23 @@ mod tests {
     #[test]
     fn jcode_config_path_uses_the_shared_home_and_reads_an_empty_one_as_unset() {
         let home = tempfile::tempdir().unwrap();
-        temp_env::with_var("JCODE_HOME", Some(home.path()), || {
-            assert_eq!(
-                default_config_path().unwrap(),
-                home.path().join("config.toml")
-            );
-            assert!(detect_installed());
+        let probe = crate::install::target::JCODE.presence_probe;
+        temp_env::with_vars(
+            [
+                ("JCODE_HOME", Some(home.path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                assert_eq!(
+                    default_config_path().unwrap(),
+                    home.path().join("config.toml")
+                );
+                assert!(probe());
+            },
+        );
+        temp_env::with_var("JCODE_HOME", Some(home.path().join("absent")), || {
+            assert!(!probe());
         });
         #[cfg(unix)]
         for unset in [None, Some("".as_ref())] {

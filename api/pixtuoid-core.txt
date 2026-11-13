@@ -557,7 +557,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::daemon::
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::daemon::DaemonInstanceKey
 pub struct pixtuoid_core::source::daemon::DecodedPresence
 pub pixtuoid_core::source::daemon::DecodedPresence::instance: pixtuoid_core::state::DaemonInstanceId
-pub pixtuoid_core::source::daemon::DecodedPresence::pid: core::option::Option<i32>
 pub pixtuoid_core::source::daemon::DecodedPresence::updates: alloc::vec::Vec<pixtuoid_core::source::daemon::DaemonPresenceUpdate>
 impl core::clone::Clone for pixtuoid_core::source::daemon::DecodedPresence
 pub fn pixtuoid_core::source::daemon::DecodedPresence::clone(&self) -> Self

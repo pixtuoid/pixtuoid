@@ -29,9 +29,8 @@ use target::{BinaryStrategy, Primary, Target};
 
 /// The idempotency sentinel stamped on every hook entry pixtuoid merges into a
 /// shared config — those targets key install/uninstall/detect on this, not the
-/// command shape. A plugin's own file (Claude Code's, Codex's, Reasonix's) is ours
-/// whole and carries none; for those hosts it names only what an older pixtuoid
-/// merged into the CLI's own config ([`target::LegacyConfig`]).
+/// command shape. A plugin's own file is ours whole and carries none, and a host's
+/// own config is cleaned by command ([`target::HostRegistration::shim_hooks`]).
 pub(crate) const SENTINEL_KEY: &str = "_pixtuoid";
 
 /// Whether `t`'s config currently bears pixtuoid hooks — whether its source is
@@ -43,7 +42,7 @@ pub(crate) const SENTINEL_KEY: &str = "_pixtuoid";
 pub(crate) fn has_hooks(t: &'static Target, config: Option<PathBuf>) -> bool {
     // The gate (this) and the verify it guards MUST read the SAME config, or
     // `diagnose` through an injected root could never observe an install.
-    let path = match config.map(Ok).unwrap_or_else(|| (t.default_config_path)()) {
+    let path = match primary_path(t, config) {
         Ok(p) => p,
         Err(_) => return false,
     };
@@ -78,7 +77,7 @@ pub(crate) fn verify_target(
     config: Option<PathBuf>,
 ) -> verify::SchemaVerifyResult {
     use verify::ShimRef;
-    let path = match config.map(Ok).unwrap_or_else(|| (t.default_config_path)()) {
+    let path = match primary_path(t, config) {
         Ok(p) => p,
         Err(_) => {
             return verify::SchemaVerifyResult {
@@ -136,7 +135,7 @@ pub(crate) fn verify_target(
     if let Some(files) = t.primary.owned_files() {
         verify_owned_drift(t, files, &path, &mut issues, &mut notes);
     }
-    if let Some(host) = t.host {
+    if let Some(host) = t.host() {
         match (host.is_registered)() {
             Ok(true) => match host.copy().map(|c| (c.stale)(&path)) {
                 Some(Ok(true)) => issues.push(format!(
@@ -331,9 +330,7 @@ pub(crate) fn converge(t: &Target, config: Option<PathBuf>) -> Result<Converged>
     let Some(files) = t.primary.owned_files() else {
         return Ok(Converged::default());
     };
-    let primary = config
-        .map(Ok)
-        .unwrap_or_else(|| (t.default_config_path)())?;
+    let primary = write_path(t, config)?;
     converge_files(files, t.hook_command, &primary)
 }
 
@@ -521,6 +518,35 @@ pub(crate) struct InstallReport {
     pub post_install_hint: Option<&'static str>,
 }
 
+/// The primary file `t` addresses: `config`, else the target's default.
+fn primary_path(t: &Target, config: Option<PathBuf>) -> Result<PathBuf> {
+    config.map(Ok).unwrap_or_else(|| (t.default_config_path)())
+}
+
+/// [`primary_path`] for a write, which [`refuse_relative`] gates, with the home a
+/// host's own commands write.
+fn write_path(t: &Target, config: Option<PathBuf>) -> Result<PathBuf> {
+    let path = primary_path(t, config)?;
+    refuse_relative(&path)?;
+    if let Some(host) = t.host() {
+        refuse_relative(&(host.home)()?)?;
+    }
+    Ok(path)
+}
+
+/// Refuse a write to a relative `path`: a CLI refuses a relative home override, or
+/// resolves it against the directory it starts in, which pixtuoid can't know.
+fn refuse_relative(path: &std::path::Path) -> Result<()> {
+    anyhow::ensure!(
+        path.is_absolute(),
+        "{} is relative, which the agent CLI refuses or resolves against the \
+         directory it starts in, unknown to pixtuoid: set its home override to an \
+         absolute path",
+        path.display()
+    );
+    Ok(())
+}
+
 /// Install pixtuoid hooks into `t`'s config, returning a structured report.
 pub(crate) fn install_target(t: &Target, config: Option<PathBuf>) -> Result<InstallReport> {
     install_target_from(
@@ -540,15 +566,16 @@ fn install_target_from(
     config: Option<PathBuf>,
     env_hook: Option<PathBuf>,
 ) -> Result<InstallReport> {
-    let path = config
-        .map(Ok)
-        .unwrap_or_else(|| (t.default_config_path)())?;
+    let path = write_path(t, config)?;
     let (binary, explicit_hook) = resolve_hook_binary_from(t, env_hook, io::default_hook_binary)?;
     let hook_cmd = (t.hook_command)(&binary, explicit_hook)?;
     // Before the lock creates the first file: failing after it leaves a plugin root
     // no manifest names, which no disconnect removes.
-    if let Some(host) = t.host {
+    if let Some(host) = t.host() {
         host.cli.require()?;
+        // So a config of the CLI's own that the strip can't parse fails the connect
+        // before the CLI registers anything and before any file lands.
+        check_cli_config(host.shim_hooks.as_ref())?;
     }
     // Lost-update TOCTOU: two concurrent pixtuoid runs would otherwise interleave
     // read(A)→write(B)→write(A), and A's rename clobbers B's change.
@@ -591,17 +618,20 @@ fn install_target_from(
     // After the hooks file is written, so the plugin never registers empty, and
     // still under its lock, so a failed registration puts back the hooks file this
     // call wrote: the hooks ARE the connected fact (`has_hooks`), and a plugin that
-    // never registered fires none of the new ones. Legacy hooks `connect_host`
-    // already stripped stay stripped.
-    if let Some(host) = t.host
-        && let Err(e) = connect_host(host, &path)
-    {
-        if outcome.changed
-            && let Err(undo) = lock.restore(prior.as_deref())
-        {
-            return Err(e.context(format!("the hooks it wrote stay in place: {undo:#}")));
+    // never registered fires none of the new ones.
+    if let Some(host) = t.host() {
+        if let Err(e) = (host.register)(&path) {
+            if outcome.changed
+                && let Err(undo) = lock.restore(prior.as_deref())
+            {
+                return Err(e.context(format!("the hooks it wrote stay in place: {undo:#}")));
+            }
+            return Err(e);
         }
-        return Err(e);
+        // After the registration, so a failed one keeps the old hook and the CLI is
+        // never left with neither, and re-read, as the registration may write this
+        // same file.
+        strip_cli_config(host.shim_hooks.as_ref())?;
     }
     Ok(InstallReport {
         outcome: if outcome.changed {
@@ -614,20 +644,20 @@ fn install_target_from(
     })
 }
 
-/// Strip what an older pixtuoid merged into the CLI's own config, then register. A
-/// registration that fails after the strip leaves neither firing, which is what a
-/// failed connect reads as; a CLI that isn't on PATH failed it before any write.
-fn connect_host(host: &target::HostRegistration, primary: &std::path::Path) -> Result<()> {
-    strip_legacy(host)?;
-    (host.register)(primary)
+/// Fail where [`strip_cli_config`] would on a config it can't parse, writing nothing.
+fn check_cli_config(config: Option<&target::CliConfig>) -> Result<()> {
+    let Some(config) = config else {
+        return Ok(());
+    };
+    strip_needed(config.strip, &(config.path)()?).map(drop)
 }
 
-/// Whether it removed anything from the host's [`target::LegacyConfig`].
-fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
-    let Some(legacy) = &host.legacy else {
+/// Whether it removed anything from `config`, a config of the CLI's own.
+fn strip_cli_config(config: Option<&target::CliConfig>) -> Result<bool> {
+    let Some(config) = config else {
         return Ok(false);
     };
-    let path = (legacy.path)()?;
+    let path = (config.path)()?;
     // The CLI's own config resolves from its home, not the primary a test passes.
     #[cfg(test)]
     assert!(
@@ -635,7 +665,7 @@ fn strip_legacy(host: &target::HostRegistration) -> Result<bool> {
         "a test is about to strip {} — point the CLI's home at a TempDir first",
         path.display()
     );
-    strip_managed(legacy.strip, &path)
+    strip_managed(config.strip, &path)
 }
 
 /// Remove the entries `uninstall` recognizes from `path` under its lock; whether
@@ -644,20 +674,40 @@ fn strip_managed(
     uninstall: fn(&str) -> Result<target::MergeOutcome>,
     path: &std::path::Path,
 ) -> Result<bool> {
-    // Decided BEFORE locking: `lock_config` creates the parent dir + a .lock sidecar, and
-    // materializing ~/.reasonix here would flip that target's presence probe on a no-op.
-    if !target::config_present(path) {
+    if !strip_needed(uninstall, path)? {
         return Ok(false);
     }
     let lock = io::lock_config(path)?;
-    let content = lock.read()?;
-    let outcome = uninstall(&content).with_context(|| format!("processing {}", path.display()))?;
-    // A byte compare would falsely fire on hand formatting.
+    // Re-derived under the lock, which a concurrent pixtuoid may have held.
+    let outcome = strip_outcome(uninstall, path, &lock.read()?)?;
     if !outcome.changed {
         return Ok(false);
     }
     lock.write_atomic(&outcome.content)?;
     Ok(true)
+}
+
+/// Whether `uninstall` would change `path`, read without its lock: `lock_config`
+/// creates the parent dir and a `.lock` sidecar, and materializing ~/.reasonix on a
+/// no-op would flip that target's presence probe.
+fn strip_needed(
+    uninstall: fn(&str) -> Result<target::MergeOutcome>,
+    path: &std::path::Path,
+) -> Result<bool> {
+    if !target::config_present(path) {
+        return Ok(false);
+    }
+    Ok(strip_outcome(uninstall, path, &io::read_config(path)?)?.changed)
+}
+
+/// `uninstall` over `content`, read from `path`. Its `changed` is semantic: a byte
+/// compare would falsely fire on hand formatting.
+fn strip_outcome(
+    uninstall: fn(&str) -> Result<target::MergeOutcome>,
+    path: &std::path::Path,
+    content: &str,
+) -> Result<target::MergeOutcome> {
+    uninstall(content).with_context(|| format!("processing {}", path.display()))
 }
 
 /// Write each of `files` that differs on disk. Called before the primary's
@@ -682,9 +732,7 @@ pub(crate) fn heal_retired_stub(t: &Target, config: Option<PathBuf>) -> Result<b
     else {
         return Ok(false);
     };
-    let path = config
-        .map(Ok)
-        .unwrap_or_else(|| (t.default_config_path)())?;
+    let path = primary_path(t, config)?;
     // Checked before the lock, which would create its file beside a CLI the
     // user may not have.
     if io::read_config(&path)? != stub.was {
@@ -703,6 +751,7 @@ fn write_owned_file(
     p: &std::path::Path,
     want: impl FnOnce() -> Result<Option<String>>,
 ) -> Result<Option<String>> {
+    refuse_relative(p)?;
     // A real write here would be invisible: CI has no such dir, and the shim exits
     // 0 by invariant #5, so nothing downstream would report it.
     #[cfg(test)]
@@ -743,14 +792,20 @@ pub(crate) struct UninstallReport {
 /// Remove pixtuoid hooks from `t`'s config, returning a structured report. Same
 /// lock scope as `install_target`, and never rewrites on a semantic no-op.
 pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<UninstallReport> {
-    let path = config
-        .map(Ok)
-        .unwrap_or_else(|| (t.default_config_path)())?;
+    let path = write_path(t, config)?;
+    // As a connect does, so a config of the CLI's own the strip can't parse leaves the
+    // plugin both registered and whole.
+    if let Some(host) = t.host() {
+        check_cli_config(host.shim_hooks.as_ref())?;
+    }
     let mut removed = strip_managed(t.primary.uninstall(), &path)?;
-    // After the strip, which needs no CLI: a failing deregister leaves a
-    // registered plugin whose hooks are gone, or whose copy fires into a
+    // Before the deregister, as neither strip needs the CLI: a failing deregister
+    // leaves a registered plugin whose hooks are gone, or whose copy fires into a
     // disconnected source, which drops the events.
-    let plugin_left_registered = match t.host {
+    if let Some(host) = t.host() {
+        removed |= strip_cli_config(host.shim_hooks.as_ref())?;
+    }
+    let plugin_left_registered = match t.host() {
         Some(host) => match (host.unregister)(&path)? {
             target::Unregistered::Removed => {
                 removed = true;
@@ -761,11 +816,6 @@ pub(crate) fn uninstall_target(t: &Target, config: Option<PathBuf>) -> Result<Un
         },
         None => None,
     };
-    // Last, so a legacy config it cannot parse fails the disconnect only once the
-    // plugin is gone.
-    if let Some(host) = t.host {
-        removed |= strip_legacy(host)?;
-    }
     Ok(UninstallReport {
         outcome: if removed {
             UninstallOutcome::Removed

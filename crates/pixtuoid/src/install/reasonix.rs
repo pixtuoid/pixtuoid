@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-use crate::install::target::{HostRegistration, LegacyConfig, MergeOutcome, Unregistered};
+use crate::install::target::{CliConfig, HostRegistration, MergeOutcome, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 
 /// Events we register == events we decode, enforced by
@@ -62,10 +62,11 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    pickup: None,
-    legacy: Some(LegacyConfig {
+    home,
+    refresh: Refresh::NextStart,
+    shim_hooks: Some(CliConfig {
         path: settings_path,
-        strip: merge::flat_json_uninstall,
+        strip: merge::strip_shim_json,
     }),
 };
 
@@ -87,7 +88,7 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     host_plugin::owned_path("reasonix-plugin", &[MANIFEST])
 }
 
-/// The GLOBAL `settings.json` a pixtuoid from before the plugin merged into.
+/// The global `settings.json` Reasonix reads hooks from.
 fn settings_path() -> Result<PathBuf> {
     Ok(home()?.join("settings.json"))
 }
@@ -188,8 +189,9 @@ fn expand_vars(s: &str, var: impl Fn(&str) -> Option<String>) -> String {
 /// unit-test on any host. `config_dir` is what Go's `os.UserConfigDir` reads:
 /// `%AppData%`, or a `$XDG_CONFIG_HOME` it refuses unless absolute (golang/go
 /// `src/os/file.go:557-594` @ be57ebb0f3). `None` when upstream's is `""`, and
-/// the legacy strip and the registration probe then error rather than read a
-/// CWD-relative file Reasonix never writes.
+/// the presence probe then misses and the registration probe errs, rather than
+/// read a CWD-relative file Reasonix never writes; the install's refusal covers
+/// writes only.
 fn resolve_reasonix_home(
     reasonix_home_env: Option<PathBuf>,
     windows: bool,
@@ -331,21 +333,24 @@ fn plugin_entry() -> Result<Option<Value>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::install::SENTINEL_KEY;
 
-    fn json_merge_uninstall(doc: Value) -> Value {
-        merge::flat_json_merge_uninstall(doc, SENTINEL_KEY)
-    }
-
-    /// Two events as a pixtuoid from before the plugin merged them into settings.json.
-    fn legacy() -> Value {
-        let ours = json!({
-            SENTINEL_KEY: true,
-            "command": "PIXTUOID_SOURCE=reasonix '/opt/pixtuoid-hook'",
-            "timeout": 1000,
-            "description": "pixtuoid visualizer"
-        });
-        json!({ "hooks": { "PreToolUse": [ours.clone()], "Stop": [ours] } })
+    #[test]
+    fn the_presence_probe_reads_reasonix_home() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("rx");
+        temp_env::with_vars(
+            [
+                ("REASONIX_HOME", Some(dir.as_path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::REASONIX.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(&dir).unwrap();
+                assert!(probe());
+            },
+        );
     }
 
     #[test]
@@ -507,31 +512,6 @@ mod tests {
     }
 
     #[test]
-    fn uninstall_removes_only_managed_entries_and_empty_maps() {
-        let mut installed = legacy();
-        installed["hooks"]["PreToolUse"]
-            .as_array_mut()
-            .unwrap()
-            .insert(0, json!({ "match": "bash", "command": "my-guard.sh" }));
-        let cleaned = json_merge_uninstall(installed);
-        let arr = cleaned["hooks"]["PreToolUse"].as_array().unwrap();
-        assert_eq!(arr.len(), 1);
-        assert_eq!(arr[0]["command"], json!("my-guard.sh"));
-        for ev in REASONIX_EVENTS.iter().filter(|e| **e != "PreToolUse") {
-            assert!(
-                cleaned["hooks"].get(*ev).is_none(),
-                "event {ev} should be dropped once empty"
-            );
-        }
-    }
-
-    #[test]
-    fn uninstall_all_managed_drops_hooks_map() {
-        let cleaned = json_merge_uninstall(legacy());
-        assert!(cleaned.get("hooks").is_none(), "got {cleaned}");
-    }
-
-    #[test]
     fn every_event_execs_the_shim_with_its_source_and_reads_it_back() {
         let shim = if cfg!(windows) {
             r"C:\Program Files\pixtuoid-hook.exe"
@@ -577,13 +557,6 @@ mod tests {
         assert_eq!(doc, manifest());
         assert!(!uninstall(&out.content).unwrap().changed);
         assert!(!uninstall("").unwrap().changed);
-    }
-
-    #[test]
-    fn merge_uninstall_no_pixtuoid_hooks_reports_unchanged() {
-        let user = r#"{ "hooks": { "Stop": [ { "command": "notify-send done" } ] } }"#;
-        let out = merge::flat_json_uninstall(user).unwrap();
-        assert!(!out.changed, "no managed entries → semantic no-op");
     }
 
     #[test]

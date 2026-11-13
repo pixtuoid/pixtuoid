@@ -16,7 +16,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 
 use crate::install::merge::SentinelPlugin;
 use crate::install::target::MergeOutcome;
@@ -38,25 +38,15 @@ const EXTENSION: SentinelPlugin = SentinelPlugin {
 };
 
 /// The extensions root is core's [`omp_extensions_dir`], never a second copy of
-/// that resolver (#880). A RELATIVE `PI_CODING_AGENT_DIR` is refused rather
-/// than resolved: upstream resolves it against OMP's own cwd, which pixtuoid
-/// cannot know, so any absolutization here would be a confidently wrong write.
-/// Accepted residual: omp discovers extensions through a gitignore-filtered
-/// glob, so a dotfiles-repo ignore rule covering this path can suppress loading
-/// while every check here reads green.
+/// that resolver (#880). Accepted residual: omp discovers extensions through a
+/// gitignore-filtered glob, so a dotfiles-repo ignore rule covering this path can
+/// suppress loading while every check here reads green.
 ///
 /// [`omp_extensions_dir`]: pixtuoid_core::source::omp::omp_extensions_dir
 pub(crate) fn default_config_path() -> Result<PathBuf> {
     let dir = pixtuoid_core::source::omp::omp_extensions_dir().ok_or_else(|| {
         crate::install::io::home_unset("omp's agent dir", pixtuoid_core::platform::USER_HOME_VAR)
     })?;
-    if !dir.is_absolute() {
-        bail!(
-            "omp's agent dir resolved to the relative path {} — PI_CODING_AGENT_DIR \
-             must be an absolute path for pixtuoid to install the bridge",
-            dir.display()
-        );
-    }
     Ok(dir.join("pixtuoid.ts"))
 }
 
@@ -91,6 +81,27 @@ pub(crate) fn render_extension(hook_path: &str) -> Result<String> {
 mod tests {
     use super::*;
     use crate::install::merge::HOOK_PLACEHOLDER;
+
+    #[test]
+    fn the_presence_probe_reads_omps_agent_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("agent");
+        temp_env::with_vars(
+            [
+                ("PI_CODING_AGENT_DIR", Some(dir.as_path())),
+                ("OMP_PROFILE", None),
+                ("PI_PROFILE", None),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::OMP.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(&dir).unwrap();
+                assert!(probe());
+            },
+        );
+    }
 
     /// The bridge must never hold a gate: omp's `tool_call` handlers fail
     /// CLOSED (a throw/timeout blocks the user's tool), so the extension may

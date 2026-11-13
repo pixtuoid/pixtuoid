@@ -4,9 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use serde_json::json;
 
 use crate::install::host_plugin::{self, NAME};
-use crate::install::target::{
-    HostRegistration, LegacyConfig, MergeOutcome, Pickup, PluginCopy, Unregistered,
-};
+use crate::install::target::{CliConfig, HostRegistration, PluginCopy, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 use crate::install::{io, merge};
 use pixtuoid_core::source::codex::CodexHomeUnresolved;
@@ -51,13 +49,18 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    pickup: Some(Pickup::Recopy(PluginCopy {
+    home,
+    refresh: Refresh::Recopy(PluginCopy {
         stale: copy_is_stale,
-        refresh: add_plugin,
-    })),
-    legacy: Some(LegacyConfig {
+        recopy: add_plugin,
+    }),
+    // Written through v0.19.0: an untrusted config.toml hook is skipped
+    // (`codex-rs/hooks/src/engine/discovery.rs:917-923`), but the startup hook review
+    // returns on every launch because "continue without trusting" isn't saved
+    // (`codex-rs/tui/src/startup_hooks_review.rs:144-146`, rust-v0.167.2).
+    shim_hooks: Some(CliConfig {
         path: config_toml,
-        strip: merge_uninstall,
+        strip: merge::strip_shim_toml,
     }),
 };
 
@@ -69,7 +72,7 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
 
 /// Core's [`codex_home`](pixtuoid_core::source::codex::codex_home), the watcher's,
 /// with each unresolved cause worded as its remedy.
-fn codex_home() -> Result<PathBuf> {
+fn home() -> Result<PathBuf> {
     pixtuoid_core::source::codex::codex_home().map_err(|unresolved| match unresolved {
         CodexHomeUnresolved::NotADirectory(set) => anyhow!(
             "CODEX_HOME is {}, which is no directory, so codex itself won't start; create it or unset CODEX_HOME",
@@ -84,7 +87,7 @@ fn codex_home() -> Result<PathBuf> {
 
 /// Codex's own config, where it records the marketplace and the plugin's enablement.
 fn config_toml() -> Result<PathBuf> {
-    Ok(codex_home()?.join("config.toml"))
+    Ok(home()?.join("config.toml"))
 }
 
 /// Codex is present when its config is: an empty ~/.codex says nothing.
@@ -223,7 +226,7 @@ fn copy_is_stale(config: &Path) -> Result<bool> {
         .split('/')
         .chain([NAME, NAME, LOCAL_VERSION])
         .chain(host_plugin::HOOKS_FILE.iter().copied())
-        .fold(codex_home()?, |p, c| p.join(c));
+        .fold(home()?, |p, c| p.join(c));
     Ok(io::read_config(&copy)? != io::read_config(config)?)
 }
 
@@ -278,40 +281,6 @@ fn read_codex_config() -> Result<toml::Value> {
     toml::from_str(&content).with_context(|| format!("parsing {}", path.display()))
 }
 
-/// Strips what a pixtuoid from before the plugin merged into `config.toml`.
-pub(crate) fn merge_uninstall(content: &str) -> Result<MergeOutcome> {
-    merge::toml_merge_outcome(content, |doc| {
-        let Some(hooks) = doc.get_mut("hooks").and_then(merge::open_toml_table) else {
-            return Ok(());
-        };
-        for (_event, groups) in hooks.iter_mut() {
-            let Some(groups) = merge::open_toml_tables(groups) else {
-                continue;
-            };
-            for group in groups.iter_mut() {
-                if let Some(handlers) = group.get_mut("hooks").and_then(merge::open_toml_tables) {
-                    // Sentinel-only, no basename fallback: no released version ever
-                    // wrote a sentinel-less entry, so a basename match could only ever
-                    // hit a USER hand-written entry pointing at the shim, which
-                    // uninstall must not touch.
-                    handlers.retain(|handler| !merge::is_toml_managed(handler));
-                }
-            }
-            groups.retain(|group| !group.get("hooks").is_some_and(is_emptied));
-        }
-        hooks.retain(|_event, groups| !is_emptied(groups));
-        if hooks.is_empty() {
-            doc.remove("hooks");
-        }
-        Ok(())
-    })
-}
-
-fn is_emptied(item: &toml_edit::Item) -> bool {
-    item.as_array_of_tables()
-        .is_some_and(toml_edit::ArrayOfTables::is_empty)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,7 +312,7 @@ _pixtuoid = true
     }
 
     #[test]
-    fn the_legacy_config_honors_codex_home() {
+    fn codex_config_honors_codex_home() {
         let tmp = tempfile::tempdir().unwrap();
         temp_env::with_var("CODEX_HOME", Some(tmp.path()), || {
             assert_eq!(config_toml().unwrap(), tmp.path().join("config.toml"));
@@ -403,7 +372,7 @@ _pixtuoid = true
     #[test]
     fn uninstall_no_pixtuoid_hooks_reports_unchanged() {
         let cfg = "model = \"o1\"\n\n[[hooks.PreToolUse]]\nmatcher = \"*\"\n\n[[hooks.PreToolUse.hooks]]\ntype = \"command\"\ncommand = \"/usr/bin/mytool\"\n";
-        let out = merge_uninstall(cfg).unwrap();
+        let out = merge::strip_shim_toml(cfg).unwrap();
         assert!(!out.changed, "no managed entries → semantic no-op");
     }
 
@@ -420,7 +389,7 @@ _pixtuoid = true
                 t.insert("command".into(), "/usr/bin/mytool".into());
                 t
             }));
-        let cleaned = merge_uninstall(&toml::to_string_pretty(&v).unwrap()).unwrap();
+        let cleaned = merge::strip_shim_toml(&toml::to_string_pretty(&v).unwrap()).unwrap();
         assert!(cleaned.changed, "the managed handler was removed");
         let cv = parse(&cleaned.content);
         let arr = cv["hooks"]["PreToolUse"].as_array().unwrap();
@@ -432,7 +401,7 @@ _pixtuoid = true
 
     #[test]
     fn uninstall_removes_empty_groups_and_events() {
-        let cleaned = merge_uninstall(LEGACY).unwrap();
+        let cleaned = merge::strip_shim_toml(LEGACY).unwrap();
         assert!(cleaned.changed);
         let v = parse(&cleaned.content);
         assert!(
@@ -442,8 +411,10 @@ _pixtuoid = true
         );
     }
 
+    /// `hook_cmd::invokes_shim` keys on the command, so a hand-written entry that runs
+    /// the shim goes as one a release wrote does.
     #[test]
-    fn uninstall_leaves_a_hand_written_shim_entry_alone() {
+    fn uninstall_takes_a_hand_written_shim_entry_too() {
         let cfg = r#"
 [[hooks.PreToolUse]]
 matcher = "*"
@@ -451,14 +422,13 @@ matcher = "*"
 type = "command"
 command = "/hand/written/pixtuoid-hook"
 "#;
-        let cleaned = merge_uninstall(cfg).unwrap();
-        let v = parse(&cleaned.content);
+        let cleaned = merge::strip_shim_toml(cfg).unwrap();
+        assert!(cleaned.changed);
         assert!(
-            v.get("hooks").is_some(),
-            "hand-written entry survives uninstall: {}",
+            parse(&cleaned.content).get("hooks").is_none(),
+            "{}",
             cleaned.content
         );
-        assert!(!cleaned.changed, "nothing managed to remove");
     }
 
     #[test]
@@ -535,8 +505,8 @@ command = "/hand/written/pixtuoid-hook"
 
     #[test]
     fn uninstall_strips_a_hand_inlined_legacy_handler() {
-        let cfg = "hooks = { Stop = [{ hooks = [{ command = \"x\", _pixtuoid = true }] }] }\n";
-        let out = merge_uninstall(cfg).unwrap();
+        let cfg = "hooks = { Stop = [{ hooks = [{ command = \"PIXTUOID_SOURCE=codex '/x/pixtuoid-hook'\" }] }] }\n";
+        let out = merge::strip_shim_toml(cfg).unwrap();
         assert!(out.changed);
         assert!(
             parse(&out.content).get("hooks").is_none(),
@@ -547,7 +517,7 @@ command = "/hand/written/pixtuoid-hook"
 
     #[test]
     fn uninstall_doc_without_hooks_returns_unchanged() {
-        let out = merge_uninstall("model = \"o1\"\n").unwrap();
+        let out = merge::strip_shim_toml("model = \"o1\"\n").unwrap();
         assert!(!out.changed, "no [hooks] → nothing to remove");
     }
 

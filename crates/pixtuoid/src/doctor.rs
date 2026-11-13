@@ -258,6 +258,13 @@ impl SourceDiagnostics {
         self.install.as_ref().filter(|i| !i.is_sound())
     }
 
+    /// What every surface says of a [`broken_install`](Self::broken_install), each
+    /// behind its own glyph.
+    pub(crate) fn broken_summary(&self) -> Option<String> {
+        self.broken_install()
+            .map(|i| format!("install broken: {}", i.issues.join("; ")))
+    }
+
     pub(crate) fn is_broken(&self) -> bool {
         self.broken_install().is_some()
     }
@@ -400,18 +407,15 @@ fn format_doctor_row(row: &DoctorSourceRow, ink: &Ink) -> String {
     // Each of `issues` is stripped where it is minted (a target's
     // `verify_schema`, or `install::verify_target`), so it prints as is; `notes`
     // carry error chains that quote another CLI's files, so they are stripped here.
-    if let Some(s) = &row.diag.install {
-        if !s.is_sound() {
-            out.push_str(&format!(
-                "\n{CONT_INDENT}\u{21b3} install broken: {}",
-                s.issues.join("; ")
-            ));
-        } else if !s.notes.is_empty() {
-            out.push_str(&format!(
-                "\n{CONT_INDENT}\u{21b3} note: {}",
-                crate::strip_control_chars(&s.notes.join("; "))
-            ));
-        }
+    if let Some(broken) = row.diag.broken_summary() {
+        out.push_str(&format!("\n{CONT_INDENT}\u{21b3} {broken}"));
+    } else if let Some(s) = &row.diag.install
+        && !s.notes.is_empty()
+    {
+        out.push_str(&format!(
+            "\n{CONT_INDENT}\u{21b3} note: {}",
+            crate::strip_control_chars(&s.notes.join("; "))
+        ));
     }
     if row.diag.drift.total() > 0 {
         out.push_str(&format!(
@@ -2497,6 +2501,26 @@ mod tests {
             b.contains("\n          \u{21b3} install broken: shim binary missing"),
             "broken reason on its own ↳ line: {b}"
         );
+    }
+
+    #[test]
+    fn broken_summary_joins_every_hard_issue_and_ignores_notes() {
+        let with = |issues: &[&str], notes: &[&str]| {
+            diag(
+                Some(crate::install::verify::SchemaVerifyResult {
+                    issues: issues.iter().map(|s| s.to_string()).collect(),
+                    notes: notes.iter().map(|s| s.to_string()).collect(),
+                    ..Default::default()
+                }),
+                LogScanResult::default(),
+            )
+        };
+        assert_eq!(
+            with(&["a", "b"], &["n"]).broken_summary().as_deref(),
+            Some("install broken: a; b")
+        );
+        assert_eq!(with(&[], &["n"]).broken_summary(), None);
+        assert_eq!(diag(None, LogScanResult::default()).broken_summary(), None);
     }
 
     fn diag(
