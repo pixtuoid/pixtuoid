@@ -8,8 +8,8 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::source::daemon::{self, DaemonInstanceKey, DaemonPresenceUpdate};
 use pixtuoid_core::source::{RequestKeys, Resolution, registry};
-use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
+use pixtuoid_core::state::{SceneState, TurnKey};
 use pixtuoid_core::{AgentEvent, AgentId, ToolDetail, Transport};
 
 /// One authored instant of a demo timeline: what lands, `at` after the
@@ -48,21 +48,16 @@ impl Cue {
 
     /// Land it at `origin` + [`Cue::at`].
     pub fn land(&self, origin: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
-        self.land_on(origin + self.at(), 0, reducer, scene);
+        self.land_on(origin + self.at(), Lap::FIRST, reducer, scene);
     }
 
-    /// Land it at `now` in loop `lap`, whose calls and readings it names apart
-    /// from every other lap's: the reducer counts an id once, so a replayed one
-    /// would add nothing to its agent's counts or the day's.
-    fn land_on(&self, now: SystemTime, lap: u128, reducer: &mut Reducer, scene: &mut SceneState) {
+    fn land_on(&self, now: SystemTime, lap: Lap, reducer: &mut Reducer, scene: &mut SceneState) {
         match self {
             Cue::Event {
                 transport, event, ..
             } => {
                 let mut event = event.clone();
-                if let Some(id) = counted_id(&mut event) {
-                    id.push_str(&format!("#{lap}"));
-                }
+                lap.name(&mut event);
                 reducer.apply(scene, event, now, *transport);
             }
             Cue::Presence { key, update, .. } => {
@@ -72,6 +67,58 @@ impl Cue {
                 daemon::apply_presence(scene, key, update.clone(), now);
             }
         }
+    }
+}
+
+/// A loop played, which names its ids and turns apart from every other lap's:
+/// the reducer counts an id once and refuses a closed turn's replay, so a
+/// replayed lap would add no work.
+#[derive(Debug, Clone, Copy)]
+struct Lap {
+    n: u64,
+    /// One past the script's highest `Seq` turn, so each lap's `Seq` turns
+    /// come after the last lap's.
+    seq_stride: u64,
+}
+
+impl Lap {
+    const FIRST: Self = Self {
+        n: 0,
+        seq_stride: 0,
+    };
+
+    fn name(self, event: &mut AgentEvent) {
+        if let Some(id) = counted_id(event) {
+            id.push_str(&format!("#{}", self.n));
+        }
+        match turn(event) {
+            Some(TurnKey::Id(id)) => *id = format!("{id}#{}", self.n).into(),
+            Some(TurnKey::Seq(seq)) => {
+                *seq = seq.saturating_add(self.seq_stride.saturating_mul(self.n));
+            }
+            None => {}
+        }
+    }
+}
+
+/// The turn `event` names, wherever it carries one.
+fn turn(event: &mut AgentEvent) -> Option<&mut TurnKey> {
+    match event {
+        AgentEvent::TurnStart { turn, .. }
+        | AgentEvent::TurnEnd {
+            turn: Some(turn), ..
+        }
+        | AgentEvent::ToolUsePending {
+            turn: Some(turn), ..
+        }
+        | AgentEvent::UserActionRequest {
+            turn: Some(turn), ..
+        }
+        | AgentEvent::UserActionResolved {
+            by: Resolution::Turn(turn),
+            ..
+        } => Some(turn),
+        _ => None,
     }
 }
 
@@ -306,6 +353,8 @@ pub struct Script {
     /// By phase, ties in authored order: a wait's prompt follows its call's start.
     cues: Vec<Cue>,
     period: Duration,
+    /// [`Lap::seq_stride`].
+    seq_stride: u64,
 }
 
 impl Script {
@@ -318,12 +367,28 @@ impl Script {
         assert!(!period.is_zero(), "a looped script needs a period");
         let mut cues: Vec<Cue> = cues.into_iter().collect();
         cues.sort_by_key(|cue| place(cue.at(), period).0);
-        Self { cues, period }
+        let seq_stride = (cues.iter_mut())
+            .filter_map(|cue| match cue {
+                Cue::Event { event, .. } => turn(event),
+                Cue::Presence { .. } => None,
+            })
+            .filter_map(|turn| match turn {
+                TurnKey::Seq(seq) => Some(seq.saturating_add(1)),
+                TurnKey::Id(_) => None,
+            })
+            .max()
+            .unwrap_or_default();
+        Self {
+            cues,
+            period,
+            seq_stride,
+        }
     }
 }
 
 /// Where a [`Script`] is: each cue lands once, at its own instant, into the
-/// host's reducer and scene.
+/// host's reducer and scene, but for the loops a jump skips
+/// ([`Playhead::advance`]).
 #[derive(Debug, Clone)]
 pub struct Playhead {
     script: Script,
@@ -331,9 +396,9 @@ pub struct Playhead {
     origin: SystemTime,
     /// The current loop's next cue.
     cursor: usize,
-    /// Loops played, which name each lap's calls apart. A skip plays on in the
-    /// lap it interrupts, so a call open across it still ends.
-    lap: u128,
+    /// Loops played, [`Lap::n`]. A jump plays on in the lap it interrupts, so
+    /// a call open across it still ends.
+    lap: u64,
 }
 
 impl Playhead {
@@ -348,9 +413,10 @@ impl Playhead {
     }
 
     /// Land every cue due by `now` at its own instant, then sweep as a live
-    /// office's reducer task would. A gap of two loops or more jumps whole
-    /// loops, in phase, and finishes the loop under way in the last one before
-    /// `now`: a fresh playhead's first call fills the office it would show then.
+    /// office's reducer task would. Once `now` is two loops or more past the
+    /// current loop's start, it jumps whole loops, in phase: the loop under way
+    /// finishes in the last one before `now`, and the loops jumped never play,
+    /// so a fresh playhead's first call fills the office it would show then.
     pub fn advance(&mut self, now: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
         let period = self.script.period;
         let loops = now
@@ -367,7 +433,14 @@ impl Playhead {
                 }
                 // A cue past the seam is its own timeline's, which began
                 // `seams` laps back: none did before `started`.
-                if let Some(lap) = self.lap.checked_sub(seams) {
+                if let Some(n) = u64::try_from(seams)
+                    .ok()
+                    .and_then(|seams| self.lap.checked_sub(seams))
+                {
+                    let lap = Lap {
+                        n,
+                        seq_stride: self.script.seq_stride,
+                    };
                     cue.land_on(self.origin + phase, lap, reducer, scene);
                 }
                 self.cursor += 1;

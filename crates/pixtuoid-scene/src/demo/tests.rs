@@ -1,5 +1,5 @@
 use super::*;
-use pixtuoid_core::source::{claude_code, codex, copilot, hermes, openclaw};
+use pixtuoid_core::source::{CopyId, claude_code, codex, copilot, hermes, openclaw, opencode};
 use pixtuoid_core::state::{ActivityState, DaemonInstanceId, ToolKind};
 
 const PERIOD: Duration = Duration::from_secs(60);
@@ -213,18 +213,18 @@ fn a_catch_up_sweeps_presence_before_each_delta_as_stepping_does() {
 
 #[test]
 fn a_script_orders_its_cues_by_phase_ties_in_authored_order() {
-    let past_the_seam = lead().end(PERIOD + ms(5_000));
+    let past_the_seam = lead().end(PERIOD + ms(500));
     let [start, ask, end] = lead().wait(ms(1_000), ms(1_000), "Bash: rm -rf dist");
     let script = Script::new(
         PERIOD,
         [
-            past_the_seam.clone(),
             end.clone(),
             start.clone(),
             ask.clone(),
+            past_the_seam.clone(),
         ],
     );
-    assert_eq!(script.cues, [start, ask, end, past_the_seam]);
+    assert_eq!(script.cues, [past_the_seam, start, ask, end]);
 }
 
 /// A loop's calls and named readings count again every lap, on the agent and
@@ -237,7 +237,8 @@ fn a_replayed_loop_counts_its_calls_again() {
         Cue::Event {
             at: ms(500),
             transport: Transport::Jsonl,
-            event: AgentEvent::usage(lead().id(), 100, Some("reading".to_owned())),
+            event: AgentEvent::usage(lead().id(), 100, Some("reading".to_owned()))
+                .with_copy_id(CopyId::new("copy")),
         },
     ];
     cues.extend(lead().spell(ms(1_000), 3, &["Bash: cargo test"]));
@@ -474,5 +475,136 @@ fn a_visitor_ending_at_the_seam_returns_every_loop() {
             slot.is_some_and(|slot| slot.exiting_at.is_none()),
             "{source}: {slot:?}"
         );
+    }
+}
+
+/// Every id the reducer counts once and every turn an event names takes the
+/// lap, whichever field carries it.
+#[test]
+fn a_lap_names_every_counted_id_and_turn_apart() {
+    let lap = Lap {
+        n: 3,
+        seq_stride: 10,
+    };
+    let agent_id = lead().id();
+    let id = || "x".to_owned();
+    let turn_id = || TurnKey::Id("t".into());
+    let request = || AgentEvent::UserActionRequest {
+        agent_id,
+        reason: None,
+        tool_use_id: Some(id()),
+        tool_name: None,
+        turn: Some(turn_id()),
+    };
+    let pending = || AgentEvent::ToolUsePending {
+        agent_id,
+        tool_use_id: id(),
+        tool_name: None,
+        turn: Some(turn_id()),
+    };
+    for mut event in [
+        AgentEvent::tool_use_start(agent_id, Some(id()), None),
+        AgentEvent::ToolUseEnd {
+            agent_id,
+            tool_use_id: Some(id()),
+        },
+        request(),
+        pending(),
+        AgentEvent::UserActionResolved {
+            agent_id,
+            by: Resolution::Call(id()),
+        },
+        AgentEvent::usage(agent_id, 1, Some(id())),
+    ] {
+        lap.name(&mut event);
+        assert_eq!(
+            counted_id(&mut event).cloned(),
+            Some("x#3".to_owned()),
+            "{event:?}"
+        );
+    }
+    for (mut event, want) in [
+        (
+            AgentEvent::TurnStart {
+                agent_id,
+                turn: turn_id(),
+            },
+            TurnKey::Id("t#3".into()),
+        ),
+        (
+            AgentEvent::TurnEnd {
+                agent_id,
+                turn: Some(turn_id()),
+            },
+            TurnKey::Id("t#3".into()),
+        ),
+        (request(), TurnKey::Id("t#3".into())),
+        (pending(), TurnKey::Id("t#3".into())),
+        (
+            AgentEvent::UserActionResolved {
+                agent_id,
+                by: Resolution::Turn(turn_id()),
+            },
+            TurnKey::Id("t#3".into()),
+        ),
+        (
+            AgentEvent::TurnStart {
+                agent_id,
+                turn: TurnKey::Seq(2),
+            },
+            TurnKey::Seq(2 + 10 * 3),
+        ),
+    ] {
+        lap.name(&mut event);
+        assert_eq!(turn(&mut event).cloned(), Some(want), "{event:?}");
+    }
+}
+
+/// A turn a loop brackets opens again every lap, by an opaque id or by its
+/// position on the stream, which the reducer would refuse as a replay.
+#[test]
+fn a_replayed_turn_opens_again_every_lap() {
+    for (source, key) in [
+        (codex::SOURCE_NAME, TurnKey::Id("turn".into())),
+        (opencode::SOURCE_NAME, TurnKey::Seq(1)),
+    ] {
+        let turner = Actor::new(source, "turner", "/work/cli");
+        let bracket = |at, event| Cue::Event {
+            at,
+            transport: turner.lifecycle,
+            event,
+        };
+        let cues = [
+            turner.start(ms(0)),
+            bracket(
+                ms(1_000),
+                AgentEvent::TurnStart {
+                    agent_id: turner.id(),
+                    turn: key.clone(),
+                },
+            ),
+            bracket(
+                ms(6_000),
+                AgentEvent::TurnEnd {
+                    agent_id: turner.id(),
+                    turn: Some(key.clone()),
+                },
+            ),
+        ];
+        let mut host = Host::new(cues, t0());
+        for lap in 0..3u32 {
+            let open = host.at(t0() + PERIOD * lap + ms(1_500));
+            assert!(
+                matches!(state(open, &turner), ActivityState::Running { .. }),
+                "{source} lap {lap}: {:?}",
+                state(open, &turner)
+            );
+            let closed = host.at(t0() + PERIOD * lap + ms(6_500));
+            assert_eq!(
+                state(closed, &turner),
+                ActivityState::Idle,
+                "{source} lap {lap}"
+            );
+        }
     }
 }
