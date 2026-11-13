@@ -18,18 +18,14 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use pixtuoid_core::source::daemon::apply_presence;
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
-use pixtuoid_core::{AgentEvent, AgentId, Transport};
-
-use crate::script::{
-    Beat, LOOP_MS, PresenceBeat, hero_gateway, hero_script, hire_beats, lobster_beats,
-};
+use pixtuoid_core::{AgentEvent, AgentId};
 
 use pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS;
 use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
+use pixtuoid_scene::demo::{Beat, Cue, Playhead};
 use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{RenderInputs, WorldText};
@@ -40,12 +36,29 @@ use pixtuoid_scene::screen::{ManualClock, Screen, ScreenClock};
 use pixtuoid_scene::sky::WeatherPolicy;
 use pixtuoid_scene::theme::{NORMAL, Theme};
 
-/// A visitor hire's one-shot event, queued OUTSIDE the loop machinery so a
+/// A visitor hire's one-shot beat, queued OUTSIDE the loop machinery so a
 /// hire's lifecycle never replays on wrap.
 #[derive(Debug)]
-struct ScheduledEvent {
-    at: SystemTime,
-    event: AgentEvent,
+struct ScheduledBeat {
+    /// The hire instant.
+    origin: SystemTime,
+    beat: Beat,
+}
+
+impl ScheduledBeat {
+    fn due(&self) -> SystemTime {
+        self.origin + self.beat.at
+    }
+
+    fn starts(&self) -> Option<AgentId> {
+        match &self.beat.cue {
+            Cue::Event {
+                event: AgentEvent::SessionStart { agent_id, .. },
+                ..
+            } => Some(*agent_id),
+            _ => None,
+        }
+    }
 }
 
 /// The visitor-hire lane — grouped so the cap invariant lives in ONE place
@@ -53,7 +66,7 @@ struct ScheduledEvent {
 #[derive(Debug, Default)]
 struct VisitorHires {
     /// Kept sorted by time; drained from the front.
-    pending: Vec<ScheduledEvent>,
+    pending: Vec<ScheduledBeat>,
     ids: Vec<AgentId>,
     seq: u32,
 }
@@ -70,10 +83,7 @@ impl VisitorHires {
         // (SessionStart pending): pruning a queued id loses it permanently, and a
         // click one frame after a burst would overshoot the cap.
         self.ids.retain(|id| {
-            scene.agents.contains_key(id)
-                || self.pending.iter().any(
-                    |ev| matches!(&ev.event, AgentEvent::SessionStart { agent_id, .. } if agent_id == id),
-                )
+            scene.agents.contains_key(id) || self.pending.iter().any(|p| p.starts() == Some(*id))
         });
         if self.ids.len() >= Self::MAX_LIVE {
             return false;
@@ -83,32 +93,30 @@ impl VisitorHires {
         let queued_starts = self
             .pending
             .iter()
-            .filter(|ev| matches!(ev.event, AgentEvent::SessionStart { .. }))
+            .filter_map(ScheduledBeat::starts)
             .count();
         let claimed = scene.agents.values().filter(|a| a.claims_a_desk()).count();
         if claimed + queued_starts >= scene.total_capacity() {
             return false;
         }
         self.seq += 1;
-        let session = format!("hire-{}", self.seq);
-        let id = AgentId::from_parts(pixtuoid_core::source::claude_code::SOURCE_NAME, &session);
+        let (id, beats) = script::hire(self.seq);
         self.ids.push(id);
-        for (at_ms, event) in hire_beats(id, session) {
-            self.pending.push(ScheduledEvent {
-                at: base + Duration::from_millis(at_ms),
-                event,
-            });
-        }
-        self.pending.sort_by_key(|ev| ev.at);
+        self.pending.extend(
+            beats
+                .into_iter()
+                .map(|beat| ScheduledBeat { origin: base, beat }),
+        );
+        self.pending.sort_by_key(ScheduledBeat::due);
         true
     }
 
-    /// Fire every queued hire event due by `now`, each applied at its SCHEDULED
-    /// time (not `now`) so the reducer's time-based semantics hold.
+    /// Land every queued hire beat due by `now`, each at its SCHEDULED time
+    /// (not `now`) so the reducer's time-based semantics hold.
     fn drain_due(&mut self, now: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
-        while self.pending.first().is_some_and(|ev| ev.at <= now) {
-            let ev = self.pending.remove(0);
-            reducer.apply(scene, ev.event, ev.at, Transport::Hook);
+        while self.pending.first().is_some_and(|p| p.due() <= now) {
+            let p = self.pending.remove(0);
+            p.beat.land(p.origin, reducer, scene);
         }
     }
 }
@@ -146,13 +154,8 @@ pub struct Office {
     /// The cutaway at the pack's densest art, which the browser upscales.
     fit: PixelFit,
     reducer: Reducer,
-    beats: Vec<Beat>,
-    cursor: usize,
-    /// Scripted gateway presence deltas — own cursor, same loop clock as `beats`.
-    presence_beats: Vec<PresenceBeat>,
-    presence_cursor: usize,
-    /// t0 of the current loop; set on the first `step` call.
-    epoch: Option<SystemTime>,
+    /// The hero's cast, its loop anchored at the first `step`.
+    cast: Option<Playhead>,
     /// Visitor hires — outside the loop machinery, so one never replays on wrap.
     hires: VisitorHires,
     /// The clock of the most recent `step` — `hire()` has no clock parameter, so
@@ -207,14 +210,6 @@ impl Office {
         // frame must allocate desks against the canvas this frame renders.
         self.sync_capacity(units_w, units_h, now);
         self.advance_script(now);
-        self.reducer.tick(&mut self.scene, now);
-        // The DAEMON sweep the app's reducer task runs: without it a `Down` row
-        // lives until the next loop's `GatewayUp` and the wall board shows a stale
-        // `gw down` chip. Registry-driven so an Nth daemon row can't decay in
-        // production yet linger here.
-        for (source, ttl) in pixtuoid_core::source::registry::daemon_sources() {
-            pixtuoid_core::source::daemon::sweep_presence_ttl(&mut self.scene, source, ttl, now);
-        }
         // `render` evicts per-agent render state for the agents the sweep removed
         // — load-bearing: the looped script REUSES agent ids, and a returning cast
         // member with stale walk legs teleports in.
@@ -302,7 +297,7 @@ impl Office {
     }
 
     /// Hire one more agent: a new coworker walks into the background office,
-    /// works a few spells, and heads out `script::HIRE_STAY_MS` later. Refused
+    /// works a few spells, and heads out `script::HIRE_STAY` later. Refused
     /// (`false`) before the first `step` (no clock yet), while `MAX_LIVE` hires
     /// are already alive, and when the canvas-sized office has no free desk.
     /// Never throws.
@@ -529,11 +524,7 @@ impl Office {
             theme: &NORMAL,
             fit,
             reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
-            beats: hero_script(),
-            cursor: 0,
-            presence_beats: lobster_beats(),
-            presence_cursor: 0,
-            epoch: None,
+            cast: None,
             hires: VisitorHires::default(),
             last_now: None,
             caps_units: None,
@@ -611,56 +602,14 @@ impl Office {
         self.caps_units = Some((units_w, units_h));
     }
 
-    /// Fire every scripted beat due by `now`, each applied at its SCHEDULED time
-    /// (not `now`) so the reducer's time-based semantics hold even when a hidden
-    /// tab's rAF pauses and a resumed step has to catch up a large gap. A gap
-    /// past one full loop is re-anchored instead of replayed N times.
+    /// Land the hires' and the cast's beats due by `now`. The cast's sweep at
+    /// `now` comes last, so it covers the hires' too.
     fn advance_script(&mut self, now: SystemTime) {
-        let mut epoch = *self.epoch.get_or_insert(now);
-        let mut elapsed = u64::try_from(now.duration_since(epoch).unwrap_or_default().as_millis())
-            .unwrap_or(u64::MAX);
-
-        // A long-hidden tab: skip whole missed loops, keep the phase — the
-        // replayed SessionStarts of the kept phase re-seat the cast.
-        if elapsed >= 2 * LOOP_MS {
-            let skip = (elapsed / LOOP_MS - 1) * LOOP_MS;
-            epoch += Duration::from_millis(skip);
-            self.epoch = Some(epoch);
-            elapsed -= skip;
-        }
-
-        loop {
-            while let Some(beat) = self.beats.get(self.cursor) {
-                if beat.at_ms > elapsed {
-                    break;
-                }
-                let at = epoch + Duration::from_millis(beat.at_ms);
-                self.reducer
-                    .apply(&mut self.scene, beat.event.clone(), at, beat.transport);
-                self.cursor += 1;
-            }
-            // Each presence delta lands at its SCHEDULED time, so enter/running/leave
-            // motion anchors correctly even on a catch-up step.
-            while let Some(pb) = self.presence_beats.get(self.presence_cursor) {
-                if pb.at_ms > elapsed {
-                    break;
-                }
-                let at = epoch + Duration::from_millis(pb.at_ms);
-                apply_presence(&mut self.scene, &hero_gateway(), pb.update.clone(), at);
-                self.presence_cursor += 1;
-            }
-            if elapsed < LOOP_MS {
-                break;
-            }
-            epoch += Duration::from_millis(LOOP_MS);
-            self.epoch = Some(epoch);
-            self.cursor = 0;
-            self.presence_cursor = 0;
-            elapsed -= LOOP_MS;
-        }
-
         self.hires
             .drain_due(now, &mut self.reducer, &mut self.scene);
+        self.cast
+            .get_or_insert_with(|| Playhead::new(script::hero(), now))
+            .advance(now, &mut self.reducer, &mut self.scene);
     }
 
     /// The hero's conditions: this office's own weather.
@@ -799,8 +748,12 @@ impl Segment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::script::cast_id;
+    use crate::script::{CAST_LEN, HIRE_STAY, LOOP, cast_id, hero_gateway};
+    use pixtuoid_core::Transport;
     use pixtuoid_scene::screen::Flashes;
+
+    /// [`LOOP`] in the unit `step` takes.
+    const LOOP_MS: u64 = LOOP.as_millis() as u64;
 
     /// The hero [`office`] draws.
     const SEED: u32 = 1;
@@ -821,7 +774,7 @@ mod tests {
         o.scene
             .agents
             .keys()
-            .filter(|id| !(0..crate::script::CAST_LEN).map(cast_id).any(|c| c == **id))
+            .filter(|id| !(0..CAST_LEN).map(cast_id).any(|c| c == **id))
             .count()
     }
 
@@ -1243,7 +1196,7 @@ mod tests {
     }
 
     #[test]
-    fn beats_fire_once_at_scheduled_times_across_a_wrap() {
+    fn the_cast_stays_bounded_across_a_wrap() {
         let mut o = office();
         let step_ms = 5_000u64;
         let total = LOOP_MS + LOOP_MS / 2;
@@ -1257,7 +1210,6 @@ mod tests {
             "cast bounded across the wrap, got {}",
             o.scene.agents.len()
         );
-        assert!(o.cursor > 0 && o.cursor < o.beats.len());
     }
 
     #[test]
@@ -1400,20 +1352,12 @@ mod tests {
     }
 
     #[test]
-    fn a_long_hidden_tab_reanchors_instead_of_replaying_every_missed_loop() {
+    fn a_long_hidden_tab_resumes_a_coherent_office() {
         let mut o = office();
         o.step(T0_MS, 160, 96);
-        let epoch_before = o.epoch.unwrap();
         // 10 simulated minutes of a hidden tab.
         let gap = 10 * 60 * 1_000u64;
         o.step(T0_MS + gap as f64, 160, 96);
-        let epoch_after = o.epoch.unwrap();
-        let advanced = epoch_after
-            .duration_since(epoch_before)
-            .unwrap()
-            .as_millis() as u64;
-        assert_eq!(advanced % LOOP_MS, 0, "re-anchor keeps the loop phase");
-        assert!(gap - advanced < 2 * LOOP_MS, "at most one wrap replays");
         assert!(
             (8..=11).contains(&o.scene.agents.len()),
             "office coherent after the gap, got {}",
@@ -1512,8 +1456,7 @@ mod tests {
         o.step(T0_MS + 80_000.0, 160, 96);
         assert_eq!(o.scene.agents.len(), baseline + 1);
         // Past SessionEnd + exit grace + GC, and across the loop wrap.
-        let after =
-            T0_MS + 31_000.0 + crate::script::HIRE_STAY_MS as f64 + 20_000.0 + LOOP_MS as f64;
+        let after = T0_MS + 31_000.0 + HIRE_STAY.as_millis() as f64 + 20_000.0 + LOOP_MS as f64;
         o.step(after, 160, 96);
         assert_eq!(hires_alive(&o), 0, "the hire left and never replays");
     }
@@ -1624,7 +1567,7 @@ mod tests {
             t += 1_000;
         }
         assert!(
-            o.scene.total_capacity() <= crate::script::CAST_LEN,
+            o.scene.total_capacity() <= CAST_LEN,
             "premise: this width seats no more than the cast"
         );
         assert_eq!(
@@ -1664,7 +1607,6 @@ mod tests {
 
     #[test]
     fn hire_after_the_stay_ends_re_admits_past_the_cap() {
-        use crate::script::HIRE_STAY_MS;
         let mut o = office();
         o.step(T0_MS, 320, 180);
         o.step(T0_MS + 30_000.0, 320, 180);
@@ -1682,7 +1624,7 @@ mod tests {
         assert_eq!(hires_alive(&o), VisitorHires::MAX_LIVE);
 
         // Past the stay + exit grace + GC sweep.
-        let after_stay = T0_MS + 32_000.0 + HIRE_STAY_MS as f64 + 20_000.0;
+        let after_stay = T0_MS + 32_000.0 + HIRE_STAY.as_millis() as f64 + 20_000.0;
         o.step(after_stay, 320, 180);
         assert_eq!(hires_alive(&o), 0, "the earlier hires left the office");
 

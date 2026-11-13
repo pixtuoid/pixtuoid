@@ -49,6 +49,7 @@ pub mod interact;
 pub use creatures::PET_LONGEST_REST_MS;
 #[doc(hidden)]
 pub mod cutaway;
+pub mod demo;
 #[doc(hidden)]
 pub mod display;
 pub(crate) mod dither;
