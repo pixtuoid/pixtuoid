@@ -25,7 +25,7 @@ pub(crate) enum Sight {
     /// Its session ended: the last lifecycle evidence of a read or of an
     /// oversized span's tail is its end. The path stays KNOWN, so the watcher's
     /// re-vouch won't replay it however live the probe says the (still-open)
-    /// rollout is.
+    /// transcript is.
     Ended,
 }
 

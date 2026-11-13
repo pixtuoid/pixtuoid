@@ -1,7 +1,7 @@
 //! `HookRouter` — an instance's end of the ONE shared hook socket that EVERY
-//! source's hooks ride (Codex, Reasonix, CodeWhale, opencode, Cursor, and the
-//! OpenClaw daemon): it owns the socket, or subscribes to the instance that does
-//! and takes the socket over when that instance exits.
+//! source's hooks ride, the OpenClaw daemon's included: it owns the socket, or
+//! subscribes to the instance that does and takes the socket over when that
+//! instance exits.
 //!
 //! It implements [`Source`] DELIBERATELY, to inherit `spawn_with_health`'s
 //! `SourceDeath` path for free instead of rebuilding it. It is still

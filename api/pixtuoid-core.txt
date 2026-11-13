@@ -1226,7 +1226,6 @@ impl core::marker::Unpin for pixtuoid_core::source::RequestKeys
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::RequestKeys
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::RequestKeys
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::RequestKeys
-pub const pixtuoid_core::source::EVENT_CHANNEL_CAPACITY: usize
 pub trait pixtuoid_core::source::DynSource: core::marker::Send + 'static
 pub fn pixtuoid_core::source::DynSource::name(&self) -> &str
 pub fn pixtuoid_core::source::DynSource::run(alloc::boxed::Box<Self>, pixtuoid_core::TaggedSender) -> core::pin::Pin<alloc::boxed::Box<(dyn core::future::future::Future<Output = anyhow::Result<()>> + core::marker::Send)>>

@@ -4135,8 +4135,8 @@ mod follow {
         Some(snap(&[("child", 1)]))
     }
 
-    /// A multi-turn codex child's claim ends at each turn while its parent
-    /// still holds the rollout open; the pass follows it on the probe's word.
+    /// An ended transcript a live writer holds is a resume, which may write no
+    /// start (omp's, `each_life`); the pass follows it on the probe's word.
     #[tokio::test]
     async fn a_pass_follows_an_ended_transcript_a_live_writer_holds() {
         let follower = follower();

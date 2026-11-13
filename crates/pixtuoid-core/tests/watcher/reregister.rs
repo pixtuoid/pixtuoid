@@ -16,9 +16,9 @@ use crate::{
 };
 
 #[tokio::test]
-async fn in_flight_multi_turn_codex_child_revives_and_relinks_on_its_next_live_read() {
+async fn in_flight_multi_turn_codex_child_revives_and_relinks_on_its_next_turn() {
     use pixtuoid_core::source::decoder::decode_hook_payload;
-    use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, EXIT_GRACE_WINDOW};
+    use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, EXIT_GRACE_WINDOW, STRAGGLER_TTL};
     use pixtuoid_core::{Reducer, SceneState};
 
     fast_watch();
@@ -117,7 +117,9 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_on_its_next_live_r
     )
     .await;
     for (transport, ev) in straggler {
-        r.apply(&mut scene, ev, SystemTime::now(), transport);
+        // Past the #242 straggler window, so only the #244 gate refuses it.
+        let late = SystemTime::now() + STRAGGLER_TTL + Duration::from_secs(1);
+        r.apply(&mut scene, ev, late, transport);
     }
     assert!(
         !scene.agents.contains_key(&child),

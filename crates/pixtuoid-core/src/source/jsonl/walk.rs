@@ -128,7 +128,7 @@ fn id_deriver(decoders: SourceDecoders) -> impl Fn(&Path) -> String {
 }
 
 /// The agent `path` is the transcript of.
-pub(super) fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
+fn own_agent(path: &Path, source: &str, decoders: SourceDecoders) -> AgentId {
     transcript_session(source, path, id_deriver(decoders)).1
 }
 
