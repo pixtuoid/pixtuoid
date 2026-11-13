@@ -1,42 +1,83 @@
 name: security audit
 
-# A dependency set that did not change still meets new advisories: this
-# judges each one daily, and a PR judges only the lockfiles it changes.
+# Throwaway probe branch: never merged.
 on:
-  schedule:
-    - cron: "0 6 * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  rust:
-    name: cargo-deny advisories
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # The same mise.toml key ci-lint's deny job installs; each resolves its version at run time.
-      - uses: ./.github/actions/setup-tools
-        with:
-          tools: cargo-deny
-      - run: just deny-advisories
-
-  npm:
-    name: npm audit (${{ matrix.dir }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  probe:
     strategy:
       fail-fast: false
       matrix:
-        dir: [site, integrations/raycast]
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # `npm audit` reads the lockfile; nothing is installed or run.
-      - run: npm run audit
-        working-directory: ${{ matrix.dir }}
+      - shell: bash
+        run: |
+          set +e -uo pipefail
+          t() { printf '\n=== [%4ds] %s\n' "$SECONDS" "$*"; }
+          if [[ $RUNNER_OS == Linux ]]; then eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; fi
+
+          t "brew as shipped"
+          brew --version
+          env | grep -E '^HOMEBREW_' | sort
+          git -C "$(brew --repository)" config --get homebrew.devcmdrun || echo "devcmdrun: unset"
+          git ls-remote https://github.com/Homebrew/brew HEAD
+
+          t "brew update, plain"
+          brew update >/dev/null 2>&1
+          echo "exit=$?"
+          brew --version
+
+          t "brew update, HOMEBREW_DEVELOPER=1"
+          HOMEBREW_DEVELOPER=1 brew update >/dev/null 2>&1
+          echo "exit=$?"
+          brew --version
+
+          version="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
+          tarball="$RUNNER_TEMP/pixtuoid-$version.tar.gz"
+          git archive --format=tar.gz --prefix="pixtuoid-$version/" -o "$tarball" HEAD
+          sha="$(shasum -a 256 "$tarball" | cut -d' ' -f1)"
+
+          t "tap-new"
+          brew tap-new --no-git pixtuoid/ci
+          echo "exit=$?"
+          formula="$(brew --repository pixtuoid/ci)/Formula/pixtuoid.rb"
+          awk -v u="file://$tarball" -v s="$sha" '{ print } /^  homepage / { print "  url \"" u "\""; print "  sha256 \"" s "\"" }' \
+              .github/actions/packaging-build/pixtuoid.rb >"$formula"
+          cat "$formula"
+
+          t "install, untrusted"
+          brew install --build-from-source pixtuoid/ci/pixtuoid
+          rc=$?
+          echo "exit=$rc"
+          if ((rc != 0)); then
+              t "trust"
+              brew trust --tap pixtuoid/ci
+              echo "exit=$?"
+              t "install, trusted"
+              brew install --build-from-source pixtuoid/ci/pixtuoid
+              echo "exit=$?"
+          fi
+
+          t "test, committed block"
+          brew test --verbose pixtuoid/ci/pixtuoid
+          echo "exit=$?"
+
+          t "test, XDG_RUNTIME_DIR block"
+          awk '/assert_match "delivered a test event"/ { print "    ENV[\"XDG_RUNTIME_DIR\"] = testpath" } { print }' "$formula" >"$formula.new"
+          mv "$formula.new" "$formula"
+          sed -n '/test do/,/^  end/p' "$formula"
+          brew test --verbose pixtuoid/ci/pixtuoid
+          echo "exit=$?"
+
+          t "sandbox state"
+          brew ruby -e 'puts "available=#{Sandbox.available?} state=#{Sandbox.state} reason=#{Sandbox.failure_reason.inspect}"'
+          t "done"
