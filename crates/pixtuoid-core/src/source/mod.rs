@@ -614,7 +614,7 @@ pub use proc_start::pid_parent;
 pub use proc_start::pid_start_marker;
 pub mod reasonix;
 // `doc(hidden)`: an internal fact table, `pub` only for this workspace's own
-// crates. Keeping it off the published API lets cargo-semver-checks
-// accept descriptor/caps field changes without a breaking-version bump.
+// crates, whose field changes cargo-semver-checks lets through, since it skips a path docs hide:
+// https://github.com/obi1kenobi/trustfall-rustdoc-adapter/blob/b24088502d1cc1fcdbdb5037407e3a90c4e33b18/src/rustdoc_schema.graphql#L1360-L1365
 #[doc(hidden)]
 pub mod registry;
