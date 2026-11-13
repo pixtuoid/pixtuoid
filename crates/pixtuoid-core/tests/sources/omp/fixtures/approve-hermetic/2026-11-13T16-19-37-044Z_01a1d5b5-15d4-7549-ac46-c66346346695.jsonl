@@ -1,0 +1,16 @@
+{"type":"title","v":0,"title":"Hermetic","source":"","updatedAt":"","pad":""}
+{"type":"session","version":0,"id":"","timestamp":"","cwd":"/tmp/pixtuoid-capture/proj"}
+{}
+{"type":"thinking_level_change","id":"","parentId":"","timestamp":"","runtime":{},"thinkingLevel":"high","configured":null}
+{}
+{}
+{}
+{"type":"message","id":"07965f33","parentId":"","timestamp":"2026-11-13T16:19:40.036Z","runtime":{},"message":{"role":"assistant","content":[{"type":"toolCall","id":"call_ITC3xvXt07RapjTu","name":"bash","arguments":{"i":"","command":"cat NOTE.txt"},"partialArgs":"","streamIndex":0,"intent":""}],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2350,"output":14,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{}
+{"type":"message","id":"","parentId":"","timestamp":"","runtime":{},"message":{"role":"toolResult","toolCallId":"call_ITC3xvXt07RapjTu","toolName":"","content":[],"details":{},"isError":false,"timestamp":0}}
+{"type":"model_usage","id":"c18f7aa7","parentId":"","timestamp":"2026-11-13T16:19:40.964Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":2834,"output":14,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","activeLeafId":""}
+{"type":"model_usage","id":"1317a1de","parentId":"","timestamp":"2026-11-13T16:19:40.971Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":403,"output":6,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":""}
+{"type":"message","id":"69eb8d5d","parentId":"","timestamp":"2026-11-13T16:19:41.698Z","runtime":{},"message":{"role":"assistant","content":[],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2352,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{"type":"model_usage","id":"6d3e66c0","parentId":"","timestamp":"2026-11-13T16:19:42.791Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":427,"output":14,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","activeLeafId":""}
+{"type":"title_change","id":"","parentId":"","timestamp":"","runtime":{},"title":"Hermetic","source":""}
+{"type":"custom","customType":"session_exit","data":{},"id":"","parentId":"","timestamp":"","runtime":{}}
