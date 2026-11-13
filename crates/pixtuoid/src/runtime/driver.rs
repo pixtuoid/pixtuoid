@@ -687,7 +687,7 @@ mod tests {
             .collect();
         assert_eq!(
             transcript_built, expected,
-            "run_async's transcript-source wiring diverged from the registry: a \
+            "build_source_set's transcript sources diverged from the registry: a \
              transcript-bearing source is registered but not built (it would never \
              spawn), or a built source isn't registered"
         );
