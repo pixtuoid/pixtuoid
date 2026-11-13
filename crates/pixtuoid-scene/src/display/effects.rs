@@ -10,11 +10,10 @@ use crate::sprite::{HeadView, Rgb};
 use crate::display::Span;
 use crate::display::pen::Pen;
 use crate::effects::look::{
-    CAP_SHADE, Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X, SLEEP_Z_MAX_RISE, plot_effect,
+    CAP_SHADE, Glyph, Inks, REQUIRES_ACTION_MARK_1X, SLEEP_Z_1X, SLEEP_Z_MAX_RISE, plot_effect,
     sleep_z_fade, walking_dust_foot,
 };
 use crate::effects::{Cap, Effect, EffectKind};
-use crate::layout::chrome::{Glyph, REQUIRES_ACTION_MARK};
 
 /// The density this module's own looks are drawn at.
 const LOOK_DENSITY: Density = Density::new(4).expect("nonzero");
@@ -159,6 +158,19 @@ const SLEEP_Z: Glyph = Glyph::new(&[
     "..##..", //
     ".##...", //
     "######", //
+]);
+
+/// The mark beside the head of an agent whose turn it is.
+const REQUIRES_ACTION_MARK: Glyph = Glyph::new(&[
+    ".####.", //
+    "##..##", //
+    "##..##", //
+    "...##.", //
+    "..##..", //
+    "..##..", //
+    "......", //
+    "..##..", //
+    "..##..", //
 ]);
 
 /// Art columns from the head mark to the west edge of what floats beside the
