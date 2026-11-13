@@ -182,37 +182,26 @@ assert_detect false "a branch merely naming the prefix" "$(pr_heads "feat/${dete
 assert_detect false "a direct push with no PR" "$(pr_heads)"
 assert_detect error "an API failure" error
 
-# ── release-plz.yml: a homebrew-core test miss warns, once per miss, and never
-# holds the release PR ──
-brew_step="homebrew-core's test calls only what this tree can run"
+# ── release-plz.yml: homebrew-core's formula drifting from packaging-build's
+# warns once with the diff, and never holds the release PR ──
+brew_step="homebrew-core's formula is the one packaging-build tests"
 brew_script="$(workflow_step_script "$release_workflow" "$brew_step")"
+brew_committed="$(STEP_NAME="$brew_step" yq -e -r '.jobs[].steps[] | select(.name == strenv(STEP_NAME)) | .env.COMMITTED' "$release_workflow")" ||
+    fail "the homebrew step names no COMMITTED formula"
 brew_dir="$test_dir/brew"
-brew_bin="$brew_dir/bin"
-mkdir -p "$brew_bin" "$brew_dir/target/debug"
-cat >"$brew_bin/curl" <<'STUB'
+mkdir -p "$brew_dir/bin"
+cat >"$brew_dir/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 [[ -n "${FAKE_FORMULA:-}" ]] || exit 22
 cat "$FAKE_FORMULA"
 STUB
-printf '#!/usr/bin/env bash\n' >"$brew_bin/cargo"
-# This tree dropped `gone-cmd`; `doctor` prints the delivered line, `loud` prints
-# it to stderr alone, and `broken` fails with two lines of cause.
-cat >"$brew_dir/target/debug/pixtuoid" <<'STUB'
-#!/usr/bin/env bash
-case "$1 ${2:-}" in
-"gone-cmd --help") exit 2 ;;
-"doctor ") printf 'shim delivered a test event\n' ;;
-"loud ") printf 'delivered a test event\n' >&2 ;;
-"broken ") printf 'line one\nline two\n' >&2 && exit 1 ;;
-esac
-STUB
-chmod +x "$brew_bin/curl" "$brew_bin/cargo" "$brew_dir/target/debug/pixtuoid"
+chmod +x "$brew_dir/bin/curl"
 assert_brew() {
-    local label="$1" formula="$2" want="$3" out lines=0 warnings=0 summary="$brew_dir/summary"
+    local label="$1" live="$2" want="$3" out lines=0 warnings=0 summary="$brew_dir/summary"
     : >"$summary"
-    printf '%s\n' "$formula" >"$brew_dir/formula.rb"
-    out="$(cd "$brew_dir" && PATH="$brew_bin:$PATH" GITHUB_STEP_SUMMARY="$summary" \
-        FAKE_FORMULA="${formula:+$brew_dir/formula.rb}" bash -c "$brew_script" 2>&1)" ||
+    printf '%s\n' "$live" >"$brew_dir/live.rb"
+    out="$(PATH="$brew_dir/bin:$PATH" GITHUB_STEP_SUMMARY="$summary" COMMITTED="$brew_committed" \
+        FAKE_FORMULA="${live:+$brew_dir/live.rb}" bash -c "$brew_script" 2>&1)" ||
         fail "the homebrew step held the release on $label: $out"
     if [[ -n "$out" ]]; then
         lines="$(wc -l <<<"$out" | tr -d ' ')"
@@ -227,43 +216,16 @@ assert_brew() {
             fail "the homebrew step on $label wanted one heading: $(<"$summary")"
     fi
 }
+# The committed formula as the autobump leaves it in homebrew-core.
+bumped="$(awk '{ print }
+    /^  homepage / { print "  url \"https://example.invalid/v1.tar.gz\""; print "  sha256 \"00\"" }
+    /^  head / { print ""; print "  bottle do"; print "    sha256 cellar: :any, arm64_tahoe: \"00\""; print "  end" }' "$brew_committed")"
 assert_brew "a failed fetch" "" 1
-assert_brew "a test block with no subcommand" $'  test do\n    assert_match version.to_s, shell_output("#{bin}/pixtuoid --version")\n  end' 1
-grep -q 'shape changed' "$brew_dir/summary" || fail "the homebrew step didn't name an unrecognized test block"
-delivered='assert_match "delivered a test event", shell_output("#{bin}/pixtuoid'
-assert_brew "a dropped subcommand and a failing command" \
-    $'  test do\n    system bin/"pixtuoid", "gone-cmd", testpath/"x"\n    '"$delivered"$' broken")\n    '"$delivered"$' doctor")\n  end' 2
-{ grep -q 'gone-cmd' "$brew_dir/summary" && grep -q 'broken.*exit 0.*exits 1: *line one line two' "$brew_dir/summary"; } ||
-    fail "the homebrew step didn't name each miss with its cause: $(<"$brew_dir/summary")"
-assert_brew "a test block this tree runs" $'  test do\n    assert_match version.to_s, shell_output("#{bin}/pixtuoid --version")\n    '"$delivered"$' doctor")\n  end' 0
-assert_brew "an expected failure this tree fails" $'  test do\n    assert_match "", shell_output("#{bin}/pixtuoid broken", 1)\n  end' 0
-assert_brew "an expected failure this tree passes" $'  test do\n    '"$delivered"$' doctor", 1)\n  end' 1
-grep -q 'exit 1, and this tree exits 0' "$brew_dir/summary" ||
-    fail "the homebrew step didn't name the exit it expected: $(<"$brew_dir/summary")"
-assert_brew "text this tree no longer prints" $'  test do\n    assert_match "a reworded line", shell_output("#{bin}/pixtuoid doctor")\n  end' 1
-grep -q 'print "a reworded line".*shim delivered a test event' "$brew_dir/summary" ||
-    fail "the homebrew step didn't name the missing text: $(<"$brew_dir/summary")"
-assert_brew "a literal assertion split across lines" $'  test do\n    assert_match "delivered a test event",\n                 shell_output("#{bin}/pixtuoid doctor")\n  end' 1
-grep -q "can't read: assert_match \"delivered a test event\"," "$brew_dir/summary" ||
-    fail "the homebrew step passed an assertion it couldn't read: $(<"$brew_dir/summary")"
-for form in "assert_match('delivered a test event', shell_output(\"#{bin}/pixtuoid doctor\"))" \
-    "assert_match(/delivered/, shell_output(\"#{bin}/pixtuoid doctor\"))" \
-    "assert_match version.to_s, shell_output(\"#{bin}/pixtuoid doctor\")"; do
-    assert_brew "an assertion of another form: $form" "  test do
-    $form
-  end" 1
-    grep -q "can't read: assert_match" "$brew_dir/summary" ||
-        fail "the homebrew step passed an assertion it couldn't read: $(<"$brew_dir/summary")"
-done
-assert_brew "the version line, transformed" $'  test do\n    '"$delivered"$' doctor")\n    assert_match version.to_s, shell_output("#{bin}/pixtuoid --version").split.first\n  end' 1
-grep -q "can't read: assert_match version.to_s, .*split.first" "$brew_dir/summary" ||
-    fail "the homebrew step passed a version line it doesn't replay: $(<"$brew_dir/summary")"
-assert_brew "a literal assertion, transformed" $'  test do\n    '"$delivered"$' doctor").lines.first\n  end' 1
-grep -q "can't read: assert_match \"delivered a test event\", .*lines.first" "$brew_dir/summary" ||
-    fail "the homebrew step replayed a transformed assertion as plain: $(<"$brew_dir/summary")"
-assert_brew "text this tree prints to stderr alone" $'  test do\n    '"$delivered"$' loud")\n  end' 1
-grep -q 'loud.*print "delivered a test event"' "$brew_dir/summary" ||
-    fail "the homebrew step matched text off stdout: $(<"$brew_dir/summary")"
+grep -q "could not fetch" "$brew_dir/summary" || fail "the homebrew step's summary didn't say why: $(<"$brew_dir/summary")"
+assert_brew "the committed formula, bumped" "$bumped" 0
+assert_brew "a formula homebrew-core changed" "${bumped/delivered a test event/a reworded line}" 1
+{ grep -q '^-.*a reworded line' "$brew_dir/summary" && grep -q '^+.*delivered a test event' "$brew_dir/summary"; } ||
+    fail "the homebrew step's summary didn't carry the diff: $(<"$brew_dir/summary")"
 
 # ── apt-install: a failed or stalled update or download retries under the
 # action's own bound, and the install never runs under it or after a failed
