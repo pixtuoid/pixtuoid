@@ -146,7 +146,7 @@ pub(crate) struct ListWindow {
 /// Window a `list_len`-row list into a `viewport`-row region, following `selected`
 /// from `scroll`. On overflow, reserve the last line for the `⋮ N more ▾` cue —
 /// UNLESS the selection has reached the end (nothing below), then use the full
-/// viewport and drop the cue.
+/// viewport and drop the cue, as a zero viewport, which has no line for it, does.
 pub(crate) fn window_range(
     list_len: usize,
     selected: Option<usize>,
@@ -161,7 +161,7 @@ pub(crate) fn window_range(
         viewport
     };
     let probe = clamp_scroll_idx(selected, scroll, reserved);
-    let show_cue = overflow && list_len > probe + reserved;
+    let show_cue = overflow && viewport > 0 && list_len > probe + reserved;
     let window = if show_cue { reserved } else { viewport };
     let start = clamp_scroll_idx(selected, scroll, window);
     ListWindow {
@@ -249,6 +249,17 @@ impl Panel<'_> {
     /// exist — for a width-dependent row builder (word-wrap, marquee).
     pub(crate) fn inner_width(bounds: Rect, content_w: u16) -> Option<u16> {
         panel_inner_width(bounds, content_w, Self::SCALE)
+    }
+
+    /// The tallest inner content HEIGHT `bounds` gives a panel `content_w` wide,
+    /// before its bands exist — for a band sized to what the bounds can hold.
+    pub(crate) fn max_inner_height(
+        bounds: Rect,
+        content_w: u16,
+        title: Option<&str>,
+    ) -> Option<u16> {
+        PanelGeometry::compute(bounds, content_w, u16::MAX, title, Self::SCALE)
+            .map(|g| g.inner().height)
     }
 
     /// Frame (backing, title), window the `list` band, and append the overflow
@@ -594,6 +605,14 @@ mod tests {
         let w = window_range(20, Some(0), 0, 6);
         assert_eq!((w.start, w.count), (0, 5));
         assert_eq!(w.cue, Some(15));
+    }
+
+    /// The band's other rows can take the whole inner, and a cue there would push
+    /// the last of them past its clip.
+    #[test]
+    fn window_range_shows_no_cue_without_a_line_for_it() {
+        let w = window_range(20, Some(0), 0, 0);
+        assert_eq!((w.count, w.cue), (0, None));
     }
 
     #[test]
