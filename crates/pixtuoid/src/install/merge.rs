@@ -639,7 +639,7 @@ mod tests {
         let moved = merge_install(&owner, cmd).unwrap();
         assert!(moved.changed, "{}", moved.content);
         let again = merge_install(&moved.content, cmd).unwrap();
-        assert!(!again.changed, "{}", moved.content);
+        assert!(!again.changed, "{}", again.content);
         assert_eq!(again.content, moved.content);
     }
 
