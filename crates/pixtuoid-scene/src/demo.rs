@@ -51,16 +51,16 @@ impl Cue {
         self.land_on(origin + self.at(), 0, reducer, scene);
     }
 
-    /// Land it at `now` in loop `lap`, whose calls it names apart from every
-    /// other lap's: the reducer counts an id once, so a replayed one would add
-    /// no call to its agent's count or the day's.
+    /// Land it at `now` in loop `lap`, whose calls and readings it names apart
+    /// from every other lap's: the reducer counts an id once, so a replayed one
+    /// would add nothing to its agent's counts or the day's.
     fn land_on(&self, now: SystemTime, lap: u128, reducer: &mut Reducer, scene: &mut SceneState) {
         match self {
             Cue::Event {
                 transport, event, ..
             } => {
                 let mut event = event.clone();
-                if let Some(id) = call_id(&mut event) {
+                if let Some(id) = counted_id(&mut event) {
                     id.push_str(&format!("#{lap}"));
                 }
                 reducer.apply(scene, event, now, *transport);
@@ -75,8 +75,9 @@ impl Cue {
     }
 }
 
-/// The call id `event` names, whichever field carries it.
-fn call_id(event: &mut AgentEvent) -> Option<&mut String> {
+/// The id `event` names that the reducer counts once: a call's, wherever the
+/// event carries it, or a reading's.
+fn counted_id(event: &mut AgentEvent) -> Option<&mut String> {
     match event {
         AgentEvent::ToolUseStart {
             tool_use_id: Some(id),
@@ -95,6 +96,10 @@ fn call_id(event: &mut AgentEvent) -> Option<&mut String> {
         }
         | AgentEvent::UserActionResolved {
             by: Resolution::Call(id),
+            ..
+        }
+        | AgentEvent::Usage {
+            reading_id: Some(id),
             ..
         } => Some(id),
         _ => None,
@@ -326,7 +331,8 @@ pub struct Playhead {
     origin: SystemTime,
     /// The current loop's next cue.
     cursor: usize,
-    /// Loops since `started`.
+    /// Loops played, which name each lap's calls apart. A skip plays on in the
+    /// lap it interrupts, so a call open across it still ends.
     lap: u128,
 }
 
@@ -342,19 +348,16 @@ impl Playhead {
     }
 
     /// Land every cue due by `now` at its own instant, then sweep as a live
-    /// office's reducer task would. A gap of two loops or more replays only the
-    /// last whole loop and the current one, in phase: a fresh playhead's first
-    /// call fills the office it would show at `now`.
+    /// office's reducer task would. A gap of two loops or more jumps whole
+    /// loops, in phase, and finishes the loop under way in the last one before
+    /// `now`: a fresh playhead's first call fills the office it would show then.
     pub fn advance(&mut self, now: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
         let period = self.script.period;
         let loops = now
             .duration_since(self.origin)
             .map_or(0, |elapsed| elapsed.as_nanos() / period.as_nanos());
         if loops >= 2 {
-            let skipped = loops - 1;
-            self.origin += Duration::from_nanos_u128(skipped * period.as_nanos());
-            self.lap += skipped;
-            self.cursor = 0;
+            self.origin += Duration::from_nanos_u128((loops - 1) * period.as_nanos());
         }
         loop {
             while let Some(cue) = self.script.cues.get(self.cursor) {

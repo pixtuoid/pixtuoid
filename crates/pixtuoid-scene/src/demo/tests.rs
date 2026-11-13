@@ -227,10 +227,19 @@ fn a_script_orders_its_cues_by_phase_ties_in_authored_order() {
     assert_eq!(script.cues, [start, ask, end, past_the_seam]);
 }
 
-/// A loop's calls count again every lap, on the agent and on the day's tally.
+/// A loop's calls and named readings count again every lap, on the agent and
+/// on the day's tally.
 #[test]
 fn a_replayed_loop_counts_its_calls_again() {
-    let mut cues = vec![lead().start(ms(0))];
+    let mut cues = vec![
+        lead().start(ms(0)),
+        lead().caught_up(ms(0)),
+        Cue::Event {
+            at: ms(500),
+            transport: Transport::Jsonl,
+            event: AgentEvent::usage(lead().id(), 100, Some("reading".to_owned())),
+        },
+    ];
     cues.extend(lead().spell(ms(1_000), 3, &["Bash: cargo test"]));
     let mut host = Host {
         playhead: Playhead::new(Script::new(PERIOD, cues), t0()),
@@ -239,14 +248,12 @@ fn a_replayed_loop_counts_its_calls_again() {
     };
     for lap in 1..=3u32 {
         let scene = host.at(t0() + PERIOD * lap - ms(1));
+        let slot = &scene.agents[&lead().id()];
+        assert_eq!(slot.tool_call_count, 3 * lap, "lap {lap}");
+        assert_eq!(slot.tokens_used, 100 * u64::from(lap), "lap {lap}");
         assert_eq!(
-            scene.agents[&lead().id()].tool_call_count,
-            3 * lap,
-            "lap {lap}"
-        );
-        assert_eq!(
-            scene.today.map(|today| today.tool_calls),
-            Some(u64::from(3 * lap)),
+            scene.today.map(|today| (today.tool_calls, today.tokens)),
+            Some((u64::from(3 * lap), 100 * u64::from(lap))),
             "lap {lap}"
         );
     }
@@ -359,17 +366,21 @@ fn a_call_across_the_seam_runs_from_its_start_through_the_wrap() {
     }
 }
 
-/// The first loop's wrapped End has no Start before it: the reducer ignores
-/// it, and it doesn't eat that loop's own Start of the call.
+/// The first loop's wrapped End belongs to a loop before `started`, so it
+/// never lands: landed inside the hook-wins window before its own loop's
+/// Start, it would drop that Start as an already-ended call.
 #[test]
-fn the_first_loop_ignores_a_wrapped_end_and_still_runs_its_start() {
-    let (_, cues) = cast();
+fn the_first_loop_never_lands_a_wrapped_end_and_still_runs_its_start() {
+    use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
+    let start = ms(2_000);
+    let early = HOOK_WINS_WINDOW / 2;
+    let mut cues = vec![lead().start(ms(0))];
+    cues.extend(lead().delegate(start, PERIOD - early));
     assert_eq!(
-        state(&fresh(cues.clone(), ms(600)), &lead()),
+        state(&fresh(cues.clone(), start - early), &lead()),
         ActivityState::Idle
     );
-    let caught_up = fresh(cues, PERIOD - ms(300));
-    assert_eq!(kind(&caught_up, &lead()), Some(ToolKind::Read));
+    assert_eq!(kind(&fresh(cues, start), &lead()), Some(ToolKind::Task));
 }
 
 #[test]
@@ -395,7 +406,7 @@ fn nothing_lands_before_the_script_starts() {
 }
 
 #[test]
-fn a_long_gap_replays_the_last_whole_loop_in_phase() {
+fn a_long_gap_jumps_whole_loops_in_phase() {
     let (_, mut cues) = cast();
     cues.extend([lead().caught_up(ms(0)), lead().usage(ms(10_000), 1)]);
     let mut host = Host::new(cues, t0());
@@ -409,6 +420,20 @@ fn a_long_gap_replays_the_last_whole_loop_in_phase() {
         "one loop replayed"
     );
     assert!(scene.agents.len() >= 3, "{}", scene.agents.len());
+}
+
+/// A call open when the clock jumps still ends: the jump plays on in the lap
+/// it interrupts, so the End names the Start that landed.
+#[test]
+fn a_call_open_across_a_long_gap_still_ends() {
+    let mut cues = vec![lead().start(ms(0))];
+    cues.extend(lead().spell(ms(1_000), 1, &["Bash: cargo test"]));
+    cues.extend(lead().spell(ms(20_000), 1, &["Read: src/lib.rs"]));
+    let mut host = Host::new(cues, t0());
+    let open = host.at(t0() + ms(1_500)).clone();
+    assert_eq!(kind(&open, &lead()), Some(ToolKind::Bash), "premise");
+    let after = host.at(t0() + PERIOD * 10 + ms(30_000));
+    assert_eq!(state(after, &lead()), ActivityState::Idle);
 }
 
 #[test]
