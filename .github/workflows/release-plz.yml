@@ -68,26 +68,26 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
       # homebrew-core's formula builds and tests every release on its autobump,
       # and the owner was told to release before updating it
-      # (CONTRIBUTING.md#releasing), so a miss can't hold the release: it names
-      # the update that step 4 there sends after the tag.
+      # (CONTRIBUTING.md#releasing), so a difference can't hold the release:
+      # step 4 there settles it after the tag.
       - name: homebrew-core's formula is the one packaging-build tests
         env:
           COMMITTED: .github/actions/packaging-build/pixtuoid.rb
         run: |
           set -euo pipefail
-          owe() {
-            printf '### homebrew-core formula update owed after the tag (CONTRIBUTING.md#releasing)\n\n%s\n' "$2" >>"$GITHUB_STEP_SUMMARY"
+          report() {
+            printf '### homebrew-core formula (CONTRIBUTING.md#releasing)\n\n%s\n\n%s\n' "$1" "$2" >>"$GITHUB_STEP_SUMMARY"
             echo "::warning::$1"
           }
           if ! live="$(curl -fsSL --retry 3 \
             https://raw.githubusercontent.com/Homebrew/homebrew-core/HEAD/Formula/p/pixtuoid.rb)"; then
-            owe "could not fetch homebrew-core's formula; compare it with $COMMITTED by hand" ""
+            report "could not fetch homebrew-core's formula; compare it with $COMMITTED by hand" ""
             exit 0
           fi
           # The autobump writes url and sha256, and the bottle block is homebrew-core's own.
           theirs="$(sed -e '/^  url "/d' -e '/^  sha256 "/d' -e '/^  bottle do$/,/^  end$/d' <<<"$live" | cat -s)"
           if ! drift="$(diff -u --label homebrew-core --label "$COMMITTED" <(printf '%s\n' "$theirs") "$COMMITTED")"; then
-            owe "homebrew-core's formula differs from $COMMITTED" "$(printf '~~~diff\n%s\n~~~' "$drift")"
+            report "homebrew-core's formula differs from $COMMITTED" "$(printf '~~~diff\n%s\n~~~' "$drift")"
           fi
       # SHA-pinned: the step sees the PAT (release-plz's security.md), and the
       # SHA also pins the release-plz binary the action installs. Dependabot

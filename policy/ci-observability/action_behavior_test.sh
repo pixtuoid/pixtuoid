@@ -221,6 +221,7 @@ bumped="$(awk '{ print }
     /^  homepage / { print "  url \"https://example.invalid/v1.tar.gz\""; print "  sha256 \"00\"" }
     /^  head / { print ""; print "  bottle do"; print "    sha256 cellar: :any, arm64_tahoe: \"00\""; print "  end" }' "$brew_committed")"
 assert_brew "a failed fetch" "" 1
+grep -q "could not fetch" "$brew_dir/summary" || fail "the homebrew step's summary didn't say why: $(<"$brew_dir/summary")"
 assert_brew "the committed formula, bumped" "$bumped" 0
 assert_brew "a formula homebrew-core changed" "${bumped/delivered a test event/a reworded line}" 1
 { grep -q '^-.*a reworded line' "$brew_dir/summary" && grep -q '^+.*delivered a test event' "$brew_dir/summary"; } ||

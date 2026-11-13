@@ -627,8 +627,8 @@ mod tests {
         ));
     }
 
-    /// Where the endpoint is the owned fallback a fresh machine never made, as
-    /// under brew's `test do`, the probe makes it as the office's bind would.
+    /// Where the endpoint is the owned fallback a fresh machine never made, the
+    /// probe makes it as the office's bind would.
     #[cfg(unix)]
     #[test]
     fn a_probe_beside_a_fresh_owned_fallback_makes_it() {

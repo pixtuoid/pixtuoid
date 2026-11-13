@@ -79,8 +79,9 @@ a lint to dodge the bump.
    publishes the draft, and publishes the npm packages. The crates.io and npm
    jobs each wait for an approval from the `release` environment's reviewer,
    crates.io first. The tag also starts a homebrew-core autobump.
-4. **If the dispatch's run summary listed an owed homebrew-core formula
-   update**, open a PR there once the tag exists that applies its diff.
+4. **If the dispatch's run summary showed homebrew-core's formula differing**,
+   send each hunk this tree's `pixtuoid.rb` made there as a PR once the tag
+   exists, and bring each one homebrew-core made into `pixtuoid.rb` here.
 
 The crates.io upload happens in the `release` job on the merge push, which
 first waits for that commit's own `ci-gate`: a failure or timeout publishes
@@ -110,7 +111,7 @@ sandboxes included, so a new system-library dependency or a `test do` this tree
 breaks (see the "homebrew-core contract" comments) reds there and is fixed in
 that file. A dispatch warns with the diff wherever homebrew-core's copy differs,
 and never fails, because the owner, who sent a test update before its release,
-was told to release first (no public record); step 4 sends it.
+was told to release first (no public record); step 4 settles it.
 
 Do not try to preempt BrewTestBot: the formula is on homebrew-core's
 autobump list, so `brew bump-formula-pr pixtuoid` refuses by policy and the
