@@ -54,7 +54,7 @@ fn walkable_debug_toggle_tints_blocked_pixels_and_is_reversible() {
 /// 80 columns is the classic default and `min_terminal_size().1` is the tightest HEIGHT
 /// that lays out the office at all — so it is also the tightest the popup must render
 /// whole on: title and link both reach the frame. Not the tightest width: the panel
-/// saturates at `VERSION_POPUP_W`, narrower wraps by design.
+/// saturates at `VERSION_POPUP_W`, narrower truncates by design.
 #[test]
 fn the_version_popup_renders_whole_on_a_classic_terminal() {
     let version = env!("CARGO_PKG_VERSION");
