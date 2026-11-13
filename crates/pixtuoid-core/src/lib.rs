@@ -45,6 +45,9 @@
 /// The offline decode→reduce driver every test/tool that feeds real wire bytes
 /// through the production path rides.
 #[cfg(feature = "harness")]
+// cargo-semver-checks enables this feature too (its README's feature
+// heuristic), and checks no item docs hide.
+#[doc(hidden)]
 pub mod harness;
 /// Agent identity: the `AgentId` session key and its path/parts derivations.
 pub mod id;
