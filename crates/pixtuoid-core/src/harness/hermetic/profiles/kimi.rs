@@ -1,4 +1,5 @@
-//! kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.2.0`.
+//! kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.2.0`
+//! unless a cite names its own ref.
 
 use super::{AIMOCK_V1, hook_event_name};
 use crate::harness::hermetic::{Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui};
