@@ -1434,8 +1434,8 @@ mod tests {
     }
 
     /// `name`'s sample reads as `value`, the value it was written from, and
-    /// `value` writes everything a v1 reader reads of it.
-    fn holds<T: PartialEq + fmt::Debug>(
+    /// `value` writes everything a v1 reader reads of it; `name` back for the census.
+    fn assert_holds<T: PartialEq + fmt::Debug>(
         name: &'static str,
         value: T,
         read: impl Fn(&[u8]) -> Option<T>,
@@ -1465,10 +1465,12 @@ mod tests {
         let version = format!("{}\n", v1_sample("version"));
         assert_eq!(version_reply().expect("it encodes"), version);
 
-        let hello = |name, value| holds(name, value, |b| Hello::from_line(b).ok(), Hello::line);
-        let reply = |name, value| holds(name, value, |b| Reply::from_line(b).ok(), Reply::line);
+        let hello =
+            |name, value| assert_holds(name, value, |b| Hello::from_line(b).ok(), Hello::line);
+        let reply =
+            |name, value| assert_holds(name, value, |b| Reply::from_line(b).ok(), Reply::line);
         let ask = |name, value| {
-            holds(
+            assert_holds(
                 name,
                 value,
                 |b| serde_json::from_slice(b).ok(),
@@ -1476,7 +1478,7 @@ mod tests {
             )
         };
         let answer = |name, value| {
-            holds(
+            assert_holds(
                 name,
                 value,
                 Answer::from_line,
@@ -1485,7 +1487,7 @@ mod tests {
         };
         let machine = |name, os| {
             let value = Machine::new("studio", os);
-            holds(
+            assert_holds(
                 name,
                 value,
                 |b| serde_json::from_slice(b).ok(),
