@@ -88,11 +88,7 @@ fn config_toml() -> Result<PathBuf> {
 
 /// Codex is present when its config is: an empty ~/.codex says nothing.
 pub(crate) fn detect_installed() -> bool {
-    match pixtuoid_core::source::codex::codex_home() {
-        // Its row stays connectable, and connect names the variable.
-        Err(CodexHomeUnresolved::NotADirectory(_)) => true,
-        _ => config_toml().is_ok_and(|p| crate::install::target::config_present(&p)),
-    }
+    config_toml().is_ok_and(|p| crate::install::target::config_present(&p))
 }
 
 /// The Codex hook `command`. Codex runs it under a shell (`/bin/sh -lc` on Unix,
@@ -359,17 +355,17 @@ _pixtuoid = true
     }
 
     #[test]
-    fn a_codex_home_that_is_no_directory_reads_present() {
+    fn a_codex_home_that_is_no_directory_reads_absent() {
         let probe = crate::install::target::CODEX.presence_probe;
         let tmp = tempfile::tempdir().unwrap();
+        // Codex can't start under it, so setup and onboarding must not offer it.
         temp_env::with_var("CODEX_HOME", Some(tmp.path().join("codx")), || {
-            assert!(
-                probe(),
-                "its row must offer the connect that names CODEX_HOME"
-            );
+            assert!(!probe(), "a CODEX_HOME that is no directory");
         });
         temp_env::with_var("CODEX_HOME", Some(tmp.path()), || {
             assert!(!probe(), "a CODEX_HOME holding no config.toml");
+            std::fs::write(tmp.path().join("config.toml"), "").unwrap();
+            assert!(probe(), "a CODEX_HOME holding its config.toml");
         });
     }
 

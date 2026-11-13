@@ -791,7 +791,7 @@ fn collect_roots() -> Vec<RootStatus> {
                 .map(|v| (v, pixtuoid_core::platform::path_env(v).is_some()));
             let root = match pixtuoid_core::source::resolved_source_root(d.name) {
                 Some(root) => root,
-                // The set override that resolves no root is what the row alarms on.
+                // Codex's set CODEX_HOME that is no directory keeps its row, so the $CODEX_HOME alarm fires.
                 None if d.name == codex::SOURCE_NAME => match codex::codex_home() {
                     Err(codex::CodexHomeUnresolved::NotADirectory(set)) => set,
                     _ => return None,
@@ -2257,7 +2257,7 @@ mod tests {
     }
 
     #[test]
-    fn a_set_override_that_resolves_no_root_keeps_its_row_and_alarm() {
+    fn a_codex_home_that_is_no_directory_keeps_its_root_row_and_alarm() {
         let home = tempfile::tempdir().unwrap();
         let missing = home.path().join("codx");
         let vars = [

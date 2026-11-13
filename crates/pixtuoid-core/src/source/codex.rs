@@ -542,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn a_set_codex_home_that_is_no_dir_names_no_home() {
+    fn a_set_codex_home_that_is_no_dir_is_not_a_directory() {
         let tmp = tempfile::tempdir().unwrap();
         let missing = tmp.path().join("missing");
         let home = Some(PathBuf::from("/home/u"));
