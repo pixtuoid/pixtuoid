@@ -22,7 +22,6 @@ use pixtuoid_core::source::copilot::CopilotSource;
 use pixtuoid_core::source::daemon::{self, PresenceMsg};
 use pixtuoid_core::source::grok::GrokSource;
 use pixtuoid_core::source::hook::HookRouter;
-use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::omp::OmpSource;
 use pixtuoid_core::state::MAX_FLOORS;
 use pixtuoid_core::{Reducer, SceneState, TaggedReceiver};
@@ -141,35 +140,16 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
     }
 }
 
-/// Build the runtime source set `run_async` spawns — the ONE place that set is
-/// constructed. Imperative rather than a registry-driven loop: cc, codex and
-/// grok share one `ChildEndUnclaims` the others don't take. Hook-only sources + the daemon (OpenClaw) are absent by
-/// design — they ride the router's shared socket.
+/// Build the source set [`spawn_pipeline`](super::pipeline::spawn_pipeline)
+/// spawns — the ONE place that set is constructed. Hook-only sources + the
+/// daemon (OpenClaw) are absent by design — they ride the router's shared
+/// socket.
 pub(crate) fn build_source_set(
     socket_path: PathBuf,
     presence_tx: Option<daemon::PresenceSender>,
     connected: ConnectedSources,
 ) -> Vec<Box<dyn DynSource>> {
-    // The hook tee is the sole PRODUCER, and each watcher drains only ids whose
-    // transcripts it claims (AgentId is source-namespaced), so a Codex child waits
-    // for the Codex watcher even though the router decoded its hook.
-    let child_end_unclaims = ChildEndUnclaims::new();
-    let cc_src = ClaudeCodeSource::default_paths().map(|src| ClaudeCodeSource {
-        child_end_unclaims: Some(child_end_unclaims.clone()),
-        ..src
-    });
-    let codex_src = CodexSource::default_paths().map(|src| CodexSource {
-        child_end_unclaims: Some(child_end_unclaims.clone()),
-        ..src
-    });
-
-    // grok consumes too: its subagent_stop/end hooks decode to Hook-transport
-    // `SessionEnd{as_child:true}`, the tee's trigger.
-    let mut grok_src = GrokSource::default_paths();
-    grok_src.child_end_unclaims = Some(child_end_unclaims.clone());
-
     let hook_router = HookRouter::new(socket_path)
-        .with_child_end_unclaims(Some(child_end_unclaims))
         .with_presence_tx(presence_tx)
         .with_connected(connected);
 
@@ -178,12 +158,12 @@ pub(crate) fn build_source_set(
     }
     [
         Some(boxed(hook_router)),
-        cc_src.map(boxed),
+        ClaudeCodeSource::default_paths().map(boxed),
         AntigravitySource::default_paths().map(boxed),
-        codex_src.map(boxed),
+        CodexSource::default_paths().map(boxed),
         CopilotSource::default_paths().map(boxed),
         OmpSource::default_paths().map(boxed),
-        Some(boxed(grok_src)),
+        Some(boxed(GrokSource::default_paths())),
     ]
     .into_iter()
     .flatten()
@@ -723,7 +703,7 @@ mod tests {
             .collect();
         assert_eq!(
             transcript_built, expected,
-            "run_async's transcript-source wiring diverged from the registry: a \
+            "build_source_set's transcript sources diverged from the registry: a \
              transcript-bearing source is registered but not built (it would never \
              spawn), or a built source isn't registered"
         );

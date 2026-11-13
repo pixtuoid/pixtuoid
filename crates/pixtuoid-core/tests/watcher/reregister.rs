@@ -8,7 +8,6 @@ use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::Source;
 use pixtuoid_core::source::Transport;
 use pixtuoid_core::source::codex::CodexSource;
-use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 
 use crate::today::spawn_source;
 use crate::{
@@ -17,9 +16,9 @@ use crate::{
 };
 
 #[tokio::test]
-async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
+async fn in_flight_multi_turn_codex_child_revives_and_relinks_on_its_next_turn() {
     use pixtuoid_core::source::decoder::decode_hook_payload;
-    use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, EXIT_GRACE_WINDOW};
+    use pixtuoid_core::state::reducer::{CHILD_END_GATE_TTL, EXIT_GRACE_WINDOW, STRAGGLER_TTL};
     use pixtuoid_core::{Reducer, SceneState};
 
     fast_watch();
@@ -65,11 +64,7 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
         "first life: the child registers with the parent link"
     );
 
-    let unclaims = ChildEndUnclaims::new();
-    let src = CodexSource {
-        sessions_root,
-        child_end_unclaims: Some(unclaims.clone()),
-    };
+    let src = CodexSource { sessions_root };
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
     let watcher_task = tokio::spawn(async move { Box::new(src).run(tx).await });
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -103,7 +98,6 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
             "_pixtuoid_source": "codex",
         }),
     );
-    unclaims.push(child);
     r.tick(
         &mut scene,
         SystemTime::now() + EXIT_GRACE_WINDOW + Duration::from_secs(1),
@@ -113,18 +107,19 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
         "the child's first life is GC'd after the SubagentStop"
     );
 
-    // The un-claim drain walks bytes already written under the still-held
-    // claim, and emits nothing when none are: so a straggler line comes first,
-    // its re-sent start the drain's one sign, and turn N+1 is appended after it.
+    // Turn N+1 is appended only after the straggler's read, so each is a read
+    // of its own.
     append(&rollout, &format!("{work}\n"));
     let straggler = collect_until(
         &mut rx,
-        "the drain walks the straggler under the held claim",
+        "the straggler re-sends the held claim's start",
         |e| start_id(e) == Some(child),
     )
     .await;
     for (transport, ev) in straggler {
-        r.apply(&mut scene, ev, SystemTime::now(), transport);
+        // Past the #242 straggler window, so only the #244 gate refuses it.
+        let late = SystemTime::now() + STRAGGLER_TTL + Duration::from_secs(1);
+        r.apply(&mut scene, ev, late, transport);
     }
     assert!(
         !scene.agents.contains_key(&child),
@@ -133,7 +128,7 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
     append(&rollout, &format!("{work}\n"));
     let revival = collect_until(
         &mut rx,
-        "turn N+1 must re-register the child through the released claim",
+        "turn N+1 must re-send the held claim's start",
         |e| start_id(e) == Some(child),
     )
     .await;
@@ -144,7 +139,7 @@ async fn in_flight_multi_turn_codex_child_revives_and_relinks_via_unclaim() {
     }
     assert!(
         scene.agents.contains_key(&child),
-        "turn N+1 must re-register the child through the released claim"
+        "turn N+1 must re-register the child"
     );
     assert_eq!(
         scene.agents.get(&child).map(|s| s.parent_id),

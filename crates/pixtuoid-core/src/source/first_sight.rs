@@ -23,9 +23,9 @@ pub(crate) enum Sight {
     /// admits re-registers it, so a slot the reducer forgot comes back.
     Claimed(Registration),
     /// Its session ended: the last lifecycle evidence of a read or of an
-    /// oversized span's tail is its end, or a child-end un-claim. The path
-    /// stays KNOWN, so the watcher's re-vouch won't replay it however live the
-    /// probe says the (still-open) rollout is.
+    /// oversized span's tail is its end. The path stays KNOWN, so the watcher's
+    /// re-vouch won't replay it however live the probe says the (still-open)
+    /// transcript is.
     Ended,
 }
 

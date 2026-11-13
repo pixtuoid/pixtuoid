@@ -5,12 +5,6 @@ use serde::{Deserialize, Serialize};
 use crate::id::AgentId;
 use crate::state::TurnKey;
 
-/// Backpressure bound for the workspace-wide `(Transport, AgentEvent)` event
-/// channel — the ONE place this capacity is defined. The runtime reducer feed
-/// and the hook tee both size their channels from this, so the tee adds a
-/// stage rather than a different backpressure policy.
-pub const EVENT_CHANNEL_CAPACITY: usize = 256;
-
 /// The transcript watcher's poll backstop — also the cadence profile rescans
 /// ride, so "how often we look at the filesystem" has one authority. Ungated,
 /// because it also bounds how far a transcript lags its write for the state

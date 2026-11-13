@@ -448,7 +448,7 @@ pub(super) async fn revouch_gated_files(decoders: SourceDecoders, ctx: &WatchCtx
     };
     for (path, cursor) in candidates {
         // ANY entry skips: registered ones leave the candidate set (so this cannot
-        // loop), and replaying a RELEASED, still-vouched child bursts stale activity.
+        // loop), and replaying an ENDED, still-vouched one bursts stale activity.
         if ctx.seen.lock().await.contains_key(&path) {
             continue;
         }

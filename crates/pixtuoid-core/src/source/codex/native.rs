@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 
 use super::{CodexHomeUnresolved, SOURCE_NAME, codex_home, codex_id_from_path};
-use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
+use crate::source::jsonl::{JsonlWatcher, ProbeSnapshot};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
 
@@ -43,10 +43,6 @@ fn is_rollout_filename(path: &Path) -> bool {
 pub struct CodexSource {
     /// The watched Codex `sessions` rollout root (`~/.codex/sessions`).
     pub sessions_root: PathBuf,
-    /// The child-end un-claim side-channel (#246) — Codex is consumer-only:
-    /// this watcher releases an ended child's rollout claim so a multi-turn
-    /// child's turn-N+1 append re-registers. `None` disables it.
-    pub child_end_unclaims: Option<ChildEndUnclaims>,
 }
 
 impl CodexSource {
@@ -55,7 +51,6 @@ impl CodexSource {
     pub fn default_paths() -> Option<Self> {
         Some(Self {
             sessions_root: sessions_root().ok()?,
-            child_end_unclaims: None,
         })
     }
 }
@@ -66,13 +61,11 @@ impl Source for CodexSource {
     }
 
     async fn run(self: Box<Self>, tx: TaggedSender) -> Result<()> {
-        let mut watcher = JsonlWatcher::new(self.sessions_root.clone(), SOURCE_NAME.to_string())
+        JsonlWatcher::new(self.sessions_root.clone(), SOURCE_NAME.to_string())
             .context("no transcript row")?
-            .with_root_probe(live_codex_rollout_ids);
-        if let Some(unclaims) = &self.child_end_unclaims {
-            watcher = watcher.with_child_end_unclaims(unclaims.clone());
-        }
-        watcher.run(tx).await
+            .with_root_probe(live_codex_rollout_ids)
+            .run(tx)
+            .await
     }
 }
 

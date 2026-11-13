@@ -200,14 +200,6 @@ mod tests {
         assert_eq!(plan.follow, Vec::<PathBuf>::new());
     }
 
-    /// Whatever the claim says: a multi-turn codex child's claim ends at each
-    /// turn while its parent still holds the rollout open.
-    #[test]
-    fn a_known_transcript_a_live_writer_holds_is_followed() {
-        let plan = plan(&[], &paths(&["child"]), &live(&["child"]), id_for);
-        assert_eq!(plan.follow, paths(&["child"]));
-    }
-
     /// A boot knows every transcript in the initial window; only the held
     /// ones may cost an fd.
     #[test]

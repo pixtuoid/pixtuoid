@@ -7,13 +7,11 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
-use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::tap::Endpoint;
 use pixtuoid_core::source::daemon::PresenceMsg;
 use pixtuoid_core::source::hook::{
     ConnectedSources, EndpointStatus, HookRouter, HookSocketListener, OwnerStatus, endpoint_status,
 };
-use pixtuoid_core::source::jsonl::ChildEndUnclaims;
 use pixtuoid_core::source::manager::{SourceDeath, SourceManager};
 use pixtuoid_core::source::{AgentEvent, Source, TaggedReceiver, Transport};
 
@@ -157,47 +155,6 @@ async fn a_subscriber_receives_daemon_presence() {
         .expect("the gateway reaches the subscriber")
         .unwrap();
     assert_eq!(msg.key.source(), "openclaw");
-    owner.abort();
-    subscriber.abort();
-}
-
-// The #246 tee runs on a subscriber too, or its child ends go unclaimed.
-#[tokio::test]
-async fn a_subscriber_tees_child_ends() {
-    let (_dir, at) = endpoint("tee");
-    let (owner, mut owner_rx) = spawn_router(&at);
-    until_seen(&at, "owner-up", &mut [&mut owner_rx]).await;
-
-    let (tx, mut rx) = mpsc::channel(64);
-    let unclaims = ChildEndUnclaims::new();
-    let router =
-        HookRouter::new(at.path().to_path_buf()).with_child_end_unclaims(Some(unclaims.clone()));
-    let subscriber = tokio::spawn(Box::new(router).run(tx));
-    until_seen(&at, "subscribed", &mut [&mut rx]).await;
-
-    let child_uuid = "0d000000-0000-7000-8000-0000000000d1";
-    let child = AgentId::from_parts("codex", child_uuid);
-    let mut stop = serde_json::to_vec(&serde_json::json!({
-        "hook_event_name": "SubagentStop",
-        "session_id": "parent-sess",
-        "agent_id": child_uuid,
-        "_pixtuoid_source": "codex",
-    }))
-    .unwrap();
-    stop.push(b'\n');
-    at.send(&stop).await.unwrap();
-
-    tokio::time::timeout(PATIENCE, async {
-        loop {
-            let (_, ev) = rx.recv().await.expect("the router must stay alive");
-            if matches!(ev, AgentEvent::SessionEnd { .. }) {
-                return;
-            }
-        }
-    })
-    .await
-    .expect("the child end reaches the subscriber");
-    assert_eq!(unclaims.take_matching(|id| *id == child), vec![child]);
     owner.abort();
     subscriber.abort();
 }

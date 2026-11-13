@@ -123,8 +123,9 @@ pub(crate) fn spawn_pipeline(
     let presence_exit_watch = daemon::spawn_presence_exit_watch(presence_tx.clone());
     let sources = build_source_set(socket_path, Some(presence_tx), connected.clone());
 
-    let (tx, rx) =
-        mpsc::channel::<(Transport, AgentEvent)>(pixtuoid_core::source::EVENT_CHANNEL_CAPACITY);
+    /// Backpressure bound on the sources' feed into the reducer.
+    const EVENT_CHANNEL_CAPACITY: usize = 256;
+    let (tx, rx) = mpsc::channel::<(Transport, AgentEvent)>(EVENT_CHANNEL_CAPACITY);
     let (floor_caps, caps_rx) = watch::channel(boot_caps);
     tokio::spawn(reducer_task(
         rx,

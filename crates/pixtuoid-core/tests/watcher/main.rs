@@ -1,10 +1,10 @@
 mod attach;
 mod first_sight;
 mod liveness;
+mod reregister;
 mod sources;
 mod tailing;
 mod today;
-mod unclaim;
 mod wait;
 
 use std::path::{Path, PathBuf};

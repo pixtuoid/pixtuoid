@@ -117,7 +117,6 @@ const OWNERS: &[(&str, Owner)] = &[
     ("jsonl/mod.rs", Owner::Nobody(PATH_AXIS)),
     ("jsonl/health.rs", Owner::Nobody(PATH_AXIS)),
     ("jsonl/liveness.rs", Owner::Nobody(PATH_AXIS)),
-    ("jsonl/unclaim.rs", Owner::Nobody(PATH_AXIS)),
     ("jsonl/walk.rs", Owner::Nobody(PATH_AXIS)),
     ("drift.rs", Owner::Nobody("the breadcrumb's own log fields")),
     ("hook/mod.rs", Owner::Nobody(OUR_SHIM)),

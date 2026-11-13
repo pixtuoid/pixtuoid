@@ -24,10 +24,7 @@ async fn codex_source_run_emits_events_from_rollout() {
     let transcript = sessions_root.join(format!("rollout-2026-05-29T22-36-52-{uuid}.jsonl"));
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let src = CodexSource {
-        sessions_root,
-        child_end_unclaims: None,
-    };
+    let src = CodexSource { sessions_root };
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -110,10 +107,7 @@ async fn claude_code_source_run_emits_session_start_from_jsonl() {
     let transcript = project_dir.join("ses-cc.jsonl");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let src = ClaudeCodeSource {
-        projects_root,
-        child_end_unclaims: None,
-    };
+    let src = ClaudeCodeSource { projects_root };
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -158,10 +152,7 @@ async fn claude_code_source_run_emits_usage_from_jsonl() {
     let transcript = project_dir.join("ses-cu.jsonl");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let src = ClaudeCodeSource {
-        projects_root,
-        child_end_unclaims: None,
-    };
+    let src = ClaudeCodeSource { projects_root };
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -276,10 +267,7 @@ async fn grok_source_run_emits_events_from_updates_jsonl() {
     use pixtuoid_core::AgentId;
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
-    let src = GrokSource {
-        sessions_root,
-        child_end_unclaims: None,
-    };
+    let src = GrokSource { sessions_root };
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
 
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -684,10 +672,7 @@ async fn codex_permission_hermetic_fixture_drives_the_reducer_through_its_turn()
         .join("rollout-2026-01-01T00-00-00-0a0a0a0a-0b0b-0c0c-0d0d-0e0e0e0e0e0e.jsonl");
 
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
-    let src = CodexSource {
-        sessions_root,
-        child_end_unclaims: None,
-    };
+    let src = CodexSource { sessions_root };
     let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
     tokio::time::sleep(Duration::from_millis(50)).await;
 
