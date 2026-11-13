@@ -1,0 +1,24 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 9587735768802776976
+    source: kimi
+    session_id: session_e6040c31-48d5-4dc4-be38-48c21d6442ef
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelInfo:
+    agent_id: 9587735768802776976
+    model: __kimi_env_model__
+    effort: ~
+- Identity:
+    agent_id: 9587735768802776976
+    source: kimi
+    session_id: session_e6040c31-48d5-4dc4-be38-48c21d6442ef
+    cwd: /private/tmp/pixtuoid-capture/proj
+- TurnEnd:
+    agent_id: 9587735768802776976
+- SessionEnd:
+    agent_id: 9587735768802776976
+    as_child: false

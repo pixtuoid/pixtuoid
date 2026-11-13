@@ -1,4 +1,5 @@
-//! kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.2.0`.
+//! kimi's cites are `MoonshotAI/kimi-code` at `@moonshot-ai/kimi-code@2.2.0`
+//! unless a cite names its own ref.
 
 use super::{AIMOCK_V1, hook_event_name};
 use crate::harness::hermetic::{Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui};
@@ -22,7 +23,10 @@ const TUI: tui::Tui = tui::Tui {
         keys: &[tui::Key::Esc],
         dwell: std::time::Duration::ZERO,
     }],
-    cancel: &[],
+    // Esc cancels a streaming turn
+    // (`apps/kimi-code/src/tui/controllers/editor-keyboard.ts:259-262` at
+    // `@moonshot-ai/kimi-code@2.5.3`).
+    cancel: &[tui::Key::Esc],
     quit: &[tui::Key::Text("/exit"), tui::Key::Enter],
     conpty: tui::ConPty::Renders,
 };
@@ -80,6 +84,13 @@ pub(crate) const PROFILE: Profile = Profile {
                 "Stop",
                 "SessionEnd",
             ],
+            turn: Turn::PROFILE,
+        },
+        Scenario {
+            name: "cancel",
+            shape: Shape::Cancel,
+            surface: Surface::Tui { row: &TUI },
+            expects: &["SessionStart", "Interrupt", "SessionEnd"],
             turn: Turn::PROFILE,
         },
         Scenario {

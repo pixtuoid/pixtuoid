@@ -1181,7 +1181,7 @@ mod tests {
         const GROK_TURN_ONE: &str = screen!("grok", "turn-one");
         // Each run's boot screen, then the screen each of its turns ended at:
         // the gate it answered or the reply it cancelled, where it answers one.
-        let recorded: [(&str, &str, &str, &[&str]); 21] = [
+        let recorded: [(&str, &str, &str, &[&str]); 22] = [
             ("claude-code", "permission", BOOT, &[GATE]),
             ("codex", "permission", CODEX_BOOT, &[CODEX_GATE]),
             ("codex", "cancel", CODEX_BOOT, &[CODEX_CANCEL]),
@@ -1223,6 +1223,12 @@ mod tests {
                 "permission",
                 screen!("kimi", "boot"),
                 &[screen!("kimi", "gate")],
+            ),
+            (
+                "kimi",
+                "cancel",
+                screen!("kimi", "boot"),
+                &[screen!("kimi", "cancel")],
             ),
             (
                 "grok",
