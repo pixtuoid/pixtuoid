@@ -139,8 +139,7 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<Option<runtime::QuitSi
         }
         #[cfg(feature = "serve")]
         Cmd::Serve { source, port } => {
-            // Headless's boot: no painter, and no adoption, whose consent is an
-            // interactive launch.
+            // Headless's boot: no painter.
             let rc = build_run_config(
                 crate::cli::PaintArgs::default(),
                 source,

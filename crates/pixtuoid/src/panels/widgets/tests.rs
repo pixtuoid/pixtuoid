@@ -845,3 +845,27 @@ fn grid_of_reads_a_named_colour_and_leaves_the_terminals_to_the_painter() {
     assert_eq!(colours(1), (rgb(205, 0, 0), None));
     assert_eq!(colours(2), (None, rgb(127, 127, 127)));
 }
+
+/// A release build's wrap, first-fit at ASCII spaces, in every build: optimal
+/// fit would move `bb` down, and Unicode breaking would split the ideographs to
+/// fill the row after `x`.
+#[test]
+fn wrap_options_wrap_first_fit_at_spaces_in_any_build() {
+    let width = 20;
+    let long = "a".repeat(width - 3);
+    let ideographs = "字".repeat(width / 2);
+    let wrap = |text: &str| -> Vec<String> {
+        textwrap::wrap(text, wrap_options(width))
+            .into_iter()
+            .map(std::borrow::Cow::into_owned)
+            .collect()
+    };
+    assert_eq!(
+        wrap(&format!("{long} bb cc {long}zz")),
+        [format!("{long} bb"), "cc".to_string(), format!("{long}zz")]
+    );
+    assert_eq!(
+        wrap(&format!("x {ideographs}")),
+        ["x".to_string(), ideographs]
+    );
+}

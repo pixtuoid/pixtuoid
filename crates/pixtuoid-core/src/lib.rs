@@ -46,7 +46,8 @@
 /// through the production path rides.
 #[cfg(feature = "harness")]
 // cargo-semver-checks enables this feature too (its README's feature
-// heuristic), and checks no item docs hide.
+// heuristic), and skips a path docs hide (trustfall-rustdoc-adapter's
+// `ImportablePath.public_api`).
 #[doc(hidden)]
 pub mod harness;
 /// Agent identity: the `AgentId` session key and its path/parts derivations.

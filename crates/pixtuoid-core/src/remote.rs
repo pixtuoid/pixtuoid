@@ -484,7 +484,7 @@ pub fn is_host(host: &str) -> bool {
 /// A string that isn't a [`PairLink`] this build pairs with.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum PairLinkError {
-    /// No link a server writes.
+    /// No link a server since the first release a device can pair with writes.
     #[error("not a pixtuoid pairing link")]
     NotALink,
     /// A link a server speaking wire version `v` wrote, read no further: whichever
@@ -1336,8 +1336,8 @@ mod tests {
         assert_eq!(office.machine(), None);
     }
 
-    /// A link cut short, or under a scheme no server writes, is no link: only
-    /// a version this build doesn't speak reads as more.
+    /// A link cut short, or under another scheme, is no link: only a version
+    /// this build doesn't speak reads as more.
     #[test]
     fn a_cut_or_rehomed_link_is_no_link() {
         let newer = link().to_string();

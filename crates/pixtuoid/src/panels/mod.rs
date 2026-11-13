@@ -2093,13 +2093,26 @@ mod dispatch_tests {
         std::fs::write(&cfg, "[sources]\ncopilot = true\n").unwrap();
         let connected =
             crate::runtime::ConnectedSources::new(std::iter::once("copilot".to_string()).collect());
+        let home = tempfile::TempDir::new().unwrap();
         let run = |job| {
-            run_job(JobInput {
-                job,
-                config_path: cfg.clone(),
-                connected: connected.clone(),
-                log: None,
-            })
+            temp_env::with_vars(
+                [
+                    (
+                        pixtuoid_core::platform::USER_HOME_VAR,
+                        Some(home.path().as_os_str()),
+                    ),
+                    ("CLAUDE_CONFIG_DIR", None),
+                    ("CODEX_HOME", None),
+                ],
+                || {
+                    run_job(JobInput {
+                        job,
+                        config_path: cfg.clone(),
+                        connected: connected.clone(),
+                        log: None,
+                    })
+                },
+            )
         };
         // Its connection, whichever CLIs this machine has.
         let copilot_on = |done: &JobDone| {

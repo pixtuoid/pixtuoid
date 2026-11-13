@@ -1702,8 +1702,11 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let cfg = dir.path().join("config.toml");
         std::fs::write(&cfg, "not = [valid").unwrap();
-        // FAIL_TARGET's install would name itself; the table write must stop first.
+        // FAIL_TARGET's install and uninstall would name themselves; the table
+        // write must stop either first.
         let err = connect_target(&cfg, "rollbacktest", Some(&FAIL_TARGET)).unwrap_err();
+        assert!(!err.to_string().contains("forced install failure"), "{err}");
+        let err = disconnect_target(&cfg, "rollbacktest", Some(&FAIL_TARGET)).unwrap_err();
         assert!(!err.to_string().contains("forced install failure"), "{err}");
     }
 

@@ -49,8 +49,7 @@ pub struct AppearanceFrame {
     pub shown: AppearancePick,
 }
 
-/// The version popup: whether it is open, and what it last opened with,
-/// kept past its close so the shrinking popup still shows it.
+/// The version popup: whether it is open, and what its title says.
 #[derive(Debug, Default, Clone)]
 pub struct VersionPopupFrame {
     pub open: bool,
@@ -99,8 +98,8 @@ pub(crate) struct UiState {
     /// `(fade start, the dim the open ramp was interrupted at)`.
     onboarding_closing_at: Option<(Instant, pixtuoid_scene::look::Dim)>,
     version_popup_open: bool,
-    /// [`crate::version::BootDecision::should_show_popup`], before the
-    /// onboarding could hold the popup back.
+    /// [`resolve_version_popup`]'s answer, before the onboarding could hold the
+    /// popup back.
     upgraded: bool,
     help_open: bool,
     /// The pause (toggled by [`PAUSE`](super::keys::PAUSE)): while paused, `now()`
@@ -177,11 +176,11 @@ impl UiState {
 
     /// [`Self::boot`] with the onboarding and this build's version injected.
     fn boot_with(boot: Boot<'_>, onboarding_ui: WelcomeUi, current: &semver::Version) -> Self {
-        let decision = resolve_version_popup(boot.config_path, current);
+        let upgraded = resolve_version_popup(boot.config_path, current);
         // Yields to the onboarding but still STAMPS `last_seen_version`: gated on
         // the overlay SHOWING, not on `first_run`, which a no-CLI user carries
         // forever.
-        let pops_up = decision.should_show_popup && onboarding_ui.is_empty();
+        let pops_up = upgraded && onboarding_ui.is_empty();
         let mut ui = Self::new(
             boot.theme,
             onboarding_ui,
@@ -189,7 +188,7 @@ impl UiState {
             Some(boot.log),
             boot.drift,
         );
-        ui.upgraded = decision.should_show_popup;
+        ui.upgraded = upgraded;
         ui.saved.look = boot.look;
         if pops_up {
             ui.open_version_popup();
@@ -639,10 +638,7 @@ pub fn footer_warning(
 /// `current` as `last_seen_version` in the config at `config_path` at boot, so the popup
 /// shows at most once per upgrade however the run exits. The config's warnings
 /// are dropped: `main`'s pre-altscreen pass already surfaced them.
-fn resolve_version_popup(
-    config_path: &std::path::Path,
-    current: &semver::Version,
-) -> crate::version::BootDecision {
+fn resolve_version_popup(config_path: &std::path::Path, current: &semver::Version) -> bool {
     let cfg = crate::config::load(config_path, &mut Vec::new());
     let decision = crate::version::boot_decision(current, cfg.last_seen_version.as_deref());
     if decision.should_persist
@@ -650,7 +646,7 @@ fn resolve_version_popup(
     {
         tracing::warn!(error = ?e, "failed to persist version");
     }
-    decision
+    decision.should_show_popup
 }
 
 #[cfg(test)]
@@ -953,7 +949,6 @@ mod tests {
     #[test]
     fn a_press_on_the_link_opens_this_releases_page() {
         let mut ui = ui();
-        ui.open_version_popup();
         let screen = (120, 44);
         let bounds = ratatui::layout::Rect::new(0, 0, screen.0, screen.1);
         let link = crate::panels::widgets::version_popup_url_rect(bounds, 1.0).expect("a link");
