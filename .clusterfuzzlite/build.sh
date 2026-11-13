@@ -38,8 +38,8 @@ done < <(find "$fixtures" -path '*/fixtures/*' -name '*.jsonl')
 # The endpoint's control line and the reply it gets.
 cp fuzz/seeds/hook/* "$seeds/hook"
 
-# A stream of two lines, the second keeping the first's desks, beside a seed for
-# each other parser `harness::fuzz::remote` drives.
+# Every v1 sample, and the golden line twice as one stream, the second keeping
+# the first's desks.
 cp fuzz/seeds/remote/* "$seeds/remote"
 line=$(python3 -c 'import json, sys; print(json.dumps(json.load(sys.stdin)))' \
     <crates/pixtuoid-core/src/remote.v1.golden.json)

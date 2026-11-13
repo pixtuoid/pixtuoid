@@ -33,13 +33,13 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 
 /// The wire version this build writes and reads, as `v` on every hello, reply
 /// and office line and in every pairing link: the one field no version may
-/// reshape, since a reader takes it before the rest. Within a version the line
-/// only gains fields and tags, held to samples `just wire-frozen` never lets a
-/// change edit, from the first release a device can pair with; a reader
-/// ignores what it doesn't know and maps an unknown tag to its nearest state.
-/// Any break, in a line or the link, bumps it, and every pairing or reconnect
-/// across it ends in a precise "update" on the side that can act
-/// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]).
+/// reshape, since a reader takes it before the rest. Within a version a line
+/// only gains fields and tags, each held to a sample `just wire-frozen` never
+/// lets a change edit; a reader ignores what it doesn't know and maps an
+/// unknown tag to its nearest state. A server drops a hello kind it can't
+/// name, so a new one, like any break in a line or the link, bumps it, and
+/// every pairing or reconnect across it ends in a precise "update" on the side
+/// that can act ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]).
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office: a device takes
