@@ -236,6 +236,8 @@ wire-frozen-selftest:
     #!/usr/bin/env bash
     set -euo pipefail
     d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+    # A developer's signing or hooks would fail its commits for reasons not the gate's.
+    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
     seeds=fuzz/seeds/remote
     mkdir -p "$d/$seeds" "$d/crates/pixtuoid-core/src"
     printf '{}' >"$d/crates/pixtuoid-core/src/remote.v1.golden.json"

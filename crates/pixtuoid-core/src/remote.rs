@@ -1443,11 +1443,13 @@ mod tests {
     }
 
     /// A place this build or a v1 sample puts a value: a property at `path` of
-    /// its owner (a `$defs` name, or the root's title), `[]` standing for every
-    /// index, or with `tag` a value it fixes.
-    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    /// its owner (a `$defs` name, or the root's title) under the tag that picks
+    /// its `variant`, `[]` standing for every index, or with `tag` a value it
+    /// fixes.
+    #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
     struct Key {
         owner: String,
+        variant: String,
         path: String,
         tag: Option<String>,
     }
@@ -1491,37 +1493,37 @@ mod tests {
         "enum",
     ];
 
-    /// Every key `node` of `schema` lets this build write, owned by `owner` at
-    /// `path`, or with `held` only those that value holds.
+    /// Every key `node` of `schema` lets this build write, each `at` its place,
+    /// or with `held` only those that value holds.
     fn collect(
         schema: &Value,
         node: &Value,
         held: Option<&Value>,
-        owner: &str,
-        path: &str,
+        at: &Key,
         keys: &mut BTreeSet<Key>,
     ) {
         for keyword in node.as_object().into_iter().flat_map(|node| node.keys()) {
             assert!(
                 SCHEMA_KEYWORDS.contains(&keyword.as_str()),
-                "{owner}.{path}: walk `{keyword}`, or list it if it holds no schema"
+                "{at:?}: walk `{keyword}`, or list it if it holds no schema"
             );
         }
-        let key = |path: &str, tag: Option<&Value>| Key {
-            owner: owner.to_owned(),
-            path: path.to_owned(),
-            tag: tag.map(Value::to_string),
-        };
         if let Some(def) = node["$ref"]
             .as_str()
             .and_then(|r| r.strip_prefix("#/$defs/"))
         {
-            collect(schema, &schema["$defs"][def], held, def, "", keys);
+            let owner = def.to_owned();
+            let at = Key {
+                owner,
+                ..Key::default()
+            };
+            collect(schema, &schema["$defs"][def], held, &at, keys);
         }
         let tags = node.get("const").into_iter();
         for tag in tags.chain(node["enum"].as_array().into_iter().flatten()) {
             if held.is_none_or(|v| v == tag) {
-                keys.insert(key(path, Some(tag)));
+                let tag = Some(tag.to_string());
+                keys.insert(Key { tag, ..at.clone() });
             }
         }
         for (name, field) in node["properties"].as_object().into_iter().flatten() {
@@ -1532,21 +1534,25 @@ mod tests {
                     field_held => field_held,
                 },
             };
-            let path = if path.is_empty() {
+            let path = if at.path.is_empty() {
                 name.clone()
             } else {
-                format!("{path}.{name}")
+                format!("{}.{name}", at.path)
             };
-            keys.insert(key(&path, None));
-            collect(schema, field, field_held, owner, &path, keys);
+            let at = Key { path, ..at.clone() };
+            keys.insert(at.clone());
+            collect(schema, field, field_held, &at, keys);
         }
         if let Some(items) = node.get("items") {
-            let path = format!("{path}[]");
+            let at = Key {
+                path: format!("{}[]", at.path),
+                ..at.clone()
+            };
             match held {
-                None => collect(schema, items, None, owner, &path, keys),
+                None => collect(schema, items, None, &at, keys),
                 Some(held) => {
                     for item in held.as_array().into_iter().flatten() {
-                        collect(schema, items, Some(item), owner, &path, keys);
+                        collect(schema, items, Some(item), &at, keys);
                     }
                 }
             }
@@ -1554,7 +1560,15 @@ mod tests {
         let branches = ["oneOf", "anyOf", "allOf"].map(|of| node[of].as_array());
         for branch in branches.into_iter().flatten().flatten() {
             if held.is_none_or(|v| fits(branch, v)) {
-                collect(schema, branch, held, owner, path, keys);
+                // A variant's fields are its own: one a sibling variant gains is new.
+                let mut fields = branch["properties"].as_object().into_iter().flatten();
+                let tag = fields
+                    .find_map(|(name, field)| Some(format!("{name}={}", field.get("const")?)));
+                let at = Key {
+                    variant: tag.unwrap_or_else(|| at.variant.clone()),
+                    ..at.clone()
+                };
+                collect(schema, branch, held, &at, keys);
             }
         }
     }
@@ -1567,16 +1581,21 @@ mod tests {
     }
 
     impl Sample {
-        /// The sample `name`, once `new`, what this build writes as a `W` in its
-        /// place, writes everything a v1 reader reads of it.
+        /// Asserts `new`, this build's write in the sample `name`'s place, keeps
+        /// everything a v1 reader reads of `sample`; returns the keys `sample`
+        /// holds and every key a `W` can write.
         fn kept<W: schemars::JsonSchema>(name: &'static str, sample: &str, new: &str) -> Self {
             let old: Value = serde_json::from_str(sample).expect(name);
             assert_keeps(&old, &serde_json::from_str(new).expect(name), name);
             let schema = written::<W>();
-            let owner = schema["title"].as_str().expect("a title");
+            let owner = schema["title"].as_str().expect("a title").to_owned();
+            let root = Key {
+                owner,
+                ..Key::default()
+            };
             let [mut holds, mut writes] = [BTreeSet::new(), BTreeSet::new()];
-            collect(&schema, &schema, Some(&old), owner, "", &mut holds);
-            collect(&schema, &schema, None, owner, "", &mut writes);
+            collect(&schema, &schema, Some(&old), &root, &mut holds);
+            collect(&schema, &schema, None, &root, &mut writes);
             Self {
                 name,
                 holds,

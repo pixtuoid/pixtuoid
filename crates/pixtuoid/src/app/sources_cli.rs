@@ -147,7 +147,7 @@ fn text_lines(rows: &[SourceChange]) -> Vec<String> {
             Some(m) => format!("{}: {}: {m}", row.id, row.outcome),
             None => format!("{}: {}", row.id, row.outcome),
         });
-        for note in done.iter().flat_map(|made| made.changed.notes()) {
+        for note in done.iter().flat_map(|made| made.changed().notes()) {
             lines.push(format!("  \u{21b3} {note}"));
         }
     }
@@ -160,7 +160,7 @@ fn json_notes(rows: &[SourceChange]) -> Vec<String> {
     rows.iter()
         .flat_map(|(id, done)| {
             done.iter()
-                .flat_map(|made| made.changed.notes())
+                .flat_map(|made| made.changed().notes())
                 .map(move |note| format!("{id}: {note}"))
         })
         .collect()

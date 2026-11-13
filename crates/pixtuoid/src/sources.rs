@@ -93,7 +93,7 @@ impl OutcomeRow {
     /// line) and `sources_cli::text_lines` prints it to a real terminal (R0615-06).
     pub(crate) fn new(id: &str, done: &Result<Made>) -> Self {
         let (outcome, message) = match done {
-            Ok(made) => (made.outcome, None),
+            Ok(made) => (made.outcome(), None),
             Err(e) => (
                 WireOutcome::Failed,
                 Some(crate::strip_control_chars(
@@ -401,11 +401,11 @@ pub(crate) type SourceChange = (&'static str, Result<Made>);
 
 /// A change this build made: the closed token it is reported under, held from
 /// where it is made, since [`Changed`]'s outcome is open to a newer server's.
+/// Private, so each one's token and [`Changed`] come from its one constructor.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Made {
-    pub(crate) outcome: WireOutcome,
-    /// What a paired device and the Sources panel word it from.
-    pub(crate) changed: Changed,
+    outcome: WireOutcome,
+    changed: Changed,
 }
 
 impl Made {
@@ -420,6 +420,24 @@ impl Made {
     ) -> Self {
         let changed = Changed::new(sid, on, outcome.into(), hook_off_path, step, plugin_left);
         Self { outcome, changed }
+    }
+
+    /// [`Changed::no_cli`], a no-op.
+    #[cfg(feature = "serve")]
+    fn no_cli(sid: &'static str) -> Self {
+        Self {
+            outcome: WireOutcome::NoOp,
+            changed: Changed::no_cli(sid),
+        }
+    }
+
+    pub(crate) fn outcome(&self) -> WireOutcome {
+        self.outcome
+    }
+
+    /// What a paired device and the Sources panel word it from.
+    pub(crate) fn changed(&self) -> &Changed {
+        &self.changed
     }
 }
 
@@ -619,12 +637,7 @@ fn change_from(
     match toggle_intent(state) {
         ToggleIntent::Connect if on => {}
         ToggleIntent::Disconnect if !on => {}
-        ToggleIntent::Hint if on => {
-            return Made {
-                outcome: WireOutcome::NoOp,
-                changed: Changed::no_cli(sid),
-            };
-        }
+        ToggleIntent::Hint if on => return Made::no_cli(sid),
         _ => return unchanged(sid, on),
     }
     let done = if on {
@@ -1723,7 +1736,7 @@ mod tests {
         let cfg = dir.path().join("config.toml");
         let outcomes: Vec<_> = connect_each(&cfg, &["copilot"])
             .into_iter()
-            .map(|(id, done)| (id, done.unwrap().outcome))
+            .map(|(id, done)| (id, done.unwrap().outcome()))
             .collect();
         assert_eq!(outcomes, [("copilot", WireOutcome::Connected)]);
         let app = config::load(&cfg, &mut Vec::new());
@@ -1929,7 +1942,7 @@ mod tests {
         let outcomes: std::collections::HashMap<_, _> =
             reconcile_from(&cfg, &set(&["copilot"]), &HashSet::new())
                 .into_iter()
-                .map(|(id, done)| (id, done.unwrap().outcome))
+                .map(|(id, done)| (id, done.unwrap().outcome()))
                 .collect();
 
         assert_eq!(outcomes["copilot"], WireOutcome::Disconnected);

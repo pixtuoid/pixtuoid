@@ -721,7 +721,7 @@ fn result_line(
     name: &str,
 ) -> String {
     match done {
-        Ok(made) => made.changed.line(name),
+        Ok(made) => made.changed().line(name),
         Err(e) => connection::format_failure(op, name, &crate::install::io::failure_reason(e)),
     }
 }
@@ -751,7 +751,7 @@ impl ChangeNotice {
             failed: done.is_err(),
             quiet: done
                 .as_ref()
-                .is_ok_and(|made| made.changed.notes().is_empty()),
+                .is_ok_and(|made| made.changed().notes().is_empty()),
         }
     }
 }
