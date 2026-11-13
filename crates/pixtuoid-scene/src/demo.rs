@@ -1,6 +1,7 @@
 //! A demo office any front end plays: authored [`Moment`]s a [`Playhead`]
 //! lands by the clock through the REAL [`Reducer`], so a demo shows only
-//! states the product produces. Each front end authors its own cast.
+//! states the reducer produces; each cast keeps to what its CLI's decoder
+//! emits. Each front end authors its own cast.
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
@@ -48,7 +49,10 @@ impl Moment {
         match &self.cue {
             Cue::Event { transport, event } => reducer.apply(scene, event.clone(), now, *transport),
             Cue::Presence { key, update } => {
-                daemon::apply_presence(scene, key, update.clone(), now)
+                // What `Reducer::apply` does for exits: a delta landing late, in
+                // a catch-up, must find the presence a live sweep left by then.
+                daemon::sweep_registered(scene, now, |_| true);
+                daemon::apply_presence(scene, key, update.clone(), now);
             }
         }
     }
@@ -280,7 +284,7 @@ pub struct Playhead {
     cursor: usize,
 }
 
-// The App shares one across threads in a `Mutex`, which needs its content
+// A host may share one across threads in a `Mutex`, which needs its content
 // `Send` only: https://doc.rust-lang.org/std/sync/struct.Mutex.html
 const _: () = {
     const fn sendable<T: Send>() {}

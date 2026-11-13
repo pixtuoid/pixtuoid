@@ -159,7 +159,7 @@ impl DecodedPresence {
 /// the only abrupt-exit signal — these bound how long running/up linger without
 /// fresh deltas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PresenceTtl {
+pub(crate) struct PresenceTtl {
     /// Grace before running → idle when no `before_agent_run`/`agent_end` arrives
     /// (a dropped `agent_end` must self-heal, never strand perpetual running).
     pub(crate) running_decay_ms: u64,

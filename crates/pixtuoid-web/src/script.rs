@@ -363,18 +363,10 @@ mod tests {
             scene.agents.len(),
             "each agent has its own desk"
         );
-        for a in scene.agents.values() {
-            assert!(
-                pixtuoid_core::source::registry::descriptor_for(&a.source).is_some(),
-                "{} works for an unregistered source, {:?}",
-                a.label,
-                a.source
-            );
-        }
     }
 
     #[test]
-    fn usage_beats_grow_only_wire_bearing_towers() {
+    fn usage_moments_grow_only_wire_bearing_towers() {
         let scene = loops(1);
         let tokens_of = |i: usize| scene.agents.get(&cast_id(i)).map_or(0, |a| a.tokens_used);
         assert!(

@@ -84,18 +84,33 @@ fn a_spell_runs_its_calls_back_to_back_each_kind_from_its_real_tool_name() {
 
 #[test]
 fn a_wait_requires_action_until_its_call_ends() {
-    let hm = Actor::new(hermes::SOURCE_NAME, "hm", "/work/tests");
-    let mut moments = vec![hm.start(ms(0))];
-    moments.extend(hm.wait(ms(1_000), ms(5_000), "terminal: rm -rf dist"));
-    assert!(matches!(
-        state(&fresh(moments.clone(), ms(1_000)), &hm),
-        ActivityState::RequiresAction { reason: Some(reason) } if &*reason == "permission"
-    ));
-    assert!(matches!(
-        state(&fresh(moments.clone(), ms(5_999)), &hm),
-        ActivityState::RequiresAction { .. }
-    ));
-    assert_eq!(state(&fresh(moments, ms(6_000)), &hm), ActivityState::Idle);
+    for (source, tool) in [
+        (hermes::SOURCE_NAME, "terminal: rm -rf dist"),
+        (copilot::SOURCE_NAME, "bash: rm -rf dist"),
+    ] {
+        let asker = Actor::new(source, "asker", "/work/tests");
+        let mut moments = vec![asker.start(ms(0))];
+        moments.extend(asker.wait(ms(1_000), ms(5_000), tool));
+        assert!(
+            matches!(
+                state(&fresh(moments.clone(), ms(1_000)), &asker),
+                ActivityState::RequiresAction { reason: Some(reason) } if &*reason == "permission"
+            ),
+            "{source}"
+        );
+        assert!(
+            matches!(
+                state(&fresh(moments.clone(), ms(5_999)), &asker),
+                ActivityState::RequiresAction { .. }
+            ),
+            "{source}"
+        );
+        assert_eq!(
+            state(&fresh(moments, ms(6_000)), &asker),
+            ActivityState::Idle,
+            "{source}"
+        );
+    }
 }
 
 #[test]
@@ -139,22 +154,63 @@ fn a_model_and_a_usage_reading_land_on_the_slot() {
     assert_eq!(slot.tokens_used, 1_000);
 }
 
-#[test]
-fn a_presence_moment_lands_on_the_daemon_roster_and_registers_no_agent() {
-    let key = DaemonInstanceKey::new(
+fn gateway() -> DaemonInstanceKey {
+    DaemonInstanceKey::new(
         openclaw::SOURCE_NAME,
         DaemonInstanceId::from_port(std::num::NonZeroU16::MIN),
-    );
-    let moment = Moment {
-        at: ms(1_000),
+    )
+}
+
+fn presence(at: Duration, update: DaemonPresenceUpdate) -> Moment {
+    Moment {
+        at,
         cue: Cue::Presence {
-            key: key.clone(),
-            update: DaemonPresenceUpdate::GatewayUp { pid: None },
+            key: gateway(),
+            update,
         },
-    };
-    let scene = fresh([moment], ms(1_000));
+    }
+}
+
+#[test]
+fn a_presence_moment_lands_on_the_daemon_roster_and_registers_no_agent() {
+    let key = gateway();
+    let scene = fresh(
+        [presence(
+            ms(1_000),
+            DaemonPresenceUpdate::GatewayUp { pid: None },
+        )],
+        ms(1_000),
+    );
     assert!(scene.daemon(key.source(), key.instance()).is_some());
     assert!(scene.agents.is_empty());
+}
+
+/// A `SessionEnded` keeps a Down gateway Down but recreates a removed one
+/// Up, so a catch-up must remove the Down entry before landing it, as a
+/// stepped playhead's sweeps did.
+#[test]
+fn a_catch_up_sweeps_presence_before_each_delta_as_stepping_does() {
+    use DaemonPresenceUpdate::*;
+    let moments = [
+        presence(ms(0), GatewayUp { pid: None }),
+        presence(ms(1_000), GatewayDown),
+        presence(ms(30_000), SessionEnded),
+    ];
+    let mut stepped = Host::new(moments.clone(), t0());
+    let mut after = Duration::ZERO;
+    while after <= ms(30_000) {
+        stepped.at(t0() + after);
+        after += ms(250);
+    }
+    let caught_up = fresh(moments, ms(30_000));
+    let key = gateway();
+    let shown = |scene: &SceneState| {
+        scene
+            .daemon(key.source(), key.instance())
+            .map(|p| p.display_state())
+    };
+    assert_eq!(shown(&caught_up), shown(&stepped.scene));
+    assert_eq!(caught_up, stepped.scene);
 }
 
 #[test]
