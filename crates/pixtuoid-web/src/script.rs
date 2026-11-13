@@ -2,7 +2,7 @@
 //! [`Playhead`](pixtuoid_scene::demo::Playhead) plays through the REAL
 //! `Reducer`, so the web office can never drift from real behavior.
 //!
-//! On loop wrap the same moments replay: a `SessionStart` for a live slot is
+//! On loop wrap the same cues replay: a `SessionStart` for a live slot is
 //! a reducer no-op (backfill arm), the ended agent re-enters, so the office
 //! stays coherent forever.
 
@@ -17,7 +17,7 @@ use pixtuoid_core::source::{
 };
 use pixtuoid_core::state::{DaemonInstanceId, TurnKey};
 use pixtuoid_scene::DEMO_REPOS;
-use pixtuoid_scene::demo::{Actor, Cue, Moment, Script};
+use pixtuoid_scene::demo::{Actor, Cue, Script};
 
 /// Long enough that the cycle doesn't read as a loop.
 pub(crate) const LOOP: Duration = Duration::from_secs(120);
@@ -60,8 +60,8 @@ fn ms(ms: u64) -> Duration {
     Duration::from_millis(ms)
 }
 
-fn spell(moments: &mut Vec<Moment>, i: usize, at: u64, calls: u32, tools: &[&str]) {
-    moments.extend(actor(i).spell(ms(at), calls, tools));
+fn spell(cues: &mut Vec<Cue>, i: usize, at: u64, calls: u32, tools: &[&str]) {
+    cues.extend(actor(i).spell(ms(at), calls, tools));
 }
 
 pub(crate) const HIRE_STAY: Duration = Duration::from_secs(70);
@@ -69,14 +69,14 @@ pub(crate) const HIRE_STAY: Duration = Duration::from_secs(70);
 /// Visitor hire `n`'s agent and lifecycle, from the hire instant. The cwd is
 /// the hire's own ("/work/yours") so Team Palette gives hires a distinct
 /// outfit family.
-pub(crate) fn hire(n: u32) -> (AgentId, Vec<Moment>) {
+pub(crate) fn hire(n: u32) -> (AgentId, Vec<Cue>) {
     let hire = Actor::new(claude_code::SOURCE_NAME, format!("hire-{n}"), "/work/yours");
-    let mut moments = vec![hire.start(Duration::ZERO), hire.end(HIRE_STAY)];
+    let mut cues = vec![hire.start(Duration::ZERO), hire.end(HIRE_STAY)];
     // Spaced so the hire also idles/wanders like everyone else.
     for at in [8_000, 28_000, 50_000] {
-        moments.extend(hire.spell(ms(at), 4, &["Edit: notes.md"]));
+        cues.extend(hire.spell(ms(at), 4, &["Edit: notes.md"]));
     }
-    (hire.id(), moments)
+    (hire.id(), cues)
 }
 
 /// The ONE gateway the hero scripts, so the authored timeline lands on exactly
@@ -95,7 +95,7 @@ const HERO_GATEWAY_PORT: std::num::NonZeroU16 = std::num::NonZeroU16::new(18789)
 /// through two busy turns, and walks out before the wrap — so every loop
 /// replays a clean enter animation (GatewayUp after Down re-anchors
 /// `entered_at`).
-fn lobster() -> impl Iterator<Item = Moment> {
+fn lobster() -> impl Iterator<Item = Cue> {
     use DaemonPresenceUpdate::*;
     let turn = |id: &str| TurnKey::Id(id.into());
     [
@@ -127,17 +127,15 @@ fn lobster() -> impl Iterator<Item = Moment> {
         (112_000, GatewayDown),
     ]
     .into_iter()
-    .map(|(at, update)| Moment {
+    .map(|(at, update)| Cue::Presence {
         at: ms(at),
-        cue: Cue::Presence {
-            key: hero_gateway(),
-            update,
-        },
+        key: hero_gateway(),
+        update,
     })
 }
 
 pub(crate) fn hero() -> Script {
-    let mut b: Vec<Moment> = Vec::new();
+    let mut b: Vec<Cue> = Vec::new();
 
     // Walk-ins — the morning rush: the cast is through the door within ~2.5s
     // of reveal, so scroll-0 never reads as an empty looping video.
@@ -284,10 +282,10 @@ pub(crate) fn hero() -> Script {
         &["Edit: tests/api.rs", "Bash: cargo test"],
     );
 
-    // Token-meter readings — cc (0) and cx (1) only, the two cast CLIs whose
-    // real wires carry per-turn usage: the hero must never show a tower the
-    // product can't produce for that CLI. cc opens with a big restore-sized
-    // reading so its first ream lands within the first second of the reveal.
+    // Token-meter readings, for cc (0) and cx (1) alone: a scripted reading
+    // must be one its CLI's real wire carries, or the hero shows a tower the
+    // product can't. cc opens with a big restore-sized reading so its first
+    // ream lands within the first second of the reveal.
     b.extend([
         actor(0).usage(ms(500), 1_200_000),
         actor(0).usage(ms(11_000), 180_000),
@@ -366,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn usage_moments_grow_only_wire_bearing_towers() {
+    fn usage_cues_grow_only_wire_bearing_towers() {
         let scene = loops(1);
         let tokens_of = |i: usize| scene.agents.get(&cast_id(i)).map_or(0, |a| a.tokens_used);
         assert!(
@@ -383,7 +381,7 @@ mod tests {
             assert_eq!(
                 tokens_of(i),
                 0,
-                "cast {i} ({source}) has no per-turn usage wire — its desk must stay bare"
+                "cast {i} ({source}) is scripted no usage reading — its desk must stay bare"
             );
         }
         let scene3 = loops(3);

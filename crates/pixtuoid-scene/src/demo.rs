@@ -1,4 +1,4 @@
-//! A demo office any front end plays: authored [`Moment`]s a [`Playhead`]
+//! A demo office any front end plays: authored [`Cue`]s a [`Playhead`]
 //! lands by the clock through the REAL [`Reducer`], so a demo shows only
 //! states the reducer produces; each cast keeps to what its CLI's decoder
 //! emits. Each front end authors its own cast.
@@ -12,21 +12,15 @@ use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::{AgentEvent, AgentId, ToolDetail, Transport};
 
-/// One authored moment of a demo timeline.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Moment {
-    /// When it lands, after its timeline's origin.
-    pub at: Duration,
-    /// What lands.
-    pub cue: Cue,
-}
-
-/// What a [`Moment`] lands.
+/// One authored instant of a demo timeline: what lands, `at` after the
+/// timeline's origin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Cue {
     /// An agent event, as a live source sends it.
     Event {
+        /// When it lands.
+        at: Duration,
         /// What hook-wins dedup reads: the transport the live source uses.
         transport: Transport,
         /// The event.
@@ -35,6 +29,8 @@ pub enum Cue {
     /// A daemon mascot's presence delta, which rides its own lane: the one
     /// event channel is `AgentId`-pure.
     Presence {
+        /// When it lands.
+        at: Duration,
         /// The daemon instance.
         key: DaemonInstanceKey,
         /// The delta.
@@ -42,15 +38,30 @@ pub enum Cue {
     },
 }
 
-impl Moment {
-    /// Land it at `origin` + [`Moment::at`].
+impl Cue {
+    /// When it lands, after its timeline's origin.
+    pub fn at(&self) -> Duration {
+        match self {
+            Cue::Event { at, .. } | Cue::Presence { at, .. } => *at,
+        }
+    }
+
+    fn at_mut(&mut self) -> &mut Duration {
+        match self {
+            Cue::Event { at, .. } | Cue::Presence { at, .. } => at,
+        }
+    }
+
+    /// Land it at `origin` + [`Cue::at`].
     pub fn land(&self, origin: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
-        let now = origin + self.at;
-        match &self.cue {
-            Cue::Event { transport, event } => reducer.apply(scene, event.clone(), now, *transport),
-            Cue::Presence { key, update } => {
+        let now = origin + self.at();
+        match self {
+            Cue::Event {
+                transport, event, ..
+            } => reducer.apply(scene, event.clone(), now, *transport),
+            Cue::Presence { key, update, .. } => {
                 // What `Reducer::apply` does for exits: a delta landing late, in
-                // a catch-up, must find the presence a live sweep left by then.
+                // a catch-up, finds a Down entry removed as a live sweep would.
                 daemon::sweep_registered(scene, now, |_| true);
                 daemon::apply_presence(scene, key, update.clone(), now);
             }
@@ -62,7 +73,7 @@ impl Moment {
 /// slot the moment its call ends, so any gap between them shows as Idle.
 const CALL: Duration = Duration::from_millis(1_200);
 
-/// A scripted session: the identity every moment it plays names.
+/// A scripted session: the identity every cue it plays names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Actor {
     id: AgentId,
@@ -110,14 +121,14 @@ impl Actor {
         }
     }
 
-    /// The agent every moment it plays names.
+    /// The agent every cue it plays names.
     pub fn id(&self) -> AgentId {
         self.id
     }
 
     /// The session starts.
-    pub fn start(&self, at: Duration) -> Moment {
-        self.moment(
+    pub fn start(&self, at: Duration) -> Cue {
+        self.cue(
             at,
             self.lifecycle,
             AgentEvent::SessionStart {
@@ -132,8 +143,8 @@ impl Actor {
 
     /// Its transcript reader has caught up: without it, a usage reading grows
     /// the desk's tower and never the sign's count.
-    pub fn caught_up(&self, at: Duration) -> Moment {
-        self.moment(
+    pub fn caught_up(&self, at: Duration) -> Cue {
+        self.cue(
             at,
             Transport::Jsonl,
             AgentEvent::Backlog {
@@ -145,7 +156,7 @@ impl Actor {
 
     /// `calls` calls back to back from `at`, displayed in turn as `tools`
     /// cycles: Running throughout, then Idle.
-    pub fn spell(&self, at: Duration, calls: u32, tools: &[&str]) -> Vec<Moment> {
+    pub fn spell(&self, at: Duration, calls: u32, tools: &[&str]) -> Vec<Cue> {
         (0..calls)
             .zip(tools.iter().cycle())
             .flat_map(|(k, tool)| self.call(at + CALL * k, CALL, Self::generic(tool)))
@@ -154,9 +165,9 @@ impl Actor {
 
     /// A `tool` call parked on a permission prompt from `at` until it ends
     /// `held` later.
-    pub fn wait(&self, at: Duration, held: Duration, tool: &str) -> [Moment; 3] {
+    pub fn wait(&self, at: Duration, held: Duration, tool: &str) -> [Cue; 3] {
         let [start, end] = self.call(at, held, Self::generic(tool));
-        let ask = self.moment(
+        let ask = self.cue(
             at,
             self.lifecycle,
             AgentEvent::user_action_request(
@@ -170,13 +181,13 @@ impl Actor {
 
     /// A subagent dispatch running from `at` for `held`: the typed Task no
     /// tool display can spell.
-    pub fn delegate(&self, at: Duration, held: Duration) -> [Moment; 2] {
+    pub fn delegate(&self, at: Duration, held: Duration) -> [Cue; 2] {
         self.call(at, held, ToolDetail::Task)
     }
 
     /// The session's model, as its wire names it.
-    pub fn model(&self, at: Duration, model: &str) -> Moment {
-        self.moment(
+    pub fn model(&self, at: Duration, model: &str) -> Cue {
+        self.cue(
             at,
             Transport::Jsonl,
             AgentEvent::ModelInfo {
@@ -188,8 +199,8 @@ impl Actor {
     }
 
     /// A fresh-token reading.
-    pub fn usage(&self, at: Duration, fresh_tokens: u64) -> Moment {
-        self.moment(
+    pub fn usage(&self, at: Duration, fresh_tokens: u64) -> Cue {
+        self.cue(
             at,
             Transport::Jsonl,
             AgentEvent::usage(self.id, fresh_tokens, None),
@@ -197,8 +208,8 @@ impl Actor {
     }
 
     /// The session ends.
-    pub fn end(&self, at: Duration) -> Moment {
-        self.moment(
+    pub fn end(&self, at: Duration) -> Cue {
+        self.cue(
             at,
             self.lifecycle,
             AgentEvent::SessionEnd {
@@ -208,10 +219,11 @@ impl Actor {
         )
     }
 
-    fn moment(&self, at: Duration, transport: Transport, event: AgentEvent) -> Moment {
-        Moment {
+    fn cue(&self, at: Duration, transport: Transport, event: AgentEvent) -> Cue {
+        Cue::Event {
             at,
-            cue: Cue::Event { transport, event },
+            transport,
+            event,
         }
     }
 
@@ -223,15 +235,15 @@ impl Actor {
 
     /// One call from `at` for `held`, named by its start: one actor never
     /// starts two calls at once.
-    fn call(&self, at: Duration, held: Duration, detail: ToolDetail) -> [Moment; 2] {
+    fn call(&self, at: Duration, held: Duration, detail: ToolDetail) -> [Cue; 2] {
         let id = format!("{}@{}", self.session, at.as_millis());
         [
-            self.moment(
+            self.cue(
                 at,
                 self.lifecycle,
                 AgentEvent::tool_use_start(self.id, Some(id.clone()), Some(detail)),
             ),
-            self.moment(
+            self.cue(
                 at + held,
                 self.lifecycle,
                 AgentEvent::ToolUseEnd {
@@ -243,44 +255,44 @@ impl Actor {
     }
 }
 
-/// A looped timeline: its moments on a circle a period long, so a call that
+/// A looped timeline: its cues on a circle a period long, so a call that
 /// straddles the seam ends early in the next loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Script {
     /// By phase, ties in authored order: a wait's prompt follows its call's start.
-    moments: Vec<Moment>,
+    cues: Vec<Cue>,
     period: Duration,
 }
 
 impl Script {
-    /// `moments` looped every `period`, each at its [`Moment::at`] modulo
-    /// `period`.
+    /// `cues` looped every `period`, each at its [`Cue::at`] modulo `period`.
     ///
     /// # Panics
     ///
     /// If `period` is zero.
-    pub fn new(period: Duration, moments: impl IntoIterator<Item = Moment>) -> Self {
+    pub fn new(period: Duration, cues: impl IntoIterator<Item = Cue>) -> Self {
         assert!(!period.is_zero(), "a looped script needs a period");
-        let mut moments: Vec<Moment> = moments
+        let mut cues: Vec<Cue> = cues
             .into_iter()
-            .map(|moment| Moment {
-                at: Duration::from_nanos_u128(moment.at.as_nanos() % period.as_nanos()),
-                ..moment
+            .map(|mut cue| {
+                let at = cue.at_mut();
+                *at = Duration::from_nanos_u128(at.as_nanos() % period.as_nanos());
+                cue
             })
             .collect();
-        moments.sort_by_key(|moment| moment.at);
-        Self { moments, period }
+        cues.sort_by_key(Cue::at);
+        Self { cues, period }
     }
 }
 
-/// Where a [`Script`] is: each moment lands once, at its own instant, into the
+/// Where a [`Script`] is: each cue lands once, at its own instant, into the
 /// host's reducer and scene.
 #[derive(Debug, Clone)]
 pub struct Playhead {
     script: Script,
     /// The current loop's start.
     origin: SystemTime,
-    /// The current loop's next moment.
+    /// The current loop's next cue.
     cursor: usize,
 }
 
@@ -301,7 +313,7 @@ impl Playhead {
         }
     }
 
-    /// Land every moment due by `now` at its own instant, then sweep as a live
+    /// Land every cue due by `now` at its own instant, then sweep as a live
     /// office's reducer task would. A gap of two loops or more replays only the
     /// last whole loop and the current one, in phase: a fresh playhead's first
     /// call fills the office it would show at `now`.
@@ -315,11 +327,11 @@ impl Playhead {
             self.cursor = 0;
         }
         loop {
-            while let Some(moment) = self.script.moments.get(self.cursor) {
-                if self.origin + moment.at > now {
+            while let Some(cue) = self.script.cues.get(self.cursor) {
+                if self.origin + cue.at() > now {
                     break;
                 }
-                moment.land(self.origin, reducer, scene);
+                cue.land(self.origin, reducer, scene);
                 self.cursor += 1;
             }
             let next = self.origin + period;

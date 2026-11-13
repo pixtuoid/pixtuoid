@@ -20,9 +20,9 @@ struct Host {
 }
 
 impl Host {
-    fn new(moments: impl IntoIterator<Item = Moment>, started: SystemTime) -> Self {
+    fn new(cues: impl IntoIterator<Item = Cue>, started: SystemTime) -> Self {
         Self {
-            playhead: Playhead::new(Script::new(PERIOD, moments), started),
+            playhead: Playhead::new(Script::new(PERIOD, cues), started),
             reducer: Reducer::new(),
             scene: SceneState::uniform(8),
         }
@@ -36,8 +36,8 @@ impl Host {
 }
 
 /// The office a fresh playhead started at [`t0`] shows `after` it.
-fn fresh(moments: impl IntoIterator<Item = Moment>, after: Duration) -> SceneState {
-    let mut host = Host::new(moments, t0());
+fn fresh(cues: impl IntoIterator<Item = Cue>, after: Duration) -> SceneState {
+    let mut host = Host::new(cues, t0());
     host.at(t0() + after).clone()
 }
 
@@ -59,9 +59,9 @@ fn kind(scene: &SceneState, actor: &Actor) -> Option<ToolKind> {
 #[test]
 fn a_spell_runs_its_calls_back_to_back_each_kind_from_its_real_tool_name() {
     let cx = Actor::new(codex::SOURCE_NAME, "cx", "/work/web");
-    let mut moments = vec![lead().start(ms(0)), cx.start(ms(0))];
-    moments.extend(lead().spell(ms(1_000), 3, &["Bash: cargo test", "Read: src/lib.rs"]));
-    moments.extend(cx.spell(ms(1_000), 1, &["exec_command"]));
+    let mut cues = vec![lead().start(ms(0)), cx.start(ms(0))];
+    cues.extend(lead().spell(ms(1_000), 3, &["Bash: cargo test", "Read: src/lib.rs"]));
+    cues.extend(cx.spell(ms(1_000), 1, &["exec_command"]));
     let mid = |k: u32| ms(1_000) + CALL * k + CALL / 2;
     for (k, want) in [ToolKind::Bash, ToolKind::Read, ToolKind::Bash]
         .into_iter()
@@ -69,17 +69,17 @@ fn a_spell_runs_its_calls_back_to_back_each_kind_from_its_real_tool_name() {
     {
         let k = u32::try_from(k).expect("three calls");
         assert_eq!(
-            kind(&fresh(moments.clone(), mid(k)), &lead()),
+            kind(&fresh(cues.clone(), mid(k)), &lead()),
             Some(want),
             "call {k}"
         );
     }
     assert_eq!(
-        kind(&fresh(moments.clone(), mid(0)), &cx),
+        kind(&fresh(cues.clone(), mid(0)), &cx),
         Some(ToolKind::Other)
     );
     let after = ms(1_000) + CALL * 3 + ms(1);
-    assert_eq!(state(&fresh(moments, after), &lead()), ActivityState::Idle);
+    assert_eq!(state(&fresh(cues, after), &lead()), ActivityState::Idle);
 }
 
 #[test]
@@ -89,24 +89,24 @@ fn a_wait_requires_action_until_its_call_ends() {
         (copilot::SOURCE_NAME, "bash: rm -rf dist"),
     ] {
         let asker = Actor::new(source, "asker", "/work/tests");
-        let mut moments = vec![asker.start(ms(0))];
-        moments.extend(asker.wait(ms(1_000), ms(5_000), tool));
+        let mut cues = vec![asker.start(ms(0))];
+        cues.extend(asker.wait(ms(1_000), ms(5_000), tool));
         assert!(
             matches!(
-                state(&fresh(moments.clone(), ms(1_000)), &asker),
+                state(&fresh(cues.clone(), ms(1_000)), &asker),
                 ActivityState::RequiresAction { reason: Some(reason) } if &*reason == "permission"
             ),
             "{source}"
         );
         assert!(
             matches!(
-                state(&fresh(moments.clone(), ms(5_999)), &asker),
+                state(&fresh(cues.clone(), ms(5_999)), &asker),
                 ActivityState::RequiresAction { .. }
             ),
             "{source}"
         );
         assert_eq!(
-            state(&fresh(moments, ms(6_000)), &asker),
+            state(&fresh(cues, ms(6_000)), &asker),
             ActivityState::Idle,
             "{source}"
         );
@@ -116,21 +116,21 @@ fn a_wait_requires_action_until_its_call_ends() {
 #[test]
 fn a_subagent_works_under_its_delegating_lead_and_ends_as_a_child() {
     let sub = lead().subagent("lead-sub");
-    let mut moments = vec![
+    let mut cues = vec![
         lead().start(ms(0)),
         sub.start(ms(2_000)),
         sub.end(ms(8_000)),
     ];
-    moments.extend(lead().delegate(ms(1_000), ms(9_000)));
-    moments.extend(sub.spell(ms(2_000), 4, &["Read: src/lib.rs"]));
-    let working = fresh(moments.clone(), ms(3_000));
+    cues.extend(lead().delegate(ms(1_000), ms(9_000)));
+    cues.extend(sub.spell(ms(2_000), 4, &["Read: src/lib.rs"]));
+    let working = fresh(cues.clone(), ms(3_000));
     assert_eq!(working.agents[&sub.id()].parent_id, Some(lead().id()));
     assert_eq!(kind(&working, &lead()), Some(ToolKind::Task));
     assert_eq!(kind(&working, &sub), Some(ToolKind::Read));
-    let ended = fresh(moments, ms(8_001));
+    let ended = fresh(cues, ms(8_001));
     assert!(ended.agents[&sub.id()].exiting_at.is_some());
     assert_eq!(kind(&ended, &lead()), Some(ToolKind::Task));
-    let as_child = |actor: &Actor| match actor.end(ms(0)).cue {
+    let as_child = |actor: &Actor| match actor.end(ms(0)) {
         Cue::Event {
             event: AgentEvent::SessionEnd { as_child, .. },
             ..
@@ -142,13 +142,13 @@ fn a_subagent_works_under_its_delegating_lead_and_ends_as_a_child() {
 
 #[test]
 fn a_model_and_a_usage_reading_land_on_the_slot() {
-    let moments = [
+    let cues = [
         lead().start(ms(0)),
         lead().caught_up(ms(0)),
         lead().model(ms(1_000), "claude-fable-5"),
         lead().usage(ms(2_000), 1_000),
     ];
-    let scene = fresh(moments, ms(2_000));
+    let scene = fresh(cues, ms(2_000));
     let slot = &scene.agents[&lead().id()];
     assert_eq!(slot.model.as_deref(), Some("claude-fable-5"));
     assert_eq!(slot.tokens_used, 1_000);
@@ -161,18 +161,16 @@ fn gateway() -> DaemonInstanceKey {
     )
 }
 
-fn presence(at: Duration, update: DaemonPresenceUpdate) -> Moment {
-    Moment {
+fn presence(at: Duration, update: DaemonPresenceUpdate) -> Cue {
+    Cue::Presence {
         at,
-        cue: Cue::Presence {
-            key: gateway(),
-            update,
-        },
+        key: gateway(),
+        update,
     }
 }
 
 #[test]
-fn a_presence_moment_lands_on_the_daemon_roster_and_registers_no_agent() {
+fn a_presence_cue_lands_on_the_daemon_roster_and_registers_no_agent() {
     let key = gateway();
     let scene = fresh(
         [presence(
@@ -191,18 +189,18 @@ fn a_presence_moment_lands_on_the_daemon_roster_and_registers_no_agent() {
 #[test]
 fn a_catch_up_sweeps_presence_before_each_delta_as_stepping_does() {
     use DaemonPresenceUpdate::*;
-    let moments = [
+    let cues = [
         presence(ms(0), GatewayUp { pid: None }),
         presence(ms(1_000), GatewayDown),
         presence(ms(30_000), SessionEnded),
     ];
-    let mut stepped = Host::new(moments.clone(), t0());
+    let mut stepped = Host::new(cues.clone(), t0());
     let mut after = Duration::ZERO;
     while after <= ms(30_000) {
         stepped.at(t0() + after);
         after += ms(250);
     }
-    let caught_up = fresh(moments, ms(30_000));
+    let caught_up = fresh(cues, ms(30_000));
     let key = gateway();
     let shown = |scene: &SceneState| {
         scene
@@ -214,7 +212,7 @@ fn a_catch_up_sweeps_presence_before_each_delta_as_stepping_does() {
 }
 
 #[test]
-fn a_script_lands_each_moment_at_its_phase_ties_in_authored_order() {
+fn a_script_lands_each_cue_at_its_phase_ties_in_authored_order() {
     let past_the_seam = lead().end(PERIOD + ms(5_000));
     let [start, ask, end] = lead().wait(ms(1_000), ms(1_000), "Bash: rm -rf dist");
     let script = Script::new(
@@ -226,11 +224,9 @@ fn a_script_lands_each_moment_at_its_phase_ties_in_authored_order() {
             ask.clone(),
         ],
     );
-    let wrapped = Moment {
-        at: ms(5_000),
-        ..past_the_seam
-    };
-    assert_eq!(script.moments, [start, ask, end, wrapped]);
+    let mut wrapped = past_the_seam;
+    *wrapped.at_mut() = ms(5_000);
+    assert_eq!(script.cues, [start, ask, end, wrapped]);
 }
 
 #[test]
@@ -242,8 +238,8 @@ fn a_script_without_a_period_is_refused() {
 /// Usage accumulates once per landed reading: the stepping can't double or
 /// drop one.
 #[test]
-fn each_moment_lands_once_however_the_clock_steps() {
-    let moments = [
+fn each_cue_lands_once_however_the_clock_steps() {
+    let cues = [
         lead().start(ms(0)),
         lead().caught_up(ms(0)),
         lead().usage(ms(10_000), 1),
@@ -251,7 +247,7 @@ fn each_moment_lands_once_however_the_clock_steps() {
     ];
     let span = PERIOD * 2 + ms(15_000);
     for step in [ms(33), ms(700), ms(13_000)] {
-        let mut host = Host::new(moments.clone(), t0());
+        let mut host = Host::new(cues.clone(), t0());
         let mut after = Duration::ZERO;
         while after <= span {
             host.at(t0() + after);
@@ -266,28 +262,28 @@ fn each_moment_lands_once_however_the_clock_steps() {
 }
 
 /// A sample cast's coming and going across the seam, as the hero's.
-fn cast() -> (Vec<Actor>, Vec<Moment>) {
+fn cast() -> (Vec<Actor>, Vec<Cue>) {
     let cx = Actor::new(codex::SOURCE_NAME, "cx", "/work/web");
     let hm = Actor::new(hermes::SOURCE_NAME, "hm", "/work/tests");
     let visitor = Actor::new(claude_code::SOURCE_NAME, "visitor", "/work/docs");
-    let mut moments = vec![
+    let mut cues = vec![
         lead().start(ms(0)),
         cx.start(ms(400)),
         hm.start(ms(800)),
         visitor.start(ms(30_000)),
         visitor.end(ms(55_000)),
     ];
-    moments.extend(lead().spell(ms(1_000), 8, &["Edit: src/main.rs", "Bash: cargo test"]));
-    moments.extend(cx.spell(ms(20_000), 6, &["apply_patch", "exec_command"]));
-    moments.extend(hm.wait(ms(40_000), ms(8_000), "terminal: rm -rf dist"));
-    moments.extend(lead().spell(PERIOD - ms(600), 1, &["Read: src/lib.rs"]));
-    (vec![lead(), cx, hm, visitor], moments)
+    cues.extend(lead().spell(ms(1_000), 8, &["Edit: src/main.rs", "Bash: cargo test"]));
+    cues.extend(cx.spell(ms(20_000), 6, &["apply_patch", "exec_command"]));
+    cues.extend(hm.wait(ms(40_000), ms(8_000), "terminal: rm -rf dist"));
+    cues.extend(lead().spell(PERIOD - ms(600), 1, &["Read: src/lib.rs"]));
+    (vec![lead(), cx, hm, visitor], cues)
 }
 
 #[test]
 fn the_office_stays_seated_and_never_empties_across_the_wrap() {
-    let (actors, moments) = cast();
-    let mut host = Host::new(moments, t0());
+    let (actors, cues) = cast();
+    let mut host = Host::new(cues, t0());
     let mut after = Duration::ZERO;
     while after <= PERIOD * 3 {
         let scene = host.at(t0() + after);
@@ -316,8 +312,8 @@ fn the_office_stays_seated_and_never_empties_across_the_wrap() {
 
 #[test]
 fn a_call_across_the_seam_runs_from_its_start_through_the_wrap() {
-    let (_, moments) = cast();
-    let mut host = Host::new(moments, t0());
+    let (_, cues) = cast();
+    let mut host = Host::new(cues, t0());
     for loop_start in [PERIOD, PERIOD * 2] {
         let running = host.at(t0() + loop_start - ms(300)).clone();
         assert_eq!(
@@ -344,20 +340,20 @@ fn a_call_across_the_seam_runs_from_its_start_through_the_wrap() {
 /// it, and it doesn't eat that loop's own Start of the call.
 #[test]
 fn the_first_loop_ignores_a_wrapped_end_and_still_runs_its_start() {
-    let (_, moments) = cast();
+    let (_, cues) = cast();
     assert_eq!(
-        state(&fresh(moments.clone(), ms(600)), &lead()),
+        state(&fresh(cues.clone(), ms(600)), &lead()),
         ActivityState::Idle
     );
-    let caught_up = fresh(moments, PERIOD - ms(300));
+    let caught_up = fresh(cues, PERIOD - ms(300));
     assert_eq!(kind(&caught_up, &lead()), Some(ToolKind::Read));
 }
 
 #[test]
 fn a_playhead_started_a_loop_ago_seats_everyone_in_the_past() {
-    let (actors, moments) = cast();
+    let (actors, cues) = cast();
     let now = t0() + PERIOD;
-    let mut host = Host::new(moments, t0());
+    let mut host = Host::new(cues, t0());
     let scene = host.at(now);
     let starts = [ms(0), ms(400), ms(800)];
     for (actor, start) in actors.iter().zip(starts) {
@@ -377,9 +373,9 @@ fn nothing_lands_before_the_script_starts() {
 
 #[test]
 fn a_long_gap_replays_the_last_whole_loop_in_phase() {
-    let (_, mut moments) = cast();
-    moments.extend([lead().caught_up(ms(0)), lead().usage(ms(10_000), 1)]);
-    let mut host = Host::new(moments, t0());
+    let (_, mut cues) = cast();
+    cues.extend([lead().caught_up(ms(0)), lead().usage(ms(10_000), 1)]);
+    let mut host = Host::new(cues, t0());
     host.at(t0());
     let scene = host.at(t0() + PERIOD * 10 + ms(7_000)).clone();
     let advanced = host.playhead.origin.duration_since(t0()).expect("forward");
@@ -394,16 +390,16 @@ fn a_long_gap_replays_the_last_whole_loop_in_phase() {
 
 #[test]
 fn a_fresh_playhead_is_the_office_a_stepped_one_reaches() {
-    let (_, moments) = cast();
-    let mut stepped = Host::new(moments.clone(), t0());
+    let (_, cues) = cast();
+    let mut stepped = Host::new(cues.clone(), t0());
     let mut after = Duration::ZERO;
     while after < PERIOD * 2 - ms(1_000) {
         stepped.at(t0() + after);
         after += ms(33);
     }
     let now = t0() + after;
-    assert_eq!(stepped.at(now), &fresh(moments.clone(), after));
-    assert_eq!(fresh(moments.clone(), after), fresh(moments, after));
+    assert_eq!(stepped.at(now), &fresh(cues.clone(), after));
+    assert_eq!(fresh(cues.clone(), after), fresh(cues, after));
 }
 
 #[test]
@@ -418,8 +414,8 @@ fn an_actor_of_no_registered_source_is_refused() {
 fn a_visitor_ending_at_the_seam_returns_every_loop() {
     for source in [claude_code::SOURCE_NAME, copilot::SOURCE_NAME] {
         let visitor = Actor::new(source, "visitor", "/work/docs");
-        let moments = [visitor.start(ms(0)), visitor.end(PERIOD - ms(2_000))];
-        let mut host = Host::new(moments, t0());
+        let cues = [visitor.start(ms(0)), visitor.end(PERIOD - ms(2_000))];
+        let mut host = Host::new(cues, t0());
         let mut after = Duration::ZERO;
         while after < PERIOD * 3 + ms(1_000) {
             host.at(t0() + after);
