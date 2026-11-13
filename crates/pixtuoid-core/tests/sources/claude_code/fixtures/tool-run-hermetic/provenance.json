@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.322 (Claude Code)",
-  "captured": "2026-11-11",
+  "version": "2.1.323 (Claude Code)",
+  "captured": "2026-11-13",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 243
+    "blanked": 244
   },
   "aimock": "1.47.0",
   "script": "tests/sources/claude_code/hermetic/tool-run.json",
@@ -32,7 +32,7 @@
     }
   },
   "sentinel_reads": {
-    "b02fea1c-8c6e-4003-9527-f2386f95e567.jsonl": [
+    "dc6ce5a2-a928-491d-8b67-06fa2b7aabf9.jsonl": [
       "19:/message/usage/cache_creation_input_tokens",
       "20:/message/usage/cache_creation_input_tokens"
     ]
