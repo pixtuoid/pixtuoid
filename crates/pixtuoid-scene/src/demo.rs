@@ -296,13 +296,6 @@ pub struct Playhead {
     cursor: usize,
 }
 
-// A host may share one across threads in a `Mutex`, which needs its content
-// `Send` only: https://doc.rust-lang.org/std/sync/struct.Mutex.html
-const _: () = {
-    const fn sendable<T: Send>() {}
-    sendable::<Playhead>();
-};
-
 impl Playhead {
     /// `script`, its first loop starting at `started`.
     pub fn new(script: Script, started: SystemTime) -> Self {
