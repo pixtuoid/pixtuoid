@@ -604,8 +604,8 @@ pub(crate) fn presence_of(
 
 /// Every registered daemon source paired with its presence-decay profile, so
 /// each daemon decays on its own TTL with no hardcoded name.
-pub fn daemon_sources() -> impl Iterator<Item = (&'static str, crate::source::daemon::PresenceTtl)>
-{
+pub(crate) fn daemon_sources()
+-> impl Iterator<Item = (&'static str, crate::source::daemon::PresenceTtl)> {
     REGISTRY
         .iter()
         .filter(|d| d.is_daemon())

@@ -25,3 +25,9 @@ crate = "pixtuoid_scene"
 module = "layout::chrome"
 level = "expect"
 reason = "what the App, a painter outside this workspace, reads"
+
+[[exclude]]
+crate = "pixtuoid_scene"
+module = "demo"
+level = "expect"
+reason = "for the App, a painter outside this workspace, to author its demo cast with"

@@ -65,12 +65,7 @@ pub(crate) fn reconcile_sweep_tick(
     let cur = connected.snapshot();
     reducer.reconcile_connected(scene, &cur, now);
     reducer.tick(scene, now);
-    for (source, ttl) in registry::daemon_sources() {
-        if !connected.is_connected(source) {
-            daemon::mark_presence_down(scene, source, now);
-        }
-        daemon::sweep_presence_ttl(scene, source, ttl, now);
-    }
+    daemon::sweep_registered(scene, now, |source| connected.is_connected(source));
 }
 
 /// `Applied` carries the gateway pid the shell should arm the abrupt-down exit

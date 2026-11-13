@@ -600,27 +600,9 @@ impl core::marker::Unpin for pixtuoid_core::source::daemon::PresenceMsg
 impl core::marker::UnsafeUnpin for pixtuoid_core::source::daemon::PresenceMsg
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::daemon::PresenceMsg
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::daemon::PresenceMsg
-pub struct pixtuoid_core::source::daemon::PresenceTtl
-impl core::clone::Clone for pixtuoid_core::source::daemon::PresenceTtl
-pub fn pixtuoid_core::source::daemon::PresenceTtl::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_core::source::daemon::PresenceTtl
-impl core::cmp::PartialEq for pixtuoid_core::source::daemon::PresenceTtl
-pub fn pixtuoid_core::source::daemon::PresenceTtl::eq(&self, &Self) -> bool
-impl core::fmt::Debug for pixtuoid_core::source::daemon::PresenceTtl
-pub fn pixtuoid_core::source::daemon::PresenceTtl::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Copy for pixtuoid_core::source::daemon::PresenceTtl
-impl core::marker::StructuralPartialEq for pixtuoid_core::source::daemon::PresenceTtl
-impl core::marker::Freeze for pixtuoid_core::source::daemon::PresenceTtl
-impl core::marker::Send for pixtuoid_core::source::daemon::PresenceTtl
-impl core::marker::Sync for pixtuoid_core::source::daemon::PresenceTtl
-impl core::marker::Unpin for pixtuoid_core::source::daemon::PresenceTtl
-impl core::marker::UnsafeUnpin for pixtuoid_core::source::daemon::PresenceTtl
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::daemon::PresenceTtl
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::daemon::PresenceTtl
 pub fn pixtuoid_core::source::daemon::apply_presence(&mut pixtuoid_core::state::SceneState, &pixtuoid_core::source::daemon::DaemonInstanceKey, pixtuoid_core::source::daemon::DaemonPresenceUpdate, std::time::SystemTime)
-pub fn pixtuoid_core::source::daemon::mark_presence_down(&mut pixtuoid_core::state::SceneState, &str, std::time::SystemTime)
 pub fn pixtuoid_core::source::daemon::spawn_presence_exit_watch(pixtuoid_core::source::daemon::PresenceSender) -> core::option::Option<pixtuoid_core::source::daemon::PresenceExitWatch>
-pub fn pixtuoid_core::source::daemon::sweep_presence_ttl(&mut pixtuoid_core::state::SceneState, &str, pixtuoid_core::source::daemon::PresenceTtl, std::time::SystemTime)
+pub fn pixtuoid_core::source::daemon::sweep_registered(&mut pixtuoid_core::state::SceneState, std::time::SystemTime, impl core::ops::function::Fn(&str) -> bool)
 pub type pixtuoid_core::source::daemon::PresenceSender = tokio::sync::mpsc::unbounded::UnboundedSender<pixtuoid_core::source::daemon::PresenceMsg>
 pub mod pixtuoid_core::source::decoder
 #[non_exhaustive] pub enum pixtuoid_core::source::decoder::DecodeError
