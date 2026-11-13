@@ -208,6 +208,20 @@ ci-observability:
     bash policy/ci-observability/check.sh
     bash policy/ci-observability/action_behavior_test.sh
 
+# An App or CLI of the first release a device pairs with reads what that release
+# wrote, so a test edited along with these files passes the break it hides.
+[doc('Fail when a v1 wire golden differs from the first release a device pairs with')]
+[group('rust')]
+wire-frozen:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag=v0.23.0
+    git rev-parse -q --verify "refs/tags/$tag" >/dev/null ||
+        git fetch -q --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
+    # A sample added since is no edit of one.
+    git diff --exit-code --diff-filter=a "$tag" -- crates/pixtuoid-core/src/remote.v1.golden.json fuzz/seeds/remote ||
+        { echo "a v1 break: bump remote::VERSION and start a v2 golden" >&2; exit 1; }
+
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link
 # must resolve and every `#anchor` exist. `--offline`, so external-URL decay is
@@ -364,6 +378,7 @@ lint: (_npm ".")
     run composites just actionlint-composites & pids+=($!)
     run zizmor  just zizmor              & pids+=($!)
     run ci-obs  just ci-observability     & pids+=($!)
+    run wire    just wire-frozen          & pids+=($!)
     run links   just links               & pids+=($!)
     run ruff    just ruff                & pids+=($!)
     run pyright just pyright             & pids+=($!)

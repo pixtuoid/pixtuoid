@@ -365,26 +365,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn each_committed_remote_seed_gets_past_its_parser() {
-        let seed = |name: &str| {
-            let seeds = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/seeds/remote");
-            std::fs::read_to_string(seeds.join(name)).expect(name)
-        };
-        PairLink::from_str(&seed("link")).expect("a link");
-        Hello::from_line(seed("hello").as_bytes()).expect("a hello");
-        let reply = Reply::from_line(seed("reply").as_bytes()).expect("a reply");
-        assert!(matches!(reply, Reply::Paired { .. }));
-        let ask = serde_json::from_str::<Ask>(&seed("ask")).expect("an ask");
-        assert_eq!(ask, Ask::Sources);
-        let answer = Answer::from_line(seed("answer").as_bytes()).expect("an answer");
-        assert!(matches!(answer, Answer::Sources { rows } if !rows.is_empty()));
-        let change = serde_json::from_str::<Ask>(&seed("change")).expect("a change");
-        assert!(matches!(change, Ask::Change { .. }));
-        let changed = Answer::from_line(seed("changed").as_bytes()).expect("an answer");
-        assert!(matches!(changed, Answer::Changed(_)));
-    }
-
     const MUTABLE: &str =
         "claude-code\n{\"text\":\"ascii\",\"n\":1,\"list\":[true,null]}\n{\"other\":{}}\n";
     const ROOM: usize = 4096;

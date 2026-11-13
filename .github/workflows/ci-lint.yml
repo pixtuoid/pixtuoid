@@ -101,6 +101,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
       - run: just ci-observability
+      - run: just wire-frozen
       - run: just links
       - run: just ruff
       - run: just pyright
