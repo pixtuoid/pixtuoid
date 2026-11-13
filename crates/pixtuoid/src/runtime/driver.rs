@@ -140,7 +140,8 @@ async fn run_async(cfg: RunConfig, tui: Option<Boot>) -> Result<Option<QuitSigna
     }
 }
 
-/// Build the runtime source set `run_async` spawns — the ONE place that set is
+/// Build the source set [`spawn_pipeline`](super::pipeline::spawn_pipeline)
+/// spawns for both painters and `serve` — the ONE place that set is
 /// constructed. Hook-only sources + the daemon (OpenClaw) are absent by
 /// design — they ride the router's shared socket.
 pub(crate) fn build_source_set(
