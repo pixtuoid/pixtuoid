@@ -63,11 +63,12 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// which shares the global hooks file but is not this source.
 pub const CLI_APP_DATA_DIR: &str = "antigravity-cli";
 
-/// agy's `.gemini` dir, under Go's `os.UserHomeDir` on every platform (agy 1.5.3
-/// `fs/local.GeminiDir`): its app data dir and its global `config/` both sit here.
+/// agy's `.gemini` dir, under Go's `os.UserHomeDir` on every platform, and none
+/// where that errs, as agy's own is (agy 1.5.7 `fs/local.GeminiDir`,
+/// `local.go:23-30,65-71`): its app data dir and its global `config/` both sit here.
 #[cfg(feature = "native")]
-pub fn gemini_dir() -> std::path::PathBuf {
-    crate::platform::or_host_fallback(crate::platform::go_user_home_dir()).join(".gemini")
+pub fn gemini_dir() -> Option<std::path::PathBuf> {
+    Some(crate::platform::go_user_home_dir()?.join(".gemini"))
 }
 
 /// Antigravity-cli writes one conversation's `step_index` stream several times
@@ -341,15 +342,12 @@ mod tests {
             || {
                 assert_eq!(
                     gemini_dir(),
-                    std::path::PathBuf::from("/home/u").join(".gemini")
+                    Some(std::path::PathBuf::from("/home/u").join(".gemini"))
                 );
             },
         );
         temp_env::with_vars([(own, None), (other, Some("/elsewhere"))], || {
-            assert_eq!(
-                gemini_dir(),
-                crate::platform::or_host_fallback(None).join(".gemini")
-            );
+            assert_eq!(crate::source::resolved_source_root(SOURCE_NAME), None);
         });
     }
 

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
 
-use super::{SOURCE_NAME, codex_home, codex_id_from_path};
+use super::{CodexHomeUnresolved, SOURCE_NAME, codex_home, codex_id_from_path};
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher, ProbeSnapshot};
 use crate::source::registry::{FocusProbe, Native, NativeTranscript};
 use crate::source::{Source, TaggedSender};
@@ -50,12 +50,13 @@ pub struct CodexSource {
 }
 
 impl CodexSource {
-    /// Construct pointed at the default Codex `sessions` rollout root.
-    pub fn default_paths() -> Self {
-        Self {
-            sessions_root: codex_home().join("sessions"),
+    /// Construct pointed at the default Codex `sessions` rollout root, if
+    /// [`codex_home`] resolves.
+    pub fn default_paths() -> Option<Self> {
+        Some(Self {
+            sessions_root: sessions_root().ok()?,
             child_end_unclaims: None,
-        }
+        })
     }
 }
 
@@ -83,7 +84,7 @@ pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
 };
 
 pub(crate) const NATIVE: Native = Native {
-    root: Some(sessions_root),
+    root: Some(|| sessions_root().ok()),
     focus_probe: Some(FocusProbe {
         paths: probe_paths,
         present: Path::is_dir,
@@ -91,12 +92,14 @@ pub(crate) const NATIVE: Native = Native {
     }),
 };
 
-fn sessions_root() -> Option<PathBuf> {
-    Some(CodexSource::default_paths().sessions_root)
+fn sessions_root() -> std::result::Result<PathBuf, CodexHomeUnresolved> {
+    Ok(codex_home()?.join(super::SESSIONS_DIR))
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
-    Ok(vec![CodexSource::default_paths().sessions_root])
+    sessions_root()
+        .map(|root| vec![root])
+        .map_err(|unresolved| unresolved.reason())
 }
 
 /// The live session's pid, keyed by the rollout UUID (the slot's
@@ -111,6 +114,28 @@ mod tests {
     use super::*;
 
     const UUID: &str = "019e7762-9ded-7e33-be41-946ecf105bf4";
+
+    #[test]
+    fn a_codex_home_that_is_no_directory_disables_the_probe_by_name() {
+        let probe = crate::source::registry::descriptor_for(SOURCE_NAME)
+            .and_then(|d| d.focus_probe())
+            .expect("codex has a focus probe");
+        let home = tempfile::tempdir().unwrap();
+        let pinned = [
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        temp_env::with_vars(pinned, || {
+            temp_env::with_var("CODEX_HOME", Some(home.path().join("codx")), || {
+                assert_eq!((probe.paths)(), Err("CODEX_HOME is no directory"));
+            });
+            temp_env::with_var_unset("CODEX_HOME", || {
+                let root =
+                    crate::platform::dirs_home_dir().map(|h| h.join(".codex").join("sessions"));
+                assert_eq!((probe.paths)().ok(), root.map(|r| vec![r]));
+            });
+        });
+    }
 
     fn snap_of(root: &Path, paths: Vec<PathBuf>) -> ProbeSnapshot {
         ProbeSnapshot::from_open_fd_pairs(

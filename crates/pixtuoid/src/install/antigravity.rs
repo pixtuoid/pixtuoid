@@ -56,13 +56,10 @@ pub(crate) const AG_EVENTS: &[(&str, bool)] = &[
 ];
 
 fn config_dir() -> Result<PathBuf> {
-    if pixtuoid_core::platform::go_user_home_dir().is_none() {
-        return Err(io::home_unset(
-            "the home directory",
-            pixtuoid_core::platform::USER_HOME_VAR,
-        ));
-    }
-    Ok(gemini_dir().join("config"))
+    let gemini = gemini_dir().ok_or_else(|| {
+        io::home_unset("the home directory", pixtuoid_core::platform::USER_HOME_VAR)
+    })?;
+    Ok(gemini.join("config"))
 }
 
 pub(crate) fn default_config_path() -> Result<PathBuf> {
@@ -78,7 +75,7 @@ fn shared_hooks_path() -> Result<PathBuf> {
 /// agy creates its app data dir on first run; `~/.gemini` alone is Gemini CLI's
 /// too.
 pub(crate) fn detect_installed() -> bool {
-    gemini_dir().join(CLI_APP_DATA_DIR).exists()
+    gemini_dir().is_some_and(|dir| dir.join(CLI_APP_DATA_DIR).exists())
 }
 
 /// The BASE command, which [`render_hooks`] extends per event. agy shells it
@@ -247,7 +244,7 @@ mod tests {
             || {
                 let probe = crate::install::target::ANTIGRAVITY.presence_probe;
                 assert!(!probe());
-                std::fs::create_dir_all(gemini_dir().join(CLI_APP_DATA_DIR)).unwrap();
+                std::fs::create_dir_all(gemini_dir().unwrap().join(CLI_APP_DATA_DIR)).unwrap();
                 assert!(probe());
             },
         );

@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn a_hook_connection_is_framed_as_the_listener_frames_it() {
-        let payload = br#"{"session_id":"s","cwd":"/repo","hook_event_name":"SessionStart"}"#;
+        let payload = br#"{"_pixtuoid_source":"claude-code","session_id":"s","cwd":"/repo","hook_event_name":"SessionStart"}"#;
         assert_eq!(
             hook(payload).registered(),
             1,

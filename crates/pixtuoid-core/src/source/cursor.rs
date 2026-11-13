@@ -16,8 +16,8 @@
 //! - **cursor also runs Claude Code's hooks** (`~/.claude/settings.json` and the
 //!   project's, on by default: cursor.com/docs/reference/third-party-hooks), so a
 //!   user who connected both CLIs gets each cursor event again through CC's shim,
-//!   stamped `claude-code`, or unstamped by an install without the env prefix.
-//!   `decoder`'s cross-fire guard drops every one on `cursor_version`. Lossless —
+//!   stamped `claude-code`. `decoder`'s cross-fire guard drops every one on
+//!   `cursor_version`. Lossless —
 //!   the `cursor`-stamped copy carries the whole arc.
 //! - **A child is its own session, linked late.** pixtuoid registers no
 //!   subagent hook (`CURSOR_EVENTS`) and a child fires no `sessionStart`

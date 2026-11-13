@@ -358,9 +358,8 @@ mod tests {
             "pixtuoid now connects to Claude Code, Codex and Reasonix as a plugin: \
              reconnect the ones you use in Sources (s)."
                 .to_string(),
-            "The cutaway office is now the default where this terminal draws it: \
-             `pixtuoid run --look classic` (or `look = \"classic\"` in the config) keeps the \
-             classic office."
+            "pixtuoid now connects to Antigravity CLI as a plugin: reconnect it in Sources (s) \
+             if you use it."
                 .to_string(),
         ]
     }

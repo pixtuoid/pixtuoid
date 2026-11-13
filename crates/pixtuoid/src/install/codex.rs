@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use serde_json::json;
 
 use crate::install::host_plugin::{self, NAME};
 use crate::install::target::{CliConfig, HostRegistration, PluginCopy, Refresh, Unregistered};
 use crate::install::verify::{SchemaParse, ShimRef};
 use crate::install::{io, merge};
+use pixtuoid_core::source::codex::CodexHomeUnresolved;
 
 pub(crate) const CODEX_EVENTS: &[&str] = &[
     "SessionStart",
@@ -69,9 +70,19 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     host_plugin::owned_path("codex-plugin", host_plugin::HOOKS_FILE)
 }
 
-/// The SAME codex_home() the watcher uses, so the two can't disagree.
+/// Core's [`codex_home`](pixtuoid_core::source::codex::codex_home), the watcher's,
+/// with each unresolved cause worded as its remedy.
 fn home() -> Result<PathBuf> {
-    Ok(pixtuoid_core::source::codex::codex_home())
+    pixtuoid_core::source::codex::codex_home().map_err(|unresolved| match unresolved {
+        CodexHomeUnresolved::NotADirectory(set) => anyhow!(
+            "CODEX_HOME is {}, which is no directory, so codex itself won't start; create it or unset CODEX_HOME",
+            crate::display_path(&set)
+        ),
+        CodexHomeUnresolved::NoHome => io::home_unset(
+            "Codex's home",
+            &format!("CODEX_HOME/{}", pixtuoid_core::platform::USER_HOME_VAR),
+        ),
+    })
 }
 
 /// Codex's own config, where it records the marketplace and the plugin's enablement.
@@ -215,7 +226,7 @@ fn copy_is_stale(config: &Path) -> Result<bool> {
         .split('/')
         .chain([NAME, NAME, LOCAL_VERSION])
         .chain(host_plugin::HOOKS_FILE.iter().copied())
-        .fold(pixtuoid_core::source::codex::codex_home(), |p, c| p.join(c));
+        .fold(home()?, |p, c| p.join(c));
     Ok(io::read_config(&copy)? != io::read_config(config)?)
 }
 
@@ -306,14 +317,25 @@ _pixtuoid = true
         temp_env::with_var("CODEX_HOME", Some(tmp.path()), || {
             assert_eq!(config_toml().unwrap(), tmp.path().join("config.toml"));
         });
-        // A non-existent dir falls back, where upstream errors; `resolve_codex_home` says why.
         let missing = tmp.path().join("missing");
         temp_env::with_var("CODEX_HOME", Some(&missing), || {
-            assert!(
-                config_toml()
-                    .unwrap()
-                    .ends_with(PathBuf::from(".codex").join("config.toml"))
-            );
+            let err = format!("{:#}", config_toml().unwrap_err());
+            assert!(err.contains("which is no directory"), "{err}");
+        });
+    }
+
+    #[test]
+    fn a_codex_home_that_is_no_directory_reads_absent() {
+        let probe = crate::install::target::CODEX.presence_probe;
+        let tmp = tempfile::tempdir().unwrap();
+        // Codex can't start under it, so setup and onboarding must not offer it.
+        temp_env::with_var("CODEX_HOME", Some(tmp.path().join("codx")), || {
+            assert!(!probe(), "a CODEX_HOME that is no directory");
+        });
+        temp_env::with_var("CODEX_HOME", Some(tmp.path()), || {
+            assert!(!probe(), "a CODEX_HOME holding no config.toml");
+            std::fs::write(tmp.path().join("config.toml"), "").unwrap();
+            assert!(probe(), "a CODEX_HOME holding its config.toml");
         });
     }
 

@@ -68,6 +68,7 @@ fn decode_unknown_event_returns_err() {
 fn empty_session_id_is_rejected() {
     assert!(
         decode_hook_payload(json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SessionStart",
             "session_id": "",
             "transcript_path": "/p/a.jsonl",
@@ -200,6 +201,7 @@ fn codex_subagent_hooks_reject_missing_or_empty_agent_id() {
 fn cc_subagent_start_keys_prefixed_child_and_links_parent() {
     for agent_type in ["general-purpose", "workflow-subagent"] {
         let ev = decode_single(json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SubagentStart",
             "session_id": "01000000-0000-7000-8000-0000000000cc",
             "transcript_path": "/home/user/.claude/projects/-home-user-demo-project/01000000-0000-7000-8000-0000000000cc.jsonl",
@@ -244,6 +246,7 @@ fn cc_subagent_stop_keys_on_agent_transcript_path_stem() {
         "/home/user/.claude/projects/-home-user-demo-project/01000000-0000-7000-8000-0000000000cc/subagents/workflows/wf_00000000-000/agent-a0000000000000001.jsonl",
     ] {
         let ev = decode_single(json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SubagentStop",
             "session_id": "01000000-0000-7000-8000-0000000000cc",
             "transcript_path": "/home/user/.claude/projects/-home-user-demo-project/01000000-0000-7000-8000-0000000000cc.jsonl",
@@ -277,17 +280,20 @@ fn cc_subagent_stop_keys_on_agent_transcript_path_stem() {
 fn cc_subagent_stop_without_transcript_path_falls_back_to_prefixed_agent_id() {
     for payload in [
         json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SubagentStop",
             "session_id": "parent-sess",
             "agent_id": "a0000000000000001"
         }),
         json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SubagentStop",
             "session_id": "parent-sess",
             "agent_id": "a0000000000000001",
             "agent_transcript_path": null
         }),
         json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SubagentStop",
             "session_id": "parent-sess",
             "agent_id": "a0000000000000001",
@@ -315,6 +321,7 @@ fn cc_subagent_stop_without_transcript_path_falls_back_to_prefixed_agent_id() {
 #[test]
 fn cc_subagent_start_and_stop_coalesce_on_one_child_id() {
     let start = decode_single(json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SubagentStart",
         "session_id": "01000000-0000-7000-8000-0000000000cc",
         "cwd": "/home/user/demo-project",
@@ -323,6 +330,7 @@ fn cc_subagent_start_and_stop_coalesce_on_one_child_id() {
     }))
     .agent_id();
     let stop = decode_single(json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SubagentStop",
         "session_id": "01000000-0000-7000-8000-0000000000cc",
         "agent_id": "a0000000000000001",
@@ -340,6 +348,7 @@ fn cc_subagent_start_and_stop_coalesce_on_one_child_id() {
 fn cc_subagent_start_does_not_double_prefix_an_already_prefixed_agent_id() {
     for wire_id in ["abc123", "agent-abc123"] {
         let ev = decode_single(json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "SubagentStart",
             "session_id": "parent-sess",
             "cwd": "/home/user/demo-project",
@@ -358,9 +367,9 @@ fn cc_subagent_start_does_not_double_prefix_an_already_prefixed_agent_id() {
 fn cc_subagent_hooks_reject_missing_or_empty_agent_id() {
     for event in ["SubagentStart", "SubagentStop"] {
         for payload in [
-            json!({"hook_event_name": event, "session_id": "parent-sess"}),
-            json!({"hook_event_name": event, "session_id": "parent-sess", "agent_id": ""}),
-            json!({"hook_event_name": event, "agent_id": "abc"}),
+            json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "session_id": "parent-sess"}),
+            json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "session_id": "parent-sess", "agent_id": ""}),
+            json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "agent_id": "abc"}),
         ] {
             assert!(
                 decode_hook_payload(payload.clone()).is_err(),
@@ -436,6 +445,7 @@ fn cc_jsonl_tool_result_is_tool_use_end() {
 #[test]
 fn decode_hook_payload_with_multibyte_tool_input_does_not_panic() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PreToolUse",
         "session_id": "ses-zh",
         "transcript_path": "/tmp/zh.jsonl",
@@ -458,6 +468,7 @@ fn decode_hook_payload_with_multibyte_tool_input_does_not_panic() {
 #[test]
 fn decode_pre_tool_use_carries_tool_use_id_from_payload() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PreToolUse",
         "session_id": "ses-abc",
         "transcript_path": "/Users/me/.claude/projects/x/ses-abc.jsonl",
@@ -484,6 +495,7 @@ fn decode_pre_tool_use_carries_tool_use_id_from_payload() {
 fn decode_pre_tool_use_agent_tool_is_task() {
     for tool in ["Agent", "Task"] {
         let payload = serde_json::json!({
+            "_pixtuoid_source": "claude-code",
             "hook_event_name": "PreToolUse",
             "session_id": "ses-abc",
             "transcript_path": "/p/ses-abc.jsonl",
@@ -505,6 +517,7 @@ fn decode_pre_tool_use_agent_tool_is_task() {
 #[test]
 fn subagent_dispatch_detected_by_subagent_type_under_novel_name() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PreToolUse",
         "session_id": "ses-abc",
         "transcript_path": "/p/ses-abc.jsonl",
@@ -525,6 +538,7 @@ fn subagent_dispatch_detected_by_subagent_type_under_novel_name() {
 #[test]
 fn non_dispatch_tool_is_not_task() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PreToolUse",
         "session_id": "s",
         "transcript_path": "/p/s.jsonl",
@@ -564,6 +578,7 @@ fn cc_jsonl_agent_tool_use_is_task() {
 #[test]
 fn decode_post_tool_use_carries_tool_use_id_from_payload() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PostToolUse",
         "session_id": "ses-abc",
         "transcript_path": "/Users/me/.claude/projects/x/ses-abc.jsonl",
@@ -718,6 +733,7 @@ fn ag_ask_permission_and_question_emits_user_action_request() {
 #[test]
 fn decode_hook_payload_missing_session_id_returns_err() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionStart",
         "transcript_path": "/tmp/t.jsonl",
         "cwd": "/repo"
@@ -731,6 +747,7 @@ fn decode_hook_payload_missing_session_id_returns_err() {
 #[test]
 fn decode_cc_hook_keys_on_session_id_ignoring_transcript_path() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PreToolUse",
         "session_id": "ses-abc",
         "transcript_path": "/Users/me/.claude/projects/-Worktree-B/OTHER-stem.jsonl",
@@ -757,6 +774,7 @@ fn decode_cc_hook_keys_on_session_id_ignoring_transcript_path() {
 fn decode_pre_tool_use_long_command_is_ellipsis_truncated() {
     let long_cmd = "echo ".to_string() + &"a".repeat(60);
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PreToolUse",
         "session_id": "ses-trunc",
         "transcript_path": "/tmp/t.jsonl",
@@ -780,6 +798,7 @@ fn decode_pre_tool_use_long_command_is_ellipsis_truncated() {
 #[test]
 fn decode_pre_tool_use_missing_target_field_has_no_suffix() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PreToolUse",
         "session_id": "ses-nocmd",
         "transcript_path": "/tmp/t.jsonl",
@@ -876,6 +895,7 @@ fn ag_grep_search_decodes_to_tool_use_start() {
 #[test]
 fn decode_hook_payload_missing_tool_name_still_succeeds() {
     let payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "PreToolUse",
         "session_id": "ses-abc",
         "transcript_path": "/tmp/t.jsonl"
@@ -912,6 +932,7 @@ async fn hook_and_watcher_keys_coalesce_for_one_file() {
 
     let transcript_str = transcript.to_string_lossy().to_string();
     let hook_payload = serde_json::json!({
+        "_pixtuoid_source": "claude-code",
         "hook_event_name": "SessionStart",
         "session_id": "ses-coalesce",
         "transcript_path": transcript_str,

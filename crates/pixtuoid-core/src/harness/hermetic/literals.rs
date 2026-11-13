@@ -879,6 +879,7 @@ mod tests {
         ),
         item("decoder.rs", "describe_tool_target", LABEL_DETAIL),
         item("decoder.rs", "SUBAGENTS_DIR", PATH_AXIS),
+        item("codex.rs", "SESSIONS_DIR", PATH_AXIS),
         item("codex/native.rs", "is_rollout_filename", PATH_AXIS),
         item("grok.rs", "is_updates_jsonl", PATH_AXIS),
         item("grok/native.rs", "grok_probe_root_resolved", PATH_AXIS),

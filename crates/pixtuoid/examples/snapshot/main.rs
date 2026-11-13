@@ -54,9 +54,9 @@ struct SnapshotArgs {
     #[arg(long)]
     live: bool,
 
-    /// CC project root to watch (only with --live).
-    #[arg(long, default_value_t = default_projects_root())]
-    projects_root: String,
+    /// CC project root to watch (only with --live); default: CC's own.
+    #[arg(long)]
+    projects_root: Option<PathBuf>,
 
     /// How many seconds to listen for events (only with --live).
     #[arg(long, default_value_t = 5)]
@@ -332,15 +332,6 @@ fn pixel_look() -> impl clap::builder::TypedValueParser<Value = LookKind> {
     pixtuoid::dev::named_parser(LookKind::ALL, LookKind::name)
 }
 
-fn default_projects_root() -> String {
-    // Honor CLAUDE_CONFIG_DIR via the same resolver the runtime uses, rather
-    // than re-hardcoding the ~/.claude shape.
-    pixtuoid_core::source::claude_code::ClaudeCodeSource::default_paths()
-        .projects_root
-        .to_string_lossy()
-        .into_owned()
-}
-
 fn parse_navigations(specs: &[String]) -> Result<Vec<(u64, usize)>> {
     specs
         .iter()
@@ -420,7 +411,17 @@ fn main() -> Result<()> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()?;
-        rt.block_on(capture_live_scene(&args.projects_root, args.listen_secs))?
+        // Honor CLAUDE_CONFIG_DIR via the same resolver the runtime uses, rather
+        // than re-hardcoding the ~/.claude shape.
+        let projects_root = match args.projects_root.clone() {
+            Some(root) => root,
+            None => {
+                pixtuoid_core::source::claude_code::ClaudeCodeSource::default_paths()
+                    .context("no home directory: pass --projects-root")?
+                    .projects_root
+            }
+        };
+        rt.block_on(capture_live_scene(&projects_root, args.listen_secs))?
     } else if args.dashboard {
         dashboard_scene(now)
     } else {

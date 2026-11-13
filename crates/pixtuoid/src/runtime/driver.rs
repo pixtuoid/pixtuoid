@@ -150,19 +150,18 @@ pub(crate) fn build_source_set(
     presence_tx: Option<daemon::PresenceSender>,
     connected: ConnectedSources,
 ) -> Vec<Box<dyn DynSource>> {
-    let mut cc_src = ClaudeCodeSource::default_paths();
-    let ag_src = AntigravitySource::default_paths();
-    let copilot_src = CopilotSource::default_paths();
-    let omp_src = OmpSource::default_paths();
-
-    let mut codex_src = CodexSource::default_paths();
-
     // The hook tee is the sole PRODUCER, and each watcher drains only ids whose
     // transcripts it claims (AgentId is source-namespaced), so a Codex child waits
     // for the Codex watcher even though the router decoded its hook.
     let child_end_unclaims = ChildEndUnclaims::new();
-    cc_src.child_end_unclaims = Some(child_end_unclaims.clone());
-    codex_src.child_end_unclaims = Some(child_end_unclaims.clone());
+    let cc_src = ClaudeCodeSource::default_paths().map(|src| ClaudeCodeSource {
+        child_end_unclaims: Some(child_end_unclaims.clone()),
+        ..src
+    });
+    let codex_src = CodexSource::default_paths().map(|src| CodexSource {
+        child_end_unclaims: Some(child_end_unclaims.clone()),
+        ..src
+    });
 
     // grok consumes too: its subagent_stop/end hooks decode to Hook-transport
     // `SessionEnd{as_child:true}`, the tee's trigger.
@@ -174,15 +173,21 @@ pub(crate) fn build_source_set(
         .with_presence_tx(presence_tx)
         .with_connected(connected);
 
-    vec![
-        Box::new(hook_router) as Box<dyn DynSource>,
-        Box::new(cc_src),
-        Box::new(ag_src),
-        Box::new(codex_src),
-        Box::new(copilot_src),
-        Box::new(omp_src),
-        Box::new(grok_src),
+    fn boxed(src: impl DynSource) -> Box<dyn DynSource> {
+        Box::new(src)
+    }
+    [
+        Some(boxed(hook_router)),
+        cc_src.map(boxed),
+        AntigravitySource::default_paths().map(boxed),
+        codex_src.map(boxed),
+        CopilotSource::default_paths().map(boxed),
+        OmpSource::default_paths().map(boxed),
+        Some(boxed(grok_src)),
     ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 #[cfg(test)]
@@ -685,11 +690,20 @@ mod tests {
         use pixtuoid_core::source::registry::{self, descriptor_for};
         use std::collections::BTreeSet;
 
-        let sources = build_source_set(
-            PathBuf::from("/tmp/pixtuoid-test.sock"),
-            None,
-            ConnectedSources::default(),
-        );
+        // Pinned so every source's root resolves.
+        let home = tempfile::tempdir().unwrap();
+        let vars = [
+            ("CODEX_HOME", None),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let sources = temp_env::with_vars(vars, || {
+            build_source_set(
+                PathBuf::from("/tmp/pixtuoid-test.sock"),
+                None,
+                ConnectedSources::default(),
+            )
+        });
         let built: BTreeSet<&str> = sources.iter().map(|s| s.name()).collect();
 
         // The HookRouter is infrastructure, not a registered CLI: it has no
@@ -713,6 +727,29 @@ mod tests {
              transcript-bearing source is registered but not built (it would never \
              spawn), or a built source isn't registered"
         );
+    }
+
+    #[test]
+    fn a_codex_home_that_is_no_directory_builds_no_codex_watcher() {
+        let home = tempfile::tempdir().unwrap();
+        let missing = home.path().join("codx");
+        let vars = [
+            ("CODEX_HOME", Some(missing.as_os_str())),
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
+        let built: Vec<String> = temp_env::with_vars(vars, || {
+            build_source_set(
+                PathBuf::from("/tmp/pixtuoid-test.sock"),
+                None,
+                ConnectedSources::default(),
+            )
+            .iter()
+            .map(|s| s.name().to_owned())
+            .collect()
+        });
+        assert!(!built.iter().any(|n| n == "codex"), "{built:?}");
+        assert!(built.iter().any(|n| n == "claude-code"), "{built:?}");
     }
 
     /// A transcript read hands over a call's start and end together: both

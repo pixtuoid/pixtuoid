@@ -53,7 +53,15 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
 }
 
 fn home() -> Result<PathBuf> {
-    claude_config_dir().map_or_else(|| io::home_relative(".claude"), Ok)
+    claude_config_dir().ok_or_else(|| {
+        io::home_unset(
+            "Claude Code's config dir",
+            &format!(
+                "CLAUDE_CONFIG_DIR/{}",
+                pixtuoid_core::platform::USER_HOME_VAR
+            ),
+        )
+    })
 }
 
 /// Claude Code's user settings, where it records the plugin as enabled.
@@ -194,9 +202,7 @@ pub(crate) fn hook_command(resolved: &Path, explicit: bool) -> Result<String> {
     #[cfg(not(windows))]
     {
         // CC's Unix entry carries no `args` key, so it runs through a SHELL and
-        // the env prefix every other source uses works here too. It was bare for
-        // years, which made "no `_pixtuoid_source`" mean "probably CC" — the
-        // guess `decoder` still has to make for installs written before this.
+        // the env prefix every other source uses works here too.
         let p = if explicit {
             merge::hook_path_str(resolved)?
         } else {
@@ -296,27 +302,34 @@ mod tests {
 
     #[test]
     fn settings_path_honors_claude_config_dir() {
-        let fallback_suffix = PathBuf::from(".claude").join("settings.json");
+        let home = tempfile::tempdir().unwrap();
+        let fallback = home.path().join(".claude").join("settings.json");
+        let pinned = [
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
 
-        temp_env::with_var_unset("CLAUDE_CONFIG_DIR", || {
-            let unset_path = settings_path().unwrap();
-            assert!(
-                unset_path.ends_with(&fallback_suffix),
-                "default config path must end with .claude/settings.json, got {unset_path:?}"
-            );
-        });
+        temp_env::with_vars(pinned, || {
+            temp_env::with_var_unset("CLAUDE_CONFIG_DIR", || {
+                assert_eq!(
+                    settings_path().unwrap(),
+                    fallback,
+                    "unset CLAUDE_CONFIG_DIR"
+                );
+            });
 
-        let custom_dir = std::env::temp_dir().join("pixtuoid-claude-config-dir");
-        temp_env::with_var("CLAUDE_CONFIG_DIR", Some(&custom_dir), || {
-            assert_eq!(settings_path().unwrap(), custom_dir.join("settings.json"));
-        });
+            let custom_dir = std::env::temp_dir().join("pixtuoid-claude-config-dir");
+            temp_env::with_var("CLAUDE_CONFIG_DIR", Some(&custom_dir), || {
+                assert_eq!(settings_path().unwrap(), custom_dir.join("settings.json"));
+            });
 
-        temp_env::with_var("CLAUDE_CONFIG_DIR", Some(""), || {
-            let empty_path = settings_path().unwrap();
-            assert!(
-                empty_path.ends_with(&fallback_suffix),
-                "empty CLAUDE_CONFIG_DIR must fall back to .claude/settings.json, got {empty_path:?}"
-            );
+            temp_env::with_var("CLAUDE_CONFIG_DIR", Some(""), || {
+                assert_eq!(
+                    settings_path().unwrap(),
+                    fallback,
+                    "empty CLAUDE_CONFIG_DIR"
+                );
+            });
         });
     }
 
@@ -459,6 +472,7 @@ mod tests {
         use pixtuoid_core::source::decoder::decode_hook_payload;
         for ev in EVENTS {
             let payload = serde_json::json!({
+                "_pixtuoid_source": "claude-code",
                 "hook_event_name": ev,
                 "session_id": "sess",
                 "transcript_path": "/p/sess.jsonl",

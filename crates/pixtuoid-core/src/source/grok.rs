@@ -586,14 +586,12 @@ fn percent_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// The grok home dir, matching grok-build's own resolution (`xai-dirs`
-/// `src/lib.rs:33-89` @ 2bdd1d6a63): `GROK_HOME` UNCONDITIONALLY when set
-/// (upstream takes the env var without an exists-check and `create_dir_all`s it
-/// — the opposite of codex's existing-dir gate), else `<home>/.grok` on EVERY
-/// OS (no XDG, no APPDATA), the home being `std::env::home_dir()`'s, so
-/// [`crate::platform::user_home_opt`]'s. The watcher, the installer and the
-/// liveness probe all route through here, so the watched root, the installed
-/// hooks file and the probed registry can never disagree.
+/// The grok home dir, matching grok-build's own `grok_home()` (`xai-dirs`
+/// `src/lib.rs:61-97` @ 2bdd1d6a63): [`user_grok_home`], else `<cwd>/.grok`
+/// (upstream's `default_grok_home`). The watcher, the liveness probe and the
+/// installer's detection route through here; the installed hooks file through
+/// [`user_grok_home`], so the watched root, the installed hooks file and the
+/// probed registry can never disagree.
 ///
 /// Not mirrored: upstream `dunce::canonicalize`s the DEFAULT home before joining
 /// `.grok` (never `$GROK_HOME`), so under a SYMLINKED `$HOME` its path string
@@ -601,15 +599,36 @@ fn percent_decode(s: &str) -> Option<String> {
 /// exposed surface — the sessions WATCH ROOT — is opened, not string-compared,
 /// and both forms resolve through the link to one dir.
 pub fn grok_home() -> PathBuf {
-    resolve_grok_home(
+    resolve_grok_home(user_grok_home(), || {
+        // Upstream canonicalizes `"."`, keeping it verbatim where that fails.
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    })
+}
+
+/// grok's home with no cwd fallback, upstream's `user_grok_home()`, the root its
+/// hook discovery scans: `GROK_HOME` UNCONDITIONALLY when set (upstream takes the
+/// env var without an exists-check and `create_dir_all`s it — the opposite of
+/// codex's existing-dir gate), else `<home>/.grok` on EVERY OS (no XDG, no
+/// APPDATA), the home being `std::env::home_dir()`'s, so
+/// [`crate::platform::user_home_opt`]'s; none with neither.
+pub fn user_grok_home() -> Option<PathBuf> {
+    resolve_user_grok_home(
         crate::platform::path_env("GROK_HOME"),
-        crate::platform::user_home(),
+        crate::platform::user_home_opt(),
     )
 }
 
 /// Pure precedence core, separated so it's unit-testable without env mutation.
-fn resolve_grok_home(grok_home_env: Option<PathBuf>, home: PathBuf) -> PathBuf {
-    grok_home_env.unwrap_or_else(|| home.join(".grok"))
+fn resolve_user_grok_home(
+    grok_home_env: Option<PathBuf>,
+    home: Option<PathBuf>,
+) -> Option<PathBuf> {
+    grok_home_env.or_else(|| Some(home?.join(".grok")))
+}
+
+/// [`grok_home`]'s fallback, separated so it's unit-testable without a cwd.
+fn resolve_grok_home(user: Option<PathBuf>, cwd: impl FnOnce() -> PathBuf) -> PathBuf {
+    user.unwrap_or_else(|| cwd().join(".grok"))
 }
 
 #[cfg(test)]
@@ -617,20 +636,30 @@ mod tests {
     use super::*;
     use crate::source::decoder::test_obj;
 
+    fn cwd() -> PathBuf {
+        PathBuf::from("/work")
+    }
+
     #[test]
     fn grok_home_takes_env_unconditionally_even_when_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let missing = tmp.path().join("missing");
         assert_eq!(
-            resolve_grok_home(Some(missing.clone()), PathBuf::from("/home/u")),
-            missing
+            resolve_user_grok_home(Some(missing.clone()), None),
+            Some(missing)
         );
     }
 
     #[test]
     fn grok_home_falls_back_to_dot_grok_when_env_unset() {
         let expected = PathBuf::from("/home/u").join(".grok");
-        assert_eq!(resolve_grok_home(None, PathBuf::from("/home/u")), expected);
+        assert_eq!(
+            resolve_user_grok_home(None, Some(PathBuf::from("/home/u"))),
+            Some(expected.clone())
+        );
+        assert_eq!(resolve_user_grok_home(None, None), None);
+        assert_eq!(resolve_grok_home(Some(expected.clone()), cwd), expected);
+        assert_eq!(resolve_grok_home(None, cwd), cwd().join(".grok"));
     }
     use serde_json::json;
 

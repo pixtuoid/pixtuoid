@@ -26,12 +26,11 @@ use tracing::warn;
 
 use super::{CONN_TIMEOUT, Client, ConnectedSources, HookSocketListener, SocketBusy, connect};
 
-/// A subscriber's first line. Not JSON: an owner older than the relay skips it
-/// as malformed, where an object would raise that owner's decode-drift nudge.
+/// A subscriber's first line.
 const SUBSCRIBE_LINE: &str = "pixtuoid-subscribe\n";
 const SUBSCRIBED_LINE: &str = "pixtuoid-subscribed\n";
-/// Not JSON, for [`SUBSCRIBE_LINE`]'s reason, and no longer than it, which bounds
-/// the read of a connection's first line.
+/// No longer than [`SUBSCRIBE_LINE`], which bounds the read of a connection's
+/// first line.
 const STATUS_LINE: &str = "pixtuoid-status\n";
 
 /// Payload lines a subscriber can fall behind before it loses the oldest.
@@ -84,8 +83,8 @@ pub enum EndpointStatus {
     /// This user may not connect: another user's endpoint, or one whose owner
     /// could not be proved.
     Denied,
-    /// No status came back: an older pixtuoid, an owner too busy to read, or one
-    /// that lost its endpoint (a removed Unix socket file).
+    /// No status came back: an owner too busy to read, or one that lost its
+    /// endpoint (a removed Unix socket file).
     Silent,
     /// The owner answered.
     Live(OwnerStatus),
@@ -286,7 +285,7 @@ pub(super) async fn subscribe(path: &Path) -> Result<Payloads> {
     let read = tokio::time::timeout(CONN_TIMEOUT, conn.read_line(&mut ack)).await;
     anyhow::ensure!(
         matches!(read, Ok(Ok(_))) && ack == SUBSCRIBED_LINE,
-        "its owner took no subscription: quit it if it is an older pixtuoid, then restart this one"
+        "its owner took no subscription: quit it, then restart this one"
     );
     Ok(WholeLines::new(conn))
 }
@@ -314,9 +313,6 @@ pub async fn endpoint_status(path: &Path) -> EndpointStatus {
         .unwrap_or(EndpointStatus::Silent)
 }
 
-/// No half-close after the line: `NamedPipeClient::poll_shutdown` is a no-op, so
-/// an older owner, which skips the line and waits for more, holds a pipe to its
-/// budget, and one path costs both OSes that second.
 async fn status_over(mut conn: impl AsyncRead + AsyncWrite + Unpin) -> EndpointStatus {
     if conn.write_all(STATUS_LINE.as_bytes()).await.is_err() {
         return EndpointStatus::Silent;
@@ -413,7 +409,7 @@ mod tests {
 
     #[tokio::test]
     async fn only_a_feed_cut_mid_line_reads_as_a_hang_up() {
-        let session = "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
+        let session = "{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
                        \"transcript_path\":\"/p/s.jsonl\",\"cwd\":\"/repo\"}\n";
         let cut = &session[..session.len() / 2];
         for (feed, is_cut) in [
@@ -443,46 +439,15 @@ mod tests {
         }
     }
 
-    // An owner older than the relay is the one reader of this line that isn't
-    // ours to change.
-    #[tokio::test]
-    async fn an_owner_without_a_relay_skips_a_subscribe_line() {
-        let (logs, _guard) = crate::test_capture::capture_warns();
-        let (mut client, server) = tokio::io::duplex(64);
-        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
-        client.write_all(SUBSCRIBE_LINE.as_bytes()).await.unwrap();
-        drop(client);
-        super::super::handle_conn(server, tx, None, None, None).await;
-        assert!(rx.recv().await.is_none());
-        let out = logs.contents();
-        assert!(out.contains("malformed hook line skipped"), "got {out:?}");
-        assert!(!out.contains("hook decode error"), "got {out:?}");
-    }
-
-    // An owner older than this line skips it the same way, and that reads as
-    // Silent, never as a drift nudge on its office.
-    #[tokio::test]
-    async fn an_owner_without_a_status_answer_reads_as_silent() {
-        let (logs, _guard) = crate::test_capture::capture_warns();
-        let (client, server) = tokio::io::duplex(64);
-        let (tx, mut rx) = tokio::sync::mpsc::channel(4);
-        // It waits for more lines, so only the listener's budget hangs up.
-        let older = tokio::spawn(tokio::time::timeout(
-            CONN_TIMEOUT,
-            super::super::handle_conn(server, tx, None, None, None),
-        ));
-        let status = tokio::spawn(status_over(client));
-        let _ = older.await.unwrap();
-        assert_eq!(status.await.unwrap(), EndpointStatus::Silent);
-        assert!(rx.recv().await.is_none());
-        let out = logs.contents();
-        assert!(out.contains("malformed hook line skipped"), "got {out:?}");
-        assert!(!out.contains("hook decode error"), "got {out:?}");
-    }
-
     #[tokio::test]
     async fn a_reply_that_is_no_status_reads_as_silent() {
-        for reply in [&b"not json\n"[..], b"{\"held_for_ms\":1}\n", b"\n", b"{"] {
+        for reply in [
+            &b"not json\n"[..],
+            b"{\"held_for_ms\":1}\n",
+            b"\n",
+            b"{",
+            b"",
+        ] {
             let (client, mut owner) = tokio::io::duplex(1024);
             let status = tokio::spawn(status_over(client));
             let mut line = vec![0; STATUS_LINE.len()];
@@ -658,7 +623,7 @@ mod tests {
         let (_dir, path) = endpoint("second-line");
         let (task, mut rx) = listen(&path);
         let mut conn = client(&path).await;
-        let session = "{\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
+        let session = "{\"_pixtuoid_source\":\"claude-code\",\"hook_event_name\":\"SessionStart\",\"session_id\":\"s\",\
                        \"transcript_path\":\"/p/s.jsonl\",\"cwd\":\"/repo\"}\n";
         conn.write_all(format!("{session}{SUBSCRIBE_LINE}").as_bytes())
             .await

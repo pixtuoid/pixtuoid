@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 
 use super::{SOURCE_NAME, cc_derive_label, claude_config_dir};
+use crate::platform::NO_HOME;
 use crate::source::cc_probe::cc_sessions_dir;
 pub use crate::source::cc_probe::live_cc_session_ids;
 use crate::source::jsonl::{ChildEndUnclaims, JsonlWatcher};
@@ -64,15 +65,13 @@ impl ClaudeCodeSource {
         }
     }
 
-    /// Construct pointed at the default `~/.claude/projects` root.
-    pub fn default_paths() -> Self {
-        let projects_root = claude_config_dir()
-            .unwrap_or_else(|| crate::platform::user_home().join(".claude"))
-            .join("projects");
-        Self {
-            projects_root,
+    /// Construct pointed at the default `~/.claude/projects` root, if
+    /// [`claude_config_dir`] resolves.
+    pub fn default_paths() -> Option<Self> {
+        Some(Self {
+            projects_root: claude_config_dir()?.join("projects"),
             child_end_unclaims: None,
-        }
+        })
     }
 }
 
@@ -113,11 +112,11 @@ pub(crate) const NATIVE: Native = Native {
 };
 
 fn projects_root() -> Option<PathBuf> {
-    Some(ClaudeCodeSource::default_paths().projects_root)
+    ClaudeCodeSource::default_paths().map(|s| s.projects_root)
 }
 
 fn probe_paths() -> std::result::Result<Vec<PathBuf>, &'static str> {
-    registry_dir(&ClaudeCodeSource::default_paths().projects_root)
+    registry_dir(&projects_root().ok_or(NO_HOME)?)
         .map(|dir| vec![dir])
         .ok_or("non-standard projects root")
 }
@@ -185,32 +184,27 @@ mod tests {
 
     #[test]
     fn default_paths_projects_root_honors_claude_config_dir() {
-        let fallback_suffix = PathBuf::from(".claude").join("projects");
+        let home = tempfile::tempdir().unwrap();
+        let fallback = Some(home.path().join(".claude").join("projects"));
+        let projects_root = || ClaudeCodeSource::default_paths().map(|s| s.projects_root);
+        let pinned = [
+            ("HOME", Some(home.path().as_os_str())),
+            ("USERPROFILE", Some(home.path().as_os_str())),
+        ];
 
-        temp_env::with_var_unset("CLAUDE_CONFIG_DIR", || {
-            let unset_paths = ClaudeCodeSource::default_paths();
-            assert!(
-                unset_paths.projects_root.ends_with(&fallback_suffix),
-                "projects_root must end with .claude/projects, got {:?}",
-                unset_paths.projects_root
-            );
-        });
+        temp_env::with_vars(pinned, || {
+            temp_env::with_var_unset("CLAUDE_CONFIG_DIR", || {
+                assert_eq!(projects_root(), fallback, "unset CLAUDE_CONFIG_DIR");
+            });
 
-        let custom_dir = std::env::temp_dir().join("pixtuoid-claude-config-dir");
-        temp_env::with_var("CLAUDE_CONFIG_DIR", Some(&custom_dir), || {
-            assert_eq!(
-                ClaudeCodeSource::default_paths().projects_root,
-                custom_dir.join("projects")
-            );
-        });
+            let custom_dir = std::env::temp_dir().join("pixtuoid-claude-config-dir");
+            temp_env::with_var("CLAUDE_CONFIG_DIR", Some(&custom_dir), || {
+                assert_eq!(projects_root(), Some(custom_dir.join("projects")));
+            });
 
-        temp_env::with_var("CLAUDE_CONFIG_DIR", Some(""), || {
-            let empty_paths = ClaudeCodeSource::default_paths();
-            assert!(
-                empty_paths.projects_root.ends_with(&fallback_suffix),
-                "empty CLAUDE_CONFIG_DIR must fall back to .claude/projects, got {:?}",
-                empty_paths.projects_root
-            );
+            temp_env::with_var("CLAUDE_CONFIG_DIR", Some(""), || {
+                assert_eq!(projects_root(), fallback, "empty CLAUDE_CONFIG_DIR");
+            });
         });
     }
 

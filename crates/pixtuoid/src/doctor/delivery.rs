@@ -345,7 +345,9 @@ pub(super) fn hooks_category(d: &Delivery, rows: &[DoctorSourceRow], ink: &Ink) 
         EndpointStatus::Silent => {
             details.push(format!(
                 "{DETAIL_INDENT}{}",
-                ink.warn("it gave no status: restart it (an older pixtuoid gives none, and one that lost its endpoint gets no hooks)")
+                ink.warn(
+                    "it gave no status: restart it (one that lost its endpoint gets no hooks)"
+                )
             ));
             (format!("instance on {endpoint} is not answering"), false)
         }
@@ -501,7 +503,7 @@ mod tests {
     #[test]
     fn an_owner_it_cannot_read_is_a_warning_and_delivery_still_shows() {
         for (status, says) in [
-            (EndpointStatus::Silent, "older pixtuoid"),
+            (EndpointStatus::Silent, "gave no status"),
             (EndpointStatus::Denied, "may not connect"),
             (EndpointStatus::Unbindable("refusing".into()), "refusing"),
         ] {
