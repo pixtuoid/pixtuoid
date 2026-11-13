@@ -101,17 +101,17 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::demo::Cue
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::demo::Cue
 pub struct pixtuoid_scene::demo::Actor
 impl pixtuoid_scene::demo::Actor
-pub fn pixtuoid_scene::demo::Actor::caught_up(&self, core::time::Duration) -> pixtuoid_scene::demo::Beat
-pub fn pixtuoid_scene::demo::Actor::delegate(&self, core::time::Duration, core::time::Duration) -> [pixtuoid_scene::demo::Beat; 2]
-pub fn pixtuoid_scene::demo::Actor::end(&self, core::time::Duration) -> pixtuoid_scene::demo::Beat
+pub fn pixtuoid_scene::demo::Actor::caught_up(&self, core::time::Duration) -> pixtuoid_scene::demo::Moment
+pub fn pixtuoid_scene::demo::Actor::delegate(&self, core::time::Duration, core::time::Duration) -> [pixtuoid_scene::demo::Moment; 2]
+pub fn pixtuoid_scene::demo::Actor::end(&self, core::time::Duration) -> pixtuoid_scene::demo::Moment
 pub fn pixtuoid_scene::demo::Actor::id(&self) -> pixtuoid_core::id::AgentId
-pub fn pixtuoid_scene::demo::Actor::model(&self, core::time::Duration, &str) -> pixtuoid_scene::demo::Beat
+pub fn pixtuoid_scene::demo::Actor::model(&self, core::time::Duration, &str) -> pixtuoid_scene::demo::Moment
 pub fn pixtuoid_scene::demo::Actor::new(&'static str, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<std::path::PathBuf>) -> Self
-pub fn pixtuoid_scene::demo::Actor::spell(&self, core::time::Duration, u32, &[&str]) -> alloc::vec::Vec<pixtuoid_scene::demo::Beat>
-pub fn pixtuoid_scene::demo::Actor::start(&self, core::time::Duration) -> pixtuoid_scene::demo::Beat
+pub fn pixtuoid_scene::demo::Actor::spell(&self, core::time::Duration, u32, &[&str]) -> alloc::vec::Vec<pixtuoid_scene::demo::Moment>
+pub fn pixtuoid_scene::demo::Actor::start(&self, core::time::Duration) -> pixtuoid_scene::demo::Moment
 pub fn pixtuoid_scene::demo::Actor::subagent(&self, impl core::convert::Into<alloc::string::String>) -> Self
-pub fn pixtuoid_scene::demo::Actor::usage(&self, core::time::Duration, u64) -> pixtuoid_scene::demo::Beat
-pub fn pixtuoid_scene::demo::Actor::wait(&self, core::time::Duration, core::time::Duration, &str) -> [pixtuoid_scene::demo::Beat; 3]
+pub fn pixtuoid_scene::demo::Actor::usage(&self, core::time::Duration, u64) -> pixtuoid_scene::demo::Moment
+pub fn pixtuoid_scene::demo::Actor::wait(&self, core::time::Duration, core::time::Duration, &str) -> [pixtuoid_scene::demo::Moment; 3]
 impl core::clone::Clone for pixtuoid_scene::demo::Actor
 pub fn pixtuoid_scene::demo::Actor::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::demo::Actor
@@ -127,26 +127,26 @@ impl core::marker::Unpin for pixtuoid_scene::demo::Actor
 impl core::marker::UnsafeUnpin for pixtuoid_scene::demo::Actor
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::demo::Actor
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::demo::Actor
-pub struct pixtuoid_scene::demo::Beat
-pub pixtuoid_scene::demo::Beat::at: core::time::Duration
-pub pixtuoid_scene::demo::Beat::cue: pixtuoid_scene::demo::Cue
-impl pixtuoid_scene::demo::Beat
-pub fn pixtuoid_scene::demo::Beat::land(&self, std::time::SystemTime, &mut pixtuoid_core::state::reducer::Reducer, &mut pixtuoid_core::state::SceneState)
-impl core::clone::Clone for pixtuoid_scene::demo::Beat
-pub fn pixtuoid_scene::demo::Beat::clone(&self) -> Self
-impl core::cmp::Eq for pixtuoid_scene::demo::Beat
-impl core::cmp::PartialEq for pixtuoid_scene::demo::Beat
-pub fn pixtuoid_scene::demo::Beat::eq(&self, &Self) -> bool
-impl core::fmt::Debug for pixtuoid_scene::demo::Beat
-pub fn pixtuoid_scene::demo::Beat::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::StructuralPartialEq for pixtuoid_scene::demo::Beat
-impl core::marker::Freeze for pixtuoid_scene::demo::Beat
-impl core::marker::Send for pixtuoid_scene::demo::Beat
-impl core::marker::Sync for pixtuoid_scene::demo::Beat
-impl core::marker::Unpin for pixtuoid_scene::demo::Beat
-impl core::marker::UnsafeUnpin for pixtuoid_scene::demo::Beat
-impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::demo::Beat
-impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::demo::Beat
+pub struct pixtuoid_scene::demo::Moment
+pub pixtuoid_scene::demo::Moment::at: core::time::Duration
+pub pixtuoid_scene::demo::Moment::cue: pixtuoid_scene::demo::Cue
+impl pixtuoid_scene::demo::Moment
+pub fn pixtuoid_scene::demo::Moment::land(&self, std::time::SystemTime, &mut pixtuoid_core::state::reducer::Reducer, &mut pixtuoid_core::state::SceneState)
+impl core::clone::Clone for pixtuoid_scene::demo::Moment
+pub fn pixtuoid_scene::demo::Moment::clone(&self) -> Self
+impl core::cmp::Eq for pixtuoid_scene::demo::Moment
+impl core::cmp::PartialEq for pixtuoid_scene::demo::Moment
+pub fn pixtuoid_scene::demo::Moment::eq(&self, &Self) -> bool
+impl core::fmt::Debug for pixtuoid_scene::demo::Moment
+pub fn pixtuoid_scene::demo::Moment::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for pixtuoid_scene::demo::Moment
+impl core::marker::Freeze for pixtuoid_scene::demo::Moment
+impl core::marker::Send for pixtuoid_scene::demo::Moment
+impl core::marker::Sync for pixtuoid_scene::demo::Moment
+impl core::marker::Unpin for pixtuoid_scene::demo::Moment
+impl core::marker::UnsafeUnpin for pixtuoid_scene::demo::Moment
+impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::demo::Moment
+impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::demo::Moment
 pub struct pixtuoid_scene::demo::Playhead
 impl pixtuoid_scene::demo::Playhead
 pub fn pixtuoid_scene::demo::Playhead::advance(&mut self, std::time::SystemTime, &mut pixtuoid_core::state::reducer::Reducer, &mut pixtuoid_core::state::SceneState)
@@ -164,7 +164,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_scene::demo::Playhead
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_scene::demo::Playhead
 pub struct pixtuoid_scene::demo::Script
 impl pixtuoid_scene::demo::Script
-pub fn pixtuoid_scene::demo::Script::new(core::time::Duration, impl core::iter::traits::collect::IntoIterator<Item = pixtuoid_scene::demo::Beat>) -> Self
+pub fn pixtuoid_scene::demo::Script::new(core::time::Duration, impl core::iter::traits::collect::IntoIterator<Item = pixtuoid_scene::demo::Moment>) -> Self
 impl core::clone::Clone for pixtuoid_scene::demo::Script
 pub fn pixtuoid_scene::demo::Script::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_scene::demo::Script

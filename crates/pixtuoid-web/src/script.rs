@@ -2,7 +2,7 @@
 //! [`Playhead`](pixtuoid_scene::demo::Playhead) plays through the REAL
 //! `Reducer`, so the web office can never drift from real behavior.
 //!
-//! On loop wrap the same beats replay: a `SessionStart` for a live slot is
+//! On loop wrap the same moments replay: a `SessionStart` for a live slot is
 //! a reducer no-op (backfill arm), the ended agent re-enters, so the office
 //! stays coherent forever.
 
@@ -17,7 +17,7 @@ use pixtuoid_core::source::{
 };
 use pixtuoid_core::state::{DaemonInstanceId, TurnKey};
 use pixtuoid_scene::DEMO_REPOS;
-use pixtuoid_scene::demo::{Actor, Beat, Cue, Script};
+use pixtuoid_scene::demo::{Actor, Cue, Moment, Script};
 
 /// Long enough that the cycle doesn't read as a loop.
 pub(crate) const LOOP: Duration = Duration::from_secs(120);
@@ -60,8 +60,8 @@ fn ms(ms: u64) -> Duration {
     Duration::from_millis(ms)
 }
 
-fn spell(beats: &mut Vec<Beat>, i: usize, at: u64, calls: u32, tools: &[&str]) {
-    beats.extend(actor(i).spell(ms(at), calls, tools));
+fn spell(moments: &mut Vec<Moment>, i: usize, at: u64, calls: u32, tools: &[&str]) {
+    moments.extend(actor(i).spell(ms(at), calls, tools));
 }
 
 pub(crate) const HIRE_STAY: Duration = Duration::from_secs(70);
@@ -69,14 +69,14 @@ pub(crate) const HIRE_STAY: Duration = Duration::from_secs(70);
 /// Visitor hire `n`'s agent and lifecycle, from the hire instant. The cwd is
 /// the hire's own ("/work/yours") so Team Palette gives hires a distinct
 /// outfit family.
-pub(crate) fn hire(n: u32) -> (AgentId, Vec<Beat>) {
+pub(crate) fn hire(n: u32) -> (AgentId, Vec<Moment>) {
     let hire = Actor::new(claude_code::SOURCE_NAME, format!("hire-{n}"), "/work/yours");
-    let mut beats = vec![hire.start(Duration::ZERO), hire.end(HIRE_STAY)];
+    let mut moments = vec![hire.start(Duration::ZERO), hire.end(HIRE_STAY)];
     // Spaced so the hire also idles/wanders like everyone else.
     for at in [8_000, 28_000, 50_000] {
-        beats.extend(hire.spell(ms(at), 4, &["Edit: notes.md"]));
+        moments.extend(hire.spell(ms(at), 4, &["Edit: notes.md"]));
     }
-    (hire.id(), beats)
+    (hire.id(), moments)
 }
 
 /// The ONE gateway the hero scripts, so the authored timeline lands on exactly
@@ -95,7 +95,7 @@ const HERO_GATEWAY_PORT: std::num::NonZeroU16 = std::num::NonZeroU16::new(18789)
 /// through two busy turns, and walks out before the wrap — so every loop
 /// replays a clean enter animation (GatewayUp after Down re-anchors
 /// `entered_at`).
-fn lobster() -> impl Iterator<Item = Beat> {
+fn lobster() -> impl Iterator<Item = Moment> {
     use DaemonPresenceUpdate::*;
     let turn = |id: &str| TurnKey::Id(id.into());
     [
@@ -127,7 +127,7 @@ fn lobster() -> impl Iterator<Item = Beat> {
         (112_000, GatewayDown),
     ]
     .into_iter()
-    .map(|(at, update)| Beat {
+    .map(|(at, update)| Moment {
         at: ms(at),
         cue: Cue::Presence {
             key: hero_gateway(),
@@ -137,7 +137,7 @@ fn lobster() -> impl Iterator<Item = Beat> {
 }
 
 pub(crate) fn hero() -> Script {
-    let mut b: Vec<Beat> = Vec::new();
+    let mut b: Vec<Moment> = Vec::new();
 
     // Walk-ins — the morning rush: the cast is through the door within ~2.5s
     // of reveal, so scroll-0 never reads as an empty looping video.

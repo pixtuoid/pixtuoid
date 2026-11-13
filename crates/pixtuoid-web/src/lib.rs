@@ -25,7 +25,7 @@ use pixtuoid_core::{AgentEvent, AgentId};
 use pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS;
 use pixtuoid_scene::audio::OneShotPool;
 use pixtuoid_scene::audio::mixer::LoopStem;
-use pixtuoid_scene::demo::{Beat, Cue, Playhead};
+use pixtuoid_scene::demo::{Cue, Moment, Playhead};
 use pixtuoid_scene::floor::{Conditions, FloorInputs, FloorSession, PetInputs};
 use pixtuoid_scene::layout::Size;
 use pixtuoid_scene::look::{RenderInputs, WorldText};
@@ -36,22 +36,22 @@ use pixtuoid_scene::screen::{ManualClock, Screen, ScreenClock};
 use pixtuoid_scene::sky::WeatherPolicy;
 use pixtuoid_scene::theme::{NORMAL, Theme};
 
-/// A visitor hire's one-shot beat, queued OUTSIDE the loop machinery so a
+/// A visitor hire's one-shot moment, queued OUTSIDE the loop machinery so a
 /// hire's lifecycle never replays on wrap.
 #[derive(Debug)]
-struct ScheduledBeat {
+struct ScheduledMoment {
     /// The hire instant.
     origin: SystemTime,
-    beat: Beat,
+    moment: Moment,
 }
 
-impl ScheduledBeat {
+impl ScheduledMoment {
     fn due(&self) -> SystemTime {
-        self.origin + self.beat.at
+        self.origin + self.moment.at
     }
 
     fn starts(&self) -> Option<AgentId> {
-        match &self.beat.cue {
+        match &self.moment.cue {
             Cue::Event {
                 event: AgentEvent::SessionStart { agent_id, .. },
                 ..
@@ -66,7 +66,7 @@ impl ScheduledBeat {
 #[derive(Debug, Default)]
 struct VisitorHires {
     /// Kept sorted by time; drained from the front.
-    pending: Vec<ScheduledBeat>,
+    pending: Vec<ScheduledMoment>,
     ids: Vec<AgentId>,
     seq: u32,
 }
@@ -93,30 +93,30 @@ impl VisitorHires {
         let queued_starts = self
             .pending
             .iter()
-            .filter_map(ScheduledBeat::starts)
+            .filter_map(ScheduledMoment::starts)
             .count();
         let claimed = scene.agents.values().filter(|a| a.claims_a_desk()).count();
         if claimed + queued_starts >= scene.total_capacity() {
             return false;
         }
         self.seq += 1;
-        let (id, beats) = script::hire(self.seq);
+        let (id, moments) = script::hire(self.seq);
         self.ids.push(id);
-        self.pending.extend(
-            beats
-                .into_iter()
-                .map(|beat| ScheduledBeat { origin: base, beat }),
-        );
-        self.pending.sort_by_key(ScheduledBeat::due);
+        self.pending
+            .extend(moments.into_iter().map(|moment| ScheduledMoment {
+                origin: base,
+                moment,
+            }));
+        self.pending.sort_by_key(ScheduledMoment::due);
         true
     }
 
-    /// Land every queued hire beat due by `now`, each at its SCHEDULED time
+    /// Land every queued hire moment due by `now`, each at its SCHEDULED time
     /// (not `now`) so the reducer's time-based semantics hold.
     fn drain_due(&mut self, now: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
         while self.pending.first().is_some_and(|p| p.due() <= now) {
             let p = self.pending.remove(0);
-            p.beat.land(p.origin, reducer, scene);
+            p.moment.land(p.origin, reducer, scene);
         }
     }
 }
@@ -516,7 +516,7 @@ impl Office {
         let fit = PixelFit::at_least_density(density.get(), density, Size { w: 0, h: 0 });
         Ok(Office {
             // Capacity starts empty and is synced from the CANVAS's own layout
-            // on every `step` before any beat fires, so the reducer seats agents
+            // on every `step` before any moment lands, so the reducer seats agents
             // only at desks the rendered office has.
             scene: SceneState::default(),
             session: FloorSession::new(pack).with_floor_seed(u64::from(seed)),
@@ -536,8 +536,8 @@ impl Office {
     }
 
     /// `seed`'s office `advance_ms` after `t0_ms`, `w`×`h` units, as one still
-    /// frame: the step at `t0_ms` anchors the script's loop, and the next fires
-    /// its beats.
+    /// frame: the step at `t0_ms` anchors the script's loop, and the next lands
+    /// its moments.
     ///
     /// # Errors
     ///
@@ -602,7 +602,7 @@ impl Office {
         self.caps_units = Some((units_w, units_h));
     }
 
-    /// Land the hires' and the cast's beats due by `now`. The cast's sweep at
+    /// Land the hires' and the cast's moments due by `now`. The cast's sweep at
     /// `now` comes last, so it covers the hires' too.
     fn advance_script(&mut self, now: SystemTime) {
         self.hires

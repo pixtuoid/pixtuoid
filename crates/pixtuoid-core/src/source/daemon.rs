@@ -341,7 +341,12 @@ pub fn apply_presence(
 /// and a `Down` entry is REMOVED after `ttl.down_remove_ms`. Expiring a turn lease
 /// never clears `degraded` — a separate axis only a real
 /// `TurnEnded`/`TurnStarted`/`GatewayUp` heals.
-pub fn sweep_presence_ttl(scene: &mut SceneState, source: &str, ttl: PresenceTtl, now: SystemTime) {
+pub(crate) fn sweep_presence_ttl(
+    scene: &mut SceneState,
+    source: &str,
+    ttl: PresenceTtl,
+    now: SystemTime,
+) {
     let mut doomed: Vec<DaemonInstanceId> = Vec::new();
     for (instance, p) in scene.daemons.instances_of_mut(source) {
         let idle_ms = now
@@ -369,15 +374,26 @@ pub fn sweep_presence_ttl(scene: &mut SceneState, source: &str, ttl: PresenceTtl
 
 /// Drive EVERY instance of a source to `Down` (the sim walks each mascot out),
 /// skipping any already Down — idempotent, so the `down_remove_ms` removal timer
-/// in [`sweep_presence_ttl`] isn't reset on every tick. The runtime calls this
-/// when a source is DISCONNECTED in the Sources panel: the presence side-channel
+/// in [`sweep_presence_ttl`] isn't reset on every tick. [`sweep_registered`] calls
+/// this for a source DISCONNECTED in the Sources panel: the presence side-channel
 /// is separate from the `AgentEvent` connection gate, so a disconnect must
 /// reconcile presence too. Source-WIDE by design.
-pub fn mark_presence_down(scene: &mut SceneState, source: &str, now: SystemTime) {
+pub(crate) fn mark_presence_down(scene: &mut SceneState, source: &str, now: SystemTime) {
     for (_, p) in scene.daemons.instances_of_mut(source) {
         if p.liveness != DaemonLiveness::Down {
             p.enter_down(now);
         }
+    }
+}
+
+/// The reducer task's presence sweep over every registered daemon source: one
+/// `connected` refuses goes Down first, then each decays on its own TTL.
+pub fn sweep_registered(scene: &mut SceneState, now: SystemTime, connected: impl Fn(&str) -> bool) {
+    for (source, ttl) in crate::source::registry::daemon_sources() {
+        if !connected(source) {
+            mark_presence_down(scene, source, now);
+        }
+        sweep_presence_ttl(scene, source, ttl, now);
     }
 }
 
