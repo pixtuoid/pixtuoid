@@ -1425,8 +1425,8 @@ mod tests {
         assert_keeps(&golden, &line, "line");
     }
 
-    /// What a v1 peer wrote of each exchange besides the line, a sample a file
-    /// named for its shape, frozen as `GOLDEN` is.
+    /// What a v1 peer wrote of each exchange besides the line, one sample per
+    /// file, its shape the name before any `-`; frozen as `GOLDEN` is.
     const V1_EXCHANGES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
 
     #[test]
