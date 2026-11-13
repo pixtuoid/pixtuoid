@@ -106,10 +106,10 @@ homebrew-core's formula is `autobump: true` and builds from the tag tarball,
 instantly, with DEFAULT features on macOS *and* Linux — the one configuration
 our release never builds. [`pixtuoid.rb`](../.github/actions/packaging-build/pixtuoid.rb)
 is the formula we hold them to: packaging-build runs Homebrew's own
-`brew install --build-from-source` and `brew test` of it against each tree,
-sandboxes included, so a new system-library dependency or a `test do` this tree
-breaks (see the "homebrew-core contract" comments) reds there and is fixed in
-that file. A dispatch warns with the diff wherever homebrew-core's copy differs,
+`brew install --build-from-source` and `brew test` of it in the full tier (`main`
+and the merge queue), sandboxes included, so a new system-library dependency or a
+`test do` this tree breaks (see the "homebrew-core contract" comments) reds there
+and is fixed in that file. A dispatch warns with the diff wherever homebrew-core's copy differs,
 and never fails, because the owner, who sent a test update before its release,
 was told to release first (no public record); step 4 settles it.
 

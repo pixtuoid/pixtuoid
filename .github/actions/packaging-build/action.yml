@@ -15,7 +15,7 @@ runs:
         if [[ $RUNNER_OS == Linux ]]; then eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; fi
         # The images set HOMEBREW_NO_AUTO_UPDATE, and homebrew-core's test-bot
         # runs Homebrew/brew's HEAD, which only a developer's update reaches
-        # (Homebrew/brew Library/Homebrew/cmd/update.sh:595-601).
+        # (Homebrew/brew@53c5856230 Library/Homebrew/cmd/update.sh:595-602).
         HOMEBREW_DEVELOPER=1 brew update
         version="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
         # A tag's tarball is its `git archive` (docs.github.com/en/repositories/
