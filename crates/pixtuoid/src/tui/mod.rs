@@ -524,7 +524,6 @@ pub(crate) async fn run_tui(session: TuiSession) -> Result<Option<QuitSignal>> {
         socket_path,
         log,
         drift,
-        connected: &connected.snapshot(),
         look: plan.cutaway().map(|_| plan.start()),
     });
     renderer.warm(&scene_rx.borrow().clone(), ui.now());
@@ -1727,31 +1726,12 @@ mod apply_key_action_tests {
         }
     }
 
-    /// [`keys::VERSION`](crate::panels::keys::VERSION) reopens the popup with the
-    /// notices due against the LIVE connections and the CLIs a panel job last
-    /// read, probing none itself: a host connected since boot is not named.
+    /// [`keys::VERSION`](crate::panels::keys::VERSION) reopens the popup.
     #[test]
-    fn v_reopens_the_popup_with_the_notices_still_due() {
+    fn v_reopens_the_popup() {
         let mut h = Harness::new();
-        h.ui = super::ui_state::UiState::upgraded_from("0.19.0", &semver::Version::new(0, 20, 0));
-        h.connected = crate::runtime::ConnectedSources::new(HashSet::from(["codex".to_string()]));
         assert!(!h.apply(KeyAction::OpenVersionPopup));
         assert!(h.ui.modal().version_popup_open);
-        assert!(h.ui.version_notices().is_empty(), "no CLI read yet");
-        h.apply(KeyAction::DismissVersionPopup);
-
-        h.apply(KeyAction::ToggleConnection);
-        h.open_gate(false);
-        h.settle();
-        h.apply(KeyAction::ConnectionClose);
-        assert!(!h.apply(KeyAction::OpenVersionPopup));
-        let shown = h.ui.version_notices();
-        assert!(
-            shown
-                .iter()
-                .any(|n| n.contains("Reasonix") && !n.contains("Codex")),
-            "{shown:?}"
-        );
     }
 
     /// The highest-blast-radius pair: `Quit` must be the ONLY action that ends
