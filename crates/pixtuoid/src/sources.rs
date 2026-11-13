@@ -17,7 +17,7 @@ use pixtuoid_core::source::registry;
 use crate::config;
 use crate::install::{
     self, InstallOutcome, InstallReport, UninstallOutcome, UninstallReport,
-    target::{HostRegistration, Pickup, PluginCopy, Target, by_source},
+    target::{HostRegistration, Pickup, PluginCopy, PluginReload, Refresh, Target, by_source},
 };
 use crate::runtime::ConnectedSources;
 
@@ -265,21 +265,26 @@ fn converge_owned_with(
         for (path, error) in &done.failed {
             tracing::warn!(cli = t.name, path = ?path, error = ?error, "could not refresh a plugin file to this build");
         }
-        let loads_new = match t.host.and_then(|h| h.pickup.as_ref().map(|p| (h, p))) {
-            Some((host, Pickup::Recopy(copy))) => recopy(host, copy, t).unwrap_or_else(|e| {
-                tracing::warn!(cli = t.name, error = ?e, "could not re-copy the plugin to this build");
-                false
-            }),
-            Some((host, Pickup::Reload(reload))) => {
-                let failed = !done.rewritten.is_empty() && reload_failed(host, *reload, t);
-                // The disk then says what the CLI runs, so the next launch rewrites
-                // and reloads again.
-                if failed && let Err(e) = install::put_back(&done.rewritten) {
-                    tracing::warn!(cli = t.name, error = ?e, "could not put back the plugin its CLI still runs");
+        let rewrote = !done.rewritten.is_empty();
+        let loads_new = match t.pickup {
+            Pickup::NextStart => rewrote,
+            Pickup::Watches => false,
+            Pickup::Plugin(host) => match &host.refresh {
+                Refresh::NextStart => rewrote,
+                Refresh::Recopy(copy) => recopy(host, copy, t).unwrap_or_else(|e| {
+                    tracing::warn!(cli = t.name, error = ?e, "could not re-copy the plugin to this build");
+                    false
+                }),
+                Refresh::Reload(reload) => {
+                    let failed = reload_failed(host, reload, rewrote, t);
+                    // The disk then says what the CLI runs, so the next launch rewrites
+                    // and reloads again.
+                    if failed && let Err(e) = install::put_back(&done.rewritten) {
+                        tracing::warn!(cli = t.name, error = ?e, "could not put back the plugin its CLI still runs");
+                    }
+                    rewrote && failed
                 }
-                failed
-            }
-            None => !done.rewritten.is_empty() && !t.primary.reloads_on_change(),
+            },
         };
         if loads_new {
             refreshed.push(t);
@@ -294,15 +299,22 @@ fn recopy(host: &HostRegistration, copy: &PluginCopy, t: &Target) -> Result<bool
     if !(host.is_registered)()? || !(copy.stale)(&(t.default_config_path)()?)? {
         return Ok(false);
     }
-    (copy.refresh)()?;
+    (copy.recopy)()?;
     Ok(true)
 }
 
-/// Run `reload` to load `t`'s rewritten plugin into its running CLI, and say
-/// whether that failed, leaving the CLI on the old one. A disabled plugin stays as
-/// the user left it.
-fn reload_failed(host: &HostRegistration, reload: fn() -> Result<()>, t: &Target) -> bool {
-    let reloaded = (host.is_registered)().and_then(|on| if on { reload() } else { Ok(()) });
+/// Run `reload` to load `t`'s plugin into its running CLI when it was rewritten or
+/// an earlier reload left it off, and say whether that failed, leaving the CLI on the
+/// old one. A plugin the user disabled stays as they left it.
+fn reload_failed(
+    host: &HostRegistration,
+    reload: &PluginReload,
+    rewrote: bool,
+    t: &Target,
+) -> bool {
+    let reloaded = (reload.pending)()
+        .and_then(|pending| Ok(pending || (rewrote && (host.is_registered)()?)))
+        .and_then(|due| if due { (reload.reload)() } else { Ok(()) });
     if let Err(e) = &reloaded {
         tracing::warn!(cli = t.name, error = ?e, "could not reload the plugin into its CLI");
     }
@@ -313,10 +325,10 @@ fn reload_failed(host: &HostRegistration, reload: fn() -> Result<()>, t: &Target
 /// has a newer plugin to load.
 pub(crate) fn refreshed_notice(t: &Target) -> String {
     let name = t.display_name();
-    let step = match (t.post_install_hint, t.host.and_then(|h| h.pickup.as_ref())) {
+    let step = match (t.post_install_hint, t.host().map(|h| &h.refresh)) {
         (Some(hint), _) => hint.to_string(),
         // A connect runs the reload.
-        (None, Some(Pickup::Reload(_))) => format!("reconnect {name} to load it"),
+        (None, Some(Refresh::Reload(_))) => format!("reconnect {name} to load it"),
         (None, _) => format!("restart {name} to load it"),
     };
     format!("pixtuoid: refreshed the {name} plugin to this build — {step}")
@@ -789,8 +801,8 @@ fn conn_state(no_cli: bool, connected: bool) -> ConnState {
 /// A source's worst diagnostic as its Sources row shows it, glyph-prefixed:
 /// install-broken (hooks can't fire) outranks decode drift.
 pub(crate) fn row_health(d: &crate::doctor::SourceDiagnostics) -> Option<String> {
-    if let Some(i) = d.broken_install() {
-        return Some(format!("⚠ install broken: {}", i.issues.join("; ")));
+    if let Some(broken) = d.broken_summary() {
+        return Some(format!("⚠ {broken}"));
     }
     let n = d.drift.total();
     if n > 0 {
@@ -1006,11 +1018,12 @@ mod tests {
 
     /// A host that runs a copy, with the enabled and stale states the test sets.
     static COPYING_HOST: HostRegistration = HostRegistration {
-        cli: crate::install::target::CLAUDE.host.unwrap().cli,
+        cli: crate::install::target::CLAUDE.host().unwrap().cli,
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
-        pickup: Some(Pickup::Recopy(PluginCopy {
+        home: || Ok(std::env::temp_dir()),
+        refresh: Refresh::Recopy(PluginCopy {
             stale: |_| {
                 use std::sync::atomic::Ordering::SeqCst;
                 if STALE_ERRS.load(SeqCst) {
@@ -1018,12 +1031,12 @@ mod tests {
                 }
                 Ok(STALE.load(SeqCst))
             },
-            refresh: || {
+            recopy: || {
                 REFRESHES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 Ok(())
             },
-        })),
-        legacy: None,
+        }),
+        shim_hooks: None,
     };
 
     /// Each launch re-copies a stale copy, so a re-copy that failed, or waited for the
@@ -1032,7 +1045,7 @@ mod tests {
     fn a_launch_re_copies_a_stale_copy_only_while_enabled() {
         use std::sync::atomic::Ordering::SeqCst;
         let t = Target {
-            host: Some(&COPYING_HOST),
+            pickup: Pickup::Plugin(&COPYING_HOST),
             ..crate::install::target::CLAUDE
         };
         let copy = COPYING_HOST.copy().unwrap();
@@ -1054,7 +1067,7 @@ mod tests {
     }
 
     static COPYING: Target = Target {
-        host: Some(&COPYING_HOST),
+        pickup: Pickup::Plugin(&COPYING_HOST),
         ..crate::install::target::CLAUDE
     };
 
@@ -1092,26 +1105,31 @@ mod tests {
 
     static RELOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     static RELOAD_FAILS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    static PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
     /// A host that loads the files in place and keeps what it loaded until told.
     static RELOADING_HOST: HostRegistration = HostRegistration {
-        cli: crate::install::target::HERMES.host.unwrap().cli,
+        cli: crate::install::target::HERMES.host().unwrap().cli,
         register: |_| Ok(()),
         unregister: |_| Ok(crate::install::target::Unregistered::Absent),
         is_registered: || Ok(ENABLED.load(std::sync::atomic::Ordering::SeqCst)),
-        pickup: Some(Pickup::Reload(|| {
-            use std::sync::atomic::Ordering::SeqCst;
-            if RELOAD_FAILS.load(SeqCst) {
-                anyhow::bail!("no gateway answered");
-            }
-            RELOADS.fetch_add(1, SeqCst);
-            Ok(())
-        })),
-        legacy: None,
+        home: || Ok(std::env::temp_dir()),
+        refresh: Refresh::Reload(PluginReload {
+            pending: || Ok(PENDING.load(std::sync::atomic::Ordering::SeqCst)),
+            reload: || {
+                use std::sync::atomic::Ordering::SeqCst;
+                if RELOAD_FAILS.load(SeqCst) {
+                    anyhow::bail!("no gateway answered");
+                }
+                RELOADS.fetch_add(1, SeqCst);
+                Ok(())
+            },
+        }),
+        shim_hooks: None,
     };
 
     static RELOADING: Target = Target {
-        host: Some(&RELOADING_HOST),
+        pickup: Pickup::Plugin(&RELOADING_HOST),
         ..crate::install::target::HERMES
     };
 
@@ -1124,13 +1142,16 @@ mod tests {
         let connected = set(&["hermes"]);
         let dir = tempfile::TempDir::new().unwrap();
         let plugin = dir.path().join("__init__.py");
-        for (enabled, fails, rewrote, reloads, announced) in [
-            (true, false, true, 1, false),
-            (true, true, true, 0, true),
-            (false, false, true, 0, false),
-            (true, false, false, 0, false),
+        for (enabled, pending, fails, rewrote, reloads, announced) in [
+            (true, false, false, true, 1, false),
+            (true, false, true, true, 0, true),
+            (false, false, false, true, 0, false),
+            (true, false, false, false, 0, false),
+            (false, true, false, false, 1, false),
+            (false, true, true, false, 0, false),
         ] {
             ENABLED.store(enabled, SeqCst);
+            PENDING.store(pending, SeqCst);
             RELOAD_FAILS.store(fails, SeqCst);
             RELOADS.store(0, SeqCst);
             let refreshed = converge_owned_with(
@@ -1148,7 +1169,8 @@ mod tests {
                     })
                 },
             );
-            let case = format!("enabled {enabled}, fails {fails}, rewrote {rewrote}");
+            let case =
+                format!("enabled {enabled}, pending {pending}, fails {fails}, rewrote {rewrote}");
             assert_eq!(RELOADS.load(SeqCst), reloads, "{case}");
             assert_eq!(!refreshed.is_empty(), announced, "{case}");
         }
@@ -1222,6 +1244,30 @@ mod tests {
             ["dsh"]
         );
         assert_eq!(seen.into_inner(), ["claude", "opencode", "omp", "dsh"]);
+    }
+
+    /// A host whose next start loads the rewritten plugin is told to restart.
+    #[test]
+    fn a_launch_announces_a_host_that_loads_its_plugin_at_next_start() {
+        let refreshed = converge_owned_with(
+            &[&crate::install::target::CLAUDE],
+            &set(&["claude-code"]),
+            |_| Ok(false),
+            |_| {
+                Ok(install::Converged {
+                    rewritten: vec![(PathBuf::from("/x/hooks.json"), String::new())],
+                    failed: Vec::new(),
+                })
+            },
+        );
+        let [claude] = refreshed.as_slice() else {
+            panic!("{:?}", refreshed.iter().map(|t| t.name).collect::<Vec<_>>());
+        };
+        assert!(
+            refreshed_notice(claude).ends_with("restart Claude Code to load it"),
+            "{}",
+            refreshed_notice(claude)
+        );
     }
 
     /// The heal's whole population is the disconnected: a stub is what a
@@ -1459,7 +1505,7 @@ mod tests {
         let plain = "\u{2713} Codex disconnected";
         assert_eq!(line(UninstallOutcome::Removed, None), plain);
         assert_eq!(line(UninstallOutcome::NothingToRemove, None), plain);
-        let codex = crate::install::target::CODEX.host.map(|h| h.cli);
+        let codex = crate::install::target::CODEX.host().map(|h| h.cli);
         let stranded = line(UninstallOutcome::Removed, codex);
         assert!(
             stranded.contains("plugin left registered (codex not on PATH)"),
@@ -1978,7 +2024,7 @@ mod tests {
         binary_strategy: crate::install::target::BinaryStrategy::EmbedAbsolute,
         presence_probe: || false,
         post_install_hint: None,
-        host: None,
+        pickup: Pickup::NextStart,
         registers: Vec::new,
         consumes: &[],
     };

@@ -72,10 +72,10 @@ fn parse_toml(content: &str) -> anyhow::Result<toml::Table> {
 }
 
 /// The one YAML document `content` holds, `None` when it holds none; `file` names
-/// it in the error. A second is refused: the CLIs whose YAML pixtuoid rewrites
+/// it in the error. A second is refused: the CLIs whose YAML pixtuoid reads
 /// load exactly one and reject the file otherwise (dsh's js-yaml `load`,
 /// `lib/loader.js:1791-1799` @ 4.3.2; Hermes's ruamel `Composer.get_single_node`,
-/// `composer.py:65-83` @ 0.18.16), so a rewrite would drop every later document.
+/// `composer.py:65-83` @ 0.18.16).
 pub(crate) fn single_yaml_doc(content: &str, file: &str) -> anyhow::Result<Option<YamlOwned>> {
     let mut docs = YamlOwned::load_from_str(content)
         .map_err(|e| anyhow::anyhow!("{file} does not parse as YAML: {e}"))?;
@@ -163,13 +163,10 @@ pub(crate) fn flat_json_merge_install(
 /// content (a foreign plugin's entry, the user's own allowlist members) is left
 /// exactly as found.
 pub(crate) fn prune_empty(parent: &mut serde_json::Map<String, Value>, key: &str) {
-    let empty = match parent.get(key) {
-        Some(Value::Object(m)) => m.is_empty(),
-        Some(Value::Array(a)) => a.is_empty(),
-        _ => false,
-    };
-    if empty {
-        parent.remove(key);
+    if parent.get(key).is_some_and(json_emptied) {
+        // Under `preserve_order`, `remove` swaps the last key into this one's place
+        // (serde_json 1.0.154 `src/map.rs:160-164`), reordering the user's keys.
+        parent.shift_remove(key);
     }
 }
 
@@ -203,7 +200,7 @@ pub(crate) fn flat_json_merge_uninstall(mut doc: Value, sentinel: &str) -> Value
         })
         .collect();
     for k in to_remove {
-        hooks_obj.remove(&k);
+        hooks_obj.shift_remove(&k);
     }
     prune_empty(root, "hooks");
     doc
@@ -242,14 +239,6 @@ pub(crate) fn flat_json_merge_outcome_install(
     Ok(MergeOutcome {
         content: emit_json(content, &merged)?,
         changed,
-    })
-}
-
-/// [`flat_json_merge_outcome_uninstall`] of the [`crate::install::SENTINEL_KEY`]
-/// entries: the strip every flat-JSON config pixtuoid merged into shares.
-pub(crate) fn flat_json_uninstall(content: &str) -> anyhow::Result<MergeOutcome> {
-    flat_json_merge_outcome_uninstall(content, |doc| {
-        flat_json_merge_uninstall(doc, crate::install::SENTINEL_KEY)
     })
 }
 
@@ -293,22 +282,254 @@ pub(crate) fn emit_json(content: &str, value: &Value) -> anyhow::Result<String> 
     ))
 }
 
-/// `doc` as YAML for the file `content` held, by [`end_lines_like`], `file` naming it
-/// in the error. The emitter's leading `---` goes: an explicit document is that marker
-/// before a bare one ([YAML 1.2.2 §9.1.4](https://yaml.org/spec/1.2.2/#914-explicit-documents)).
-pub(crate) fn emit_yaml(content: &str, doc: &YamlOwned, file: &str) -> anyhow::Result<String> {
-    let mut out = String::new();
-    saphyr::YamlEmitter::new(&mut out)
-        .dump(&saphyr::Yaml::from(doc))
-        .map_err(|e| anyhow::anyhow!("emitting {file}: {e}"))?;
-    let out = out.strip_prefix("---\n").map(str::to_string).unwrap_or(out);
-    Ok(end_lines_like(content, out))
+/// `content` with every hook entry whose command runs pixtuoid's shim removed, whatever
+/// shape the release that wrote it used: one with an `args` array, Claude Code's exec
+/// form, by [`is_shim`](crate::install::hook_cmd::is_shim) over its whole `command`, any
+/// other by [`invokes_shim`](crate::install::hook_cmd::invokes_shim). A list item, member
+/// or map the removal empties goes with it, and so does a list item once it empties one
+/// of the item's members, as Claude Code's `{matcher, hooks}` group does when its `hooks`
+/// held only shim entries.
+pub(crate) fn strip_shim_json(content: &str) -> anyhow::Result<MergeOutcome> {
+    flat_json_merge_outcome_uninstall(content, |mut doc| {
+        strip_shim_value(&mut doc);
+        doc
+    })
+}
+
+/// What stripping a node did: whether it removed anything, and whether it dropped
+/// a member that held only shim entries, so a list item left holds none of its own.
+#[derive(Default)]
+struct Stripped {
+    removed: bool,
+    hollowed: bool,
+}
+
+impl Stripped {
+    /// Whether a list item goes, folding in `inner`, what stripping it did: once the
+    /// strip removed entries from it and left it empty or hollowed.
+    fn item_goes(&mut self, inner: Stripped, emptied: impl FnOnce() -> bool) -> bool {
+        self.removed |= inner.removed;
+        inner.removed && (inner.hollowed || emptied())
+    }
+
+    /// Whether a member goes, folding in `inner`: once the strip emptied it, which
+    /// hollows the node that held it.
+    fn member_goes(&mut self, inner: Stripped, emptied: impl FnOnce() -> bool) -> bool {
+        self.removed |= inner.removed;
+        let goes = inner.removed && emptied();
+        self.hollowed |= goes;
+        goes
+    }
+}
+
+fn json_shim_entry(v: &Value) -> bool {
+    let Some(command) = v.get("command").and_then(Value::as_str) else {
+        return false;
+    };
+    // `args` makes it Claude Code's exec form, whose `command` is the program itself,
+    // spawned with no shell (`claude::hook_entry`).
+    if v.get("args").is_some_and(Value::is_array) {
+        crate::install::hook_cmd::is_shim(command)
+    } else {
+        crate::install::hook_cmd::invokes_shim(command)
+    }
+}
+
+fn json_emptied(v: &Value) -> bool {
+    matches!(v, Value::Array(a) if a.is_empty()) || matches!(v, Value::Object(m) if m.is_empty())
+}
+
+fn strip_shim_value(v: &mut Value) -> Stripped {
+    let mut done = Stripped::default();
+    match v {
+        Value::Array(items) => items.retain_mut(|item| {
+            if json_shim_entry(item) {
+                done.removed = true;
+                return false;
+            }
+            let inner = strip_shim_value(item);
+            !done.item_goes(inner, || json_emptied(item))
+        }),
+        Value::Object(members) => members.retain(|_, child| {
+            let inner = strip_shim_value(child);
+            !done.member_goes(inner, || json_emptied(child))
+        }),
+        _ => {}
+    }
+    done
+}
+
+/// [`strip_shim_json`] for a YAML config, every entry read by `invokes_shim` (no YAML
+/// host writes an exec form), edited in place so every other byte stays as written;
+/// `file` names it in an error.
+pub(crate) fn strip_shim_yaml(content: &str, file: &str) -> anyhow::Result<MergeOutcome> {
+    let unchanged = || MergeOutcome {
+        content: content.to_string(),
+        changed: false,
+    };
+    let yaml = yaml_file(content, file).context("refusing to overwrite")?;
+    let Some(doc) = yaml.documents().next() else {
+        return Ok(unchanged());
+    };
+    let Some(root) = doc.as_mapping() else {
+        return Ok(unchanged());
+    };
+    if !strip_shim_node(&yaml_edit::YamlNode::Mapping(root)).removed {
+        return Ok(unchanged());
+    }
+    Ok(MergeOutcome {
+        content: yaml.to_string(),
+        changed: true,
+    })
+}
+
+fn yaml_shim_entry(node: &yaml_edit::YamlNode) -> bool {
+    node.as_mapping()
+        .and_then(|m| m.get("command"))
+        .is_some_and(|c| {
+            matches!(c, yaml_edit::YamlNode::Scalar(s)
+                if crate::install::hook_cmd::invokes_shim(&s.as_string()))
+        })
+}
+
+fn yaml_emptied(node: &yaml_edit::YamlNode) -> bool {
+    node.as_sequence()
+        .is_some_and(yaml_edit::Sequence::is_empty)
+        || node.as_mapping().is_some_and(yaml_edit::Mapping::is_empty)
+}
+
+fn strip_shim_node(node: &yaml_edit::YamlNode) -> Stripped {
+    let mut done = Stripped::default();
+    if let Some(items) = node.as_sequence() {
+        for i in (0..items.len()).rev() {
+            let Some(item) = items.get(i) else { continue };
+            if yaml_shim_entry(&item) {
+                done.removed = true;
+                items.remove(i);
+                continue;
+            }
+            if done.item_goes(strip_shim_node(&item), || yaml_emptied(&item)) {
+                items.remove(i);
+            }
+        }
+    } else if let Some(members) = node.as_mapping() {
+        for key in members.keys().collect::<Vec<_>>() {
+            let Some(child) = members.get(&key) else {
+                continue;
+            };
+            if done.member_goes(strip_shim_node(&child), || yaml_emptied(&child)) {
+                members.remove(&key);
+            }
+        }
+    }
+    done
+}
+
+/// [`strip_shim_json`] for a TOML config, every entry read by `invokes_shim` (no TOML
+/// host writes an exec form), through `toml_edit`: what it leaves unopened keeps its
+/// bytes, but for [`end_lines_like`]'s line endings.
+pub(crate) fn strip_shim_toml(content: &str) -> anyhow::Result<MergeOutcome> {
+    toml_merge_outcome(content, |doc| {
+        strip_shim_table(doc.as_table_mut());
+        Ok(())
+    })
+}
+
+fn toml_runs_shim(command: Option<&toml_edit::Value>) -> bool {
+    command
+        .and_then(toml_edit::Value::as_str)
+        .is_some_and(crate::install::hook_cmd::invokes_shim)
+}
+
+fn toml_emptied(item: &toml_edit::Item) -> bool {
+    match item {
+        toml_edit::Item::Table(t) => t.is_empty(),
+        toml_edit::Item::ArrayOfTables(a) => a.is_empty(),
+        toml_edit::Item::Value(v) => toml_value_emptied(v),
+        toml_edit::Item::None => false,
+    }
+}
+
+fn toml_value_emptied(v: &toml_edit::Value) -> bool {
+    v.as_array().is_some_and(toml_edit::Array::is_empty)
+        || v.as_inline_table()
+            .is_some_and(toml_edit::InlineTable::is_empty)
+}
+
+fn strip_shim_table(t: &mut toml_edit::Table) -> Stripped {
+    let mut done = Stripped::default();
+    t.retain(|_, item| {
+        let inner = strip_shim_item(item);
+        !done.member_goes(inner, || toml_emptied(item))
+    });
+    done
+}
+
+fn strip_shim_item(item: &mut toml_edit::Item) -> Stripped {
+    let mut done = Stripped::default();
+    match item {
+        toml_edit::Item::Table(t) => return strip_shim_table(t),
+        toml_edit::Item::Value(v) => return strip_shim_toml_value(v),
+        toml_edit::Item::ArrayOfTables(tables) => {
+            for i in (0..tables.len()).rev() {
+                let Some(t) = tables.get_mut(i) else { continue };
+                let gone = if toml_runs_shim(t.get("command").and_then(toml_edit::Item::as_value)) {
+                    done.removed = true;
+                    true
+                } else {
+                    let inner = strip_shim_table(t);
+                    done.item_goes(inner, || t.is_empty())
+                };
+                if gone {
+                    tables.remove(i);
+                }
+            }
+        }
+        toml_edit::Item::None => {}
+    }
+    done
+}
+
+fn strip_shim_toml_value(v: &mut toml_edit::Value) -> Stripped {
+    let mut done = Stripped::default();
+    if let Some(items) = v.as_array_mut() {
+        for i in (0..items.len()).rev() {
+            let Some(item) = items.get_mut(i) else {
+                continue;
+            };
+            let gone = if toml_runs_shim(item.as_inline_table().and_then(|t| t.get("command"))) {
+                done.removed = true;
+                true
+            } else {
+                let inner = strip_shim_toml_value(item);
+                done.item_goes(inner, || toml_value_emptied(item))
+            };
+            if gone {
+                items.remove(i);
+            }
+        }
+    } else if let Some(members) = v.as_inline_table_mut() {
+        members.retain(|_, child| {
+            let inner = strip_shim_toml_value(child);
+            !done.member_goes(inner, || toml_value_emptied(child))
+        });
+    }
+    done
+}
+
+/// `content` held for edits in place. saphyr's strict parse gates it, as
+/// yaml-edit's parser recovers from syntax errors (its README, "Error recovery").
+pub(crate) fn yaml_file(content: &str, file: &str) -> anyhow::Result<yaml_edit::YamlFile> {
+    single_yaml_doc(content, file)?;
+    <yaml_edit::YamlFile as std::str::FromStr>::from_str(content)
+        .map_err(|e| anyhow::anyhow!("{file} does not parse as YAML: {e}"))
 }
 
 /// `out` in `content`'s line ending, CRLF when `content` broke every line with one,
 /// and ending in a newline, as npm's `package.json` save does (npm/package-json
 /// `lib/index.js:249-257` @ v8.0.0); an empty `out` stays empty. Every config
-/// rewrite rides it, pixtuoid's own `config.toml` save included.
+/// rewrite but yaml-edit's in place (dsh's patch list, Hermes's [`strip_shim_yaml`])
+/// rides it, pixtuoid's own `config.toml` save included.
 pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
@@ -325,6 +546,87 @@ pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
 mod tests {
     use super::*;
 
+    /// A list item goes only once the strip removed entries from it: an item the user
+    /// left empty stays, and one the removal empties goes, nested arrays included.
+    #[test]
+    fn a_list_item_goes_only_once_the_strip_removed_from_it() {
+        let shim = json!({"command": "PIXTUOID_SOURCE=codex 'pixtuoid-hook'"});
+        let doc = json!({"hooks": {"Stop": [{}], "Nested": [[shim], ["mine"]]}});
+        let out = strip_shim_json(&doc.to_string()).unwrap().content;
+        let out: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(
+            out["hooks"]["Stop"],
+            json!([{}]),
+            "the user's own empty item stays"
+        );
+        assert_eq!(
+            out["hooks"]["Nested"],
+            json!([["mine"]]),
+            "the emptied array goes"
+        );
+    }
+
+    /// The JSON strip's own shapes go, Claude Code's group without the `_pixtuoid` key its
+    /// own writer drops and its exec form included; a user's hook, mixed group and empty
+    /// list stay, as does a spaced path with no `args`, which no shell runs whole. The
+    /// census of the release commands `invokes_shim` reads is `hook_cmd`'s predicate
+    /// test; the exec form, which only `args` marks, is pinned here.
+    #[test]
+    fn the_shim_strip_takes_its_json_shapes_and_leaves_the_users() {
+        let ours = |cmd: &str| json!({ "command": cmd });
+        let before = json!({
+            "theme": "dark",
+            "hooks": {
+                "Stop": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": "notify-send done"}, {"command": r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe"}]},
+                    {"matcher": ".*", "hooks": [{"type": "command", "command": "PIXTUOID_SOURCE=claude-code 'pixtuoid-hook'"}]},
+                    {"matcher": "", "hooks": [{"type": "command", "command": r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe", "args": ["--source", "claude-code"]}]},
+                    {"matcher": "x", "hooks": [{"command": "mine"}, ours("'/opt/pixtuoid-hook' --source claude-code")]},
+                    ours("PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'"),
+                ],
+                "PreToolUse": [
+                    ours("PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'"),
+                    ours(r"C:\PROGRA~1\PIXTUO~1.EXE --source reasonix"),
+                ],
+                "Empty": [],
+            },
+            "lint": {"Stop": []},
+            "pixtuoid": {"Stop": [{"matcher": "*", "hooks": [ours("PIXTUOID_SOURCE=antigravity '/old/pixtuoid-hook' --event Stop")]}]},
+        });
+        let after = json!({
+            "theme": "dark",
+            "hooks": {
+                "Stop": [
+                    {"matcher": "", "hooks": [{"type": "command", "command": "notify-send done"}, {"command": r"C:\Users\Jane Doe\.cargo\bin\pixtuoid-hook.exe"}]},
+                    {"matcher": "x", "hooks": [{"command": "mine"}]},
+                ],
+                "Empty": [],
+            },
+            "lint": {"Stop": []},
+        });
+        let pretty = |v: &Value| format!("{}\n", serde_json::to_string_pretty(v).unwrap());
+        let out = strip_shim_json(&pretty(&before)).unwrap();
+        assert!(out.changed);
+        assert_eq!(out.content, pretty(&after));
+        assert!(!strip_shim_json(&out.content).unwrap().changed);
+    }
+
+    /// The YAML strip edits in place: every byte but the shim's entries, and the keys
+    /// their removal empties, stays.
+    #[test]
+    fn the_yaml_shim_strip_leaves_every_other_byte() {
+        let user = "# mine\nmodel: gpt\ndisplay:\n  compact: off\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh   # kept\n";
+        let ours = "    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      timeout: 5\n      _pixtuoid: true\n  on_session_finalize:\n    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      timeout: 5\n";
+        for ending in ["\n", "\r\n"] {
+            let out =
+                strip_shim_yaml(&format!("{user}{ours}").replace('\n', ending), "c.yml").unwrap();
+            assert!(out.changed);
+            assert_eq!(out.content, user.replace('\n', ending));
+        }
+        assert!(!strip_shim_yaml(user, "c.yml").unwrap().changed);
+        assert!(strip_shim_yaml("- 1\nb: 2\n", "c.yml").is_err());
+    }
+
     /// An owner hook appended after ours: reinstalling moves ours to the end,
     /// and the next reinstall finds nothing to do.
     #[test]
@@ -337,7 +639,7 @@ mod tests {
         let moved = merge_install(&owner, cmd).unwrap();
         assert!(moved.changed, "{}", moved.content);
         let again = merge_install(&moved.content, cmd).unwrap();
-        assert!(!again.changed, "{}", moved.content);
+        assert!(!again.changed, "{}", again.content);
         assert_eq!(again.content, moved.content);
     }
 
@@ -392,10 +694,10 @@ mod tests {
     /// A hooks value of no shape we wrote is the owner's, whatever it is.
     #[test]
     fn an_uninstall_leaves_a_foreign_hooks_value_alone() {
-        use crate::install::{codewhale, codex, jcode, kimi};
+        use crate::install::{codewhale, jcode, kimi};
         for uninstall in [
             codewhale::merge_uninstall,
-            codex::merge_uninstall,
+            strip_shim_toml,
             jcode::merge_uninstall,
             kimi::merge_uninstall,
         ] {
@@ -579,6 +881,24 @@ command = \"notify-send done\" # theirs
         let noop = toml_merge_outcome("a  =  0x1\n", set("a", 1)).unwrap();
         assert!(!noop.changed, "an equal value must be a semantic no-op");
         assert!(toml_merge_outcome("a = 1\n", set("b", 2)).unwrap().changed);
+    }
+
+    #[test]
+    fn an_uninstall_keeps_the_order_of_the_users_keys() {
+        let doc = json!({
+            "hooks": {
+                "A": [{"command": "ours", "_pixtuoid": true}],
+                "B": [{"command": "theirs"}],
+                "C": [{"command": "theirs too"}],
+            },
+            "after": {"emptied": [], "kept": 1, "last": 2},
+        });
+        let out = flat_json_merge_uninstall(doc, "_pixtuoid");
+        let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<Vec<_>>();
+        assert_eq!(keys(&out["hooks"]), ["B", "C"]);
+        let mut after = out["after"].as_object().unwrap().clone();
+        prune_empty(&mut after, "emptied");
+        assert_eq!(keys(&Value::Object(after)), ["kept", "last"]);
     }
 
     #[test]

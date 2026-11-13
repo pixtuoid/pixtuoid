@@ -109,7 +109,9 @@ mod tests {
             resolve_windows_command(r"C:\Program Files\x\pixtuoid-hook.exe", "reasonix", |_| {
                 Some(r"C:\PROGRA~1\x\PIXTUO~1.EXE".to_string())
             });
-        assert_eq!(c.unwrap(), r"C:\PROGRA~1\x\PIXTUO~1.EXE --source reasonix");
+        let c = c.unwrap();
+        assert_eq!(c, r"C:\PROGRA~1\x\PIXTUO~1.EXE --source reasonix");
+        assert!(super::super::invokes_shim(&c), "{c}");
     }
 
     #[test]

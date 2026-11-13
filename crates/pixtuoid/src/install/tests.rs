@@ -1,12 +1,12 @@
 use super::*;
 use crate::install::target::{
-    ANTIGRAVITY, CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Primary, REASONIX, Target,
+    ANTIGRAVITY, CLAUDE, CODEX, HERMES, MergeOutcome, OPENCLAW, Pickup, Primary, REASONIX, Target,
 };
 
 /// Claude's owned hooks file without its plugin registration or presence probe,
 /// for the tests of the primary-write path itself.
 const CLAUDE_FILE: Target = Target {
-    host: None,
+    pickup: Pickup::NextStart,
     presence_probe: || false,
     ..CLAUDE
 };
@@ -36,7 +36,7 @@ static FAKE: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: || false,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     registers: Vec::new,
     consumes: &[],
 };
@@ -78,7 +78,7 @@ static FAKE2: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: || false,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     registers: Vec::new,
     consumes: &[],
 };
@@ -109,7 +109,7 @@ static FAKE_DIR: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: || false,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     registers: Vec::new,
     consumes: &[],
 };
@@ -140,7 +140,7 @@ static FAKE_NO_HOME: Target = Target {
     binary_strategy: BinaryStrategy::EmbedAbsolute,
     presence_probe: || false,
     post_install_hint: None,
-    host: None,
+    pickup: Pickup::NextStart,
     registers: Vec::new,
     consumes: &[],
 };
@@ -1460,6 +1460,9 @@ case "$*" in
 esac
 "#;
 
+/// `findstr /b`, never `/x`: `merge::strip_shim_toml`'s rewrite (through
+/// `end_lines_like`) leaves LF-only lines, which `/x` never matches, as it anchors at
+/// a CR (ss64.com/nt/findstr.html).
 const FAKE_CODEX_CMD: &str = "@echo off\r
 set \"d=%~dp0\"\r
 set \"c=%CODEX_HOME%\\config.toml\"\r
@@ -1469,14 +1472,14 @@ if exist \"%d%codex-root\" set /p root=<\"%d%codex-root\"\r
 >>\"%d%calls.log\" echo codex %~1 %~2 %~3 %~4\r
 if defined FAKE_HOST_FAIL if \"codex %*\"==\"%FAKE_HOST_FAIL%\" exit /b 1\r
 if \"%1 %2 %3\"==\"plugin marketplace add\" (>\"%d%codex-root\" echo %~4)\r
-if \"%1 %2 %3\"==\"plugin marketplace add\" ((findstr /l /x /c:\"[marketplaces.pixtuoid]\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo [marketplaces.pixtuoid]& >>\"%c%\" echo source_type = 'local'& >>\"%c%\" echo source = '%~4'))& exit /b 0)\r
+if \"%1 %2 %3\"==\"plugin marketplace add\" ((findstr /l /b /c:\"[marketplaces.pixtuoid]\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo [marketplaces.pixtuoid]& >>\"%c%\" echo source_type = 'local'& >>\"%c%\" echo source = '%~4'))& exit /b 0)\r
 if \"%1 %2 %3\"==\"plugin marketplace remove\" ((findstr /l /v /b /c:\"[marketplaces.pixtuoid]\" /c:\"source_type = \" /c:\"source = \" \"%c%\" >\"%c%.tmp\"& move /y \"%c%.tmp\" \"%c%\" >nul)& exit /b 0)\r
 if \"%1 %2\"==\"plugin add\" if not defined root exit /b 1\r
 if \"%1 %2\"==\"plugin add\" (if exist \"%cache%\" rmdir /s /q \"%cache%\")\r
 if \"%1 %2\"==\"plugin add\" (for /d %%p in (\"%root%\\*\") do xcopy /e /i /y /q \"%%p\" \"%cache%\" >nul)\r
-if \"%1 %2\"==\"plugin add\" ((findstr /l /x /c:\"[plugins.'pixtuoid@pixtuoid']\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo [plugins.'pixtuoid@pixtuoid']& >>\"%c%\" echo enabled = true))& exit /b 0)\r
+if \"%1 %2\"==\"plugin add\" ((findstr /l /b /c:\"[plugins.'pixtuoid@pixtuoid']\" \"%c%\" >nul 2>&1 || (>>\"%c%\" echo [plugins.'pixtuoid@pixtuoid']& >>\"%c%\" echo enabled = true))& exit /b 0)\r
 if \"%1 %2\"==\"plugin remove\" (if exist \"%cache%\" rmdir /s /q \"%cache%\")\r
-if \"%1 %2\"==\"plugin remove\" ((findstr /l /v /x /c:\"[plugins.'pixtuoid@pixtuoid']\" /c:\"enabled = true\" \"%c%\" >\"%c%.tmp\"& move /y \"%c%.tmp\" \"%c%\" >nul)& exit /b 0)\r
+if \"%1 %2\"==\"plugin remove\" ((findstr /l /v /b /c:\"[plugins.'pixtuoid@pixtuoid']\" /c:\"enabled = true\" \"%c%\" >\"%c%.tmp\"& move /y \"%c%.tmp\" \"%c%\" >nul)& exit /b 0)\r
 exit /b 0\r
 ";
 
@@ -1608,40 +1611,6 @@ fn claude_install_registers_the_plugin() {
             2,
             "calls: {calls}"
         );
-    });
-}
-
-/// A 0.19.0 install merged a sentinel group per event into Claude Code's own
-/// settings.json; left beside the plugin, every event would fire twice.
-#[test]
-fn claude_connect_strips_the_hooks_an_older_pixtuoid_merged_into_its_settings() {
-    with_fake_hosts(|_| {
-        let user = serde_json::json!({
-            "matcher": "",
-            "hooks": [{ "type": "command", "command": "notify-send done" }],
-        });
-        let legacy = serde_json::json!({
-            SENTINEL_KEY: true,
-            "matcher": ".*",
-            "hooks": [{ "type": "command", "command": "PIXTUOID_SOURCE=claude-code 'pixtuoid-hook'" }],
-        });
-        std::fs::write(
-            cc_settings(),
-            serde_json::json!({ "theme": "dark", "hooks": { "Stop": [user, legacy] } }).to_string(),
-        )
-        .unwrap();
-        let tmp = tempfile::TempDir::new().unwrap();
-        let hooks = plugin_hooks_path(tmp.path());
-        install_target_from(
-            &CLAUDE,
-            Some(hooks),
-            Some(PathBuf::from("/fake/pixtuoid-hook")),
-        )
-        .unwrap();
-        let settings: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(cc_settings()).unwrap()).unwrap();
-        assert_eq!(settings["hooks"]["Stop"], serde_json::json!([user]));
-        assert_eq!(settings["theme"], "dark");
     });
 }
 
@@ -1940,7 +1909,10 @@ fn codex_doctor_names_a_stale_copy_until_it_is_re_copied() {
         let hooks = plugin_hooks_path(tmp.path());
         let hook = Some(std::env::current_exe().unwrap());
         install_target_from(&CODEX, Some(hooks.clone()), hook).unwrap();
-        let copy = CODEX.host.and_then(target::HostRegistration::copy).unwrap();
+        let copy = CODEX
+            .host()
+            .and_then(target::HostRegistration::copy)
+            .unwrap();
         assert!(!(copy.stale)(&hooks).unwrap(), "connect copies the plugin");
 
         let cached =
@@ -1954,7 +1926,7 @@ fn codex_doctor_names_a_stale_copy_until_it_is_re_copied() {
             v.issues
         );
 
-        (copy.refresh)().unwrap();
+        (copy.recopy)().unwrap();
         assert!(!(copy.stale)(&hooks).unwrap());
         assert!(verify_target(&CODEX, Some(hooks)).is_sound());
     });
@@ -2013,29 +1985,6 @@ fn a_connect_without_the_host_cli_leaves_the_legacy_hooks() {
     });
 }
 
-/// A legacy config the strip cannot parse fails the disconnect, but only after the
-/// plugin is deregistered.
-#[test]
-fn a_disconnect_removes_the_plugin_before_an_unparsable_legacy_config_fails_it() {
-    with_fake_hosts(|fake| {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let manifest = reasonix_manifest_path(tmp.path());
-        install_target_from(
-            &REASONIX,
-            Some(manifest.clone()),
-            Some(PathBuf::from("/fake/pixtuoid-hook")),
-        )
-        .unwrap();
-        std::fs::write(reasonix_settings(), "{not json").unwrap();
-        assert!(uninstall_target(&REASONIX, Some(manifest)).is_err());
-        let calls = std::fs::read_to_string(fake.join("calls.log")).unwrap();
-        assert!(
-            calls.contains("reasonix plugin remove pixtuoid --yes"),
-            "calls: {calls}"
-        );
-    });
-}
-
 /// Each host reads its own state file: absent is not registered, and one it cannot
 /// parse is an error rather than a guess.
 #[test]
@@ -2046,7 +1995,7 @@ fn a_host_state_file_absent_reads_unregistered_and_unparsable_errs() {
             (&REASONIX, reasonix_packages(), "{not json"),
             (&HERMES, hermes_config(), "plugins: [unclosed\n"),
         ] {
-            let is_registered = t.host.unwrap().is_registered;
+            let is_registered = t.host().unwrap().is_registered;
             assert!(!is_registered().unwrap(), "{}: absent", t.name);
             std::fs::write(&state, unparsable).unwrap();
             assert!(is_registered().is_err(), "{}: unparsable", t.name);
@@ -2056,7 +2005,7 @@ fn a_host_state_file_absent_reads_unregistered_and_unparsable_errs() {
             r#"{"version":1,"plugins":[{"name":"other","enabled":true}]}"#,
         )
         .unwrap();
-        assert!(!(REASONIX.host.unwrap().is_registered)().unwrap());
+        assert!(!(REASONIX.host().unwrap().is_registered)().unwrap());
     });
 }
 
@@ -2139,11 +2088,10 @@ fn codex_disconnect_without_codex_on_path_leaves_a_registered_plugin() {
     });
 }
 
-/// The legacy strip runs before the plugin registers, so a registration that fails
-/// leaves neither firing: stripping after would leave the copy and the legacy
-/// hooks both firing whenever the strip failed.
+/// The shim strip runs once the plugin registered, so a registration that fails
+/// keeps the hook an older release left firing rather than leave neither.
 #[test]
-fn codex_connect_fails_when_adding_the_plugin_fails_and_leaves_no_hooks() {
+fn codex_connect_fails_when_adding_the_plugin_fails_and_keeps_the_old_hook() {
     with_fake_hosts_failing(Some("codex plugin add pixtuoid@pixtuoid"), |_| {
         std::fs::write(codex_config(), CODEX_LEGACY_HOOK).unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
@@ -2151,50 +2099,174 @@ fn codex_connect_fails_when_adding_the_plugin_fails_and_leaves_no_hooks() {
         let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
         assert!(install_target_from(&CODEX, Some(hooks.clone()), hook).is_err());
         assert!(!has_hooks(&CODEX, Some(hooks)));
-        assert!(
-            !std::fs::read_to_string(codex_config())
-                .unwrap()
-                .contains(SENTINEL_KEY)
-        );
+        let config = std::fs::read_to_string(codex_config()).unwrap();
+        assert!(config.starts_with(CODEX_LEGACY_HOOK), "{config}");
     });
 }
 
-/// A legacy config that no longer parses is never rewritten: the connect fails
-/// before the strip touches it, and before any registration.
+/// The CLI-config strip needs no CLI, so it runs before a deregister that fails.
 #[test]
-fn a_connect_over_an_unparsable_legacy_config_errs_and_rewrites_nothing() {
+fn a_failing_deregister_still_takes_the_shim_entries_out() {
+    with_fake_hosts_failing(Some("reasonix plugin remove"), |_| {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let manifest = reasonix_manifest_path(tmp.path());
+        let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
+        install_target_from(&REASONIX, Some(manifest.clone()), hook).unwrap();
+        let settings = (REASONIX.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+        std::fs::write(
+            &settings,
+            r#"{"hooks": {"Stop": [{"command": "PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'"}]}}"#,
+        )
+        .unwrap();
+        assert!(uninstall_target(&REASONIX, Some(manifest)).is_err());
+        let left = std::fs::read_to_string(&settings).unwrap();
+        assert!(!left.contains("pixtuoid-hook"), "{left}");
+    });
+}
+
+/// A reload whose `enable` fails after its `disable` ran leaves the plugin off, which
+/// verify reports, and pending until the next reload or connect turns it back on; one
+/// whose `disable` fails leaves nothing pending.
+#[test]
+fn a_half_done_hermes_reload_is_finished_by_the_next() {
+    with_fake_hosts(|_| {
+        let connect = || {
+            install_target_from(&HERMES, None, Some(PathBuf::from("/fake/pixtuoid-hook"))).unwrap()
+        };
+        connect();
+        let host = HERMES.host().unwrap();
+        let target::Refresh::Reload(r) = &host.refresh else {
+            panic!("hermes reloads");
+        };
+        let half_done = || {
+            temp_env::with_var(
+                "FAKE_HOST_FAIL",
+                Some("hermes plugins enable pixtuoid"),
+                || assert!((r.reload)().is_err()),
+            );
+        };
+        let finished = |by: &str| {
+            assert!((host.is_registered)().unwrap(), "{by}");
+            assert!(!(r.pending)().unwrap(), "{by}");
+        };
+        temp_env::with_var(
+            "FAKE_HOST_FAIL",
+            Some("hermes plugins disable pixtuoid"),
+            || assert!((r.reload)().is_err()),
+        );
+        assert!(!(r.pending)().unwrap(), "a reload that unloaded nothing");
+        half_done();
+        assert!(!(host.is_registered)().unwrap(), "the plugin is off");
+        assert!((r.pending)().unwrap());
+        let v = verify_target(&HERMES, None);
+        assert!(
+            v.issues
+                .iter()
+                .any(|i| i.contains("not installed and enabled")),
+            "{:?}",
+            v.issues
+        );
+        (r.reload)().unwrap();
+        finished("a reload");
+        half_done();
+        connect();
+        finished("a connect");
+    });
+}
+
+/// A strip that changes nothing never takes the lock, whose `.lock` sidecar would
+/// otherwise land beside a config of the CLI's own.
+#[test]
+fn a_strip_that_changes_nothing_takes_no_lock() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let at = tmp.path().join("settings.json");
+    std::fs::write(
+        &at,
+        r#"{"hooks": {"Stop": [{"command": "notify-send done"}]}}"#,
+    )
+    .unwrap();
+    assert!(!strip_managed(merge::strip_shim_json, &at).unwrap());
+    assert!(!tmp.path().join("settings.json.lock").exists());
+}
+
+/// Codex's and Antigravity's own configs, each with content its strip can't parse.
+fn unparsable_cli_configs(
+    tmp: &std::path::Path,
+) -> [(&'static Target, &'static str, Option<PathBuf>, &'static str); 2] {
+    [
+        (
+            &CODEX,
+            "codex",
+            Some(plugin_hooks_path(tmp)),
+            "{ not = = valid [[[",
+        ),
+        (&ANTIGRAVITY, "agy", None, "{ not json"),
+    ]
+}
+
+/// A CLI config the strip can't parse fails the connect before the CLI registers
+/// anything or pixtuoid writes a file, so no registration outlives the rolled-back
+/// hooks.
+#[test]
+fn a_connect_over_an_unparsable_cli_config_errs_and_touches_nothing() {
     with_fake_hosts(|fake| {
         let tmp = tempfile::TempDir::new().unwrap();
-        for (t, legacy, primary, register) in [
-            (
-                &CODEX,
-                codex_config(),
-                plugin_hooks_path(tmp.path()),
-                "codex plugin",
-            ),
-            (
-                &REASONIX,
-                reasonix_settings(),
-                reasonix_manifest_path(tmp.path()),
-                "reasonix plugin",
-            ),
-        ] {
-            std::fs::write(&legacy, "{ not = = valid [[[").unwrap();
+        for (t, cli, primary, garbage) in unparsable_cli_configs(tmp.path()) {
+            let own = (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+            std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+            std::fs::write(&own, garbage).unwrap();
             let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
             assert!(
-                install_target_from(t, Some(primary.clone()), hook).is_err(),
+                install_target_from(t, primary.clone(), hook).is_err(),
                 "{}",
                 t.name
             );
             assert_eq!(
-                std::fs::read_to_string(&legacy).unwrap(),
-                "{ not = = valid [[[",
+                std::fs::read_to_string(&own).unwrap(),
+                garbage,
                 "{}",
                 t.name
             );
-            assert!(!has_hooks(t, Some(primary)), "{}", t.name);
-            let calls = std::fs::read_to_string(fake.join("calls.log")).unwrap_or_default();
-            assert!(!calls.contains(register), "{}: {calls}", t.name);
+            let at = primary_path(t, primary).unwrap();
+            assert!(
+                !at.parent().unwrap().exists(),
+                "{}: {}",
+                t.name,
+                at.display()
+            );
+            assert_eq!(calls_of(fake, cli), Vec::<String>::new(), "{}", t.name);
+        }
+    });
+}
+
+/// A disconnect over one fails before its first write, so the plugin stays both
+/// registered and whole rather than registered with its hooks stripped.
+#[test]
+fn a_disconnect_over_an_unparsable_cli_config_errs_and_touches_nothing() {
+    with_fake_hosts(|fake| {
+        let tmp = tempfile::TempDir::new().unwrap();
+        for (t, cli, primary, garbage) in unparsable_cli_configs(tmp.path()) {
+            install_target_from(
+                t,
+                primary.clone(),
+                Some(PathBuf::from("/fake/pixtuoid-hook")),
+            )
+            .unwrap();
+            let own = (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+            std::fs::create_dir_all(own.parent().unwrap()).unwrap();
+            std::fs::write(&own, garbage).unwrap();
+            let at = primary_path(t, primary.clone()).unwrap();
+            let hooks = std::fs::read_to_string(&at).unwrap();
+            let calls = calls_of(fake, cli);
+            assert!(uninstall_target(t, primary).is_err(), "{}", t.name);
+            assert_eq!(std::fs::read_to_string(&at).unwrap(), hooks, "{}", t.name);
+            assert_eq!(
+                std::fs::read_to_string(&own).unwrap(),
+                garbage,
+                "{}",
+                t.name
+            );
+            assert_eq!(calls_of(fake, cli), calls, "{}", t.name);
         }
     });
 }
@@ -2232,20 +2304,9 @@ fn reasonix_manifest_path(tmp: &std::path::Path) -> PathBuf {
         .join("reasonix-plugin.json")
 }
 
-fn reasonix_settings() -> PathBuf {
-    reasonix_packages().with_file_name("settings.json")
-}
-
 #[test]
-fn reasonix_connect_links_the_plugin_and_strips_the_hooks_an_older_pixtuoid_merged() {
+fn reasonix_connect_links_the_plugin() {
     with_fake_hosts(|fake| {
-        let user = serde_json::json!({ "command": "notify-send done" });
-        let legacy = serde_json::json!({ SENTINEL_KEY: true, "command": "PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'" });
-        std::fs::write(
-            reasonix_settings(),
-            serde_json::json!({ "hooks": { "Stop": [user, legacy] } }).to_string(),
-        )
-        .unwrap();
         let tmp = tempfile::TempDir::new().unwrap();
         let manifest = reasonix_manifest_path(tmp.path());
         let hook = Some(std::env::current_exe().unwrap());
@@ -2260,9 +2321,6 @@ fn reasonix_connect_links_the_plugin_and_strips_the_hooks_an_older_pixtuoid_merg
             )),
             "calls: {calls}"
         );
-        let settings: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(reasonix_settings()).unwrap()).unwrap();
-        assert_eq!(settings["hooks"]["Stop"], serde_json::json!([user]));
         assert!(has_hooks(&REASONIX, Some(manifest.clone())));
         let v = verify_target(&REASONIX, Some(manifest.clone()));
         assert!(v.is_sound(), "{:?}", v.issues);
@@ -2370,23 +2428,9 @@ fn reasonix_connect_fails_when_linking_fails_and_leaves_no_hooks() {
     });
 }
 
-/// The shared hooks file an older pixtuoid merged into, under the fake's `HOME`.
-fn agy_legacy_hooks() -> PathBuf {
-    let legacy = ANTIGRAVITY.host.unwrap().legacy.as_ref().unwrap();
-    let path = (legacy.path)().expect("inside with_fake_hosts");
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    path
-}
-
 #[test]
-fn antigravity_connect_writes_its_plugin_and_strips_the_hook_an_older_pixtuoid_merged() {
+fn antigravity_connect_writes_and_enables_its_plugin() {
     with_fake_hosts(|fake| {
-        let legacy = agy_legacy_hooks();
-        std::fs::write(
-            &legacy,
-            r#"{"lint": {"Stop": []}, "pixtuoid": {"Stop": [{"command": "old"}]}}"#,
-        )
-        .unwrap();
         let hook = Some(std::env::current_exe().unwrap());
         let r = install_target_from(&ANTIGRAVITY, None, hook).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::Installed));
@@ -2394,14 +2438,231 @@ fn antigravity_connect_writes_its_plugin_and_strips_the_hook_an_older_pixtuoid_m
         assert_eq!(calls_of(fake, "agy"), ["agy plugin enable pixtuoid"]);
         let primary = (ANTIGRAVITY.default_config_path)().unwrap();
         assert!(primary.with_file_name("plugin.json").exists());
-        let shared = std::fs::read_to_string(&legacy).unwrap();
-        assert!(
-            shared.contains("lint") && !shared.contains("pixtuoid"),
-            "{shared}"
-        );
         assert!(has_hooks(&ANTIGRAVITY, None));
         let v = verify_target(&ANTIGRAVITY, None);
         assert!(v.is_sound(), "{:?}", v.issues);
+    });
+}
+
+/// `dir` spelled relative to this process's cwd, so a write a refusal lets
+/// through still lands in `dir`. A cwd on another drive than `dir` would take
+/// the `..` climb elsewhere, hence Unix only.
+#[cfg(unix)]
+fn relative_into(dir: &std::path::Path) -> PathBuf {
+    let cwd = std::env::current_dir().unwrap();
+    let climb = cwd
+        .components()
+        .skip(1)
+        .map(|_| std::path::Component::ParentDir);
+    climb
+        .chain(dir.components().skip(1))
+        .map(|c| c.as_os_str().to_owned())
+        .collect()
+}
+
+#[cfg(unix)]
+fn refused_as_relative<T>(what: &str, r: Result<T>) {
+    match r {
+        Ok(_) => panic!("{what}: a relative path was written"),
+        Err(e) => assert!(format!("{e:#}").contains("is relative"), "{what}: {e:#}"),
+    }
+}
+
+/// Every write entry point of every target refuses a relative primary.
+#[cfg(unix)]
+#[test]
+fn no_target_writes_a_relative_primary() {
+    with_fake_hosts(|_| {
+        let into = tempfile::TempDir::new().unwrap();
+        let rel = relative_into(into.path()).join("primary");
+        let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
+        for &t in target::TARGETS {
+            let some = || Some(rel.clone());
+            refused_as_relative(t.name, install_target_from(t, some(), hook()));
+            refused_as_relative(t.name, uninstall_target(t, some()));
+            if t.primary.owned_files().is_some() {
+                refused_as_relative(t.name, converge(t, some()));
+            }
+        }
+        assert_eq!(std::fs::read_dir(into.path()).unwrap().count(), 0);
+        // The heal runs at every launch, so only a stub it would rewrite refuses.
+        for &t in target::TARGETS {
+            let Primary::Owned {
+                retired: Some(stub),
+                ..
+            } = &t.primary
+            else {
+                continue;
+            };
+            assert!(
+                !heal_retired_stub(t, Some(rel.clone())).unwrap(),
+                "{}",
+                t.name
+            );
+            std::fs::write(into.path().join("primary"), stub.was).unwrap();
+            refused_as_relative(t.name, heal_retired_stub(t, Some(rel.clone())));
+            assert_eq!(
+                std::fs::read_to_string(into.path().join("primary")).unwrap(),
+                stub.was
+            );
+        }
+    });
+}
+
+/// A relative home override refuses the write it would misplace, whichever of a
+/// target's files it moves: grok's primary, a host's own home its commands write
+/// (Codex's counts only when it names an existing dir), OpenClaw's plugin dir
+/// beside an absolute config. A disconnect refuses before its first write, too.
+#[cfg(unix)]
+#[test]
+fn a_relative_home_override_refuses_every_file_it_moves() {
+    with_fake_hosts(|fake| {
+        let into = tempfile::TempDir::new().unwrap();
+        let rel = relative_into(into.path());
+        std::fs::create_dir(into.path().join("codex")).unwrap();
+        let primary = tempfile::TempDir::new().unwrap();
+        let config = primary.path().join("openclaw.json");
+        let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
+        for (t, vars, at) in [
+            (
+                &target::GROK,
+                vec![("GROK_HOME", Some(rel.join("grok")))],
+                None,
+            ),
+            (
+                &CODEX,
+                vec![("CODEX_HOME", Some(rel.join("codex")))],
+                Some(plugin_hooks_path(primary.path())),
+            ),
+            (
+                &CLAUDE,
+                vec![("CLAUDE_CONFIG_DIR", Some(rel.join("claude")))],
+                Some(plugin_hooks_path(primary.path())),
+            ),
+            (
+                &REASONIX,
+                vec![("REASONIX_HOME", Some(rel.join("rx")))],
+                Some(reasonix_manifest_path(primary.path())),
+            ),
+            (
+                &OPENCLAW,
+                vec![
+                    ("OPENCLAW_STATE_DIR", Some(rel.join("claw"))),
+                    ("OPENCLAW_CONFIG_PATH", Some(config.clone())),
+                ],
+                None,
+            ),
+        ] {
+            temp_env::with_vars(vars, || {
+                refused_as_relative(t.name, install_target_from(t, at.clone(), hook()));
+                if t.host().is_some() {
+                    refused_as_relative(t.name, uninstall_target(t, at));
+                }
+            });
+        }
+        assert_eq!(
+            std::fs::read_dir(into.path()).unwrap().count(),
+            1,
+            "only the codex dir the test made"
+        );
+        for at in [
+            config,
+            plugin_hooks_path(primary.path()),
+            reasonix_manifest_path(primary.path()),
+        ] {
+            assert!(!at.exists(), "{}", at.display());
+        }
+        assert!(!fake.join("calls.log").exists(), "no host command ran");
+    });
+}
+
+/// A connect and a disconnect each remove every entry whose command runs the shim
+/// from a host's own hook config, in the shape the release that wrote it used,
+/// Claude Code's without the sentinel its own writer drops; a second connect
+/// changes nothing, and the user's hook beside it stays.
+#[test]
+fn connect_and_disconnect_take_every_shim_entry_out_of_the_clis_own_config() {
+    with_fake_hosts(|_| {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let hook = || Some(PathBuf::from("/fake/pixtuoid-hook"));
+        let own = |t: &Target| (t.host().unwrap().shim_hooks.as_ref().unwrap().path)().unwrap();
+        // Seeds the file, connects twice, then seeds it again and disconnects, checking
+        // the file after each against `kept`.
+        let round_trip = |t: &Target, primary: Option<PathBuf>, seed: &str, kept: &dyn Fn(&str)| {
+            let at = own(t);
+            std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+            std::fs::write(&at, seed).unwrap();
+            install_target_from(t, primary.clone(), hook()).unwrap();
+            let once = std::fs::read_to_string(&at).unwrap();
+            kept(&once);
+            install_target_from(t, primary.clone(), hook()).unwrap();
+            // Blank lines aside: the fake hermes's reload leaves one per round.
+            let lines = |c: &str| {
+                c.lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            };
+            let twice = std::fs::read_to_string(&at).unwrap();
+            assert_eq!(lines(&twice), lines(&once), "{}", t.name);
+            std::fs::write(&at, seed).unwrap();
+            uninstall_target(t, primary).unwrap();
+            kept(&std::fs::read_to_string(&at).unwrap());
+        };
+        let user = serde_json::json!({ "command": "notify-send done" });
+        let cc_group = |h| serde_json::json!({ "matcher": ".*", "hooks": [h] });
+        for (t, primary, before, after) in [
+            (
+                &CLAUDE,
+                Some(plugin_hooks_path(tmp.path())),
+                serde_json::json!({ "hooks": { "Stop": [cc_group(user.clone()), cc_group(serde_json::json!({ "type": "command", "command": "PIXTUOID_SOURCE=claude-code 'pixtuoid-hook'" }))] } }),
+                serde_json::json!({ "hooks": { "Stop": [cc_group(user.clone())] } }),
+            ),
+            (
+                &REASONIX,
+                Some(reasonix_manifest_path(tmp.path())),
+                serde_json::json!({ "hooks": { "Stop": [user.clone(), { SENTINEL_KEY: true, "command": "PIXTUOID_SOURCE=reasonix '/old/pixtuoid-hook'" }] } }),
+                serde_json::json!({ "hooks": { "Stop": [user.clone()] } }),
+            ),
+            (
+                &ANTIGRAVITY,
+                None,
+                serde_json::json!({ "lint": { "Stop": [user.clone()] }, "pixtuoid": { "Stop": [cc_group(serde_json::json!({ "command": "PIXTUOID_SOURCE=antigravity '/old/pixtuoid-hook' --event Stop" }))] } }),
+                serde_json::json!({ "lint": { "Stop": [user.clone()] } }),
+            ),
+        ] {
+            round_trip(t, primary, &before.to_string(), &|content| {
+                let left: serde_json::Value = serde_json::from_str(content).unwrap();
+                for (k, v) in after.as_object().unwrap() {
+                    assert_eq!(&left[k], v, "{}", t.name);
+                }
+                assert!(!content.contains("pixtuoid-hook"), "{}: {content}", t.name);
+            });
+        }
+
+        let ours =
+            "    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      _pixtuoid: true\n";
+        let user_yaml =
+            "model: gpt\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh   # kept\n";
+        round_trip(&HERMES, None, &format!("{user_yaml}{ours}"), &|content| {
+            assert!(
+                content.starts_with(user_yaml) && !content.contains("pixtuoid-hook"),
+                "{content}"
+            );
+        });
+
+        let seed = format!("{CODEX_USER_HOOK}{CODEX_LEGACY_HOOK}");
+        round_trip(
+            &CODEX,
+            Some(plugin_hooks_path(tmp.path())),
+            &seed,
+            &|content| {
+                assert!(
+                    content.starts_with(CODEX_USER_HOOK) && !content.contains("pixtuoid-hook"),
+                    "{content}"
+                );
+            },
+        );
     });
 }
 
@@ -2425,7 +2686,7 @@ fn antigravity_disconnect_removes_the_plugin_through_agy() {
 #[test]
 fn antigravity_reports_what_agy_lists() {
     with_fake_hosts(|fake| {
-        let is_registered = ANTIGRAVITY.host.unwrap().is_registered;
+        let is_registered = ANTIGRAVITY.host().unwrap().is_registered;
         assert!(!is_registered().unwrap(), "never connected");
         let hook = Some(PathBuf::from("/fake/pixtuoid-hook"));
         install_target_from(&ANTIGRAVITY, None, hook).unwrap();
@@ -2504,13 +2765,8 @@ fn calls_of(fake: &std::path::Path, cli: &str) -> Vec<String> {
 }
 
 #[test]
-fn hermes_connect_enables_the_plugin_and_strips_the_shell_hooks_an_older_pixtuoid_merged() {
+fn hermes_connect_enables_the_plugin() {
     with_fake_hosts(|fake| {
-        std::fs::write(
-            hermes_config(),
-            "model: gpt\nhooks:\n  on_session_start:\n    - command: notify\n    - command: \"'/old/pixtuoid-hook' --source hermes\"\n      _pixtuoid: true\n",
-        )
-        .unwrap();
         let hook = Some(std::env::current_exe().unwrap());
         let r = install_target_from(&HERMES, None, hook).unwrap();
         assert!(matches!(r.outcome, InstallOutcome::Installed));
@@ -2519,13 +2775,6 @@ fn hermes_connect_enables_the_plugin_and_strips_the_shell_hooks_an_older_pixtuoi
         let manifest =
             std::fs::read_to_string(hermes_plugin().with_file_name("plugin.yaml")).unwrap();
         assert!(manifest.starts_with("name: pixtuoid\n"), "{manifest}");
-        let config = std::fs::read_to_string(hermes_config()).unwrap();
-        assert!(
-            config.contains("notify")
-                && config.contains("model: gpt")
-                && !config.contains(SENTINEL_KEY),
-            "{config}"
-        );
         assert!(has_hooks(&HERMES, None));
         let v = verify_target(&HERMES, None);
         assert!(v.is_sound(), "{:?}", v.issues);
@@ -2547,7 +2796,7 @@ fn hermes_reconnect_reloads_the_plugin_into_a_running_gateway() {
                 "hermes plugins enable pixtuoid"
             ]
         );
-        assert!((HERMES.host.unwrap().is_registered)().unwrap());
+        assert!((HERMES.host().unwrap().is_registered)().unwrap());
     });
 }
 
@@ -2560,7 +2809,7 @@ fn hermes_disconnect_disables_the_plugin_before_removing_it() {
         let u = uninstall_target(&HERMES, None).unwrap();
         assert!(matches!(u.outcome, UninstallOutcome::Removed));
         assert!(!hermes_plugin().parent().unwrap().exists());
-        assert!(!(HERMES.host.unwrap().is_registered)().unwrap());
+        assert!(!(HERMES.host().unwrap().is_registered)().unwrap());
         assert_eq!(
             calls_of(fake, "hermes"),
             [

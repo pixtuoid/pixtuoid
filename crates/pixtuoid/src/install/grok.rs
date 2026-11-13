@@ -258,9 +258,8 @@ fn extract_shim_path(cmd: &str) -> Option<PathBuf> {
             .strip_suffix('\'')?
             .replace("''", "'")
     } else if cmd.starts_with('\'') {
-        cmd.strip_prefix('\'')?
-            .strip_suffix('\'')?
-            .replace(r"'\''", "'")
+        let [path] = <[String; 1]>::try_from(shell_words::split(cmd).ok()?).ok()?;
+        path
     } else {
         cmd.to_string()
     };
@@ -270,6 +269,24 @@ fn extract_shim_path(cmd: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_presence_probe_reads_groks_sessions_root() {
+        let home = tempfile::tempdir().unwrap();
+        temp_env::with_vars(
+            [
+                ("GROK_HOME", Some(home.path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::GROK.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(home.path().join("sessions")).unwrap();
+                assert!(probe());
+            },
+        );
+    }
 
     #[test]
     fn install_renders_every_registered_event_with_env_attribution() {

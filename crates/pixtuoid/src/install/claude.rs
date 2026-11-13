@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use crate::install::host_plugin::{self, NAME};
 use crate::install::io;
 use crate::install::merge;
-use crate::install::target::{HostRegistration, LegacyConfig, Unregistered};
+use crate::install::target::{CliConfig, HostRegistration, Refresh, Unregistered};
 use crate::install::verify::ShimRef;
 
 pub(crate) const EVENTS: &[&str] = &[
@@ -38,10 +38,11 @@ pub(crate) const HOST: HostRegistration = HostRegistration {
     register,
     unregister,
     is_registered,
-    pickup: None,
-    legacy: Some(LegacyConfig {
+    home,
+    refresh: Refresh::NextStart,
+    shim_hooks: Some(CliConfig {
         path: settings_path,
-        strip: merge::flat_json_uninstall,
+        strip: merge::strip_shim_json,
     }),
 };
 
@@ -51,12 +52,13 @@ pub(crate) fn default_config_path() -> Result<PathBuf> {
     host_plugin::owned_path("claude-plugin", host_plugin::HOOKS_FILE)
 }
 
+fn home() -> Result<PathBuf> {
+    claude_config_dir().map_or_else(|| io::home_relative(".claude"), Ok)
+}
+
 /// Claude Code's user settings, where it records the plugin as enabled.
 fn settings_path() -> Result<PathBuf> {
-    if let Some(dir) = claude_config_dir() {
-        return Ok(dir.join("settings.json"));
-    }
-    io::home_relative(".claude/settings.json")
+    Ok(home()?.join("settings.json"))
 }
 
 /// Claude Code is present when its config dir exists; the hooks file is ours, so
@@ -272,6 +274,25 @@ fn managed_entry(hook_command: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_presence_probe_reads_claudes_config_dir() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join("claude");
+        temp_env::with_vars(
+            [
+                ("CLAUDE_CONFIG_DIR", Some(dir.as_path())),
+                ("HOME", Some(home.path())),
+                ("USERPROFILE", Some(home.path())),
+            ],
+            || {
+                let probe = crate::install::target::CLAUDE.presence_probe;
+                assert!(!probe());
+                std::fs::create_dir(&dir).unwrap();
+                assert!(probe());
+            },
+        );
+    }
 
     #[test]
     fn settings_path_honors_claude_config_dir() {
