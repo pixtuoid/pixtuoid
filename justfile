@@ -211,7 +211,7 @@ ci-observability:
 # An App or CLI reads what a released build wrote, so a change never edits a
 # sample its base holds. CI's base is HEAD^1: a PR merge commit's first parent
 # (path-changed's rule), or the commit a push follows.
-[doc("Fail when a change edits or deletes a v1 wire sample its base holds")]
+[doc("Fail when a change edits or deletes a v1 wire sample its base holds, or adds a hello kind")]
 [group('rust')]
 wire-frozen:
     #!/usr/bin/env bash
@@ -219,6 +219,16 @@ wire-frozen:
     if [[ -n "${GITHUB_ACTIONS:-}" ]]; then base=HEAD^1; else base="$(git merge-base HEAD origin/main)"; fi
     git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.v1.golden.json fuzz/seeds/remote ||
         { echo "a v1 break: bump remote::VERSION and start a v2 golden" >&2; exit 1; }
+    # A v1 server answers a hello kind it doesn't name with silence, so a sample
+    # of a new one would hide the break `remote`'s v1 sample test reports.
+    export LC_ALL=C
+    kind() { jq -rR 'fromjson? | objects | .hello // empty'; }
+    held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
+        while IFS= read -r f; do git show "$base:$f" | kind; done | sort -u)"
+    added="$(git diff --name-only --diff-filter=A "$base" -- fuzz/seeds/remote |
+        while IFS= read -r f; do kind <"$f"; done | sort -u)"
+    new="$(comm -23 <(printf '%s\n' "$added") <(printf '%s\n' "$held"))"
+    [[ -z "$new" ]] || { echo "a new hello kind bumps remote::VERSION: $new" >&2; exit 1; }
 
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link
