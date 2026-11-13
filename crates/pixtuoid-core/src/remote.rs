@@ -1426,45 +1426,168 @@ mod tests {
     }
 
     /// What a v1 peer wrote of each exchange and of the line's `machine`, one
-    /// sample per file, its shape the name before any `-`; frozen as `GOLDEN` is.
+    /// sample per file; frozen as `GOLDEN` is.
     const V1_EXCHANGES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
+
+    fn v1_sample(name: &str) -> String {
+        std::fs::read_to_string(Path::new(V1_EXCHANGES).join(name)).expect(name)
+    }
+
+    /// `name`'s sample reads as `value`, the value it was written from, and
+    /// `value` writes everything a v1 reader reads of it; `name` back for the census.
+    fn assert_holds<T: PartialEq + fmt::Debug>(
+        name: &'static str,
+        value: T,
+        read: impl Fn(&[u8]) -> Option<T>,
+        write: impl Fn(&T) -> serde_json::Result<String>,
+    ) -> &'static str {
+        let sample = v1_sample(name);
+        let read = read(sample.as_bytes());
+        assert_eq!(read.as_ref(), Some(&value), "{name} reads as another value");
+        let old: Value = serde_json::from_str(&sample).expect(name);
+        let new: Value = serde_json::from_str(&write(&value).expect("it encodes")).expect(name);
+        assert_keeps(&old, &new, name);
+        name
+    }
 
     #[test]
     fn this_version_reads_and_writes_back_every_v1_exchange() {
-        for entry in std::fs::read_dir(V1_EXCHANGES).expect("the samples") {
-            let path = entry.expect("a sample").path();
-            let name = path.file_name().and_then(|n| n.to_str()).expect("a name");
-            let text = std::fs::read_to_string(&path).expect(name);
-            let keeps = |written: serde_json::Result<String>| {
-                let old: Value = serde_json::from_str(&text).expect(name);
-                let new: Value = serde_json::from_str(&written.expect("it encodes")).expect(name);
-                assert_keeps(&old, &new, name);
-            };
-            match name.split('-').next() {
-                Some("link") => assert_eq!(text.parse::<PairLink>().expect(name).to_string(), text),
-                Some("version") => {
-                    assert_eq!(version_reply().expect("it encodes").trim_end(), text)
-                }
-                Some("machine") => {
-                    keeps(serde_json::to_string(
-                        &serde_json::from_str::<Machine>(&text).expect(name),
-                    ));
-                }
-                Some("hello") => keeps(Hello::from_line(text.as_bytes()).expect(name).line()),
-                Some("reply") => keeps(Reply::from_line(text.as_bytes()).expect(name).line()),
-                Some("ask" | "change") => {
-                    keeps(serde_json::to_string(
-                        &serde_json::from_str::<Ask>(&text).expect(name),
-                    ));
-                }
-                Some("answer" | "changed") => {
-                    keeps(serde_json::to_string(
-                        &Answer::from_line(text.as_bytes()).expect(name),
-                    ));
-                }
-                _ => panic!("{name} is no v1 exchange's sample"),
-            }
-        }
+        let secret = || "A".repeat(SECRET_BYTES * 2);
+        let link = PairLink {
+            host: "office.local".into(),
+            port: 7878,
+            spki: "A".repeat(PIN_BYTES * 2),
+            code: secret(),
+            expires: UNIX_EPOCH + Duration::from_secs(AT / 1000),
+        };
+        assert_eq!(v1_sample("link").parse(), Ok(link.clone()));
+        assert_eq!(link.to_string(), v1_sample("link"));
+        let version = format!("{}\n", v1_sample("version"));
+        assert_eq!(version_reply().expect("it encodes"), version);
+
+        let hello =
+            |name, value| assert_holds(name, value, |b| Hello::from_line(b).ok(), Hello::line);
+        let reply =
+            |name, value| assert_holds(name, value, |b| Reply::from_line(b).ok(), Reply::line);
+        let ask = |name, value| {
+            assert_holds(
+                name,
+                value,
+                |b| serde_json::from_slice(b).ok(),
+                serde_json::to_string::<Ask>,
+            )
+        };
+        let answer = |name, value| {
+            assert_holds(
+                name,
+                value,
+                Answer::from_line,
+                serde_json::to_string::<Answer>,
+            )
+        };
+        let machine = |name, os| {
+            let value = Machine::new("studio", os);
+            assert_holds(
+                name,
+                value,
+                |b| serde_json::from_slice(b).ok(),
+                serde_json::to_string::<Machine>,
+            )
+        };
+        let row = SourceRow::new;
+        let changed = |name, changed| answer(name, Answer::Changed(changed));
+        let checked = BTreeSet::from([
+            "link",
+            "version",
+            hello("hello", Hello::Pair { code: secret() }),
+            hello("hello-resume", Hello::Resume { token: secret() }),
+            reply("reply", Reply::Paired { token: secret() }),
+            reply("reply-resumed", Reply::Resumed),
+            reply("reply-refused", Reply::Refused),
+            ask("ask", Ask::Sources),
+            ask(
+                "change",
+                Ask::Change {
+                    source: "copilot".into(),
+                    on: true,
+                },
+            ),
+            answer(
+                "answer",
+                Answer::Sources {
+                    rows: vec![
+                        row("codex", "Codex", SourceState::Connected, false),
+                        row("grok", "Grok", SourceState::NoCli { connected: true }, true),
+                    ],
+                },
+            ),
+            answer(
+                "answer-disconnected",
+                Answer::Sources {
+                    rows: vec![row("cursor", "Cursor", SourceState::Disconnected, false)],
+                },
+            ),
+            answer(
+                "answer-no-cli",
+                Answer::Sources {
+                    rows: vec![row(
+                        "kimi",
+                        "Kimi",
+                        SourceState::NoCli { connected: false },
+                        false,
+                    )],
+                },
+            ),
+            answer("answer-unsupported", Answer::Unsupported),
+            changed(
+                "changed",
+                Changed::new(
+                    "openclaw",
+                    true,
+                    Outcome::Connected,
+                    true,
+                    Some("restart the gateway"),
+                    None,
+                ),
+            ),
+            changed(
+                "changed-disconnected",
+                Changed::new(
+                    "codex",
+                    false,
+                    Outcome::Disconnected,
+                    false,
+                    None,
+                    Some("codex"),
+                ),
+            ),
+            changed(
+                "changed-no-op",
+                Changed::new("kimi", true, Outcome::NoOp, false, None, None),
+            ),
+            changed("changed-no-cli", Changed::no_cli("kimi")),
+            changed(
+                "changed-failed",
+                Changed::new("kimi", false, Outcome::Failed, false, None, None),
+            ),
+            machine("machine-linux", Os::Linux),
+            machine("machine-windows", Os::Windows),
+            machine("machine-other", Os::Other),
+        ]);
+        let on_disk: BTreeSet<_> = std::fs::read_dir(V1_EXCHANGES)
+            .expect("the samples")
+            .map(|entry| {
+                entry
+                    .expect("a sample")
+                    .file_name()
+                    .into_string()
+                    .expect("a name")
+            })
+            .collect();
+        assert_eq!(
+            on_disk,
+            checked.iter().map(|name| name.to_string()).collect()
+        );
     }
 
     #[test]
@@ -1940,28 +2063,6 @@ mod tests {
         assert_eq!(office.scene().agents.len(), 1);
     }
 
-    /// The handshake's wire, frozen as the snapshot's golden freezes its own.
-    #[test]
-    fn handshake_lines_keep_their_shape() {
-        let wire = |hello: &Hello| hello.line().expect("it encodes");
-        assert_eq!(
-            wire(&Hello::Pair { code: "c".into() }),
-            "{\"v\":1,\"hello\":\"pair\",\"code\":\"c\"}\n"
-        );
-        assert_eq!(
-            wire(&Hello::Resume { token: "t".into() }),
-            "{\"v\":1,\"hello\":\"resume\",\"token\":\"t\"}\n"
-        );
-        let reply = |line: &str| Reply::from_line(line.as_bytes()).expect("it decodes");
-        assert_eq!(
-            reply(r#"{"v":1,"reply":"paired","token":"t"}"#),
-            Reply::Paired { token: "t".into() }
-        );
-        assert_eq!(reply(r#"{"v":1,"reply":"resumed"}"#), Reply::Resumed);
-        assert_eq!(reply(r#"{"v":1,"reply":"refused"}"#), Reply::Refused);
-        assert_eq!(version_reply().expect("it encodes"), "{\"v\":1}\n");
-    }
-
     #[test]
     fn a_hello_and_a_reply_survive_their_line() {
         for hello in [
@@ -2032,59 +2133,6 @@ mod tests {
     fn a_reply_this_build_does_not_know_is_no_refusal() {
         let line = br#"{"v":1,"reply":"from_the_future","extra":1}"#;
         assert_eq!(Reply::from_line(line).expect("it decodes"), Reply::Unknown);
-    }
-
-    /// An ask's wire, frozen as the handshake's is.
-    #[test]
-    fn asks_and_answers_keep_their_shape() {
-        fn wire(value: &impl Serialize) -> String {
-            serde_json::to_string(value).expect("it encodes")
-        }
-        let line = wire(&Ask::Sources);
-        assert_eq!(line, r#"{"ask":"sources"}"#);
-        assert_eq!(serde_json::from_str::<Ask>(&line).unwrap(), Ask::Sources);
-
-        let rows = || {
-            vec![
-                SourceRow::new("codex", "Codex", SourceState::Connected, false),
-                SourceRow::new("cursor", "Cursor", SourceState::Disconnected, true),
-                SourceRow::new(
-                    "grok",
-                    "Grok",
-                    SourceState::NoCli { connected: true },
-                    false,
-                ),
-                SourceRow::new(
-                    "kimi",
-                    "Kimi",
-                    SourceState::NoCli { connected: false },
-                    false,
-                ),
-            ]
-        };
-        let line = wire(&Answer::Sources { rows: rows() });
-        assert_eq!(
-            line,
-            concat!(
-                r#"{"answer":"sources","rows":["#,
-                r#"{"id":"codex","display_name":"Codex","state":{"kind":"connected"},"attention":false},"#,
-                r#"{"id":"cursor","display_name":"Cursor","state":{"kind":"disconnected"},"attention":true},"#,
-                r#"{"id":"grok","display_name":"Grok","state":{"kind":"no_cli","connected":true},"attention":false},"#,
-                r#"{"id":"kimi","display_name":"Kimi","state":{"kind":"no_cli","connected":false},"attention":false}"#,
-                "]}"
-            )
-        );
-        assert_eq!(
-            Answer::from_line(line.as_bytes()),
-            Some(Answer::Sources { rows: rows() })
-        );
-
-        let line = wire(&Answer::Unsupported);
-        assert_eq!(line, r#"{"answer":"unsupported"}"#);
-        assert_eq!(
-            Answer::from_line(line.as_bytes()),
-            Some(Answer::Unsupported)
-        );
     }
 
     #[test]

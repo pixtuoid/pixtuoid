@@ -173,64 +173,8 @@ pub enum Outcome {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::remote::{Answer, Ask};
+    use crate::remote::Answer;
     use crate::source::decoder::MAX_DECODED_FIELD_CHARS;
-
-    /// A change's wire, frozen as an ask's is.
-    #[test]
-    fn a_change_and_what_it_did_keep_their_shape() {
-        fn wire(value: &impl Serialize) -> String {
-            serde_json::to_string(value).expect("it encodes")
-        }
-        let ask = Ask::Change {
-            source: "codex".into(),
-            on: true,
-        };
-        let line = wire(&ask);
-        assert_eq!(line, r#"{"ask":"change","source":"codex","on":true}"#);
-        assert_eq!(serde_json::from_str::<Ask>(&line).unwrap(), ask);
-
-        for (changed, json) in [
-            (
-                Changed::new(
-                    "openclaw",
-                    true,
-                    Outcome::Connected,
-                    true,
-                    Some("restart it"),
-                    None,
-                ),
-                r#"{"answer":"changed","source":"openclaw","on":true,"outcome":"connected","hook_off_path":true,"step":"restart it"}"#,
-            ),
-            (
-                Changed::new(
-                    "codex",
-                    false,
-                    Outcome::Disconnected,
-                    false,
-                    None,
-                    Some("codex"),
-                ),
-                r#"{"answer":"changed","source":"codex","on":false,"outcome":"disconnected","plugin_left":"codex"}"#,
-            ),
-            (
-                Changed::new("kimi", true, Outcome::NoOp, false, None, None),
-                r#"{"answer":"changed","source":"kimi","on":true,"outcome":"no_op"}"#,
-            ),
-            (
-                Changed::no_cli("kimi"),
-                r#"{"answer":"changed","source":"kimi","on":true,"outcome":"no_op","no_cli":true}"#,
-            ),
-            (
-                Changed::new("kimi", false, Outcome::Failed, false, None, None),
-                r#"{"answer":"changed","source":"kimi","on":false,"outcome":"failed"}"#,
-            ),
-        ] {
-            let answer = Answer::Changed(changed);
-            assert_eq!(wire(&answer), json);
-            assert_eq!(Answer::from_line(json.as_bytes()), Some(answer));
-        }
-    }
 
     #[test]
     fn a_change_reads_back_through_its_accessors() {
