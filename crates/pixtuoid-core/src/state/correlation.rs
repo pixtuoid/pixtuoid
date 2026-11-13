@@ -15,8 +15,8 @@ use crate::state::turns::TurnLedger;
 /// tool_use_id. The suppression is asymmetric by event kind — see
 /// [`ToolEventKind`] (#150).
 ///
-// `pub` + `#[doc(hidden)]`: these tuning knobs are visible only so the `tests/reducer/`
-// binary derives its timing offsets from them; cargo-semver-checks skips a path docs hide:
+// `pub` + `#[doc(hidden)]`: these tuning knobs are visible only so this crate's
+// integration tests derive their timing offsets from them; cargo-semver-checks skips a path docs hide:
 // https://github.com/obi1kenobi/trustfall-rustdoc-adapter/blob/b24088502d1cc1fcdbdb5037407e3a90c4e33b18/src/rustdoc_schema.graphql#L1360-L1365
 #[doc(hidden)]
 pub const HOOK_WINS_WINDOW: Duration = Duration::from_millis(500);

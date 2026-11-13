@@ -160,7 +160,7 @@ const SLEEP_Z: Glyph = Glyph::new(&[
     "######", //
 ]);
 
-/// The mark beside the head of an agent whose turn it is.
+/// The mark beside the head of an agent blocked on a prompt.
 const REQUIRES_ACTION_MARK: Glyph = Glyph::new(&[
     ".####.", //
     "##..##", //
