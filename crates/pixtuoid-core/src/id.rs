@@ -5,6 +5,7 @@ use std::fmt;
 /// `(source, opaque_id)` (see [`AgentId::from_parts`]), so two sources never
 /// collide on the same opaque id.
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct AgentId(u64);
 
 /// splitmix64 finalizer. FNV-1a (used by [`AgentId::from_parts`]) doesn't

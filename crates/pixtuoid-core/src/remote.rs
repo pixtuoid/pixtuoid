@@ -55,14 +55,21 @@ struct Version {
     v: u32,
 }
 
+#[derive(Serialize)]
+// Named per body, or a hello's keys and a reply's would share one owner.
+#[cfg_attr(
+    test,
+    derive(schemars::JsonSchema),
+    schemars(rename = "Versioned<{T}>")
+)]
+struct Versioned<'a, T> {
+    v: u32,
+    #[serde(flatten)]
+    body: &'a T,
+}
+
 /// `body` after this build's [`VERSION`], as one newline-terminated line.
 fn versioned_line(body: &impl Serialize) -> serde_json::Result<String> {
-    #[derive(Serialize)]
-    struct Versioned<'a, T> {
-        v: u32,
-        #[serde(flatten)]
-        body: &'a T,
-    }
     let mut line = serde_json::to_string(&Versioned { v: VERSION, body })?;
     line.push('\n');
     Ok(line)
@@ -78,6 +85,7 @@ fn read_versioned<T: DeserializeOwned>(line: &[u8]) -> Result<T, WireError> {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 struct Snapshot {
     now_ms: u64,
     machine: Machine,
@@ -89,6 +97,7 @@ struct Snapshot {
 
 /// The machine a server runs on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct Machine {
     /// What the machine's owner named it, display-safe.
     #[serde(deserialize_with = "display_safe_text")]
@@ -118,6 +127,7 @@ impl Machine {
 
 /// The OS a server runs. Tagged so `other` can take a newer server's OS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Os {
     /// macOS.
@@ -147,6 +157,7 @@ impl Os {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 struct Day {
     day: NaiveDate,
     tokens: u64,
@@ -154,6 +165,7 @@ struct Day {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 struct Agent {
     id: AgentId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -181,6 +193,7 @@ struct Agent {
 /// Tagged so `other` can take a newer server's state
 /// (<https://serde.rs/variant-attrs.html>), as are [`Tool`] and [`DaemonActivity`].
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "state", rename_all = "snake_case")]
 enum Activity {
     Idle,
@@ -189,11 +202,12 @@ enum Activity {
         tool: Option<Tool>,
     },
     RequiresAction,
-    #[serde(other)]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Tool {
     Task,
@@ -206,18 +220,21 @@ enum Tool {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 struct Usage {
     delta: u64,
     at_ms: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 struct Effort {
     value: String,
     at_ms: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 struct Daemon {
     source: String,
     instance: String,
@@ -228,13 +245,14 @@ struct Daemon {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "state", rename_all = "snake_case")]
 enum DaemonActivity {
     Idle,
     Running,
     Degraded,
     Down,
-    #[serde(other)]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 
@@ -555,6 +573,7 @@ impl FromStr for PairLink {
 /// The first line a device writes, once the TLS handshake is done, as
 /// [`Hello::line`]. All it may write after an acceptance is an [`Ask`].
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "hello", rename_all = "snake_case")]
 pub enum Hello {
     /// First contact, redeeming a [`PairLink`]'s code.
@@ -593,6 +612,7 @@ impl Hello {
 /// The server's reply to a [`Hello`], as [`Reply::line`]. Its [`encode`] lines
 /// follow an acceptance.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "reply", rename_all = "snake_case")]
 pub enum Reply {
     /// The code was good, and this token stands in for it from now on.
@@ -605,7 +625,7 @@ pub enum Reply {
     /// Pair again: the code was spent or stale, or the token forgotten.
     Refused,
     /// A reply from a newer server, which says nothing against the pairing.
-    #[serde(other)]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 
@@ -645,6 +665,7 @@ pub fn version_reply() -> serde_json::Result<String> {
 /// A line a device may write after an accepted [`Hello`], answered in the order
 /// asked by one [`Answer`] among the server's [`encode`] lines.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "ask", rename_all = "snake_case")]
 pub enum Ask {
     /// Every agent CLI the server knows, installed on its machine or not.
@@ -658,12 +679,13 @@ pub enum Ask {
         on: bool,
     },
     /// An ask from a newer device, which keeps its stream.
-    #[serde(other)]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 
 /// What a server writes for an [`Ask`], so a device that never asks never reads one.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "answer", rename_all = "snake_case")]
 pub enum Answer {
     /// Every agent CLI this server knows, installed or not.
@@ -676,7 +698,7 @@ pub enum Answer {
     /// This server doesn't know the ask, or the source it names.
     Unsupported,
     /// An answer from a newer server.
-    #[serde(other)]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 
@@ -690,6 +712,7 @@ impl Answer {
 
 /// One agent CLI the server knows, whether or not it is installed there.
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 pub struct SourceRow {
     #[serde(deserialize_with = "display_safe_text")]
     id: String,
@@ -744,6 +767,7 @@ impl SourceRow {
 
 /// How a [`SourceRow`] stands. Tagged so `other` can take a newer server's state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceState {
     /// Bound, its CLI not known to be missing.
@@ -757,7 +781,7 @@ pub enum SourceState {
         connected: bool,
     },
     /// A state from a newer server.
-    #[serde(other)]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 
@@ -1418,40 +1442,186 @@ mod tests {
         }
     }
 
-    #[test]
-    fn this_version_writes_everything_a_v1_reader_reads() {
-        let golden: Value = serde_json::from_str(GOLDEN).unwrap();
-        let line: Value = serde_json::from_str(&sent(&full_scene())).unwrap();
-        assert_keeps(&golden, &line, "line");
+    /// What a v1 reader can read: a property at `path` of the `$defs` type that
+    /// owns it, `[]` standing for every index, or with `tag` a value it fixes.
+    #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+    struct Key {
+        owner: String,
+        path: String,
+        tag: Option<String>,
     }
 
-    /// What a v1 peer wrote of each exchange and of the line's `machine`, one
-    /// sample per file; frozen as `GOLDEN` is.
-    const V1_EXCHANGES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
+    /// What this build writes as a `W`. Its `title` owns the root's keys, as a
+    /// `$defs` name owns its type's in every root that holds it.
+    fn written<W: schemars::JsonSchema>() -> Value {
+        let generator = schemars::generate::SchemaSettings::default()
+            .for_serialize()
+            .into_generator();
+        serde_json::to_value(generator.into_root_schema_for::<W>()).expect("a schema")
+    }
+
+    /// Whether `value` can be an instance of `branch`: it holds every tag there.
+    fn fits(branch: &Value, value: &Value) -> bool {
+        let fixed = |node: &Value, value: Option<&Value>| {
+            node.get("const").is_none_or(|tag| value == Some(tag))
+        };
+        let mut fields = branch["properties"].as_object().into_iter().flatten();
+        fixed(branch, Some(value)) && fields.all(|(name, field)| fixed(field, value.get(name)))
+    }
+
+    /// What [`collect`] walks or knows holds no schema: one it doesn't could hide
+    /// what this build writes.
+    const SCHEMA_KEYWORDS: &[&str] = &[
+        "$schema",
+        "$defs",
+        "$ref",
+        "title",
+        "description",
+        "type",
+        "format",
+        "minimum",
+        "required",
+        "properties",
+        "items",
+        "oneOf",
+        "anyOf",
+        "allOf",
+        "const",
+        "enum",
+    ];
+
+    /// Every key `node` of `schema` lets this build write, owned by `owner` at
+    /// `path`, or with `held` only those that value holds.
+    fn collect(
+        schema: &Value,
+        node: &Value,
+        held: Option<&Value>,
+        owner: &str,
+        path: &str,
+        keys: &mut BTreeSet<Key>,
+    ) {
+        for keyword in node.as_object().into_iter().flat_map(|node| node.keys()) {
+            assert!(
+                SCHEMA_KEYWORDS.contains(&keyword.as_str()),
+                "{owner}.{path}: walk `{keyword}`, or list it if it holds no schema"
+            );
+        }
+        let key = |path: &str, tag: Option<&Value>| Key {
+            owner: owner.to_owned(),
+            path: path.to_owned(),
+            tag: tag.map(Value::to_string),
+        };
+        if let Some(def) = node["$ref"]
+            .as_str()
+            .and_then(|r| r.strip_prefix("#/$defs/"))
+        {
+            collect(schema, &schema["$defs"][def], held, def, "", keys);
+        }
+        let tags = node.get("const").into_iter();
+        for tag in tags.chain(node["enum"].as_array().into_iter().flatten()) {
+            if held.is_none_or(|v| v == tag) {
+                keys.insert(key(path, Some(tag)));
+            }
+        }
+        for (name, field) in node["properties"].as_object().into_iter().flatten() {
+            let field_held = match held {
+                None => None,
+                Some(held) => match held.get(name) {
+                    None => continue,
+                    field_held => field_held,
+                },
+            };
+            let path = if path.is_empty() {
+                name.clone()
+            } else {
+                format!("{path}.{name}")
+            };
+            keys.insert(key(&path, None));
+            collect(schema, field, field_held, owner, &path, keys);
+        }
+        if let Some(items) = node.get("items") {
+            let path = format!("{path}[]");
+            match held {
+                None => collect(schema, items, None, owner, &path, keys),
+                Some(held) => {
+                    for item in held.as_array().into_iter().flatten() {
+                        collect(schema, items, Some(item), owner, &path, keys);
+                    }
+                }
+            }
+        }
+        let branches = ["oneOf", "anyOf", "allOf"].map(|of| node[of].as_array());
+        for branch in branches.into_iter().flatten().flatten() {
+            if held.is_none_or(|v| fits(branch, v)) {
+                collect(schema, branch, held, owner, path, keys);
+            }
+        }
+    }
+
+    /// A frozen sample's keys, and the keys this build writes in its place.
+    struct Sample {
+        name: &'static str,
+        holds: BTreeSet<Key>,
+        writes: BTreeSet<Key>,
+    }
+
+    impl Sample {
+        fn of(name: &'static str, sample: &Value, schema: &Value) -> Self {
+            let owner = schema["title"].as_str().expect("a title");
+            let [mut holds, mut writes] = [BTreeSet::new(), BTreeSet::new()];
+            collect(schema, schema, Some(sample), owner, "", &mut holds);
+            collect(schema, schema, None, owner, "", &mut writes);
+            Self {
+                name,
+                holds,
+                writes,
+            }
+        }
+    }
+
+    /// What a v1 peer wrote of each exchange, of the line's `machine` and of a
+    /// line `GOLDEN` lacks, one sample per file; frozen as `GOLDEN` is.
+    const V1_SAMPLES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
 
     fn v1_sample(name: &str) -> String {
-        std::fs::read_to_string(Path::new(V1_EXCHANGES).join(name)).expect(name)
+        std::fs::read_to_string(Path::new(V1_SAMPLES).join(name)).expect(name)
     }
 
-    /// `name`'s sample reads as `value`, the value it was written from, and
-    /// `value` writes everything a v1 reader reads of it; `name` back for the census.
-    fn assert_holds<T: PartialEq + fmt::Debug>(
+    /// `new`, what this build writes as a `W` in place of the sample `name`,
+    /// writes everything a v1 reader reads of it.
+    fn assert_kept<W: schemars::JsonSchema>(name: &'static str, sample: &str, new: &str) -> Sample {
+        let old: Value = serde_json::from_str(sample).expect(name);
+        assert_keeps(&old, &serde_json::from_str(new).expect(name), name);
+        Sample::of(name, &old, &written::<W>())
+    }
+
+    /// `text`, the line sample `name`, still applies, and is kept by `scene`,
+    /// the scene it was written from.
+    fn assert_line(name: &'static str, text: &str, scene: &SceneState) -> Sample {
+        let mut office = RemoteOffice::new(caps(4));
+        office.apply(text.as_bytes(), at(AT)).expect(name);
+        assert_kept::<Versioned<'_, Snapshot>>(name, text, &sent(scene))
+    }
+
+    /// `name`'s sample reads as `value`, the value it was written from, and is
+    /// kept by it.
+    fn assert_holds<T: PartialEq + fmt::Debug, W: schemars::JsonSchema>(
         name: &'static str,
         value: T,
         read: impl Fn(&[u8]) -> Option<T>,
         write: impl Fn(&T) -> serde_json::Result<String>,
-    ) -> &'static str {
+    ) -> Sample {
         let sample = v1_sample(name);
         let read = read(sample.as_bytes());
         assert_eq!(read.as_ref(), Some(&value), "{name} reads as another value");
-        let old: Value = serde_json::from_str(&sample).expect(name);
-        let new: Value = serde_json::from_str(&write(&value).expect("it encodes")).expect(name);
-        assert_keeps(&old, &new, name);
-        name
+        assert_kept::<W>(name, &sample, &write(&value).expect("it encodes"))
     }
 
+    /// Every property and tag this build writes is in a frozen sample too: an App
+    /// reads what a build after the first added, which a later one could
+    /// otherwise rename unseen.
     #[test]
-    fn this_version_reads_and_writes_back_every_v1_exchange() {
+    fn this_version_reads_and_writes_back_every_v1_sample() {
         let secret = || "A".repeat(SECRET_BYTES * 2);
         let link = PairLink {
             host: "office.local".into(),
@@ -1465,12 +1635,24 @@ mod tests {
         let version = format!("{}\n", v1_sample("version"));
         assert_eq!(version_reply().expect("it encodes"), version);
 
-        let hello =
-            |name, value| assert_holds(name, value, |b| Hello::from_line(b).ok(), Hello::line);
-        let reply =
-            |name, value| assert_holds(name, value, |b| Reply::from_line(b).ok(), Reply::line);
+        let hello = |name, value| {
+            assert_holds::<_, Versioned<'static, Hello>>(
+                name,
+                value,
+                |b| Hello::from_line(b).ok(),
+                Hello::line,
+            )
+        };
+        let reply = |name, value| {
+            assert_holds::<_, Versioned<'static, Reply>>(
+                name,
+                value,
+                |b| Reply::from_line(b).ok(),
+                Reply::line,
+            )
+        };
         let ask = |name, value| {
-            assert_holds(
+            assert_holds::<_, Ask>(
                 name,
                 value,
                 |b| serde_json::from_slice(b).ok(),
@@ -1478,7 +1660,7 @@ mod tests {
             )
         };
         let answer = |name, value| {
-            assert_holds(
+            assert_holds::<_, Answer>(
                 name,
                 value,
                 Answer::from_line,
@@ -1487,7 +1669,7 @@ mod tests {
         };
         let machine = |name, os| {
             let value = Machine::new("studio", os);
-            assert_holds(
+            assert_holds::<_, Machine>(
                 name,
                 value,
                 |b| serde_json::from_slice(b).ok(),
@@ -1496,9 +1678,8 @@ mod tests {
         };
         let row = SourceRow::new;
         let changed = |name, changed| answer(name, Answer::Changed(changed));
-        let checked = BTreeSet::from([
-            "link",
-            "version",
+        let golden = assert_line("GOLDEN", GOLDEN, &full_scene());
+        let samples = [
             hello("hello", Hello::Pair { code: secret() }),
             hello("hello-resume", Hello::Resume { token: secret() }),
             reply("reply", Reply::Paired { token: secret() }),
@@ -1573,8 +1754,8 @@ mod tests {
             machine("machine-linux", Os::Linux),
             machine("machine-windows", Os::Windows),
             machine("machine-other", Os::Other),
-        ]);
-        let on_disk: BTreeSet<_> = std::fs::read_dir(V1_EXCHANGES)
+        ];
+        let on_disk: BTreeSet<_> = std::fs::read_dir(V1_SAMPLES)
             .expect("the samples")
             .map(|entry| {
                 entry
@@ -1584,9 +1765,29 @@ mod tests {
                     .expect("a name")
             })
             .collect();
-        assert_eq!(
-            on_disk,
-            checked.iter().map(|name| name.to_string()).collect()
+        let checked = ["link", "version"]
+            .into_iter()
+            .chain(samples.iter().map(|s| s.name));
+        assert_eq!(on_disk, checked.map(str::to_owned).collect());
+
+        let [mut holds, mut writes] = [BTreeSet::new(), BTreeSet::new()];
+        for sample in samples.into_iter().chain([golden]) {
+            holds.extend(sample.holds);
+            writes.extend(sample.writes);
+        }
+        let hellos = &written::<Versioned<'static, Hello>>()["title"];
+        let (kinds, rest): (Vec<_>, Vec<_>) =
+            (writes.difference(&holds)).partition(|key| *hellos == key.owner && key.tag.is_some());
+        // A v1 server answers a hello it can't read with silence (`serve::device`'s
+        // `greet`); only `version_reply` tells a device to update.
+        assert!(
+            kinds.is_empty(),
+            "{kinds:?}: a new hello kind bumps remote::VERSION"
+        );
+        assert!(
+            rest.is_empty(),
+            "{rest:?}: this build writes them and no v1 sample holds them; append \
+             one it writes to fuzz/seeds/remote and check it above"
         );
     }
 

@@ -626,8 +626,8 @@ fn change_from(
     })
 }
 
-/// The token a device's change is audited under, [`WireOutcome`]'s, or the
-/// wire's `unknown` for an outcome only a newer server makes.
+/// The token a device's change is audited under, [`WireOutcome`]'s, or
+/// `unknown` for an outcome only a newer server makes.
 #[cfg(feature = "serve")]
 fn audit_token(outcome: Outcome) -> &'static str {
     WireOutcome::try_from(outcome).map_or("unknown", WireOutcome::token)
@@ -1588,7 +1588,7 @@ mod tests {
                 assert!(line.contains(&field), "{field} not in {line}");
             }
         }
-        for outcome in [Connected, Disconnected, NoOp, Failed, Outcome::Unknown] {
+        for outcome in [Connected, Disconnected, NoOp, Failed] {
             let wire = serde_json::to_value(outcome).unwrap();
             assert_eq!(serde_json::json!(audit_token(outcome)), wire);
         }
