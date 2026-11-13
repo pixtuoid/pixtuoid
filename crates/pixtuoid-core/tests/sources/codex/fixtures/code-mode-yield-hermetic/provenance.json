@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.167.1",
-  "captured": "2026-11-11",
+  "version": "codex-cli 0.169.0",
+  "captured": "2026-11-13",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 110
+    "blanked": 112
   },
   "aimock": "1.47.0",
   "script": "tests/sources/codex/hermetic/code-mode-yield.json",
@@ -29,7 +29,7 @@
     }
   },
   "sentinel_reads": {
-    "rollout-2026-11-11T15-57-30-01a1cb54-1ff2-7092-b546-8c4167a983ea.jsonl": [
+    "rollout-2026-11-13T16-34-11-01a1d5c2-6bfb-7f50-bf5e-c0d824393a86.jsonl": [
       "15:/payload/info/last_token_usage/cached_input_tokens",
       "21:/payload/info/last_token_usage/cached_input_tokens",
       "27:/payload/info/last_token_usage/cached_input_tokens"

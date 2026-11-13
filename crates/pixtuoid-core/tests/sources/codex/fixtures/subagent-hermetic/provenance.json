@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.167.1",
-  "captured": "2026-11-11",
+  "version": "codex-cli 0.169.0",
+  "captured": "2026-11-13",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 227
+    "blanked": 229
   },
   "aimock": "1.47.0",
   "script": "tests/sources/codex/hermetic/subagent.json",
@@ -29,12 +29,12 @@
     }
   },
   "sentinel_reads": {
-    "rollout-2026-11-11T15-54-10-01a1cb51-13a0-7db3-8a96-7807657d707d.jsonl": [
+    "rollout-2026-11-13T16-30-49-01a1d5bf-586a-7b63-b9b9-e46754338ce8.jsonl": [
       "16:/payload/info/last_token_usage/cached_input_tokens",
       "23:/payload/info/last_token_usage/cached_input_tokens",
       "30:/payload/info/last_token_usage/cached_input_tokens"
     ],
-    "rollout-2026-11-11T15-54-13-01a1cb51-201c-7863-a355-b2bbb0bb25f9.jsonl": [
+    "rollout-2026-11-13T16-30-52-01a1d5bf-654c-7ca2-8c6e-d4909c9f118a.jsonl": [
       "16:/payload/info/last_token_usage/cached_input_tokens",
       "22:/payload/info/last_token_usage/cached_input_tokens"
     ]

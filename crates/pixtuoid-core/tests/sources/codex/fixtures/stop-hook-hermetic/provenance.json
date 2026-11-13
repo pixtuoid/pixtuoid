@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.167.1",
-  "captured": "2026-11-11",
+  "version": "codex-cli 0.169.0",
+  "captured": "2026-11-13",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 121
+    "blanked": 122
   },
   "seed": "tests/sources/codex/hermetic/stop-hook",
   "aimock": "1.47.0",
@@ -30,7 +30,7 @@
     }
   },
   "sentinel_reads": {
-    "rollout-2026-11-11T15-57-40-01a1cb54-46e3-7cd3-ab62-55bba21eb328.jsonl": [
+    "rollout-2026-11-13T16-34-21-01a1d5c2-93a5-7e10-82ba-2a2a8a762488.jsonl": [
       "16:/payload/info/last_token_usage/cached_input_tokens",
       "22:/payload/info/last_token_usage/cached_input_tokens",
       "30:/payload/info/last_token_usage/cached_input_tokens"
