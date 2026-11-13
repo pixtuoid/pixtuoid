@@ -223,15 +223,48 @@ wire-frozen:
     # of a new one would hide the break `remote`'s v1 sample test reports.
     export LC_ALL=C
     kind() { jq -rRs 'fromjson? | objects | .hello // empty'; }
-    # A reader that finds no kind would pass every sample, a new kind's too.
-    [[ "$(printf '{\n  "hello": "ping"\n}' | kind)" == ping ]] ||
-        { echo "WIRE-FROZEN SELFTEST: no kind read from a multi-line hello" >&2; exit 1; }
     held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
         while IFS= read -r f; do git show "$base:$f" | kind; done | sort -u)"
     added="$(git diff --name-only --diff-filter=A "$base" -- fuzz/seeds/remote |
         while IFS= read -r f; do kind <"$f"; done | sort -u)"
     new="$(comm -23 <(printf '%s\n' "$added") <(printf '%s\n' "$held"))"
     [[ -z "$new" ]] || { echo "a new hello kind bumps remote::VERSION: $new" >&2; exit 1; }
+
+[doc('Prove wire-frozen reds on an added sample of a hello kind its base lacks, pretty-printed too, and passes one of a kind it holds')]
+[group('meta')]
+wire-frozen-selftest:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    d=$(mktemp -d); trap 'rm -rf "$d"' EXIT
+    seeds=fuzz/seeds/remote
+    mkdir -p "$d/$seeds" "$d/crates/pixtuoid-core/src"
+    printf '{}' >"$d/crates/pixtuoid-core/src/remote.v1.golden.json"
+    printf '{"v":1,"hello":"pair","code":"C"}' >"$d/$seeds/hello"
+    g() { git -C "$d" -c user.name=selftest -c user.email=selftest@example.invalid "$@"; }
+    g init -q
+    g add -- crates "$seeds"
+    g commit -qm base
+    g tag base
+    fail=0
+    # Each case commits one file onto the base, as CI's HEAD^1 reads a PR.
+    expect() {
+        local path=$1 text=$2 want=$3 got=0
+        g reset -q --hard base
+        printf '%s' "$text" >"$d/$path"
+        g add -- "$path"
+        g commit -qm case
+        (cd "$d" && GITHUB_ACTIONS=1 just -f "{{ justfile() }}" -d "$d" wire-frozen) >/dev/null 2>&1 || got=1
+        if [[ "$got" != "$want" ]]; then
+            echo "wire-frozen-selftest: FAIL — adding $path exited $got, want $want" >&2
+            fail=1
+        fi
+    }
+    expect README 'no sample' 0
+    expect "$seeds/ping" '{"v":1,"hello":"ping"}' 1
+    expect "$seeds/ping" $'{\n  "v": 1,\n  "hello": "ping"\n}\n' 1
+    expect "$seeds/hello-named" '{"v":1,"hello":"pair","code":"C","name":"studio"}' 0
+    [[ "$fail" -eq 0 ]] || exit 1
+    echo "wire-frozen-selftest: OK (a new hello kind reds, pretty-printed too; a held kind passes)"
 
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link
@@ -390,6 +423,7 @@ lint: (_npm ".")
     run zizmor  just zizmor              & pids+=($!)
     run ci-obs  just ci-observability     & pids+=($!)
     run wire    just wire-frozen          & pids+=($!)
+    run wireself just wire-frozen-selftest & pids+=($!)
     run links   just links               & pids+=($!)
     run ruff    just ruff                & pids+=($!)
     run pyright just pyright             & pids+=($!)
