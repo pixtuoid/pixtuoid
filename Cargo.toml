@@ -26,7 +26,7 @@ categories   = ["command-line-utilities", "visualization"]
 #
 # `missing_docs` is NOT here on purpose: it is a PUBLIC-API gate, so it lives
 # per-crate as `#![warn(missing_docs)]` in the two PUBLISHED crates' `lib.rs`,
-# scoped identically to the semver-checks + api-surface gates.
+# the scope of the api-surface gate and release-plz's semver check (CONTRIBUTING.md#cutting-the-release).
 [workspace.lints.rust]
 unreachable_pub = "warn"
 missing_debug_implementations = "warn"
