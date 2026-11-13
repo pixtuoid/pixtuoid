@@ -5,7 +5,8 @@ use crate::source::{DynSource, TaggedSender};
 
 /// A source's fatal exit, published on the health channel so the binary can
 /// surface it (#157). `non_exhaustive` + [`SourceDeath::new`] keep a future
-/// field a minor bump instead of a major at the CI semver gate.
+/// field from being a break: Cargo's mitigation for an all-public struct
+/// (<https://doc.rust-lang.org/cargo/reference/semver.html#struct-add-public-field-when-no-private>).
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SourceDeath {
