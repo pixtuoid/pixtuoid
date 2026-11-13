@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::source::daemon::{self, DaemonInstanceKey, DaemonPresenceUpdate};
-use pixtuoid_core::source::{RequestKeys, registry};
+use pixtuoid_core::source::{RequestKeys, Resolution, registry};
 use pixtuoid_core::state::SceneState;
 use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::{AgentEvent, AgentId, ToolDetail, Transport};
@@ -46,19 +46,25 @@ impl Cue {
         }
     }
 
-    fn at_mut(&mut self) -> &mut Duration {
-        match self {
-            Cue::Event { at, .. } | Cue::Presence { at, .. } => at,
-        }
-    }
-
     /// Land it at `origin` + [`Cue::at`].
     pub fn land(&self, origin: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
-        let now = origin + self.at();
+        self.land_on(origin + self.at(), 0, reducer, scene);
+    }
+
+    /// Land it at `now` in loop `lap`, whose calls it names apart from every
+    /// other lap's: the reducer counts an id once, so a replayed one would add
+    /// no call to its agent's count or the day's.
+    fn land_on(&self, now: SystemTime, lap: u128, reducer: &mut Reducer, scene: &mut SceneState) {
         match self {
             Cue::Event {
                 transport, event, ..
-            } => reducer.apply(scene, event.clone(), now, *transport),
+            } => {
+                let mut event = event.clone();
+                if let Some(id) = call_id(&mut event) {
+                    id.push_str(&format!("#{lap}"));
+                }
+                reducer.apply(scene, event, now, *transport);
+            }
             Cue::Presence { key, update, .. } => {
                 // What `Reducer::apply` does for exits: a delta landing late, in
                 // a catch-up, finds a Down entry removed as a live sweep would.
@@ -67,6 +73,39 @@ impl Cue {
             }
         }
     }
+}
+
+/// The call id `event` names, whichever field carries it.
+fn call_id(event: &mut AgentEvent) -> Option<&mut String> {
+    match event {
+        AgentEvent::ToolUseStart {
+            tool_use_id: Some(id),
+            ..
+        }
+        | AgentEvent::ToolUseEnd {
+            tool_use_id: Some(id),
+            ..
+        }
+        | AgentEvent::UserActionRequest {
+            tool_use_id: Some(id),
+            ..
+        }
+        | AgentEvent::ToolUsePending {
+            tool_use_id: id, ..
+        }
+        | AgentEvent::UserActionResolved {
+            by: Resolution::Call(id),
+            ..
+        } => Some(id),
+        _ => None,
+    }
+}
+
+/// Where `at` falls in a loop `period` long, and how many seams it crossed to
+/// get there: the laps since the one its timeline began in.
+fn place(at: Duration, period: Duration) -> (Duration, u128) {
+    let (at, period) = (at.as_nanos(), period.as_nanos());
+    (Duration::from_nanos_u128(at % period), at / period)
 }
 
 /// One scripted call's length. Calls chain back to back: the reducer settles a
@@ -272,15 +311,8 @@ impl Script {
     /// If `period` is zero.
     pub fn new(period: Duration, cues: impl IntoIterator<Item = Cue>) -> Self {
         assert!(!period.is_zero(), "a looped script needs a period");
-        let mut cues: Vec<Cue> = cues
-            .into_iter()
-            .map(|mut cue| {
-                let at = cue.at_mut();
-                *at = Duration::from_nanos_u128(at.as_nanos() % period.as_nanos());
-                cue
-            })
-            .collect();
-        cues.sort_by_key(Cue::at);
+        let mut cues: Vec<Cue> = cues.into_iter().collect();
+        cues.sort_by_key(|cue| place(cue.at(), period).0);
         Self { cues, period }
     }
 }
@@ -294,6 +326,8 @@ pub struct Playhead {
     origin: SystemTime,
     /// The current loop's next cue.
     cursor: usize,
+    /// Loops since `started`.
+    lap: u128,
 }
 
 impl Playhead {
@@ -303,6 +337,7 @@ impl Playhead {
             script,
             origin: started,
             cursor: 0,
+            lap: 0,
         }
     }
 
@@ -316,15 +351,22 @@ impl Playhead {
             .duration_since(self.origin)
             .map_or(0, |elapsed| elapsed.as_nanos() / period.as_nanos());
         if loops >= 2 {
-            self.origin += Duration::from_nanos_u128((loops - 1) * period.as_nanos());
+            let skipped = loops - 1;
+            self.origin += Duration::from_nanos_u128(skipped * period.as_nanos());
+            self.lap += skipped;
             self.cursor = 0;
         }
         loop {
             while let Some(cue) = self.script.cues.get(self.cursor) {
-                if self.origin + cue.at() > now {
+                let (phase, seams) = place(cue.at(), period);
+                if self.origin + phase > now {
                     break;
                 }
-                cue.land(self.origin, reducer, scene);
+                // A cue past the seam is its own timeline's, which began
+                // `seams` laps back: none did before `started`.
+                if let Some(lap) = self.lap.checked_sub(seams) {
+                    cue.land_on(self.origin + phase, lap, reducer, scene);
+                }
                 self.cursor += 1;
             }
             let next = self.origin + period;
@@ -332,6 +374,7 @@ impl Playhead {
                 break;
             }
             self.origin = next;
+            self.lap += 1;
             self.cursor = 0;
         }
         reducer.tick(scene, now);

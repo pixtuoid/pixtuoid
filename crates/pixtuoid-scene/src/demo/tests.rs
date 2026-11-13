@@ -212,7 +212,7 @@ fn a_catch_up_sweeps_presence_before_each_delta_as_stepping_does() {
 }
 
 #[test]
-fn a_script_lands_each_cue_at_its_phase_ties_in_authored_order() {
+fn a_script_orders_its_cues_by_phase_ties_in_authored_order() {
     let past_the_seam = lead().end(PERIOD + ms(5_000));
     let [start, ask, end] = lead().wait(ms(1_000), ms(1_000), "Bash: rm -rf dist");
     let script = Script::new(
@@ -224,9 +224,32 @@ fn a_script_lands_each_cue_at_its_phase_ties_in_authored_order() {
             ask.clone(),
         ],
     );
-    let mut wrapped = past_the_seam;
-    *wrapped.at_mut() = ms(5_000);
-    assert_eq!(script.cues, [start, ask, end, wrapped]);
+    assert_eq!(script.cues, [start, ask, end, past_the_seam]);
+}
+
+/// A loop's calls count again every lap, on the agent and on the day's tally.
+#[test]
+fn a_replayed_loop_counts_its_calls_again() {
+    let mut cues = vec![lead().start(ms(0))];
+    cues.extend(lead().spell(ms(1_000), 3, &["Bash: cargo test"]));
+    let mut host = Host {
+        playhead: Playhead::new(Script::new(PERIOD, cues), t0()),
+        reducer: Reducer::new().counting(|_| chrono::NaiveDate::MIN),
+        scene: SceneState::uniform(8),
+    };
+    for lap in 1..=3u32 {
+        let scene = host.at(t0() + PERIOD * lap - ms(1));
+        assert_eq!(
+            scene.agents[&lead().id()].tool_call_count,
+            3 * lap,
+            "lap {lap}"
+        );
+        assert_eq!(
+            scene.today.map(|today| today.tool_calls),
+            Some(u64::from(3 * lap)),
+            "lap {lap}"
+        );
+    }
 }
 
 #[test]
