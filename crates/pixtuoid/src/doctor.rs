@@ -598,8 +598,7 @@ fn activation_backend() -> (&'static str, bool) {
     #[cfg(target_os = "linux")]
     {
         let (msg, healthy) = linux_activation_backend(
-            marker_set(crate::focus::SWAY_ENV),
-            marker_set(crate::focus::HYPRLAND_ENV),
+            crate::focus::detect_channel().ipc_backend(),
             marker_set("WAYLAND_DISPLAY"),
             marker_set("DISPLAY"),
         );
@@ -619,7 +618,7 @@ fn activation_backend() -> (&'static str, bool) {
 }
 
 /// Is a compositor/display env marker actually SET? EMPTY (or whitespace-only) counts as
-/// UNSET, NOT bare presence: a leftover `WAYLAND_DISPLAY=`/`SWAYSOCK=` (systemd user units
+/// UNSET, NOT bare presence: a leftover `WAYLAND_DISPLAY=` (systemd user units
 /// and non-forwarded ssh sessions leave them routinely) would otherwise print a confidently
 /// wrong verdict at a user whose X11 EWMH channel works fine. `focus::linux::detect_channel`
 /// keys the live channel through the SAME reader.
@@ -634,11 +633,11 @@ fn marker_set(name: &str) -> bool {
     pixtuoid_core::platform::path_env(name).is_some()
 }
 
-/// Mirrors `focus/linux.rs`'s ONE-channel-per-env order (sway IPC → hyprland IPC → X11
-/// EWMH → nothing) — EXCEPT that a Wayland session without a pid-addressable IPC must NOT
-/// be reported as "X11 EWMH ✓": XWayland sets $DISPLAY, but a native-Wayland terminal never
-/// appears in XWayland's client list and mutter/kwin block focus-steal anyway, so the ✓
-/// would mislead exactly the users focus fails for.
+/// `ipc` is the compositor channel `focus::linux::detect_channel` picked, so the verdict
+/// can't drift from the live channel. Without one, a Wayland session must NOT be reported as
+/// "X11 EWMH ✓": XWayland sets $DISPLAY, but a native-Wayland terminal never appears in
+/// XWayland's client list and mutter/kwin block focus-steal anyway, so the ✓ would mislead
+/// exactly the users focus fails for.
 #[cfg_attr(
     all(not(target_os = "linux"), not(test)),
     expect(
@@ -647,15 +646,12 @@ fn marker_set(name: &str) -> bool {
     )
 )]
 fn linux_activation_backend(
-    sway: bool,
-    hyprland: bool,
+    ipc: Option<&'static str>,
     wayland: bool,
     x11: bool,
 ) -> (&'static str, bool) {
-    if sway {
-        ("sway IPC (swaymsg)", true)
-    } else if hyprland {
-        ("hyprland IPC (hyprctl)", true)
+    if let Some(ipc) = ipc {
+        (ipc, true)
     } else if wayland {
         (
             "Wayland compositor without a pid-addressable focus channel (GNOME/KDE \
@@ -1424,16 +1420,13 @@ mod tests {
 
     #[test]
     fn linux_activation_backend_covers_every_channel_in_priority_order() {
-        let healthy = |s: bool, h: bool, w: bool, x: bool| linux_activation_backend(s, h, w, x);
-        assert!(healthy(true, true, true, true).0.contains("sway"));
-        assert!(healthy(true, true, true, true).1);
-        assert!(healthy(false, true, true, true).0.contains("hyprland"));
-        assert!(healthy(false, true, true, true).1);
-        let wayland = healthy(false, false, true, true);
+        const IPC: &str = "niri IPC (niri msg)";
+        assert_eq!(linux_activation_backend(Some(IPC), true, true), (IPC, true));
+        let wayland = linux_activation_backend(None, true, true);
         assert!(wayland.0.contains("Wayland") && !wayland.1, "{wayland:?}");
-        assert!(healthy(false, false, false, true).0.contains("EWMH"));
-        assert!(healthy(false, false, false, true).1);
-        let none = healthy(false, false, false, false);
+        let ewmh = linux_activation_backend(None, false, true);
+        assert!(ewmh.0.contains("EWMH") && ewmh.1, "{ewmh:?}");
+        let none = linux_activation_backend(None, false, false);
         assert!(none.0.contains("none") && !none.1, "{none:?}");
     }
 
