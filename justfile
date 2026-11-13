@@ -208,18 +208,16 @@ ci-observability:
     bash policy/ci-observability/check.sh
     bash policy/ci-observability/action_behavior_test.sh
 
-# An App or CLI of the first release a device pairs with reads what that release
-# wrote, so a test edited along with these files passes the break it hides.
-[doc('Fail when a v1 wire golden differs from the first release a device pairs with')]
+# An App or CLI reads what a released build wrote, so a change never edits a
+# sample its base holds. CI's base is HEAD^1: a PR merge commit's first parent
+# (path-changed's rule), or the commit a push follows.
+[doc("Fail when a change edits or deletes a v1 wire sample its base holds")]
 [group('rust')]
 wire-frozen:
     #!/usr/bin/env bash
     set -euo pipefail
-    tag=v0.23.0
-    git rev-parse -q --verify "refs/tags/$tag" >/dev/null ||
-        git fetch -q --depth=1 origin "refs/tags/$tag:refs/tags/$tag"
-    # A sample added since is no edit of one.
-    git diff --exit-code --diff-filter=a "$tag" -- crates/pixtuoid-core/src/remote.v1.golden.json fuzz/seeds/remote ||
+    if [[ -n "${GITHUB_ACTIONS:-}" ]]; then base=HEAD^1; else base="$(git merge-base HEAD origin/main)"; fi
+    git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.v1.golden.json fuzz/seeds/remote ||
         { echo "a v1 break: bump remote::VERSION and start a v2 golden" >&2; exit 1; }
 
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included

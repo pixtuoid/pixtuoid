@@ -34,11 +34,11 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 /// The wire version this build writes and reads, as `v` on every hello, reply
 /// and office line and in every pairing link: the one field no version may
 /// reshape, since a reader takes it before the rest. Within a version the line
-/// only gains fields and tags, held to the goldens `just wire-frozen` keeps as
-/// the first release a device can pair with wrote them; a reader ignores what
-/// it doesn't know and maps an unknown tag to its nearest state. Any break, in
-/// a line or the link, bumps it, and every pairing or reconnect across it ends
-/// in a precise "update" on the side that can act
+/// only gains fields and tags, held to samples `just wire-frozen` never lets a
+/// change edit, from the first release a device can pair with; a reader
+/// ignores what it doesn't know and maps an unknown tag to its nearest state.
+/// Any break, in a line or the link, bumps it, and every pairing or reconnect
+/// across it ends in a precise "update" on the side that can act
 /// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]).
 pub const VERSION: u32 = 1;
 
@@ -1425,33 +1425,40 @@ mod tests {
         assert_keeps(&golden, &line, "line");
     }
 
-    /// What a v1 peer wrote of each exchange besides the line, frozen as
-    /// `GOLDEN` is.
-    fn v1_exchange(name: &str) -> String {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/seeds/remote");
-        std::fs::read_to_string(dir.join(name)).expect(name)
-    }
+    /// What a v1 peer wrote of each exchange besides the line, a sample a file
+    /// named for its shape, frozen as `GOLDEN` is.
+    const V1_EXCHANGES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
 
     #[test]
     fn this_version_reads_and_writes_back_every_v1_exchange() {
-        let link = v1_exchange("link");
-        assert_eq!(link.parse::<PairLink>().expect("a link").to_string(), link);
-        let keeps = |name: &str, written: serde_json::Result<String>| {
-            let old: Value = serde_json::from_str(&v1_exchange(name)).expect(name);
-            let new: Value = serde_json::from_str(&written.expect("it encodes")).expect(name);
-            assert_keeps(&old, &new, name);
-        };
-        let hello = Hello::from_line(v1_exchange("hello").as_bytes()).expect("a hello");
-        keeps("hello", hello.line());
-        let reply = Reply::from_line(v1_exchange("reply").as_bytes()).expect("a reply");
-        keeps("reply", reply.line());
-        for name in ["ask", "change"] {
-            let ask: Ask = serde_json::from_str(&v1_exchange(name)).expect(name);
-            keeps(name, serde_json::to_string(&ask));
-        }
-        for name in ["answer", "changed"] {
-            let answer = Answer::from_line(v1_exchange(name).as_bytes()).expect(name);
-            keeps(name, serde_json::to_string(&answer));
+        for entry in std::fs::read_dir(V1_EXCHANGES).expect("the samples") {
+            let path = entry.expect("a sample").path();
+            let name = path.file_name().and_then(|n| n.to_str()).expect("a name");
+            let text = std::fs::read_to_string(&path).expect(name);
+            let keeps = |written: serde_json::Result<String>| {
+                let old: Value = serde_json::from_str(&text).expect(name);
+                let new: Value = serde_json::from_str(&written.expect("it encodes")).expect(name);
+                assert_keeps(&old, &new, name);
+            };
+            match name.split('-').next() {
+                Some("link") => assert_eq!(text.parse::<PairLink>().expect(name).to_string(), text),
+                Some("version") => {
+                    assert_eq!(version_reply().expect("it encodes").trim_end(), text)
+                }
+                Some("hello") => keeps(Hello::from_line(text.as_bytes()).expect(name).line()),
+                Some("reply") => keeps(Reply::from_line(text.as_bytes()).expect(name).line()),
+                Some("ask" | "change") => {
+                    keeps(serde_json::to_string(
+                        &serde_json::from_str::<Ask>(&text).expect(name),
+                    ));
+                }
+                Some("answer" | "changed") => {
+                    keeps(serde_json::to_string(
+                        &Answer::from_line(text.as_bytes()).expect(name),
+                    ));
+                }
+                _ => panic!("{name} is no v1 exchange's sample"),
+            }
         }
     }
 
