@@ -243,6 +243,14 @@ fn truncate(s: &str, max: usize) -> String {
     out
 }
 
+/// How a panel word-wraps its prose to `width` columns. Named, not defaulted:
+/// textwrap's defaults follow its features, which feature unification can widen.
+fn wrap_options(width: usize) -> textwrap::Options<'static> {
+    textwrap::Options::new(width)
+        .wrap_algorithm(textwrap::WrapAlgorithm::FirstFit)
+        .word_separator(textwrap::WordSeparator::AsciiSpace)
+}
+
 /// Time (ms) the marquee dwells on each character while scrolling.
 const MARQUEE_MS_PER_CHAR: u64 = 150;
 /// Time (ms) the marquee holds at each end (head / tail) before reversing.

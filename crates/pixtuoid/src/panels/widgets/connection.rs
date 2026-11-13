@@ -4,7 +4,9 @@
 
 use std::time::{Duration, SystemTime};
 
-use super::{Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_span, to_color};
+use super::{
+    Overflow, Panel, marquee_or_truncate, marquee_window, source_badge_span, to_color, wrap_options,
+};
 
 use crate::panels::connection::{
     ConnState, ConnectionFrame, ConnectionRow, LiveFacet, LiveInfo, no_action_hint,
@@ -70,17 +72,26 @@ pub(crate) fn paint_connection_panel(
         .map(|(i, (row, live))| connection_line(row, live, selected == i, now, theme))
         .collect();
 
+    // Reserves the 2-space left indent + a symmetric 2-col right margin, so no
+    // scrolled or wrapped row runs flush to the panel edge.
+    let detail_w = (inner_w as usize).saturating_sub(4);
+    let scroll = |s: String| vec![marquee_window(&s, detail_w, now)];
     let detail = if let Some(ci) = confirm {
         let name = rows.get(ci).map_or("", |(r, _)| r.display_name);
-        format!(
+        scroll(format!(
             "\u{26a0} disconnect {name}? ({}/{})",
             keys::CONFIRM,
             keys::DECLINE
-        )
+        ))
     } else if let Some(res) = result {
-        res.clone()
+        // An action's outcome is read whole, so it wraps; what the selection shows
+        // scrolls in its one row, so moving the selection never resizes the panel.
+        textwrap::wrap(res, wrap_options(detail_w))
+            .into_iter()
+            .map(std::borrow::Cow::into_owned)
+            .collect()
     } else if let Some((row, live)) = rows.get(selected) {
-        if let Some(op) = live.in_flight {
+        scroll(if let Some(op) = live.in_flight {
             format!("{} \u{2026}", op.progress_word())
         } else if let Some(h) = &row.health {
             h.clone()
@@ -100,28 +111,25 @@ pub(crate) fn paint_connection_panel(
                 }
                 ConnState::NoCli { .. } => no_action_hint(row),
             }
-        }
+        })
     } else {
-        String::new()
+        scroll(String::new())
     };
-    // Reserves the 2-space left indent + a symmetric 2-col right margin, so a
-    // full-width scroll never runs flush to the panel edge.
-    let detail_w = (inner_w as usize).saturating_sub(4);
-    let below = vec![
-        Line::from(""),
-        Line::from(Span::styled(
-            format!("  {}", marquee_window(&detail, detail_w, now)),
-            dim,
-        )),
-        Line::from(Span::styled(
+    let below = std::iter::once(Line::from(""))
+        .chain(
+            detail
+                .into_iter()
+                .map(|d| Line::from(Span::styled(format!("  {d}"), dim))),
+        )
+        .chain([Line::from(Span::styled(
             format!(
                 "  j/k move \u{00b7} {} toggle \u{00b7} {}/esc close",
                 keys::SOURCE_TOGGLE,
                 keys::SOURCES
             ),
             dim,
-        )),
-    ];
+        ))])
+        .collect();
     let title = format!("Sources \u{2014} {}/esc close", keys::SOURCES);
 
     Panel {
@@ -572,5 +580,86 @@ mod tests {
             "selected scrolling name must not ellipsize: {n0:?}"
         );
         assert_ne!(n0, n1, "selected name must animate across time");
+    }
+
+    /// The error the walk saw cut, as the toggle words it.
+    fn codex_off_path() -> String {
+        crate::panels::connection::format_failure(
+            crate::panels::connection::SourceOp::Connect,
+            "Codex CLI",
+            "`codex` is not on PATH; pixtuoid installs its hooks as a plugin \
+             through it \u{2014} put it on PATH and reconnect",
+        )
+    }
+
+    /// The panel painted alone on a `w`×`h` terminal, by row, at the marquee's head.
+    fn painted(frame: &ConnectionFrame, w: u16, h: u16) -> Vec<String> {
+        let mut term = ratatui::Terminal::new(ratatui::backend::TestBackend::new(w, h)).unwrap();
+        term.draw(|f| {
+            paint_connection_panel(f, frame, SystemTime::UNIX_EPOCH, f.area(), &NORMAL);
+        })
+        .unwrap();
+        let buf = term.backend().buffer();
+        (0..h)
+            .map(|y| (0..w).map(|x| buf[(x, y)].symbol()).collect())
+            .collect()
+    }
+
+    fn squash(s: &str) -> String {
+        s.split_whitespace().collect()
+    }
+
+    /// An action's outcome is read whole at every height that still shows a
+    /// row: the list sheds rows for it, and nothing paints on the footer row.
+    #[test]
+    fn a_long_result_shows_whole_while_any_row_shows() {
+        let result = codex_off_path();
+        let r = row("codex", "cx", ConnState::Disconnected);
+        let frame = ConnectionFrame {
+            open: true,
+            rows: vec![(r, LiveInfo::default()); 15],
+            result: Some(result.clone()),
+            ..Default::default()
+        };
+        let mut shed_for_it = false;
+        for h in 1..=30 {
+            let screen = painted(&frame, 100, h);
+            let footer = usize::from(h.saturating_sub(crate::panels::FOOTER_ROWS));
+            assert!(
+                screen[footer..].concat().trim().is_empty(),
+                "{h} rows paint the footer:\n{}",
+                screen.join("\n")
+            );
+            let shown = screen.iter().filter(|l| l.contains("[cx]")).count();
+            if shown > 0 {
+                assert!(
+                    squash(&screen.concat()).contains(&squash(&result)),
+                    "{h} rows cut the result:\n{}",
+                    screen.join("\n")
+                );
+                shed_for_it |= shown < frame.rows.len();
+            }
+        }
+        assert!(
+            shed_for_it,
+            "no height made the list shed rows for the result"
+        );
+    }
+
+    /// What the selection shows keeps its one scrolling row, so moving the
+    /// selection never resizes the panel.
+    #[test]
+    fn a_long_selection_detail_scrolls_in_one_row() {
+        let detail = codex_off_path();
+        let mut r = row("codex", "cx", ConnState::Connected);
+        r.health = Some(detail.clone());
+        let frame = ConnectionFrame {
+            open: true,
+            rows: vec![(r, LiveInfo::default())],
+            ..Default::default()
+        };
+        let screen = painted(&frame, 100, 30).concat();
+        assert!(screen.contains("Codex CLI: connect failed"), "{screen}");
+        assert!(!squash(&screen).contains(&squash(&detail)), "{screen}");
     }
 }
