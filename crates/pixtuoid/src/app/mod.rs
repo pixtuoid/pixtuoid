@@ -242,8 +242,6 @@ fn build_run_config(
         cli_look.protocol,
     );
     let motion = config::resolve_motion(&cfg, &mut cfg_warnings);
-    let adopted =
-        adopt_unless_headless(headless, || sources::adopt_flagged_targets(&cfg_path, &cfg));
     let connected = sources::connected(&cfg);
     let first_run = sources::is_first_run(&connected, load_degraded);
     if !headless {
@@ -252,13 +250,6 @@ fn build_run_config(
         // so re-printing there would duplicate.
         for w in &cfg_warnings {
             let _ = writeln!(std::io::stderr(), "⚠ pixtuoid: {w}");
-        }
-        for (t, installed) in &adopted {
-            let _ = writeln!(
-                std::io::stderr(),
-                "{}",
-                sources::adopted_notice(t, installed)
-            );
         }
     }
     refresh_plugins(
@@ -286,13 +277,6 @@ fn build_run_config(
         motion,
         floating: config::resolve_floating(&cfg),
     })
-}
-
-/// Run `adopt` ([`sources::adopt_flagged_targets`]) on an interactive launch
-/// only: adoption installs hooks, and a headless run's flags are no user's
-/// consent.
-fn adopt_unless_headless<T>(headless: bool, adopt: impl FnOnce() -> Vec<T>) -> Vec<T> {
-    if headless { Vec::new() } else { adopt() }
 }
 
 /// Bring the connected sources' plugin files up to this build, then name on `out`
@@ -364,19 +348,6 @@ mod tests {
             broken_install_warning("hermes", &doctor::SourceDiagnostics::default()),
             None
         );
-    }
-
-    #[test]
-    fn only_an_interactive_launch_adopts() {
-        let ran = std::cell::Cell::new(0);
-        let adopt = || {
-            ran.set(ran.get() + 1);
-            vec![()]
-        };
-        assert!(adopt_unless_headless(true, adopt).is_empty());
-        assert_eq!(ran.get(), 0, "headless never adopts");
-        assert_eq!(adopt_unless_headless(false, adopt).len(), 1);
-        assert_eq!(ran.get(), 1);
     }
 
     #[test]

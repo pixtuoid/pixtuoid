@@ -209,12 +209,9 @@ fn installed_hooks(sid: &str) -> Option<bool> {
     by_source(sid).map(|t| install::has_hooks(t, None))
 }
 
-/// The one fact for `sid`: `hooked(sid)`, else its `[sources]` flag, which also
-/// still connects a [`ONCE_FLAG_ONLY`] source until its hooks are adopted, as the
-/// release that wrote it did.
+/// The one fact for `sid`: `hooked(sid)`, else its `[sources]` flag.
 fn is_on(app: &config::AppConfig, sid: &str, hooked: impl Fn(&str) -> Option<bool>) -> bool {
-    let flag = app.sources.get(sid) == Some(&true);
-    hooked(sid).map_or(flag, |h| h || (flag && ONCE_FLAG_ONLY.contains(&sid)))
+    hooked(sid).unwrap_or(app.sources.get(sid) == Some(&true))
 }
 
 /// Rewrite every target's [`RetiredStub`](install::target::RetiredStub), connected
@@ -341,83 +338,6 @@ pub(crate) fn is_first_run(connected: &HashSet<String>, load_degraded: bool) -> 
     !load_degraded && connected.is_empty()
 }
 
-/// The sources a released pixtuoid connected by their `[sources]` flag that have
-/// since gained an install target; any other hook source's flag never connected
-/// it, so it consents to nothing.
-const ONCE_FLAG_ONLY: &[&str] = &[
-    // Flag-only through v0.19.0.
-    pixtuoid_core::source::antigravity::SOURCE_NAME,
-];
-
-/// Install the hooks of each [`ONCE_FLAG_ONLY`] source whose flag is on: the
-/// flag was the user's consent to connect it. A flag goes only once its hooks
-/// are in, so a failed install retries at the next interactive launch.
-pub(crate) fn adopt_flagged_targets(
-    cfg: &Path,
-    app: &config::AppConfig,
-) -> Vec<(&'static Target, Result<()>)> {
-    adopt_flagged_with(
-        cfg,
-        app,
-        by_source,
-        |t| install::has_hooks(t, None),
-        |t| install::install_target(t, None).map(drop),
-    )
-}
-
-/// [`adopt_flagged_targets`] with the target lookup, the hook read and the install
-/// injected.
-fn adopt_flagged_with(
-    cfg: &Path,
-    app: &config::AppConfig,
-    target_of: impl Fn(&str) -> Option<&'static Target>,
-    hooked: impl Fn(&'static Target) -> bool,
-    install: impl Fn(&'static Target) -> Result<()>,
-) -> Vec<(&'static Target, Result<()>)> {
-    let mut adopted = Vec::new();
-    for &sid in ONCE_FLAG_ONLY {
-        let Some(t) = target_of(sid).filter(|_| app.sources.get(sid) == Some(&true)) else {
-            continue;
-        };
-        if hooked(t) {
-            settle_flag(cfg, sid);
-            continue;
-        }
-        let installed = install(t);
-        match &installed {
-            Ok(()) => settle_flag(cfg, sid),
-            Err(e) => {
-                tracing::warn!(source = sid, error = ?e, "could not install an adopted source's hooks");
-            }
-        }
-        adopted.push((t, installed));
-    }
-    adopted
-}
-
-/// Drop `sid`'s [`ONCE_FLAG_ONLY`] flag now that its hooks are in: it goes then
-/// or at a disconnect, never before. A failed write leaves it for the next
-/// adoption, which drops a hooked source's flag.
-fn settle_flag(cfg: &Path, sid: &str) {
-    if !ONCE_FLAG_ONLY.contains(&sid) {
-        return;
-    }
-    if let Err(e) = write_flags(cfg, sid, Some(false)) {
-        tracing::warn!(source = sid, error = ?e, "could not drop an adopted source's flag");
-    }
-}
-
-/// The line a launch prints for one source [`adopt_flagged_targets`] adopted.
-pub(crate) fn adopted_notice(t: &Target, installed: &Result<()>) -> String {
-    let name = t.display_name();
-    match installed {
-        Ok(()) => format!("pixtuoid: {name} now connects through its own hooks — installed them"),
-        Err(e) => format!(
-            "⚠ pixtuoid: could not install {name}'s hooks ({e:#}); retrying at the next interactive launch"
-        ),
-    }
-}
-
 /// [`connected`] for one source, as the live gate re-reads it after a change.
 pub(crate) fn is_connected(cfg: &Path, sid: &str) -> bool {
     is_on(&config::load(cfg, &mut Vec::new()), sid, installed_hooks)
@@ -426,10 +346,10 @@ pub(crate) fn is_connected(cfg: &Path, sid: &str) -> bool {
 /// Rewrite `[sources]` whole, as the flags [`is_on`] reads once `sid`'s `change`
 /// applies, so a key no reader looks at never outlives a change.
 /// A `change` goes in before any hook write, so a config `update_config` refuses
-/// stops the op with nothing to undo; [`settle_flag`]'s write after one is best-effort.
+/// stops the op with nothing to undo.
 fn write_flags(cfg: &Path, sid: &str, change: Option<bool>) -> Result<()> {
     let keep: Vec<&str> = registry::registered_source_names()
-        .filter(|s| by_source(s).is_none() || ONCE_FLAG_ONLY.contains(s))
+        .filter(|s| by_source(s).is_none())
         .collect();
     config::save_flag_sources(cfg, &keep, change.map(|on| (sid, on)))
 }
@@ -464,7 +384,6 @@ fn connect_target(
         return Ok(ConnectOutcome::FlagOnly);
     };
     let installed = install::install_target(t, None)?;
-    settle_flag(cfg, sid);
     Ok(ConnectOutcome::Installed(installed))
 }
 
@@ -526,25 +445,11 @@ pub(crate) fn plan_reconcile(
 /// Declarative apply: make the connected set EXACTLY `desired`, reporting each
 /// source (a failed item doesn't abort the batch).
 pub(crate) fn reconcile_to(cfg: &Path, desired: &HashSet<String>) -> Vec<SourceChange> {
-    let app = config::load(cfg, &mut Vec::new());
     reconcile_from(
         cfg,
-        &planned_current(&app, desired, installed_hooks),
+        &connected(&config::load(cfg, &mut Vec::new())),
         desired,
     )
-}
-
-/// [`connected`] as a reconcile toward `desired` plans from: a desired source
-/// that only its [`ONCE_FLAG_ONLY`] flag connects is not connected yet, so the
-/// plan installs its hooks.
-fn planned_current(
-    app: &config::AppConfig,
-    desired: &HashSet<String>,
-    hooked: impl Fn(&str) -> Option<bool>,
-) -> HashSet<String> {
-    let mut current = connected_with(app, &hooked);
-    current.retain(|sid| !(desired.contains(sid) && hooked(sid) == Some(false)));
-    current
 }
 
 /// [`reconcile_to`] from an injected `current`.
@@ -1706,7 +1611,11 @@ mod tests {
 
     #[test]
     fn a_hook_source_is_connected_by_its_hooks_and_never_by_its_flag() {
-        let app = flags(&[("claude-code", true), ("codex", false)]);
+        let app = flags(&[
+            ("antigravity", true),
+            ("claude-code", true),
+            ("codex", false),
+        ]);
         let hooked = |sid: &str| match sid {
             "codex" => Some(true),
             "copilot" => None,
@@ -1749,7 +1658,7 @@ mod tests {
         let cfg = dir.path().join("config.toml");
         std::fs::write(
             &cfg,
-            "theme = \"x\"\n[sources]\nclaude-code = true\ncodex = false\n",
+            "theme = \"x\"\n[sources]\nantigravity = true\nclaude-code = true\ncodex = false\n",
         )
         .unwrap();
         connect(&cfg, "copilot").unwrap();
@@ -1811,166 +1720,6 @@ mod tests {
         assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
     }
 
-    /// How v0.19.0 wrote a connection to antigravity, then flag-only.
-    const V0_19_SOURCES: &str = "[sources]\nantigravity = true\ncopilot = true\n";
-
-    fn adopt_under(
-        seeded: &str,
-        hooked: bool,
-        install: impl Fn(&'static Target) -> Result<()>,
-    ) -> (
-        Vec<(&'static Target, Result<()>)>,
-        config::AppConfig,
-        String,
-    ) {
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = dir.path().join("config.toml");
-        std::fs::write(&cfg, seeded).unwrap();
-        let app = config::load(&cfg, &mut Vec::new());
-        let adopted = adopt_flagged_with(
-            &cfg,
-            &app,
-            |sid| (sid == "antigravity").then_some(&FAIL_TARGET),
-            |_| hooked,
-            install,
-        );
-        let raw = std::fs::read_to_string(&cfg).unwrap();
-        (adopted, config::load(&cfg, &mut Vec::new()), raw)
-    }
-
-    #[test]
-    fn a_flag_an_older_release_wrote_installs_the_hooks_it_now_has_then_goes() {
-        let installs = std::cell::Cell::new(0);
-        let (adopted, after, _) = adopt_under(V0_19_SOURCES, false, |_| {
-            installs.set(installs.get() + 1);
-            Ok(())
-        });
-        assert_eq!(installs.get(), 1);
-        assert!(matches!(adopted.as_slice(), [(_, Ok(()))]), "{adopted:?}");
-        assert_eq!(after.sources, flags(&[("copilot", true)]).sources);
-    }
-
-    #[test]
-    fn a_failed_adoption_keeps_the_flag_for_the_next_launch() {
-        let (adopted, after, _) =
-            adopt_under(V0_19_SOURCES, false, |_| Err(anyhow::anyhow!("refused")));
-        assert!(matches!(adopted.as_slice(), [(_, Err(_))]), "{adopted:?}");
-        assert_eq!(
-            after.sources,
-            flags(&[("antigravity", true), ("copilot", true)]).sources
-        );
-    }
-
-    #[test]
-    fn hooks_already_in_drop_the_flag_without_a_reinstall() {
-        let (adopted, after, _) = adopt_under(V0_19_SOURCES, true, |_| {
-            panic!("an installed hook is not installed again")
-        });
-        assert!(adopted.is_empty());
-        assert_eq!(after.sources, flags(&[("copilot", true)]).sources);
-    }
-
-    #[test]
-    fn a_hook_sources_flag_consents_to_no_install() {
-        let seeded = "[sources]\ncodex = true\n";
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = dir.path().join("config.toml");
-        std::fs::write(&cfg, seeded).unwrap();
-        let app = config::load(&cfg, &mut Vec::new());
-        let adopted = adopt_flagged_with(
-            &cfg,
-            &app,
-            |_| Some(&FAIL_TARGET),
-            |_| false,
-            |_| panic!("codex's flag never connected it"),
-        );
-        assert!(adopted.is_empty());
-        assert_eq!(std::fs::read_to_string(&cfg).unwrap(), seeded);
-    }
-
-    #[test]
-    fn a_pending_flag_connects_its_source_until_its_hooks_are_adopted() {
-        let app = flags(&[("antigravity", true), ("codex", true)]);
-        let none_hooked = |sid: &str| (sid != "copilot").then_some(false);
-        assert_eq!(
-            connected_with(&app, none_hooked),
-            set(&["antigravity"]),
-            "a hook source's flag connects nothing"
-        );
-    }
-
-    #[test]
-    fn a_pending_flag_outlives_another_sources_change() {
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = dir.path().join("config.toml");
-        std::fs::write(&cfg, V0_19_SOURCES).unwrap();
-        connect(&cfg, "copilot").unwrap();
-        disconnect(&cfg, "copilot").unwrap();
-        let app = config::load(&cfg, &mut Vec::new());
-        assert_eq!(app.sources, flags(&[("antigravity", true)]).sources);
-    }
-
-    #[test]
-    fn its_own_change_settles_a_pending_flag() {
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = dir.path().join("config.toml");
-        std::fs::write(&cfg, V0_19_SOURCES).unwrap();
-        // The flag write runs before FAIL_TARGET's uninstall refuses.
-        assert!(disconnect_target(&cfg, "antigravity", Some(&FAIL_TARGET)).is_err());
-        let app = config::load(&cfg, &mut Vec::new());
-        assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
-    }
-
-    #[test]
-    fn a_connect_drops_a_pending_flag_only_once_its_hooks_are_in() {
-        let dir = tempfile::tempdir().unwrap();
-        let cfg = dir.path().join("config.toml");
-        std::fs::write(&cfg, V0_19_SOURCES).unwrap();
-        assert!(connect_target(&cfg, "antigravity", Some(&FAIL_TARGET)).is_err());
-        let app = config::load(&cfg, &mut Vec::new());
-        assert_eq!(
-            app.sources,
-            flags(&[("antigravity", true), ("copilot", true)]).sources
-        );
-
-        connect_target(&cfg, "antigravity", Some(&OK_TARGET)).unwrap();
-        let _ = std::fs::remove_dir_all(ok_target_config().parent().unwrap());
-        let app = config::load(&cfg, &mut Vec::new());
-        assert_eq!(app.sources, flags(&[("copilot", true)]).sources);
-    }
-
-    #[test]
-    fn a_reconcile_settles_a_pending_flag_whichever_way_it_goes() {
-        let app = flags(&[("antigravity", true), ("copilot", true)]);
-        let hooked = |sid: &str| match sid {
-            "copilot" => None,
-            "claude-code" => Some(true),
-            _ => Some(false),
-        };
-        let all = set(&["antigravity", "claude-code", "copilot"]);
-        for (desired, [pending, hooked_in, flagged]) in [
-            (all.clone(), [Action::Connect, Action::NoOp, Action::NoOp]),
-            (HashSet::new(), [Action::Disconnect; 3]),
-        ] {
-            let current = planned_current(&app, &desired, hooked);
-            let plan: std::collections::HashMap<_, _> =
-                plan_reconcile(&current, &desired).into_iter().collect();
-            assert_eq!(
-                [plan["antigravity"], plan["claude-code"], plan["copilot"]],
-                [pending, hooked_in, flagged],
-                "{desired:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn a_config_with_nothing_to_adopt_is_left_byte_for_byte() {
-        let seeded = "theme = \"x\"  # mine\n[sources]\ncopilot = true\n";
-        let (adopted, _, raw) = adopt_under(seeded, false, |_| panic!("nothing to adopt"));
-        assert!(adopted.is_empty());
-        assert_eq!(raw, seeded);
-    }
-
     #[test]
     fn connect_then_disconnect_a_no_target_source_persists_the_flag() {
         // Copilot has no install target → a pure flag flip, so this touches no
@@ -2027,21 +1776,6 @@ mod tests {
         pickup: Pickup::NextStart,
         registers: Vec::new,
         consumes: &[],
-    };
-
-    // A fn-pointer `default_config_path` can't capture a TempDir; the PID suffix
-    // keeps concurrent runs apart, as `install/tests.rs`'s FAKE2 does.
-    fn ok_target_config() -> PathBuf {
-        std::env::temp_dir()
-            .join(format!("pixtuoid-test-ok-{}", std::process::id()))
-            .join("hooks.json")
-    }
-
-    // FAIL_TARGET with an install that succeeds and leaves the file as it was.
-    static OK_TARGET: Target = Target {
-        default_config_path: || Ok(ok_target_config()),
-        binary_strategy: crate::install::target::BinaryStrategy::BareNameOnPath,
-        ..FAIL_TARGET
     };
 
     #[test]
