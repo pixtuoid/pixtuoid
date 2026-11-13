@@ -90,15 +90,19 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 ///   `PostToolUse`, decoded as that shared arm, or the tool's `ToolUseStart`
 ///   lingers Running. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
 ///   on an already-idle slot.
-/// - `Stop`, and `StopFailure`, a failed turn end decoded as `Stop` — kimi's
-///   only per-turn hooks (`KIMI_EVENTS`), so each claims its session: a
-///   chat-only session running before the office, or swept since, registers on
-///   its next turn end. Claimed here, not in the shared `Stop` arm, whose CC
-///   children an `Identity` would re-create past their cascade.
+/// - `Stop`, and `StopFailure` and `Interrupt`, a failed and a cancelled turn
+///   end decoded as `Stop` — kimi's only per-turn hooks (`KIMI_EVENTS`), so
+///   each claims its session: a chat-only session running before the office,
+///   or swept since, registers on its next turn end. Claimed here, not in the
+///   shared `Stop` arm, whose CC children an `Identity` would re-create past
+///   their cascade.
 pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let (event, shared) = match obj.get("hook_event_name").and_then(|s| s.as_str()) {
         Some(event @ "PostToolUseFailure") => (event, "PostToolUse"),
-        Some(event @ ("Stop" | "StopFailure")) => (event, "Stop"),
+        // A cancelled turn fires `Interrupt` in place of `Stop`
+        // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:422-424`
+        // at `@moonshot-ai/kimi-code@2.5.3`).
+        Some(event @ ("Stop" | "StopFailure" | "Interrupt")) => (event, "Stop"),
         _ => return Ok(None),
     };
     // Read under the event's own name, so a missing id breadcrumbs as sent.
@@ -159,13 +163,14 @@ mod tests {
         }
     }
 
-    /// A failure decodes as its shared success arm, so an empty call id names
-    /// no call there either.
+    /// A failure or a cancel decodes as the shared arm it stands in for, so an
+    /// empty call id names no call there either.
     #[test]
-    fn a_failure_decodes_as_its_shared_success_arm() {
-        for (failure, success) in [
+    fn a_failure_or_cancel_decodes_as_its_shared_arm() {
+        for (variant, shared) in [
             ("PostToolUseFailure", "PostToolUse"),
             ("StopFailure", "Stop"),
+            ("Interrupt", "Stop"),
         ] {
             let decode = |event| {
                 crate::source::decoder::decode_hook_payload(json!({
@@ -178,7 +183,7 @@ mod tests {
                 }))
                 .expect("decodes")
             };
-            assert_eq!(decode(failure), decode(success), "{failure}");
+            assert_eq!(decode(variant), decode(shared), "{variant}");
         }
     }
 
@@ -230,7 +235,7 @@ mod tests {
     #[test]
     fn a_claimed_event_without_session_id_errs_and_breadcrumbs() {
         use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
-        for ev in ["PostToolUseFailure", "Stop", "StopFailure"] {
+        for ev in ["PostToolUseFailure", "Stop", "StopFailure", "Interrupt"] {
             for payload in [
                 json!({ "hook_event_name": ev, "cwd": "/repo" }),
                 json!({ "hook_event_name": ev, "session_id": "" }),

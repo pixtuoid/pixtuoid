@@ -1,0 +1,28 @@
+ 
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │                                                                                                                    │
+ │  ▐█▛█▛█▌  Welcome to Kimi Code!                                                                                    │
+ │  ▐█████▌  Send /help for help information.                                                                         │
+ │                                                                                                                    │
+ │  Directory: /private/tmp/pixtuoid-capture/proj                                                                     │
+ │  Session:   session_e6040c31-48d5-4dc4-be38-48c21d6442ef                                                           │
+ │  Model:     kimi-k2                                                                                                │
+ │  Version:   2.5.3                                                                                                  │
+ │                                                                                                                    │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ 
+ ✦ Kimi K3.1 Pro is ready - use the model in a fresh session for the best results
+   Standard: Plus/Moderato and above; Highspeed: Pro/Allegretto and above
+ 
+   No session yet — one will be created on your first message.                                                         
+ 
+ ❯ Read NOTE.txt, then list this directory, then read NOTE.txt again.                                                  
+ 
+ ● HERMETIC-STREAM                                                                                                     
+ 
+  ⠇ Working… · Tip: /init: generate AGENTS.md                                                                          
+ ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+ │ >                                                                                                                  │
+ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ kimi-k2 thinking  …/tmp/pixtuoid-capture/proj  main      ctrl-s to add guidance without waiting for the turn to finish
+                                                                                                   context: 0% (0/256k)
