@@ -333,10 +333,8 @@ fn modal_mouse(
         return ModalMouse::Took;
     }
     if popup_scale > 0.0 {
-        let notices = ui.version_notices();
         let on_url = left_down.is_some_and(|(col, row)| {
-            screen()
-                .is_some_and(|size| version_popup_url_clicked(col, row, popup_scale, size, notices))
+            screen().is_some_and(|size| version_popup_url_clicked(col, row, popup_scale, size))
         });
         if !on_url {
             return ModalMouse::Inert;
@@ -352,16 +350,10 @@ fn modal_mouse(
 
 /// Whether a left-click at `(col, row)` landed on the version popup's URL, hit-tested
 /// against the full surface, not the scene rect. `scale` is the popup's last painted
-/// scale, and `notices` the ones it lists.
-fn version_popup_url_clicked(
-    col: u16,
-    row: u16,
-    scale: f32,
-    screen: (u16, u16),
-    notices: &[String],
-) -> bool {
+/// scale.
+fn version_popup_url_clicked(col: u16, row: u16, scale: f32, screen: (u16, u16)) -> bool {
     let bounds = Rect::new(0, 0, screen.0, screen.1);
-    widgets::version_popup_url_rect(bounds, notices, scale)
+    widgets::version_popup_url_rect(bounds, scale)
         .is_some_and(|rect| rect.contains(ratatui::layout::Position { x: col, y: row }))
 }
 
@@ -380,7 +372,6 @@ pub(crate) enum KeyAction {
     ToggleHelp,
     CloseHelp,
     DismissVersionPopup,
-    /// Reopen the version popup, its notices due again.
     OpenVersionPopup,
     OpenAppearance,
     /// The index is pre-clamped by the dispatch.
@@ -485,8 +476,6 @@ pub(crate) struct JobDone {
     onboarding: bool,
     notices: Vec<ChangeNotice>,
     rows: Vec<connection::ConnectionRow>,
-    /// The agent CLIs on this machine, which the version popup reads.
-    installed: Vec<&'static str>,
 }
 
 /// What a painter's loop takes back from work started off it: a panel's job, or a
@@ -502,8 +491,8 @@ pub(crate) enum Landed {
 pub(crate) type LandedTx = tokio::sync::mpsc::UnboundedSender<Landed>;
 
 /// Run `input`'s job, with every step of it that can block: the config
-/// writes, the host CLIs a connect runs, the rows' rebuild, whose `diagnose`
-/// can run a CLI too, and `sources::detect`'s presence probes.
+/// writes, the host CLIs a connect runs, and the rows' rebuild, whose
+/// `diagnose` can run a CLI too.
 pub(crate) fn run_job(input: JobInput) -> JobDone {
     let JobInput {
         job,
@@ -534,7 +523,6 @@ pub(crate) fn run_job(input: JobInput) -> JobDone {
         onboarding,
         notices,
         rows,
-        installed: crate::sources::detect(),
     }
 }
 
@@ -695,9 +683,7 @@ fn finish_job(ui: &mut ui_state::UiState, done: JobDone) {
         onboarding,
         notices,
         rows,
-        installed,
     } = done;
-    ui.note_installed(installed);
     // The refusal it caused ends with it; a line it did not cause stays.
     if let Some(job) = ui.running_job.take()
         && ui.connection.last_result.as_ref() == Some(&job.busy_line())
@@ -1052,7 +1038,7 @@ pub(crate) fn apply_key_action<H: Host>(action: KeyAction, cx: &mut KeyCtx<'_, H
         KeyAction::ToggleHelp => cx.ui.toggle_help(),
         KeyAction::CloseHelp => cx.ui.close_help(),
         KeyAction::DismissVersionPopup => cx.ui.dismiss_version_popup(),
-        KeyAction::OpenVersionPopup => cx.ui.open_version_popup(&cx.connected.snapshot()),
+        KeyAction::OpenVersionPopup => cx.ui.open_version_popup(),
         KeyAction::OpenAppearance => cx.ui.open_appearance(),
         KeyAction::ThemePreview(i) => {
             cx.ui.preview_theme(i);
@@ -1585,7 +1571,7 @@ mod dispatch_tests {
         }
     }
 
-    /// The popup is DISMISS-ONLY: its notices are cut to fit, never scrolled.
+    /// The popup is DISMISS-ONLY: a fixed body and a link, nothing to scroll.
     /// A scroll key bound here would promise rows that do not exist.
     #[test]
     fn the_version_popup_binds_no_scroll_key() {
@@ -2126,28 +2112,8 @@ mod dispatch_tests {
             })
         };
 
-        // A home holding Claude Code's dir alone, so the CLIs it finds are known.
-        let home = tempfile::TempDir::new().unwrap();
-        std::fs::create_dir(home.path().join(".claude")).unwrap();
-        let refreshed = temp_env::with_vars(
-            [
-                (
-                    pixtuoid_core::platform::USER_HOME_VAR,
-                    Some(home.path().as_os_str()),
-                ),
-                ("CLAUDE_CONFIG_DIR", None),
-                ("CODEX_HOME", None),
-            ],
-            || run(PanelJob::Refresh),
-        );
+        let refreshed = run(PanelJob::Refresh);
         assert!(refreshed.notices.is_empty() && !refreshed.onboarding);
-        // Copilot has no install target, so no probe lists it.
-        let found = |id| refreshed.installed.contains(&id);
-        assert!(
-            found("claude-code") && !found("codex") && !found("copilot"),
-            "the CLIs the probe finds: {:?}",
-            refreshed.installed
-        );
         assert_eq!(copilot_on(&refreshed), Some(true));
         assert!(
             refreshed.rows.iter().any(|r| r.config_path.is_some()),
@@ -2430,12 +2396,8 @@ pub(crate) mod noted {
             rows: rows(|id| {
                 !fails && input.job.op_for(id) == Some(super::connection::SourceOp::Connect)
             }),
-            installed: INSTALLED.to_vec(),
         }
     }
-
-    /// The agent CLIs [`gated_job`] finds here.
-    pub(crate) const INSTALLED: [&str; 2] = ["codex", "reasonix"];
 
     /// The [placeholder rows](super::connection::placeholder_rows) with each
     /// source connected where `connected` says.
@@ -2782,30 +2744,19 @@ mod mouse_tests {
         use crate::panels::widgets::version_popup_url_rect;
         let term = (120u16, 44u16);
         let bounds = ratatui::layout::Rect::new(0, 0, term.0, term.1);
-        let notices = ["a notice above the link".to_string()];
-        let rect = version_popup_url_rect(bounds, &notices, 1.0)
+        let rect = version_popup_url_rect(bounds, 1.0)
             .expect("a URL rect at scale 1.0, or the misses below pass vacuously");
 
         assert!(
-            super::version_popup_url_clicked(rect.x, rect.y, 1.0, term, &notices),
+            super::version_popup_url_clicked(rect.x, rect.y, 1.0, term),
             "a click inside the URL rect at full scale must hit"
         );
         assert!(
-            !super::version_popup_url_clicked(rect.x, rect.y, 1.0, term, &[]),
-            "the link sits lower with a notice above it"
-        );
-        assert!(
-            !super::version_popup_url_clicked(
-                rect.x,
-                rect.y.saturating_sub(1),
-                1.0,
-                term,
-                &notices
-            ),
+            !super::version_popup_url_clicked(rect.x, rect.y.saturating_sub(1), 1.0, term),
             "a click one row above the URL must miss"
         );
         assert!(
-            !super::version_popup_url_clicked(rect.x, rect.y, 0.5, term, &notices),
+            !super::version_popup_url_clicked(rect.x, rect.y, 0.5, term),
             "mid-animation (below the clickable scale) there is no rect, so no hit"
         );
     }
