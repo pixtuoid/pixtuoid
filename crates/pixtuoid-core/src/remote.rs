@@ -34,12 +34,12 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 /// The wire version this build writes and reads, as `v` on every hello, reply
 /// and office line and in every pairing link: the one field no version may
 /// reshape, since a reader takes it before the rest. Within a version the line
-/// only gains fields and tags, which `remote.v1.golden.json` holds it to; a
-/// reader ignores what it doesn't know and maps an unknown tag to its nearest
-/// state. Any break, in a line or the link, bumps it, and every pairing or
-/// reconnect across it ends in a precise "update" on the side that can act
-/// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]). The promise counts
-/// from the first release a device can pair with.
+/// only gains fields and tags, held to the goldens `just wire-frozen` keeps as
+/// the first release a device can pair with wrote them; a reader ignores what
+/// it doesn't know and maps an unknown tag to its nearest state. Any break, in
+/// a line or the link, bumps it, and every pairing or reconnect across it ends
+/// in a precise "update" on the side that can act
+/// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]).
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office: a device takes
@@ -1398,8 +1398,8 @@ mod tests {
         }
     }
 
-    /// `old`'s every key, value type and string, at the same place in `new`:
-    /// what a reader built on `old` goes on to read, a tag above all.
+    /// `old`'s every key and value at the same place in `new`: what a reader
+    /// built on `old` goes on to read, a tag above all, and a number in its unit.
     fn assert_keeps(old: &Value, new: &Value, at: &str) {
         match (old, new) {
             (Value::Object(old), Value::Object(new)) => {
@@ -1414,12 +1414,7 @@ mod tests {
                     assert_keeps(o, n, &format!("{at}[{i}]"));
                 }
             }
-            (Value::String(old), Value::String(new)) => assert_eq!(old, new, "{at} changed"),
-            _ => assert_eq!(
-                std::mem::discriminant(old),
-                std::mem::discriminant(new),
-                "{at} changed type"
-            ),
+            _ => assert_eq!(old, new, "{at} changed"),
         }
     }
 
@@ -1428,6 +1423,36 @@ mod tests {
         let golden: Value = serde_json::from_str(GOLDEN).unwrap();
         let line: Value = serde_json::from_str(&sent(&full_scene())).unwrap();
         assert_keeps(&golden, &line, "line");
+    }
+
+    /// What a v1 peer wrote of each exchange besides the line, frozen as
+    /// `GOLDEN` is.
+    fn v1_exchange(name: &str) -> String {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/seeds/remote");
+        std::fs::read_to_string(dir.join(name)).expect(name)
+    }
+
+    #[test]
+    fn this_version_reads_and_writes_back_every_v1_exchange() {
+        let link = v1_exchange("link");
+        assert_eq!(link.parse::<PairLink>().expect("a link").to_string(), link);
+        let keeps = |name: &str, written: serde_json::Result<String>| {
+            let old: Value = serde_json::from_str(&v1_exchange(name)).expect(name);
+            let new: Value = serde_json::from_str(&written.expect("it encodes")).expect(name);
+            assert_keeps(&old, &new, name);
+        };
+        let hello = Hello::from_line(v1_exchange("hello").as_bytes()).expect("a hello");
+        keeps("hello", hello.line());
+        let reply = Reply::from_line(v1_exchange("reply").as_bytes()).expect("a reply");
+        keeps("reply", reply.line());
+        for name in ["ask", "change"] {
+            let ask: Ask = serde_json::from_str(&v1_exchange(name)).expect(name);
+            keeps(name, serde_json::to_string(&ask));
+        }
+        for name in ["answer", "changed"] {
+            let answer = Answer::from_line(v1_exchange(name).as_bytes()).expect(name);
+            keeps(name, serde_json::to_string(&answer));
+        }
     }
 
     #[test]
