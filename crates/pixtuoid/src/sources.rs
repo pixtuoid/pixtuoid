@@ -401,7 +401,8 @@ pub(crate) type SourceChange = (&'static str, Result<Made>);
 
 /// A change this build made: the closed token it is reported under, held from
 /// where it is made, since [`Changed`]'s outcome is open to a newer server's.
-/// Private, so each one's token and [`Changed`] come from its one constructor.
+/// Its fields are private, so a token and its [`Changed`] are paired only by
+/// [`Made::new`], which derives one from the other, and `Made::no_cli`.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Made {
     outcome: WireOutcome,
@@ -435,7 +436,6 @@ impl Made {
         self.outcome
     }
 
-    /// What a paired device and the Sources panel word it from.
     pub(crate) fn changed(&self) -> &Changed {
         &self.changed
     }
