@@ -3,45 +3,45 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 15559820768683829262
+    agent_id: 5201561850490405187
     source: copilot
-    session_id: 6a6b64f7-8b69-46b8-a116-57b3bcb747ea
+    session_id: 65f3b2a9-5f0d-4c11-94f8-cad61bb0491c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 15559820768683829262
+    agent_id: 5201561850490405187
     fresh_tokens: 5681
-    reading_id: 7d02b5a1-c236-45fd-8753-100b98340565
+    reading_id: 972f8b1b-9180-4f7b-b9b9-2f3c8880dd03
 - ToolUseStart:
-    agent_id: 15559820768683829262
-    tool_use_id: call_uU5Uy7M3UUiTq_QS
+    agent_id: 5201561850490405187
+    tool_use_id: call_THPbUspVkO3omEOJ
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 15559820768683829262
-    tool_use_id: call_uU5Uy7M3UUiTq_QS
+    agent_id: 5201561850490405187
+    tool_use_id: call_THPbUspVkO3omEOJ
 - ModelInfo:
-    agent_id: 15559820768683829262
+    agent_id: 5201561850490405187
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 15559820768683829262
+    agent_id: 5201561850490405187
     fresh_tokens: 5668
-    reading_id: 989c411e-19fb-49e0-803c-273cdd4c004a
+    reading_id: d6d0a4cf-881b-411e-a4d7-7baf1841b8cb
 - SessionEnd:
-    agent_id: 15559820768683829262
+    agent_id: 5201561850490405187
     as_child: false
 - SessionStart:
-    agent_id: 15559820768683829262
+    agent_id: 5201561850490405187
     source: copilot
-    session_id: 6a6b64f7-8b69-46b8-a116-57b3bcb747ea
+    session_id: 65f3b2a9-5f0d-4c11-94f8-cad61bb0491c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 15559820768683829262
+    agent_id: 5201561850490405187
     fresh_tokens: 5688
-    reading_id: 9a5a2e1b-884b-4022-9447-bacf21058d4b
+    reading_id: f7b4fe4f-6c48-467c-bd57-33aa8d8d0a03
 - SessionEnd:
-    agent_id: 15559820768683829262
+    agent_id: 5201561850490405187
     as_child: false
