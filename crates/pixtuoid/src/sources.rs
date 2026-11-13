@@ -59,22 +59,6 @@ impl From<WireOutcome> for Outcome {
     }
 }
 
-/// A device's outcome as this build's token; a newer server's, which it can't
-/// name, comes back as the error.
-impl TryFrom<Outcome> for WireOutcome {
-    type Error = Outcome;
-
-    fn try_from(outcome: Outcome) -> Result<Self, Outcome> {
-        match outcome {
-            Outcome::Connected => Ok(WireOutcome::Connected),
-            Outcome::Disconnected => Ok(WireOutcome::Disconnected),
-            Outcome::NoOp => Ok(WireOutcome::NoOp),
-            Outcome::Failed => Ok(WireOutcome::Failed),
-            Outcome::Unknown => Err(outcome),
-        }
-    }
-}
-
 impl std::fmt::Display for WireOutcome {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.token())
@@ -109,12 +93,7 @@ impl OutcomeRow {
     /// line) and `sources_cli::text_lines` prints it to a real terminal (R0615-06).
     pub(crate) fn new(id: &str, done: &Result<Made>) -> Self {
         let (outcome, message) = match done {
-            // Only a newer server makes an outcome this build can't name, and
-            // what it can't name it doesn't report as a success.
-            Ok(made) => (
-                WireOutcome::try_from(made.changed.outcome()).unwrap_or(WireOutcome::Failed),
-                None,
-            ),
+            Ok(made) => (made.outcome, None),
             Err(e) => (
                 WireOutcome::Failed,
                 Some(crate::strip_control_chars(
@@ -1854,12 +1833,9 @@ mod tests {
             (WireOutcome::Failed, "failed"),
         ] {
             assert_eq!(outcome.token(), token);
-            assert_eq!(WireOutcome::try_from(Outcome::from(outcome)), Ok(outcome));
+            let read: Outcome = serde_json::from_value(serde_json::json!(token)).unwrap();
+            assert_eq!(read, Outcome::from(outcome), "a device reads {token} back");
         }
-        assert_eq!(
-            WireOutcome::try_from(Outcome::Unknown),
-            Err(Outcome::Unknown)
-        );
     }
 
     /// A step never rides the envelope, whose `message` means failure.
