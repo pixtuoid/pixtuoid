@@ -546,13 +546,10 @@ pub(crate) fn end_lines_like(content: &str, mut out: String) -> String {
 mod tests {
     use super::*;
 
-    /// Every shape a release wrote, Claude Code's group without the `_pixtuoid` key its
-    /// own writer drops and its exec form included, goes; a user's hook, mixed group and
-    /// empty list stay, as does a spaced path with no `args`, which no shell runs whole.
     /// A list item goes only once the strip removed entries from it: an item the user
     /// left empty stays, and one the removal empties goes, nested arrays included.
     #[test]
-    fn a_list_item_goes_only_once_the_strip_emptied_it() {
+    fn a_list_item_goes_only_once_the_strip_removed_from_it() {
         let shim = json!({"command": "PIXTUOID_SOURCE=codex 'pixtuoid-hook'"});
         let doc = json!({"hooks": {"Stop": [{}], "Nested": [[shim], ["mine"]]}});
         let out = strip_shim_json(&doc.to_string()).unwrap().content;
@@ -569,6 +566,9 @@ mod tests {
         );
     }
 
+    /// Every shape a release wrote, Claude Code's group without the `_pixtuoid` key its
+    /// own writer drops and its exec form included, goes; a user's hook, mixed group and
+    /// empty list stay, as does a spaced path with no `args`, which no shell runs whole.
     #[test]
     fn the_shim_strip_takes_every_releases_entry_and_leaves_the_users() {
         let ours = |cmd: &str| json!({ "command": cmd });
@@ -609,7 +609,8 @@ mod tests {
         assert!(!strip_shim_json(&out.content).unwrap().changed);
     }
 
-    /// The YAML strip edits in place: every byte but the shim's entries stays.
+    /// The YAML strip edits in place: every byte but the shim's entries, and the keys
+    /// their removal empties, stays.
     #[test]
     fn the_yaml_shim_strip_leaves_every_other_byte() {
         let user = "# mine\nmodel: gpt\ndisplay:\n  compact: off\nhooks:\n  pre_tool_call:\n    - command: my-guard.sh   # kept\n";
