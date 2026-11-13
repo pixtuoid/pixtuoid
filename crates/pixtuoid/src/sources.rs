@@ -399,45 +399,58 @@ pub(crate) enum Action {
 /// One source of a batch and its change: what it did, or why it failed.
 pub(crate) type SourceChange = (&'static str, Result<Made>);
 
-/// A change this build made: the closed token it is reported under, held from
-/// where it is made, since [`Changed`]'s outcome is open to a newer server's.
-/// Its fields are private, so a token and its [`Changed`] are paired only by
-/// [`Made::new`], which derives one from the other, and `Made::no_cli`.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Made {
-    outcome: WireOutcome,
-    changed: Changed,
-}
+pub(crate) use made::Made;
 
-impl Made {
-    /// [`Changed::new`], with `outcome` as its token.
-    pub(crate) fn new(
-        sid: &'static str,
-        on: bool,
+/// Its own module, so nothing else in `sources` can write a [`Made`] whose two
+/// halves disagree.
+mod made {
+    use super::{Changed, WireOutcome};
+
+    /// A change this build made: the closed token it is reported under, held
+    /// from where it is made, since [`Changed`]'s outcome is open to a newer
+    /// server's. A token and its [`Changed`] are paired only by [`Made::new`],
+    /// which derives one from the other, and `Made::no_cli`.
+    #[derive(Debug, PartialEq, Eq)]
+    pub(crate) struct Made {
         outcome: WireOutcome,
-        hook_off_path: bool,
-        step: Option<&'static str>,
-        plugin_left: Option<&'static str>,
-    ) -> Self {
-        let changed = Changed::new(sid, on, outcome.into(), hook_off_path, step, plugin_left);
-        Self { outcome, changed }
+        changed: Changed,
     }
 
-    /// [`Changed::no_cli`], a no-op.
-    #[cfg(feature = "serve")]
-    fn no_cli(sid: &'static str) -> Self {
-        Self {
-            outcome: WireOutcome::NoOp,
-            changed: Changed::no_cli(sid),
+    impl Made {
+        /// [`Changed::new`], with `outcome` as its token.
+        pub(crate) fn new(
+            sid: &'static str,
+            on: bool,
+            outcome: WireOutcome,
+            hook_off_path: bool,
+            step: Option<&'static str>,
+            plugin_left: Option<&'static str>,
+        ) -> Self {
+            let changed = Changed::new(sid, on, outcome.into(), hook_off_path, step, plugin_left);
+            Self { outcome, changed }
         }
-    }
 
-    pub(crate) fn outcome(&self) -> WireOutcome {
-        self.outcome
-    }
+        /// [`Changed::no_cli`], a no-op.
+        #[cfg(feature = "serve")]
+        pub(super) fn no_cli(sid: &'static str) -> Self {
+            Self {
+                outcome: WireOutcome::NoOp,
+                changed: Changed::no_cli(sid),
+            }
+        }
 
-    pub(crate) fn changed(&self) -> &Changed {
-        &self.changed
+        pub(crate) fn outcome(&self) -> WireOutcome {
+            self.outcome
+        }
+
+        pub(crate) fn changed(&self) -> &Changed {
+            &self.changed
+        }
+
+        #[cfg(feature = "serve")]
+        pub(super) fn into_changed(self) -> Changed {
+            self.changed
+        }
     }
 }
 
@@ -620,9 +633,10 @@ fn device_change_with(
     };
     let no_cli = !cli_present(target_of(sid));
     let state = conn_state(no_cli, connected.is_connected(sid));
-    let Made { outcome, changed } = change_from(cfg, connected, sid, on, state);
+    let made = change_from(cfg, connected, sid, on, state);
+    let outcome = made.outcome();
     tracing::info!(device = ?who, source = ?source, on, outcome = %outcome, "a device changed a source");
-    Some(changed)
+    Some(made.into_changed())
 }
 
 /// [`device_change`] of `sid` in `state`.
@@ -1398,7 +1412,7 @@ mod tests {
                 post_install_hint,
             };
             connected_change("openclaw", ConnectOutcome::Installed(report))
-                .changed
+                .changed()
                 .line("OpenClaw")
         };
         let plain = "\u{2713} OpenClaw connected";
@@ -1414,7 +1428,7 @@ mod tests {
         );
         assert_eq!(hinted, format!("{plain} \u{b7} restart the gateway"));
         let flag = connected_change("copilot", ConnectOutcome::FlagOnly)
-            .changed
+            .changed()
             .line("Copilot CLI");
         assert_eq!(flag, "\u{2713} Copilot CLI connected");
     }
@@ -1428,7 +1442,7 @@ mod tests {
                 plugin_left_registered,
             };
             disconnected_change("codex", DisconnectOutcome::Uninstalled(report))
-                .changed
+                .changed()
                 .line("Codex")
         };
         let plain = "\u{2713} Codex disconnected";
