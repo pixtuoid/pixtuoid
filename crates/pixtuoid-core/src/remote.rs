@@ -1425,8 +1425,8 @@ mod tests {
         assert_keeps(&golden, &line, "line");
     }
 
-    /// What a v1 peer wrote of each exchange besides the line, one sample per
-    /// file, its shape the name before any `-`; frozen as `GOLDEN` is.
+    /// What a v1 peer wrote of each exchange and of the line's `machine`, one
+    /// sample per file, its shape the name before any `-`; frozen as `GOLDEN` is.
     const V1_EXCHANGES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
 
     #[test]
@@ -1444,6 +1444,11 @@ mod tests {
                 Some("link") => assert_eq!(text.parse::<PairLink>().expect(name).to_string(), text),
                 Some("version") => {
                     assert_eq!(version_reply().expect("it encodes").trim_end(), text)
+                }
+                Some("machine") => {
+                    keeps(serde_json::to_string(
+                        &serde_json::from_str::<Machine>(&text).expect(name),
+                    ));
                 }
                 Some("hello") => keeps(Hello::from_line(text.as_bytes()).expect(name).line()),
                 Some("reply") => keeps(Reply::from_line(text.as_bytes()).expect(name).line()),
