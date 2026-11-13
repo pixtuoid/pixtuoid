@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - *(core)* [**breaking**] give shape_drift typed fields, so no detail is cut away ([#2180](https://github.com/pixtuoid/pixtuoid/pull/2180))
 - *(release)* ship the LICENSE text in every published crate ([#2176](https://github.com/pixtuoid/pixtuoid/pull/2176))
 - *(serve)* greet with the host a device reaches, and test the probe on Windows ([#2171](https://github.com/pixtuoid/pixtuoid/pull/2171))
-- *(cli)* one-line help summaries, maintainer notes out of --help, --theme only on the painters ([#2170](https://github.com/pixtuoid/pixtuoid/pull/2170))
+- *(cli)* [**breaking**] one-line help summaries, maintainer notes out of --help, --theme only on the painters: a bare `pixtuoid --theme <name>` now exits 2, so pass it to `pixtuoid run` or `pixtuoid floating` ([#2170](https://github.com/pixtuoid/pixtuoid/pull/2170))
 - *(scene)* the routing grid tiles from the floor's origin ([#2123](https://github.com/pixtuoid/pixtuoid/pull/2123))
 - *(scene)* transcendentals go through libm, so a pinned frame is the same on every target ([#2115](https://github.com/pixtuoid/pixtuoid/pull/2115))
 - *(release)* the homebrew-core contract is doctor's delivered line ([#2096](https://github.com/pixtuoid/pixtuoid/pull/2096))
@@ -110,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - *(site)* the README and the site drop three hand-kept copies, and the homepage its JSON-LD ([#2247](https://github.com/pixtuoid/pixtuoid/pull/2247))
 - *(dev)* Python through uv only, and the dev gates run green and catch what they claim ([#2244](https://github.com/pixtuoid/pixtuoid/pull/2244))
-- *(packaging)* Linux installs with Homebrew or cargo; remove a prebuilt with `sudo dpkg -r pixtuoid pixtuoid-hook`, `npm uninstall -g pixtuoid` or by deleting its binaries ([#2217](https://github.com/pixtuoid/pixtuoid/pull/2217))
+- *(packaging)* [**breaking**] Linux installs with Homebrew or cargo; remove a prebuilt with `sudo dpkg -r pixtuoid pixtuoid-hook`, `npm uninstall -g pixtuoid` or by deleting its binaries ([#2217](https://github.com/pixtuoid/pixtuoid/pull/2217))
 - *(cursor)* re-capture the fixtures at 2026.11.11-043ef28 ([#2267](https://github.com/pixtuoid/pixtuoid/pull/2267))
 - *(hermetic)* pin antigravity at 1.5.5 ([#2273](https://github.com/pixtuoid/pixtuoid/pull/2273))
 - *(hermetic)* pin kimi at 2.5.3 ([#2271](https://github.com/pixtuoid/pixtuoid/pull/2271))
