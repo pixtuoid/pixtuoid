@@ -16,37 +16,35 @@ use pixtuoid_core::{AgentEvent, AgentId, ToolDetail, Transport};
 /// timeline's origin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
+#[expect(missing_docs, reason = "a field is named for what it holds")]
 pub enum Cue {
     /// An agent event, as a live source sends it.
     Event {
-        /// When it lands.
         at: Duration,
         /// What hook-wins dedup reads: the transport the live source uses.
         transport: Transport,
-        /// The event.
         event: AgentEvent,
     },
     /// A daemon mascot's presence delta, which rides its own lane: the one
     /// event channel is `AgentId`-pure.
     Presence {
-        /// When it lands.
         at: Duration,
-        /// The daemon instance.
         key: DaemonInstanceKey,
-        /// The delta.
         update: DaemonPresenceUpdate,
     },
 }
 
 impl Cue {
-    /// When it lands, after its timeline's origin.
+    /// Its authored offset from its timeline's origin.
     pub fn at(&self) -> Duration {
         match self {
             Cue::Event { at, .. } | Cue::Presence { at, .. } => *at,
         }
     }
 
-    /// Land it at `origin` + [`Cue::at`].
+    /// Land it at `origin` + [`Cue::at`], as lap 0: its call ids, usage
+    /// reading ids and `Id` turns take a `#0` suffix, so an event a host
+    /// applies by hand pairs with the suffixed id.
     pub fn land(&self, origin: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
         self.land_on(origin + self.at(), Lap::FIRST, reducer, scene);
     }
@@ -153,7 +151,7 @@ fn counted_id(event: &mut AgentEvent) -> Option<&mut String> {
     }
 }
 
-/// Where `at` falls in a loop `period` long, and how many seams it crossed to
+/// Where `at` falls in a loop `period` long, and how many wraps it crossed to
 /// get there: the laps since the one its timeline began in.
 fn place(at: Duration, period: Duration) -> (Duration, u128) {
     let (at, period) = (at.as_nanos(), period.as_nanos());
@@ -217,7 +215,7 @@ impl Actor {
         self.id
     }
 
-    /// The session starts.
+    /// Its `SessionStart`, a subagent's naming its parent.
     pub fn start(&self, at: Duration) -> Cue {
         self.cue(
             at,
@@ -289,7 +287,7 @@ impl Actor {
         )
     }
 
-    /// A fresh-token reading.
+    /// A fresh-token reading with no id: each one counts.
     pub fn usage(&self, at: Duration, fresh_tokens: u64) -> Cue {
         self.cue(
             at,
@@ -298,7 +296,7 @@ impl Actor {
         )
     }
 
-    /// The session ends.
+    /// Its `SessionEnd`, a subagent's ending as a child.
     pub fn end(&self, at: Duration) -> Cue {
         self.cue(
             at,
@@ -347,7 +345,7 @@ impl Actor {
 }
 
 /// A looped timeline: its cues on a circle a period long, so a call that
-/// straddles the seam ends early in the next loop.
+/// straddles the wrap ends early in the next loop.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Script {
     /// By phase, ties in authored order: a wait's prompt follows its call's start.
@@ -416,7 +414,7 @@ impl Playhead {
     /// office's reducer task would. Once `now` is two loops or more past the
     /// current loop's start, it jumps whole loops, in phase: the loop under way
     /// finishes in the last one before `now`, and the loops jumped never play,
-    /// so a fresh playhead's first call fills the office it would show then.
+    /// so a fresh playhead's first `advance` fills the office it would show then.
     pub fn advance(&mut self, now: SystemTime, reducer: &mut Reducer, scene: &mut SceneState) {
         let period = self.script.period;
         let loops = now
@@ -427,15 +425,15 @@ impl Playhead {
         }
         loop {
             while let Some(cue) = self.script.cues.get(self.cursor) {
-                let (phase, seams) = place(cue.at(), period);
+                let (phase, wraps) = place(cue.at(), period);
                 if self.origin + phase > now {
                     break;
                 }
-                // A cue past the seam is its own timeline's, which began
-                // `seams` laps back: none did before `started`.
-                if let Some(n) = u64::try_from(seams)
+                // A cue past the wrap is its own timeline's, which began
+                // `wraps` laps back: none did before `started`.
+                if let Some(n) = u64::try_from(wraps)
                     .ok()
-                    .and_then(|seams| self.lap.checked_sub(seams))
+                    .and_then(|wraps| self.lap.checked_sub(wraps))
                 {
                     let lap = Lap {
                         n,

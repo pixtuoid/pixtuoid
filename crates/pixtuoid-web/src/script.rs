@@ -93,8 +93,8 @@ const HERO_GATEWAY_PORT: std::num::NonZeroU16 = std::num::NonZeroU16::new(18789)
 
 /// The lobster's loop: the OpenClaw mascot scuttles in mid-loop, shuttles
 /// through two busy turns, and walks out before the wrap — so every loop
-/// replays a clean enter animation (GatewayUp after Down re-anchors
-/// `entered_at`).
+/// replays a clean enter animation (the sweep removes the Down gateway before
+/// the next `GatewayUp` creates it afresh).
 fn lobster() -> impl Iterator<Item = Cue> {
     use DaemonPresenceUpdate::*;
     let turn = |id: &str| TurnKey::Id(id.into());

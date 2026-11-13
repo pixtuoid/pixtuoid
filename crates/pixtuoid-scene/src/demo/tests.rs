@@ -213,7 +213,7 @@ fn a_catch_up_sweeps_presence_before_each_delta_as_stepping_does() {
 
 #[test]
 fn a_script_orders_its_cues_by_phase_ties_in_authored_order() {
-    let past_the_seam = lead().end(PERIOD + ms(500));
+    let past_the_wrap = lead().end(PERIOD + ms(500));
     let [start, ask, end] = lead().wait(ms(1_000), ms(1_000), "Bash: rm -rf dist");
     let script = Script::new(
         PERIOD,
@@ -221,16 +221,16 @@ fn a_script_orders_its_cues_by_phase_ties_in_authored_order() {
             end.clone(),
             start.clone(),
             ask.clone(),
-            past_the_seam.clone(),
+            past_the_wrap.clone(),
         ],
     );
-    assert_eq!(script.cues, [past_the_seam, start, ask, end]);
+    assert_eq!(script.cues, [past_the_wrap, start, ask, end]);
 }
 
 /// A loop's calls and named readings count again every lap, on the agent and
 /// on the day's tally.
 #[test]
-fn a_replayed_loop_counts_its_calls_again() {
+fn a_replayed_loop_counts_its_work_again() {
     let mut cues = vec![
         lead().start(ms(0)),
         lead().caught_up(ms(0)),
@@ -292,7 +292,7 @@ fn each_cue_lands_once_however_the_clock_steps() {
     }
 }
 
-/// A sample cast's coming and going across the seam, as the hero's.
+/// A sample cast's coming and going across the wrap, as the hero's.
 fn cast() -> (Vec<Actor>, Vec<Cue>) {
     let cx = Actor::new(codex::SOURCE_NAME, "cx", "/work/web");
     let hm = Actor::new(hermes::SOURCE_NAME, "hm", "/work/tests");
@@ -342,7 +342,7 @@ fn the_office_stays_seated_and_never_empties_across_the_wrap() {
 }
 
 #[test]
-fn a_call_across_the_seam_runs_from_its_start_through_the_wrap() {
+fn a_call_across_the_wrap_runs_from_its_start_through_it() {
     let (_, cues) = cast();
     let mut host = Host::new(cues, t0());
     for loop_start in [PERIOD, PERIOD * 2] {
@@ -457,10 +457,10 @@ fn an_actor_of_no_registered_source_is_refused() {
     let _ = Actor::new("claude_code", "typo", "/work/api");
 }
 
-/// A visitor whose end lands just before the seam and whose start opens the
+/// A visitor whose end lands just before the wrap and whose start opens the
 /// loop comes back every loop, over hooks or over a transcript alone.
 #[test]
-fn a_visitor_ending_at_the_seam_returns_every_loop() {
+fn a_visitor_ending_at_the_wrap_returns_every_loop() {
     for source in [claude_code::SOURCE_NAME, copilot::SOURCE_NAME] {
         let visitor = Actor::new(source, "visitor", "/work/docs");
         let cues = [visitor.start(ms(0)), visitor.end(PERIOD - ms(2_000))];
@@ -560,13 +560,18 @@ fn a_lap_names_every_counted_id_and_turn_apart() {
     }
 }
 
-/// A turn a loop brackets opens again every lap, by an opaque id or by its
-/// position on the stream, which the reducer would refuse as a replay.
+/// Each turn a loop brackets opens again every lap, by an opaque id or by its
+/// position on the stream, which the reducer would refuse as a replay. Two
+/// `Seq` turns from 0 pin the stride: one past the highest, never zero.
 #[test]
 fn a_replayed_turn_opens_again_every_lap() {
-    for (source, key) in [
-        (codex::SOURCE_NAME, TurnKey::Id("turn".into())),
-        (opencode::SOURCE_NAME, TurnKey::Seq(1)),
+    let brackets = [(ms(1_000), ms(6_000)), (ms(10_000), ms(15_000))];
+    for (source, keys) in [
+        (
+            codex::SOURCE_NAME,
+            [TurnKey::Id("a".into()), TurnKey::Id("b".into())],
+        ),
+        (opencode::SOURCE_NAME, [TurnKey::Seq(0), TurnKey::Seq(1)]),
     ] {
         let turner = Actor::new(source, "turner", "/work/cli");
         let bracket = |at, event| Cue::Event {
@@ -574,37 +579,39 @@ fn a_replayed_turn_opens_again_every_lap() {
             transport: turner.lifecycle,
             event,
         };
-        let cues = [
-            turner.start(ms(0)),
-            bracket(
-                ms(1_000),
+        let mut cues = vec![turner.start(ms(0))];
+        for ((opens, closes), turn) in brackets.into_iter().zip(&keys) {
+            cues.push(bracket(
+                opens,
                 AgentEvent::TurnStart {
                     agent_id: turner.id(),
-                    turn: key.clone(),
+                    turn: turn.clone(),
                 },
-            ),
-            bracket(
-                ms(6_000),
+            ));
+            cues.push(bracket(
+                closes,
                 AgentEvent::TurnEnd {
                     agent_id: turner.id(),
-                    turn: Some(key.clone()),
+                    turn: Some(turn.clone()),
                 },
-            ),
-        ];
+            ));
+        }
         let mut host = Host::new(cues, t0());
         for lap in 0..3u32 {
-            let open = host.at(t0() + PERIOD * lap + ms(1_500));
-            assert!(
-                matches!(state(open, &turner), ActivityState::Running { .. }),
-                "{source} lap {lap}: {:?}",
-                state(open, &turner)
-            );
-            let closed = host.at(t0() + PERIOD * lap + ms(6_500));
-            assert_eq!(
-                state(closed, &turner),
-                ActivityState::Idle,
-                "{source} lap {lap}"
-            );
+            for (opens, closes) in brackets {
+                let open = host.at(t0() + PERIOD * lap + opens + ms(500));
+                assert!(
+                    matches!(state(open, &turner), ActivityState::Running { .. }),
+                    "{source} lap {lap} at {opens:?}: {:?}",
+                    state(open, &turner)
+                );
+                let closed = host.at(t0() + PERIOD * lap + closes + ms(500));
+                assert_eq!(
+                    state(closed, &turner),
+                    ActivityState::Idle,
+                    "{source} lap {lap} at {closes:?}"
+                );
+            }
         }
     }
 }
