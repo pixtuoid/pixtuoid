@@ -66,66 +66,29 @@ jobs:
       # cargo-semver-checks builds the baseline and the current tree, and the
       # default `audio` feature reaches alsa-sys — hence the ALSA step above.
       - uses: ./.github/actions/setup-cargo-just
-      # homebrew-core's `test do` runs against every release on its autobump,
+      # homebrew-core's formula builds and tests every release on its autobump,
       # and the owner was told to release before updating it
       # (CONTRIBUTING.md#releasing), so a miss can't hold the release: it names
       # the update that step 4 there sends after the tag.
-      - name: homebrew-core's test calls only what this tree can run
+      - name: homebrew-core's formula is the one packaging-build tests
+        env:
+          COMMITTED: .github/actions/packaging-build/pixtuoid.rb
         run: |
           set -euo pipefail
           owe() {
-            if [ -z "${owed:-}" ]; then
-              owed=1
-              printf '### homebrew-core test update owed after the tag (CONTRIBUTING.md#releasing)\n\n' >>"$GITHUB_STEP_SUMMARY"
-            fi
+            printf '### homebrew-core formula update owed after the tag (CONTRIBUTING.md#releasing)\n\n%s\n' "$2" >>"$GITHUB_STEP_SUMMARY"
             echo "::warning::$1"
-            echo "- $1" >>"$GITHUB_STEP_SUMMARY"
           }
-          if ! formula="$(curl -fsSL --retry 3 \
+          if ! live="$(curl -fsSL --retry 3 \
             https://raw.githubusercontent.com/Homebrew/homebrew-core/HEAD/Formula/p/pixtuoid.rb)"; then
-            owe "could not fetch homebrew-core's formula; check its test block by hand"
+            owe "could not fetch homebrew-core's formula; compare it with $COMMITTED by hand" ""
             exit 0
           fi
-          block="$(sed -n '/^  test do/,/^  end/p' <<<"$formula")"
-          subs="$({ grep -oE 'pixtuoid("?, "| )[a-z][a-z0-9-]*' <<<"$block" || true; } \
-            | sed -E 's/^pixtuoid("?, "| )//' | sort -u)"
-          if [ -z "$subs" ]; then
-            owe "found no pixtuoid subcommand in homebrew-core's test block; its shape changed"
-            exit 0
+          # The autobump writes url and sha256, and the bottle block is homebrew-core's own.
+          theirs="$(sed -e '/^  url "/d' -e '/^  sha256 "/d' -e '/^  bottle do$/,/^  end$/d' <<<"$live" | cat -s)"
+          if ! drift="$(diff -u --label homebrew-core --label "$COMMITTED" <(printf '%s\n' "$theirs") "$COMMITTED")"; then
+            owe "homebrew-core's formula differs from $COMMITTED" "$(printf '~~~diff\n%s\n~~~' "$drift")"
           fi
-          cargo build --locked -q -p pixtuoid --bin pixtuoid -p pixtuoid-hook --bin pixtuoid-hook
-          for sub in $subs; do
-            ./target/debug/pixtuoid "$sub" --help >/dev/null 2>&1 \
-              || owe "homebrew-core's test calls \`pixtuoid $sub\`, which this tree dropped"
-          done
-          # Its sandbox has no agent CLI and no office, and `shell_output` keeps
-          # stdout alone (Homebrew/brew's formula_assertions.rb), so each
-          # `assert_match "<text>", shell_output("#{bin}/pixtuoid <args>"[, status])`
-          # must exit as its status expects (0 unset) and print its text there.
-          asserted='^[[:space:]]*assert_match "([^"]*)", shell_output\("#\{bin\}/pixtuoid ([^"]*)"(, ([0-9]+))?\)[[:space:]]*$'
-          # Any other `assert_match` is no pass, but the one packaging-build's
-          # Cargo.toml grep replays.
-          versioned='^[[:space:]]*assert_match version\.to_s, shell_output\("#\{bin\}/pixtuoid --version"\)[[:space:]]*$'
-          while IFS= read -r line; do
-            if ! [[ $line =~ $asserted ]]; then
-              [[ $line == *assert_match* && ! $line =~ $versioned ]] \
-                && owe "homebrew-core's test has an \`assert_match\` this check can't read: ${line#"${line%%[![:space:]]*}"}"
-              continue
-            fi
-            text="${BASH_REMATCH[1]}" args="${BASH_REMATCH[2]}" want="${BASH_REMATCH[4]:-0}"
-            read -r -a argv <<<"$args"
-            got=0
-            err="$(mktemp)"
-            said="$(env -i HOME="$(mktemp -d)" PATH=/usr/bin:/bin \
-              ./target/debug/pixtuoid "${argv[@]}" 2>"$err")" || got=$?
-            seen="$(printf '%s\n' "$said"; cat "$err")"
-            seen="${seen//$'\n'/ }"
-            if [ "$got" -ne "$want" ]; then
-              owe "homebrew-core's test expects \`pixtuoid $args\` to exit $want, and this tree exits $got: $seen"
-            elif ! grep -qF -- "$text" <<<"$said"; then
-              owe "homebrew-core's test expects \`pixtuoid $args\` to print \"$text\", and this tree prints: $seen"
-            fi
-          done <<<"$block"
       # SHA-pinned: the step sees the PAT (release-plz's security.md), and the
       # SHA also pins the release-plz binary the action installs. Dependabot
       # moves the pin.

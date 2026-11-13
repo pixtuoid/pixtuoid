@@ -1,43 +1,33 @@
 name: Packaging build
-description: Exercise the Homebrew source-build and install contracts
+description: Homebrew's own build and test of pixtuoid.rb, the formula homebrew-core is held to, from this tree
 
 runs:
   using: composite
   steps:
-    - uses: pixtuoid/.github/.github/actions/setup-rust@main
-    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      with:
-        prefix-key: v1-rust
-        # rust-cache isolates by OS, so one shared-key is safe across platforms.
-        shared-key: packaging-build
-        # As setup-cargo-just's: only main's copy is ever restored by others.
-        save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: ./.github/actions/setup-alsa
-    - name: cargo install --locked (both binaries, default features)
+    - name: brew install and brew test pixtuoid.rb from this tree
       shell: bash
+      env:
+        TAP: pixtuoid/packaging
       run: |
-        cargo install --locked --path crates/pixtuoid --root "${RUNNER_TEMP}/pkg"
-        cargo install --locked --path crates/pixtuoid-hook --root "${RUNNER_TEMP}/pkg"
-    - name: Replay the formula's install + test assertions
-      shell: bash
-      run: |
-        # Capture before grep: pipefail must expose a crashing producer, while
-        # grep -q on a live producer can induce EPIPE (notably on macOS).
         set -euo pipefail
-        BIN="${RUNNER_TEMP}/pkg/bin/pixtuoid"
-        home="${RUNNER_TEMP}/fakehome"
-        mkdir -p "$home"
-        out="${RUNNER_TEMP}/formula-test"
-        mkdir -p "$out"
-
-        "$BIN" --version                      > "$out/version"
-        "$BIN" man                            > "$out/man.roff"
-        "$BIN" completions bash               > "$out/completions.bash"
-        # As in Homebrew's sandbox: a fresh HOME, no agent CLI or office, the shim beside it.
-        env -i HOME="$home" PATH=/usr/bin:/bin "$BIN" doctor > "$out/doctor"
-
-        # Exit zero alone is not the formula's version-content assertion.
-        grep -qF "$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)" "$out/version"
-        grep -q '^\.TH' "$out/man.roff"
-        grep -q pixtuoid "$out/completions.bash"
-        grep -qF 'delivered a test event' "$out/doctor"
+        # The Ubuntu image keeps Homebrew off PATH (actions/runner-images
+        # images/ubuntu/Ubuntu2404-Readme.md, "Homebrew note").
+        if [[ $RUNNER_OS == Linux ]]; then eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"; fi
+        # The images set HOMEBREW_NO_AUTO_UPDATE, and homebrew-core's test-bot
+        # runs Homebrew/brew's HEAD, which only a developer's update reaches
+        # (Homebrew/brew Library/Homebrew/cmd/update.sh:595-601).
+        HOMEBREW_DEVELOPER=1 brew update
+        version="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -1)"
+        # A tag's tarball is its `git archive` (docs.github.com/en/repositories/
+        # working-with-files/using-files/downloading-source-code-archives), and
+        # its name gives `test do` the version it asserts.
+        tarball="$RUNNER_TEMP/pixtuoid-$version.tar.gz"
+        git archive --format=tar.gz --prefix="pixtuoid-$version/" -o "$tarball" HEAD
+        sha="$(shasum -a 256 "$tarball" | cut -d' ' -f1)"
+        brew tap-new --no-git "$TAP"
+        # url and sha256 go where the autobump writes them; pixtuoid.rb leaves both to it.
+        awk -v url="file://$tarball" -v sha="$sha" \
+          '{ print } /^  homepage / { print "  url \"" url "\""; print "  sha256 \"" sha "\"" }' \
+          "$GITHUB_ACTION_PATH/pixtuoid.rb" >"$(brew --repository "$TAP")/Formula/pixtuoid.rb"
+        brew install --build-from-source "$TAP/pixtuoid"
+        brew test --verbose "$TAP/pixtuoid"

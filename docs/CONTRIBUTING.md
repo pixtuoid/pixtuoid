@@ -79,9 +79,8 @@ a lint to dodge the bump.
    publishes the draft, and publishes the npm packages. The crates.io and npm
    jobs each wait for an approval from the `release` environment's reviewer,
    crates.io first. The tag also starts a homebrew-core autobump.
-4. **If the dispatch's run summary listed an owed homebrew-core test update**,
-   open `pixtuoid: update test` there once the tag exists, carrying
-   packaging-build's replay as its test block.
+4. **If the dispatch's run summary listed an owed homebrew-core formula
+   update**, open a PR there once the tag exists that applies its diff.
 
 The crates.io upload happens in the `release` job on the merge push, which
 first waits for that commit's own `ci-gate`: a failure or timeout publishes
@@ -104,17 +103,14 @@ version (`BOARD_BRAND`), so a release PR needs no `just gen`.
 The tag also publishes **outside** this repo:
 homebrew-core's formula is `autobump: true` and builds from the tag tarball,
 instantly, with DEFAULT features on macOS *and* Linux — the one configuration
-our release never builds. Two consequences:
-
-- **A from-source build break lands in Homebrew's CI, not ours.** Anything
-  adding a system-library dependency needs a matching `depends_on` in the core
-  formula, in the same bump PR.
-- **Their `test do` block is a public contract** — see the "homebrew-core
-  contract" comment at `doctor/delivery.rs`; the packaging-build action
-  replays the block. A dispatch warns wherever `release-plz.yml`'s
-  homebrew-core step finds the block asking what this tree can't give, and
-  never fails, because the owner, who sent a test update before its release,
-  was told to release first (no public record); step 4 sends it.
+our release never builds. [`pixtuoid.rb`](../.github/actions/packaging-build/pixtuoid.rb)
+is the formula we hold them to: packaging-build runs Homebrew's own
+`brew install --build-from-source` and `brew test` of it against each tree,
+sandboxes included, so a new system-library dependency or a `test do` this tree
+breaks (see the "homebrew-core contract" comments) reds there and is fixed in
+that file. A dispatch warns with the diff wherever homebrew-core's copy differs,
+and never fails, because the owner, who sent a test update before its release,
+was told to release first (no public record); step 4 sends it.
 
 Do not try to preempt BrewTestBot: the formula is on homebrew-core's
 autobump list, so `brew bump-formula-pr pixtuoid` refuses by policy and the
