@@ -1,0 +1,15 @@
+{"type":"session.start","data":{"sessionId":"e8f6e8e7-34ab-4a4b-95c8-f34a68322bcc","version":0,"producer":"","copilotVersion":"","startTime":"","selectedModel":"","contextTier":null,"context":{"cwd":"/private/tmp/pixtuoid-capture/proj","gitRoot":"","branch":"","headCommit":""},"alreadyInUse":false,"remoteSteerable":false},"id":"","timestamp":"","parentId":null}
+{}
+{}
+{}
+{}
+{"type":"session.usage_record","data":{"usage":{"model":"","responseModel":"","modelDisplayName":"","inputTokens":5666,"outputTokens":15,"cacheReadTokens":0,"cacheWriteTokens":0,"cost":0,"duration":0,"timeToFirstTokenMs":0,"outputTtftMs":0,"interTokenLatencyMs":0,"initiator":"","interactionType":"","isByok":false,"byokKind":"","modelProvider":"","providerType":"","isAuto":false,"maxPromptTokens":0,"maxOutputTokens":0,"transport":"","inferenceGateway":false,"requestBodyBytes":0,"requestBodyWireBytes":0,"requestBodyEncoding":"","apiCallId":"","rte":false,"apiEndpoint":"","accounting":{},"aiCreditsStatus":"","availableToolCount":0,"toolTokenCount":0,"customToolCallCount":0,"unmatchedToolResultCount":0,"orphanToolCallCount":0,"frontierSource":"","cacheDetailsReported":false,"numToolCalls":0,"toolCounts":{},"finishReason":"","contentFilterTriggered":false}},"id":"f53b4ed7-8d39-4b5e-91e3-5d5aa4746339","timestamp":"","parentId":""}
+{}
+{"type":"tool.execution_start","data":{"toolCallId":"call_x8UAq7FS2kfFzKtk","toolName":"view","arguments":{"path":"/private/tmp/pixtuoid-capture/proj/NOTE.txt"},"turnId":"","model":"","toolTitle":""},"id":"","timestamp":"","parentId":""}
+{"type":"tool.execution_complete","data":{"toolCallId":"call_x8UAq7FS2kfFzKtk","model":"gpt-4.1","interactionId":"","turnId":"","rte":false,"success":false,"result":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}
+{}
+{}
+{"type":"session.usage_record","data":{"usage":{"model":"","responseModel":"","modelDisplayName":"","inputTokens":1000,"outputTokens":77,"cacheReadTokens":300,"cacheWriteTokens":0,"cost":0,"duration":0,"timeToFirstTokenMs":0,"outputTtftMs":0,"interTokenLatencyMs":0,"initiator":"","interactionType":"","isByok":false,"byokKind":"","modelProvider":"","providerType":"","isAuto":false,"maxPromptTokens":0,"maxOutputTokens":0,"transport":"","inferenceGateway":false,"requestBodyBytes":0,"requestBodyWireBytes":0,"requestBodyEncoding":"","apiCallId":"","rte":false,"apiEndpoint":"","accounting":{},"aiCreditsStatus":"","availableToolCount":0,"toolTokenCount":0,"customToolCallCount":0,"unmatchedToolResultCount":0,"orphanToolCallCount":0,"frontierSource":"","cacheDetailsReported":false,"numToolCalls":0,"toolCounts":{},"finishReason":"","contentFilterTriggered":false}},"id":"1636b558-dbfc-4b3f-9d94-13b3872a5c68","timestamp":"","parentId":""}
+{}
+{}
+{"type":"session.shutdown","data":{},"id":"","timestamp":"","parentId":""}

@@ -3,45 +3,45 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 5201561850490405187
+    agent_id: 8181482110416427064
     source: copilot
-    session_id: 65f3b2a9-5f0d-4c11-94f8-cad61bb0491c
+    session_id: 0676bd87-beeb-4ced-81d1-7cfa0bacff05
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 5201561850490405187
+    agent_id: 8181482110416427064
     fresh_tokens: 5681
-    reading_id: 972f8b1b-9180-4f7b-b9b9-2f3c8880dd03
+    reading_id: aa84f593-037c-4b5e-99e0-ad8535ccd8c9
 - ToolUseStart:
-    agent_id: 5201561850490405187
-    tool_use_id: call_THPbUspVkO3omEOJ
+    agent_id: 8181482110416427064
+    tool_use_id: call_apwpIdHTOOoFU5aE
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 5201561850490405187
-    tool_use_id: call_THPbUspVkO3omEOJ
+    agent_id: 8181482110416427064
+    tool_use_id: call_apwpIdHTOOoFU5aE
 - ModelInfo:
-    agent_id: 5201561850490405187
+    agent_id: 8181482110416427064
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 5201561850490405187
+    agent_id: 8181482110416427064
     fresh_tokens: 5668
-    reading_id: d6d0a4cf-881b-411e-a4d7-7baf1841b8cb
+    reading_id: 1eae50da-89a1-4124-855d-078c37f9faaa
 - SessionEnd:
-    agent_id: 5201561850490405187
+    agent_id: 8181482110416427064
     as_child: false
 - SessionStart:
-    agent_id: 5201561850490405187
+    agent_id: 8181482110416427064
     source: copilot
-    session_id: 65f3b2a9-5f0d-4c11-94f8-cad61bb0491c
+    session_id: 0676bd87-beeb-4ced-81d1-7cfa0bacff05
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 5201561850490405187
+    agent_id: 8181482110416427064
     fresh_tokens: 5688
-    reading_id: f7b4fe4f-6c48-467c-bd57-33aa8d8d0a03
+    reading_id: 0580c0fe-9a3e-4a00-b1bf-267e66a1aace
 - SessionEnd:
-    agent_id: 5201561850490405187
+    agent_id: 8181482110416427064
     as_child: false
