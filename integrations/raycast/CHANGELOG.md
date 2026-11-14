@@ -8,7 +8,7 @@
 - **Start Floating Window** — waits until the window opens, and shows why when it can't (a config error, no GPU adapter).
 - **Start Floating Window** — needs pixtuoid 0.23.0 or later, and says so on an older one.
 
-## [Initial Version] - {PR_MERGE_DATE}
+## [Initial Version] - 2026-07-22
 
 - **Manage Sources** — list every agent CLI Pixtuoid knows about and connect/disconnect each one (over `pixtuoid sources --json` + `pixtuoid connect|disconnect`).
 - **Start Floating Window** — open the Pixtuoid floating desktop window.

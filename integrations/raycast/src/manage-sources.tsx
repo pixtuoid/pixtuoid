@@ -4,6 +4,7 @@ import {
   Alert,
   Color,
   Icon,
+  Keyboard,
   List,
   Toast,
   confirmAlert,
@@ -78,7 +79,7 @@ export default function ManageSources() {
               <Action
                 title="Refresh"
                 icon={Icon.ArrowClockwise}
-                shortcut={{ modifiers: ["cmd"], key: "r" }}
+                shortcut={Keyboard.Shortcut.Common.Refresh}
                 onAction={() => revalidate()}
               />
               <Action.OpenInBrowser icon={Icon.Globe} title="Open Pixtuoid on GitHub" url={REPO_URL} />
