@@ -2,7 +2,8 @@ name: claude-review
 on:
   pull_request:
     # The queue squashes a PR into its title and body, so an edit to them, or
-    # to the base, after the review's verdict is reviewed again.
+    # to the base, after the review's verdict is reviewed again: `edited` is
+    # either (docs.github.com/en/webhooks/webhook-events-and-payloads).
     types: [opened, synchronize, ready_for_review, reopened, edited]
 permissions: {}
 jobs:

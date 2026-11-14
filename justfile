@@ -51,8 +51,8 @@ WASM_CRATES := "pixtuoid-web pixtuoid-web-music"
 
 # Standalone shell FILES share one authority so formatting and lint coverage
 # cannot drift. Shell embedded in YAML is a second population this cannot cover:
-# workflow `run:` blocks go to actionlint, composite-action ones to the org's
-# workflow-lint. Both are shellcheck-only — shfmt cannot rewrite a
+# workflow and composite-action `run:` blocks go to the org's workflow-lint in
+# CI. Both are shellcheck-only — shfmt cannot rewrite a
 # scalar in place — so adding a file here is not enough for embedded shell.
 SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh .clusterfuzzlite/*.sh"
 
@@ -137,31 +137,6 @@ shfmt-fix:
 [group('rust')]
 shellcheck:
     shellcheck -x {{ SHELL_SOURCES }}
-
-# The pre-push run of the org workflow-lint's actionlint step, since a composite
-# action runs only as a CI job's step: YAML schema, expression types, action
-# input/output names, runner labels, AND shellcheck over every `run:` block.
-# Needs shellcheck on PATH for the run-block checks.
-[doc('Lint the GitHub Actions workflows (actionlint + shellcheck over run: blocks)')]
-[group('rust')]
-actionlint:
-    actionlint
-
-# The org workflow-lint's zizmor verdict, here, under the one policy that action
-# bundles. `lint` leaves it to CI: the policy is read from pixtuoid/.github's
-# main, and a check whose verdict moves with an upstream must not redden a push
-# of unchanged code, as `links` (--offline) and `deny` (advisories in
-# `deny-advisories`). Tokenless, zizmor skips its online audits
-# (docs.zizmor.sh/usage/#operating-modes); a GH_TOKEN runs them as CI does.
-[doc('Audit GitHub automation security with zizmor under the org policy')]
-[group('rust')]
-zizmor:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    policy="$(mktemp)"
-    trap 'rm -f "$policy"' EXIT
-    curl -fsSL --proto '=https' -o "$policy" https://raw.githubusercontent.com/pixtuoid/.github/main/.github/actions/workflow-lint/zizmor.yml
-    zizmor --config "$policy" --strict-collection .
 
 # action_behavior_test.sh runs the workflows' own shell against stubs, which no
 # static contract can do.
@@ -383,7 +358,6 @@ lint: (_npm ".")
     run ceiling just toolchain-ceiling   & pids+=($!)
     run shfmt   just shfmt-check         & pids+=($!)
     run shell   just shellcheck           & pids+=($!)
-    run actions just actionlint          & pids+=($!)
     run ci-obs  just ci-observability     & pids+=($!)
     run wire    just wire-frozen          & pids+=($!)
     run wireself just wire-frozen-selftest & pids+=($!)

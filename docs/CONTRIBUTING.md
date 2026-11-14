@@ -166,7 +166,8 @@ fix with its pinning test) runs as an **arc**: design → build → gate → wra
    (`beautify-decoration` skill).
 6. **Build** — TDD: failing test → minimal impl → commit.
 7. **Local review** — before the push, when the change touches 5+ counted
-   files or the owner asks: `/pixtuoid-dev:local-review` runs
+   files or the owner asks: the org's local-review skill
+   ([AGENTS.md](../AGENTS.md#org-rules)) runs
    [`REVIEW.md`](../REVIEW.md) with the reviewers CI runs; the cleanup rides
    the same PR.
 8. **Merge gate** — [the gate](#the-merge-gate).
@@ -198,7 +199,7 @@ Every [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.ym
 final head, and what no check can confirm: every review of that head posted and
 read, every finding's thread resolved by its disposition, zero open confirmed
 blocking finding, the must-run results in the body. A finding with no thread gets
-one: a local review's (`/pixtuoid-dev:local-review`), and a bot's
+one: a local review's, and a bot's
 posted only in its review body. A refuted blocking finding needs no push:
 resolve its thread with the disposition and re-run the review
 (`gh run rerun <id> --failed`), whose verifier judges the refutation once.

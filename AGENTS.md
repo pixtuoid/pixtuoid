@@ -34,7 +34,7 @@ The owner's bar: every change is best practice, the best architecture design and
 - **Evidence.** An external claim, "best practice" included, cites a doc URL or `path:line` fetched this session, or is labelled opinion.
 - **Refactor.** Existing code a change touches that breaks a written rule is refactored in that change. Any other code may be, in a commit of its own, when that removes a named defect, never on taste alone.
 - **Every mechanism earns its upkeep.** Code, config, a test, a CI job or a doc stays only if it names a failure it prevents that nothing else already does. A maintained library, the platform or the upstream tool's own mechanism is reused before one is built.
-- **One source.** What every repo shares lives once, in pixtuoid/.github or, for CodeRabbit, pixtuoid/coderabbit, and is referenced, never copied. Where a repo must hold a file to reference it, the org-rules action fails CI when that file drifts.
+- **One source.** What every repo shares lives once, in pixtuoid/.github or, for CodeRabbit, pixtuoid/coderabbit, and is referenced, never copied, but for these rules in each agent guide and the files a repo holds to reference the rest, whose drift the org-rules action fails CI on. The org's agent skills are pixtuoid/.github's `pixtuoid-dev` Claude Code plugin, which project settings enable but each clone installs once (code.claude.com/docs/en/plugins/loading, "Enabled in project settings but not installed"): `claude plugin install pixtuoid-dev --marketplace pixtuoid/.github --scope project`, which also declares the marketplace in the user's settings (code.claude.com/docs/en/discover-plugins, "Add and install from your shell", Claude Code v2.1.292 or later).
 - **TDD.** A failing test, then the minimal implementation, then the commit.
 - **Comments are WHY only**, doc prose included, and sit on the narrowest thing they constrain; a PR body states its claims and their why. Name the authority instead of restating its value. Measurements go in commit messages.
 - **No magic numbers.** Reuse the existing authority, else one named constant at the narrowest scope; when a copy of a value must cross a boundary, a test pins the pair. No `unwrap()` outside tests.
@@ -88,7 +88,7 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 - CI is the gate, and a green preflight is NOT a green PR. A PR's pushes run only the light tier; the full tier runs on `main`, and in the merge queue unless Mergify merges an up-to-date PR alone at the front directly (two-step CI).
 - Advisory (never gates): `just mutants`, `just bench`, `just bench-pacing`, CodSpeed, `fuzz.yml` (a crash's input is its run's `crashes-<target>` artifact; `just fuzz <target> <file>` replays it).
 - Fluency gate, local and pre-release (a wall-clock budget, so never CI): `just pace-check`; its runs and verdict in `scripts/pace-check.py`'s header.
-- Hooks: `git config core.hooksPath .githooks` once per clone; `just setup-tools` installs `mise.toml`'s tools and rust-analyzer (without it the agent LSP degrades to grep); `claude plugin install pixtuoid-dev@pixtuoid-dev --scope project`, once per clone too, downloads the org plugin `.claude/settings.json` enables ([install scopes](https://code.claude.com/docs/en/discover-plugins#choose-an-install-scope)).
+- Hooks: `git config core.hooksPath .githooks` once per clone; `just setup-tools` installs `mise.toml`'s tools and rust-analyzer (without it the agent LSP degrades to grep).
 - Release is a human step: [`CONTRIBUTING.md#releasing`](docs/CONTRIBUTING.md#releasing).
 
 ## Workflow
@@ -96,7 +96,7 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
 each step there before taking it, never from recall. The CI review applies
 REVIEW.md on every push; [arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says
-when `/pixtuoid-dev:local-review` runs it first.
+when the org's local-review skill runs it first.
 
 **At most 6 open PRs across the sessions** (bots' and outside contributors'
 aside), the owner's cap: the runners take

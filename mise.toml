@@ -3,10 +3,7 @@ min_version = "2026.10.11"
 [tools]
 just = "latest"
 shfmt = "latest"
-# The registry's actionlint entry is deprecated.
-"aqua:rhysd/actionlint" = "latest"
 shellcheck = "latest"
-zizmor = "latest"
 yq = "latest"
 jq = "latest"
 gitleaks = "latest"

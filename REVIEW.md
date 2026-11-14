@@ -178,8 +178,8 @@ wrong.
 The review reads; these need the change run, so the author runs each one the
 change touches before the PR queues and writes its result into the PR body. A
 result holds for the head it ran at: a later push that changes what it checked
-runs it again, a merge of `main` or a comment-only change does not.
-`/pixtuoid-dev:local-review` runs them.
+runs it again, a merge of `main` or a comment-only change does not. The org's
+local-review skill ([AGENTS.md](AGENTS.md#org-rules)) runs them.
 
 - **Render and look**: generated art and clips (extract frames and READ them;
   census the money shot; a PR's media diff is `just gen-media-check`'s
