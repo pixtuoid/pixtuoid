@@ -9,7 +9,7 @@ per-crate detail lives in the nested guides:
 - [`crates/pixtuoid-core/AGENTS.md`](crates/pixtuoid-core/AGENTS.md) — headless lib: sources/decoders, reducer/state. (+ [`tests/AGENTS.md`](crates/pixtuoid-core/tests/AGENTS.md): the test-binary layout, add-a-CLI test steps.)
 - [`crates/pixtuoid-scene/AGENTS.md`](crates/pixtuoid-scene/AGENTS.md) — backend-agnostic render+sim engine: sprite format, grid/walkable, pixel painter, layout, walk/pose/pathfind, theme model, weather, pets, chitchat.
 - [`crates/pixtuoid/AGENTS.md`](crates/pixtuoid/AGENTS.md) — the binary: install, runtime, cli, config, multi-floor. (+ [`src/tui/AGENTS.md`](crates/pixtuoid/src/tui/AGENTS.md): the terminal painter.)
-- [`integrations/raycast/AGENTS.md`](integrations/raycast/AGENTS.md), [`site/AGENTS.md`](site/AGENTS.md) — the non-Rust `--json` consumers; their gates are `tsc`/`eslint` / `just site-check`, not cargo.
+- [`integrations/AGENTS.md`](integrations/AGENTS.md), [`site/AGENTS.md`](site/AGENTS.md) — the non-Rust `--json` consumers; their gates are `tsc`/`eslint` / `just site-check`, not cargo.
 
 **What the guides hold.** A nested `AGENTS.md` says what its crate IS, plus the
 facts no single declaration can own: cross-file workflows, comment-less

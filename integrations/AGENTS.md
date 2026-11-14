@@ -1,61 +1,56 @@
-# integrations/raycast — agent guide
+# integrations — Raycast extension agent guide
 
-The **Raycast extension**: a self-contained **TypeScript / Node** project (NOT
-Rust) and a thin presenter over the `pixtuoid … --json` CLI contract. It ships
+The **Raycast extension** in [`raycast/`](raycast/): a self-contained
+**TypeScript / Node** project (NOT Rust) and a thin presenter over the
+`pixtuoid … --json` CLI contract. It ships
 two commands — `Manage Sources` (connect/disconnect over `pixtuoid
 sources|connect|disconnect --json`) and `Start Floating`. Parent guide: the
-workspace [`../../AGENTS.md`](../../AGENTS.md).
+workspace [`../AGENTS.md`](../AGENTS.md). This guide sits here, not in
+`raycast/`, because the Store review rejects an extension folder that ships an
+`AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
+[`.greptile/config.json`](https://github.com/raycast/extensions/blob/main/.greptile/config.json)).
 
 > **You are in the TS consumer, not the Rust producer.** The workspace
 > `AGENTS.md` still loads above this file — but its Rust house rules
 > (TDD-in-Rust, `cargo`/`clippy`, `just preflight`, the crate CI gates)
 > **do not apply here**. This is a Node project; the gates are `tsc` + `eslint` + `npm test`.
-> Don't run `cargo` anything for a change scoped to this directory; the
+> Don't run `cargo` anything for a change scoped to `raycast/`; the
 > pre-push hook still runs `just preflight`.
 
 ## What it is
 
 A login-shell-resolved shell over the CLI — it does **not** bundle the binary (resolves it via
-`$PATH` + a `binaryPath` preference). `src/pixtuoid.ts` is the CLI bridge; `manage-sources.tsx` /
-`start-floating.tsx` are the Raycast command UIs. No server, no state of its own — every fact
+`$PATH` + a `binaryPath` preference). `raycast/src/pixtuoid.ts` is the CLI bridge; `raycast/src/manage-sources.tsx` /
+`raycast/src/start-floating.tsx` are the Raycast command UIs. No server, no state of its own — every fact
 comes from the CLI: its `--json` rows, and Start Floating's ready line, exit code and stderr.
 
 ## The contract is GENERATED, not hand-mirrored (read this first)
 
 BOTH wire types — `SourceStatus` AND `OutcomeRow` — are **generated**, not
 hand-typed. The Rust serde types (`crates/pixtuoid/src/sources.rs`) emit
-committed JSON Schemas (`contract/source-status.schema.json` +
-`contract/outcome-row.schema.json`, via their `schemars` derives + the
+committed JSON Schemas (`raycast/contract/source-status.schema.json` +
+`raycast/contract/outcome-row.schema.json`, via their `schemars` derives + the
 `*_schema_matches_the_committed_contract` golden tests); `npm run gen:contract`
-(json-schema-to-typescript) regenerates `src/contract.ts` +
-`src/contract-outcome.ts` from those schemas; and `pixtuoid.ts` re-exports the
+(json-schema-to-typescript) regenerates `raycast/src/contract.ts` +
+`raycast/src/contract-outcome.ts` from those schemas; and `raycast/src/pixtuoid.ts` re-exports the
 generated types (`export type { SourceStatus }` / `{ OutcomeRow }`). So a
 producer shape change **can't hand-drift** — three gates catch it: the Rust
 struct↔schema golden tests (`just test`), the schema↔TS-type freshness check
 (raycast CI regenerates both files and `git diff --exit-code`s them), and the
 TS-type↔usage `tsc --noEmit` pass. **After changing `SourceStatus` or
 `OutcomeRow`, run `just gen-contract`** (re-emits the schemas + the TS types)
-and commit all of it. `src/contract.ts` / `src/contract-outcome.ts` are
+and commit all of it. `raycast/src/contract.ts` / `raycast/src/contract-outcome.ts` are
 generated — eslint/prettier-ignored, never hand-edit them.
-At runtime `src/conforms.ts` checks every CLI row against the same committed
+At runtime `raycast/src/conforms.ts` checks every CLI row against the same committed
 schemas and fails closed on drift (`npm test`), so a stale schema there breaks
 the extension, not only the types.
 (`outcome_row_json_shape` pins `OutcomeRow`'s exact wire JSON, the
 `sources --json` golden and schema test `SourceStatus`'s; `OutcomeRow`'s doc
 comment in `crates/pixtuoid/src/sources.rs` owns the published-wire rule.)
 
-**A republish may still be owed.** The split (`e21ec7f0`, 2026-07-02) landed
-AFTER the local `ray publish` marker `__raycast_latest_publish_ext/pixtuoid__`
-(`b870d8ba`, 2026-06-19), so the version in the store was built against the
-folded `failed: <msg>` form: its toast shows a bare `failed`, the reason dropped.
-`src/` parses it right, but Start Floating passes `floating --notify-ready`, so
-the republish waits for the first pixtuoid release with that flag. The marker is
-never pushed, so a fresh clone has no copy — check your own, then the listing at
-`raycast.com/IvanWng97/pixtuoid`, before assuming it is clear.
-
 ## Toolchain policy
 
-`package.json` cannot carry a comment, so these live here.
+`raycast/package.json` cannot carry a comment, so these live here.
 
 - **Toolchain bumps must stay within what Raycast DECLARES — check the peers,
   don't guess.** `eslint`/`typescript` are gated by `@raycast/eslint-config`'s
@@ -64,7 +59,7 @@ never pushed, so a fresh clone has no copy — check your own, then the listing 
   its major updates; minors still flow). `@raycast/api`'s exact peer is a warning-level
   mismatch npm tolerates under the committed lockfile, not a hard pin the
   manifest must equal. `ray build` type-checks with its OWN bundled tsc (read
-  its version from the installed `@raycast/api`), so `tsconfig.json` must stay
+  its version from the installed `@raycast/api`), so `raycast/tsconfig.json` must stay
   parseable by BOTH that and the local TS: hence `moduleResolution: "Bundler"` +
   an explicit `types: ["node"]` (TS 6.0 stopped auto-including
   `node_modules/@types`), and no `ignoreDeprecations` value the bundled tsc
@@ -73,11 +68,11 @@ never pushed, so a fresh clone has no copy — check your own, then the listing 
 ## Gates
 
 CI runs `.github/workflows/raycast.yml`'s steps on a Linux runner, on a PR that
-touches this directory, and `ci-gate` judges them; run them
-locally before "done." `ray build` writes `raycast-env.d.ts`, the
+touches `raycast/`, and `ci-gate` judges them; run them
+locally before "done." `ray build` writes `raycast/raycast-env.d.ts`, the
 manifest's generated `Preferences` that `tsc` reads, and `ray lint` validates
 the manifest, icons and metadata and runs the Prettier pass. See the
-[README](README.md) for `npm run {build,dev,lint}`.
+[README](raycast/README.md) for `npm run {build,dev,lint}`.
 
 - **Install scripts fail closed, as site's**: `strict-allow-scripts` with an
   exact-version `allowScripts`, enforced by the npm 12 CI pins
