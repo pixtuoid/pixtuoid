@@ -5,7 +5,10 @@ The **Raycast extension** in [`raycast/`](raycast/): a self-contained
 `pixtuoid … --json` CLI contract. It ships
 two commands — `Manage Sources` (connect/disconnect over `pixtuoid
 sources|connect|disconnect --json`) and `Start Floating`. Parent guide: the
-workspace [`../AGENTS.md`](../AGENTS.md).
+workspace [`../AGENTS.md`](../AGENTS.md). This guide sits here, not in
+`raycast/`, because the Store review rejects an extension folder that ships an
+`AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
+[`.greptile/config.json`](https://github.com/raycast/extensions/blob/main/.greptile/config.json)).
 
 > **You are in the TS consumer, not the Rust producer.** The workspace
 > `AGENTS.md` still loads above this file — but its Rust house rules
