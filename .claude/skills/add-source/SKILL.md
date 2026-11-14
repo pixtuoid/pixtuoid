@@ -21,7 +21,7 @@ check until it passes.
 - [ ] **[The must-run](../../../REVIEW.md#must-run)**: `just hermetic <source>`, or a
       live run for a `NOT_HERMETIC` source. Either way the real CLI, never a capture
       rig's flags.
-- [ ] **[`local-review`](../local-review/SKILL.md)**, always: a fork's PR gets no CI
+- [ ] **`/pixtuoid-dev:local-review`**, always: a fork's PR gets no CI
       review, so this is its only one. Fold what it finds into one commit.
 - [ ] **The PR body** holds step 1's answers and what
       [the merge gate](../../../docs/CONTRIBUTING.md#the-merge-gate) asks of it. CI runs

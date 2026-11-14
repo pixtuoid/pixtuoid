@@ -1,0 +1,14 @@
+{
+  "enabledPlugins": {
+    "pixtuoid-dev@pixtuoid-dev": true
+  },
+  "extraKnownMarketplaces": {
+    "pixtuoid-dev": {
+      "source": {
+        "source": "github",
+        "repo": "pixtuoid/.github"
+      },
+      "autoUpdate": true
+    }
+  }
+}

@@ -166,7 +166,7 @@ fix with its pinning test) runs as an **arc**: design → build → gate → wra
    (`beautify-decoration` skill).
 6. **Build** — TDD: failing test → minimal impl → commit.
 7. **Local review** — before the push, when the change touches 5+ counted
-   files or the owner asks: the `local-review` skill runs
+   files or the owner asks: `/pixtuoid-dev:local-review` runs
    [`REVIEW.md`](../REVIEW.md) with the reviewers CI runs; the cleanup rides
    the same PR.
 8. **Merge gate** — [the gate](#the-merge-gate).
@@ -174,7 +174,7 @@ fix with its pinning test) runs as an **arc**: design → build → gate → wra
    a line on the narrowest rule it amends — never an agent's private memory,
    which nobody reviews and nothing executes.
 
-Checks hold only the merge gate ([`.mergify.yml`](../.mergify.yml)'s
+Checks hold only the merge gate (the org's [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml)
 `queue_conditions`) and step 6's tests (the review's test teeth); every other
 step is the session's to keep.
 
@@ -186,7 +186,7 @@ step is the session's to keep.
   builds, and remove a PR's worktree and local branch once it merges.
 - **Fold before opening** — a change to a surface an open PR already touches
   folds into it.
-- **The queue never idles** — it checks one batch at a time (`.mergify.yml`'s
+- **The queue never idles** — it checks one batch at a time (the org queue's
   `max_parallel_checks`), so queue every PR once what no check can confirm holds
   and dequeue one only when it would jump a green priority PR.
 
@@ -194,11 +194,11 @@ step is the session's to keep.
 
 ### The merge gate
 
-Every [`.mergify.yml`](../.mergify.yml) `queue_conditions` check green at the
+Every [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml) `queue_conditions` check green at the
 final head, and what no check can confirm: every review of that head posted and
 read, every finding's thread resolved by its disposition, zero open confirmed
 blocking finding, the must-run results in the body. A finding with no thread gets
-one: a [local review](../.claude/skills/local-review/SKILL.md)'s, and a bot's
+one: a local review's (`/pixtuoid-dev:local-review`), and a bot's
 posted only in its review body. A refuted blocking finding needs no push:
 resolve its thread with the disposition and re-run the review
 (`gh run rerun <id> --failed`), whose verifier judges the refutation once.

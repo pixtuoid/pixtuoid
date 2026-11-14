@@ -1,10 +1,8 @@
 # AGENTS.md
 
 Instructions for any AI coding agent in this repo. Every agent, Claude Code
-included (v2.1.277 or later), reads these `AGENTS.md` files natively; there is
-deliberately no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md`, because
-any of them switches Claude Code to CLAUDE.md-only. This is the workspace map;
-per-crate detail lives in the nested guides:
+included (v2.1.277 or later), reads these `AGENTS.md` files natively. This is
+the workspace map; per-crate detail lives in the nested guides:
 
 - [`crates/pixtuoid-core/AGENTS.md`](crates/pixtuoid-core/AGENTS.md) — headless lib: sources/decoders, reducer/state. (+ [`tests/AGENTS.md`](crates/pixtuoid-core/tests/AGENTS.md): the test-binary layout, add-a-CLI test steps.)
 - [`crates/pixtuoid-scene/AGENTS.md`](crates/pixtuoid-scene/AGENTS.md) — backend-agnostic render+sim engine: sprite format, grid/walkable, pixel painter, layout, walk/pose/pathfind, theme model, weather, pets, chitchat.
@@ -36,13 +34,14 @@ The owner's bar: every change is best practice, the best architecture design and
 - **Evidence.** An external claim, "best practice" included, cites a doc URL or `path:line` fetched this session, or is labelled opinion.
 - **Refactor.** Existing code a change touches that breaks a written rule is refactored in that change. Any other code may be, in a commit of its own, when that removes a named defect, never on taste alone.
 - **Every mechanism earns its upkeep.** Code, config, a test, a CI job or a doc stays only if it names a failure it prevents that nothing else already does. A maintained library, the platform or the upstream tool's own mechanism is reused before one is built.
+- **One source.** What every repo shares lives once, in pixtuoid/.github or, for CodeRabbit, pixtuoid/coderabbit, and is referenced, never copied. Where a repo must hold a file to reference it, the org-rules action fails CI when that file drifts.
 - **TDD.** A failing test, then the minimal implementation, then the commit.
 - **Comments are WHY only**, doc prose included, and sit on the narrowest thing they constrain; a PR body states its claims and their why. Name the authority instead of restating its value. Measurements go in commit messages.
 - **No magic numbers.** Reuse the existing authority, else one named constant at the narrowest scope; when a copy of a value must cross a boundary, a test pins the pair. No `unwrap()` outside tests.
 - **Review findings.** A finding's premise is checked against the item it names before it is accepted. A refuted finding produces a mechanism (a test, a compile-time constraint, a CI gate) or nothing.
 - **Docs** change in the same commit as what they describe, and no new doc lands unless the owner asks.
-- **Git.** Never force-push and never skip hooks. How a change reaches `main` is each repo's own rule.
-- **The [Roadmap](https://github.com/orgs/pixtuoid/projects/1) is the plan of record**, the owner's rule: every step (an item started or finished, a PR opened, merged or closed, a reorder) updates its item, the draft or the issue it tracks, in the same turn. Who may file an issue is each repo's own rule.
+- **Git.** Never force-push and never skip hooks. A change reaches `main` only through a pull request and the org's Mergify queue, a release PR aside, which merges by hand. The session that opened a PR queues it (`@mergifyio queue`) once every finding has its disposition and the repo's must-run results are in the body; whoever queues a bot's PR reads it first.
+- **The [Roadmap](https://github.com/orgs/pixtuoid/projects/1) is the plan of record**, the owner's rule: every step (an item started or finished, a PR opened, merged or closed, a reorder) updates its item, the draft or the issue it tracks, in the same turn. Agents add Roadmap draft items, never issues.
 <!-- org-rules:end -->
 
 ## What this is
@@ -89,17 +88,15 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 - CI is the gate, and a green preflight is NOT a green PR. A PR's pushes run only the light tier; the full tier runs on `main`, and in the merge queue unless Mergify merges an up-to-date PR alone at the front directly (two-step CI).
 - Advisory (never gates): `just mutants`, `just bench`, `just bench-pacing`, CodSpeed, `fuzz.yml` (a crash's input is its run's `crashes-<target>` artifact; `just fuzz <target> <file>` replays it).
 - Fluency gate, local and pre-release (a wall-clock budget, so never CI): `just pace-check`; its runs and verdict in `scripts/pace-check.py`'s header.
-- Hooks: `git config core.hooksPath .githooks` once per clone; `just setup-tools` installs `mise.toml`'s tools and rust-analyzer (without it the agent LSP degrades to grep).
+- Hooks: `git config core.hooksPath .githooks` once per clone; `just setup-tools` installs `mise.toml`'s tools and rust-analyzer (without it the agent LSP degrades to grep); `claude plugin install pixtuoid-dev@pixtuoid-dev --scope project`, once per clone too, downloads the org plugin `.claude/settings.json` enables ([install scopes](https://code.claude.com/docs/en/discover-plugins#choose-an-install-scope)).
 - Release is a human step: [`CONTRIBUTING.md#releasing`](docs/CONTRIBUTING.md#releasing).
 
 ## Workflow
 
 Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
-each step there before taking it, never from recall. Merging is a session's own
-`@mergifyio queue` ([the merge gate](docs/CONTRIBUTING.md#the-merge-gate)); a
-release PR merges by hand. The CI review applies REVIEW.md on every push;
-[arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says when the `local-review`
-skill runs it first.
+each step there before taking it, never from recall. The CI review applies
+REVIEW.md on every push; [arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says
+when `/pixtuoid-dev:local-review` runs it first.
 
 **At most 6 open PRs across the sessions** (bots' and outside contributors'
 aside), the owner's cap: the runners take
@@ -117,8 +114,7 @@ runs queued, and a plain cancel still runs the `always()` gate jobs, so
 [force-cancel](https://docs.github.com/en/rest/actions/workflow-runs#force-cancel-a-workflow-run)
 them.
 
-Repo skills (committed): `local-review`, `beautify-decoration`,
-`add-source`.
+Repo skills (committed): `beautify-decoration`, `add-source`.
 
 ## Conventions
 
@@ -133,7 +129,7 @@ Repo skills (committed): `local-review`, `beautify-decoration`,
 - **No scan-the-history** — keep state updated as events arrive; never derive it by scanning backward.
 - **Shell**: match the surrounding shell; macOS-first (BSD CLI, brew).
 - **Evidence** (org rule): a hermetic profile scenario that reaches the surface (`just hermetic`) counts as a source too, and the population is the whole upstream repo (`gh api .../git/trees/<ref>?recursive=1`), not one plausible file.
-- **Review findings** (org rule): a refutation adds a code comment only for an EXTERNAL fact (another CLI's wire bytes, an OS semantic), on the narrowest thing it constrains. **A real finding ends FIXED, RE-SCOPED → #N or FOLLOW-UP → #N before the PR merges; which applies, the four terminal states and what #N may be are defined once in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#dispositions). Agents never file issues.**
+- **Review findings** (org rule): a refutation adds a code comment only for an EXTERNAL fact (another CLI's wire bytes, an OS semantic), on the narrowest thing it constrains. **A real finding ends FIXED, RE-SCOPED → #N or FOLLOW-UP → #N before the PR merges; which applies, the four terminal states and what #N may be are defined once in [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#dispositions).**
 - **Only the latest released version of each agent CLI is supported.** When upstream renames or reshapes a wire name, repoint the decoder and the plugin at the CURRENT declaration and DELETE the old one — no dual-listening beside a replacement, no legacy-format arm kept "just in case". Every superseded arm is a second copy of a wire contract that drifts silently. Two things this does NOT govern: OUR OWN upgrade path (an arm for an artifact an older pixtuoid wrote is ours to keep or drop, not upstream's — #457), and mirroring a resolver upstream itself still branches on.
 - **Path asserts compare `PathBuf` structurally**, never `to_string_lossy()` with a hardcoded separator — string asserts pass on Unix and fail only in `windows-test`. Resolution POLICY (HOME vs USERPROFILE, %APPDATA% vs `~/.config`) is per-CLI: mirror each CLI's own resolver (a runtime's in `platform`, else beside its target).
 
@@ -164,7 +160,7 @@ taller-cell terminals; bundled base character sprites max at 8×12 px (their
 
 - No write to another CLI's config outside `install/io.rs` (`write_config_atomic` / `ConfigLock`).
 - No `println!`/`eprintln!` on production paths — a print macro panics when its reader leaves (`| head`), so CLI and headless output goes through a `CliOut` (a command's is `crate::cli_stdout()`) and a stderr notice is a `let _ = writeln!`. Diagnostics are `tracing`, with a constant message and every value as a field (`error = %e`, `path = ?path`, `pid`): the constant message is a stable grep key and a field is filterable; a value baked into the format string is neither. Every path, session id and cwd rides a `?` field, never `%`, whatever its provenance, and so does an error chain that can embed one (`SourceDeath.error`, `SocketBusy`): `str`'s `Debug` escapes control and bidi chars, while under the default `fmt` layer a Display field writes them raw and `EscapeGuard` covers the message and error text only (`test_capture`'s `debug_fields_escape_control_and_bidi_chars`). Core logs under whatever subscriber hosts it, so the rule is primary; the binary's `EscapedFields` (`app/logging.rs`) escapes every value only as a backstop. Only a whole-message relay re-emitting an already-sanitized user-facing string (`config::warn_user`, the `read_log` warning in `sources_cli`) interpolates.
-- No doc generator or cap in place of a proposed diff: the owner reviews every doc change. A session pushes its own PR branches freely, never `main`.
+- No doc generator or cap in place of a proposed diff: the owner reviews every doc change. A session pushes its own PR branches freely.
 - No stale `Closes #N` on a re-scope (fires from commit body or PR text, even conditional).
 - No merging past the review gate (PR #23 merged unreviewed with a path traversal).
 

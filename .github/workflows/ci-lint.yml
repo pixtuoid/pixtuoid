@@ -44,9 +44,9 @@ jobs:
           persist-credentials: false
       # No setup-cargo-just: nothing compiles here, so the runner's preinstalled
       # cargo is enough — but cargo-deny DOES shell out to `cargo metadata`.
-      - uses: ./.github/actions/setup-tools
+      - uses: pixtuoid/.github/.github/actions/setup-tools@main
         with:
-          tools: cargo-deny
+          tools: just cargo-deny
       - run: just deny
       # Both verdicts show: a red deny must not hide arch.
       - if: ${{ !cancelled() }}
@@ -68,9 +68,9 @@ jobs:
         with:
           persist-credentials: false
       # cargo-machete parses manifests and does not need a Rust toolchain.
-      - uses: ./.github/actions/setup-tools
+      - uses: pixtuoid/.github/.github/actions/setup-tools@main
         with:
-          tools: github:bnjbvr/cargo-machete
+          tools: just github:bnjbvr/cargo-machete
       - run: just machete
 
   # The `just lint` recipes no other job runs, so a skipped local preflight can't land their break.
@@ -85,9 +85,9 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
-      - uses: ./.github/actions/setup-tools
+      - uses: pixtuoid/.github/.github/actions/setup-tools@main
         with:
-          tools: shfmt aqua:rhysd/actionlint shellcheck zizmor yq jq gitleaks lychee uv ruff
+          tools: just shfmt shellcheck yq jq gitleaks lychee uv ruff
       # pyright and tsc.
       - uses: ./.github/actions/setup-npm
         with:
@@ -95,11 +95,7 @@ jobs:
       - run: just toolchain-ceiling
       - run: just shfmt-check
       - run: just shellcheck
-      - run: just actionlint
-      - run: just actionlint-composites
-      - run: just zizmor
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: pixtuoid/.github/.github/actions/workflow-lint@main
       - run: just ci-observability
       - run: just wire-frozen
       - run: just wire-frozen-selftest
@@ -149,7 +145,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: mise.toml
-      - uses: ./.github/actions/setup-tools
+      - uses: pixtuoid/.github/.github/actions/setup-tools@main
+        with:
+          tools: just
       - run: just npm-check
 
   # Generated-file freshness is formatter-class, so every PR push runs it
@@ -166,9 +164,9 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: mise.toml
-      - uses: ./.github/actions/setup-tools
+      - uses: pixtuoid/.github/.github/actions/setup-tools@main
         with:
-          tools: uv
+          tools: just uv
       - name: Generated-file drift
         run: just gen-check
       # gen-icons-check's overlays.
@@ -196,9 +194,9 @@ jobs:
         with:
           prefix-key: v1-rust
           save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: ./.github/actions/setup-tools
+      - uses: pixtuoid/.github/.github/actions/setup-tools@main
         with:
-          tools: cargo-binstall
+          tools: just cargo-binstall
       - name: Install cargo-public-api (pinned to match the committed goldens)
         run: just _install-public-api
       - run: just api-surface-check

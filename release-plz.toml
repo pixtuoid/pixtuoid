@@ -30,7 +30,7 @@ git_tag_name = "v{{ version }}"
 release_always = false
 # release-plz's own default, declared because four mechanisms key on it: the
 # tag gate above, the recovery path in CONTRIBUTING.md#releasing, the merge
-# queue's exclusion in .mergify.yml, and release-plz.yml's release-merge job.
+# queue's exclusion (pixtuoid/.github), and release-plz.yml's release-merge job.
 pr_branch_prefix = "release-plz-"
 # The squash-merge title is the PR title, and the `^chore\(release\)` skip parser
 # below keeps it out of the changelog it is announcing. Never `{{ package }}`:

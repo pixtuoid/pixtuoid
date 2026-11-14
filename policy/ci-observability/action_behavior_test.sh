@@ -22,13 +22,6 @@ trap 'rm -rf "$test_dir"' EXIT
 fake_bin="$test_dir/bin"
 mkdir -p "$fake_bin"
 
-# The queue's release-PR exclusion copies release-plz's branch prefix.
-release_prefix="$(yq -p toml -oy -e -r '.workspace.pr_branch_prefix' release-plz.toml)" ||
-    fail "release-plz.toml has no pr_branch_prefix"
-yq -o=json '.' .mergify.yml | jq -e --arg c "-head ~= ^$release_prefix" \
-    '(.queue_rules | length > 0) and all(.queue_rules[]; any(.queue_conditions[]; . == $c))' >/dev/null ||
-    fail ".mergify.yml has a queue that admits release-plz's ${release_prefix}* PRs"
-
 # A `tools:` word that is no mise.toml key is dropped by MISE_ENABLE_TOOLS and
 # installs nothing, so the job runs whatever the runner has, or fails late. A computed value would escape that
 # check, and setup-tools writes it to GITHUB_ENV, so only setup-cargo-just's
@@ -36,7 +29,7 @@ yq -o=json '.' .mergify.yml | jq -e --arg c "-head ~= ^$release_prefix" \
 mise_keys="$(yq -p toml -o=json '.tools | keys | .[]' mise.toml | jq -r '.')" || fail "mise.toml has no [tools]"
 tools_words=""
 for f in .github/workflows/*.yml .github/actions/*/action.y*ml; do
-    values="$(yq -o=json '.' "$f" | jq -r '.. | objects | select((.uses // "") | test("/setup-(tools|cargo-just)$")) | (.with.tools // empty)')" ||
+    values="$(yq -o=json '.' "$f" | jq -r '.. | objects | select((.uses // "") | test("/setup-(tools@|cargo-just$)")) | (.with.tools // empty)')" ||
         fail "cannot read the tools: values of $f"
     while IFS= read -r value; do
         [[ -n "$value" ]] || continue
@@ -132,6 +125,8 @@ assert_wait fail "another app's passing check of that name" "$(check_page impost
 release_workflow=.github/workflows/release-plz.yml
 detect_step="Detect a merged release PR; refuse a stale one"
 detect_script="$(workflow_step_script "$release_workflow" "$detect_step")"
+release_prefix="$(yq -p toml -oy -e -r '.workspace.pr_branch_prefix' release-plz.toml)" ||
+    fail "release-plz.toml has no pr_branch_prefix"
 detect_prefix="$(STEP_NAME="$detect_step" yq -e -r '.jobs[].steps[] | select(.name == strenv(STEP_NAME)) | .env.PR_BRANCH_PREFIX' "$release_workflow")" ||
     fail "\"$detect_step\" has no PR_BRANCH_PREFIX"
 [[ "$detect_prefix" == "$release_prefix" ]] ||
