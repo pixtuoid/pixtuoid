@@ -1,4 +1,4 @@
-# integrations/raycast — agent guide
+# integrations — Raycast extension agent guide
 
 The **Raycast extension** in [`raycast/`](raycast/): a self-contained
 **TypeScript / Node** project (NOT Rust) and a thin presenter over the
