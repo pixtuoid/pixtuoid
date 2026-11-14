@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "agy",
-  "version": "1.5.8",
-  "captured": "2026-11-13",
+  "version": "1.5.9",
+  "captured": "2026-11-14",
   "command": "just hermetic --record antigravity",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 58
+    "blanked": 59
   },
   "aimock": "1.47.0",
   "script": "tests/sources/antigravity/hermetic/tool-run.json",
