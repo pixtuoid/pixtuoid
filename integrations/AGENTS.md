@@ -1,7 +1,9 @@
 # integrations/raycast — agent guide
 
-The **Raycast extension**: a self-contained **TypeScript / Node** project (NOT
-Rust) and a thin presenter over the `pixtuoid … --json` CLI contract. It ships
+The **Raycast extension** in [`raycast/`](raycast/), which the paths below are
+relative to unless they start at the repo root (`crates/`, `.github/`): a
+self-contained **TypeScript / Node** project (NOT Rust) and a thin presenter
+over the `pixtuoid … --json` CLI contract. It ships
 two commands — `Manage Sources` (connect/disconnect over `pixtuoid
 sources|connect|disconnect --json`) and `Start Floating`. Parent guide: the
 workspace [`../AGENTS.md`](../AGENTS.md).
@@ -10,7 +12,7 @@ workspace [`../AGENTS.md`](../AGENTS.md).
 > `AGENTS.md` still loads above this file — but its Rust house rules
 > (TDD-in-Rust, `cargo`/`clippy`, `just preflight`, the crate CI gates)
 > **do not apply here**. This is a Node project; the gates are `tsc` + `eslint` + `npm test`.
-> Don't run `cargo` anything for a change scoped to this directory; the
+> Don't run `cargo` anything for a change scoped to `raycast/`; the
 > pre-push hook still runs `just preflight`.
 
 ## What it is
@@ -64,7 +66,7 @@ comment in `crates/pixtuoid/src/sources.rs` owns the published-wire rule.)
 ## Gates
 
 CI runs `.github/workflows/raycast.yml`'s steps on a Linux runner, on a PR that
-touches this directory, and `ci-gate` judges them; run them
+touches `raycast/`, and `ci-gate` judges them; run them
 locally before "done." `ray build` writes `raycast-env.d.ts`, the
 manifest's generated `Preferences` that `tsc` reads, and `ray lint` validates
 the manifest, icons and metadata and runs the Prettier pass. See the
