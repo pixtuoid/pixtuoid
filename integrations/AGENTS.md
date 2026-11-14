@@ -4,7 +4,7 @@ The **Raycast extension**: a self-contained **TypeScript / Node** project (NOT
 Rust) and a thin presenter over the `pixtuoid … --json` CLI contract. It ships
 two commands — `Manage Sources` (connect/disconnect over `pixtuoid
 sources|connect|disconnect --json`) and `Start Floating`. Parent guide: the
-workspace [`../../AGENTS.md`](../../AGENTS.md).
+workspace [`../AGENTS.md`](../AGENTS.md).
 
 > **You are in the TS consumer, not the Rust producer.** The workspace
 > `AGENTS.md` still loads above this file — but its Rust house rules
@@ -68,7 +68,7 @@ touches this directory, and `ci-gate` judges them; run them
 locally before "done." `ray build` writes `raycast-env.d.ts`, the
 manifest's generated `Preferences` that `tsc` reads, and `ray lint` validates
 the manifest, icons and metadata and runs the Prettier pass. See the
-[README](README.md) for `npm run {build,dev,lint}`.
+[README](raycast/README.md) for `npm run {build,dev,lint}`.
 
 - **Install scripts fail closed, as site's**: `strict-allow-scripts` with an
   exact-version `allowScripts`, enforced by the npm 12 CI pins

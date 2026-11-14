@@ -57,7 +57,7 @@ WASM_CRATES := "pixtuoid-web pixtuoid-web-music"
 SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh .clusterfuzzlite/*.sh"
 
 # The projects that run their own checkers (site/AGENTS.md,
-# integrations/raycast/AGENTS.md), as git pathspecs.
+# integrations/AGENTS.md), as git pathspecs.
 SELF_GATED := "':!:site/' ':!:integrations/'"
 
 # The nightly the api-surface goldens are pinned to (rustdoc JSON is
