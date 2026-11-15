@@ -28,7 +28,6 @@ mutants.out.old/
 *.jsonl.new
 provenance.json.new
 
-# Any of these switches Claude Code to CLAUDE.md-only, hiding every AGENTS.md
-# (CLAUDE.md also matches .claude/CLAUDE.md).
+# Any of these switches Claude Code to CLAUDE.md-only, hiding every AGENTS.md.
 CLAUDE.md
 CLAUDE.local.md

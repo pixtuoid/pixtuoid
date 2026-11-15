@@ -148,7 +148,7 @@ fixtures, snapshots, lockfiles, `.md`, binary assets and what a `just gen*`
 recipe regenerates; not a typo, a docs fix, a mechanical move or a one-file
 fix with its pinning test) runs as an **arc**: design → build → gate → wrap.
 
-1. **Pick** — an issue (`gh issue list`) or backlog item.
+1. **Pick** — a [Roadmap](https://github.com/orgs/pixtuoid/projects/1) item, an issue or a draft.
 2. **Grill the design** — decide the open questions one at a time, each with a
    recommended answer, before writing code.
 3. **Design gate** (before build) — four lenses so slop dies in design:
