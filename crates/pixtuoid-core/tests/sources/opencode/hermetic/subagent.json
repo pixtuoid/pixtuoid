@@ -20,6 +20,11 @@
       "latency": 300
     },
     {
+      "match": { "userMessage": "<subagent sessionID=", "hasToolResult": false },
+      "response": { "content": "{note}" },
+      "latency": 300
+    },
+    {
       "match": { "hasToolResult": false },
       "response": {
         "toolCalls": [
