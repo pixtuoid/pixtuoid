@@ -561,19 +561,18 @@ async fn omp_source_run_never_registers_the_change_journal() {
     tokio::fs::write(&journal, format!("{call}\n"))
         .await
         .unwrap();
-    // The journal's own walk first, so a start for it would precede the done event.
-    tokio::time::sleep(Duration::from_millis(200)).await;
     write_omp_header(&root, "0197f0aa-0000-7000-8000-000000000031").await;
     write_omp_header(&child, "0197f0cc-0000-7000-8000-000000000033").await;
 
     let child_id = AgentId::from_parts("omp", &omp_watcher_key(&child));
     let journal_id = AgentId::from_parts("omp", &omp_watcher_key(&journal));
-    let events = collect_until(
+    let mut events = collect_until(
         &mut rx,
         "the subagent written after the journal registers",
         |e| start_id(e) == Some(child_id),
     )
     .await;
+    events.extend(collect_for(&mut rx, TRAIL, "past the subagent's start").await);
     assert!(
         !events.iter().any(|(_, e)| e.agent_id() == journal_id),
         "the journal must never become an agent: {events:?}"
