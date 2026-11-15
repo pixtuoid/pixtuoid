@@ -323,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn a_path_the_watcher_would_not_read_drives_nothing() {
+    fn what_the_watcher_would_not_read_drives_nothing() {
         assert!(transcript(b"grok\n/s/updates.jsonl\n{}\n").is_some());
         assert!(transcript(b"grok\n/s/chat_history.jsonl\n{}\n").is_none());
         let omp = |path: &str, body: &str| transcript(format!("omp\n{path}\n{body}\n").as_bytes());

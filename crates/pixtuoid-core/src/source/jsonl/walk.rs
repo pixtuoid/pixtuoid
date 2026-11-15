@@ -317,7 +317,7 @@ pub(super) async fn walk_jsonl(
         if !cursors.lock().await.contains_key(path) {
             match judge_head(path, filter).await {
                 HeadVerdict::Admits => {}
-                HeadVerdict::Unwritten => return,
+                HeadVerdict::Undecided => return,
                 HeadVerdict::Refuses => {
                     seen.lock().await.insert(path.to_path_buf(), Sight::Refused);
                     return;
@@ -685,15 +685,15 @@ pub(super) const HEAD_FIRST_READ: usize = 16 * 1024;
 
 /// `path`'s opening bytes judged by `filter`: the first [`HEAD_FIRST_READ`], then
 /// up to [`HEAD_BYTES`] only when those hold no deciding record. A read that
-/// fails leaves it [`HeadVerdict::Unwritten`], asked again on the path's next walk.
+/// fails leaves it [`HeadVerdict::Undecided`], asked again on the path's next walk.
 async fn judge_head(path: &Path, filter: HeadFilter) -> HeadVerdict {
     let Some(first) = read_prefix(path, HEAD_FIRST_READ).await else {
-        return HeadVerdict::Unwritten;
+        return HeadVerdict::Undecided;
     };
     match filter(&first) {
-        HeadVerdict::Unwritten if first.len() == HEAD_FIRST_READ => read_head(path)
+        HeadVerdict::Undecided if first.len() == HEAD_FIRST_READ => read_head(path)
             .await
-            .map_or(HeadVerdict::Unwritten, |head| filter(&head)),
+            .map_or(HeadVerdict::Undecided, |head| filter(&head)),
         verdict => verdict,
     }
 }

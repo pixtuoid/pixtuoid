@@ -19,7 +19,7 @@ use crate::source::registry;
 /// the production watcher — the recorder COMMITS one of these files as a golden,
 /// so a predicate it did not apply would let a fixture teach the decoder a shape
 /// production never reads. Only the traversal is local; a file whose head is
-/// still unwritten holds nothing to record.
+/// still undecided holds nothing to record.
 pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
     fn walk(
         admits: &dyn Fn(&Path) -> bool,
@@ -1196,6 +1196,7 @@ mod tests {
         let header = "{\"type\":\"session\",\"id\":\"01a1dfbc\",\"cwd\":\"/p\"}\n";
         std::fs::write(d.path().join("Reader.jsonl"), header).expect("write");
         std::fs::write(d.path().join("changes.jsonl"), "{\"type\":\"call\"}\n").expect("write");
+        std::fs::write(d.path().join("born.jsonl"), "{\"type\":\"title\"}\n").expect("write");
         let got = transcripts_under("omp", d.path());
         assert_eq!(got, [d.path().join("Reader.jsonl")]);
     }

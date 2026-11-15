@@ -772,13 +772,13 @@ async fn walk_jsonl_honors_the_path_filter() {
 }
 
 #[tokio::test]
-async fn a_refused_head_never_registers_and_an_unwritten_one_waits_for_its_record() {
+async fn a_refused_head_never_registers_and_an_undecided_one_waits_for_its_record() {
     // A title line decides nothing, as omp's title slot doesn't.
     fn head(bytes: &[u8]) -> HeadVerdict {
         let mut lines = crate::source::admit::lines(crate::source::admit::whole(bytes))
             .filter(|line| !line.as_ref().is_ok_and(|l| l.contains("\"title\"")));
         match lines.next() {
-            None => HeadVerdict::Unwritten,
+            None => HeadVerdict::Undecided,
             Some(Ok(line)) if line.contains("\"header\"") => HeadVerdict::Admits,
             Some(_) => HeadVerdict::Refuses,
         }
@@ -824,7 +824,7 @@ async fn a_refused_head_never_registers_and_an_unwritten_one_waits_for_its_recor
     assert_eq!(seen.lock().await.get(&sidecar), Some(&Sight::Refused));
     assert!(
         !cursors.lock().await.contains_key(&born),
-        "an unwritten head is asked again"
+        "an undecided head is asked again"
     );
 
     let append = |path: &Path, bytes: &str| {

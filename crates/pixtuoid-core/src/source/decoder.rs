@@ -128,12 +128,13 @@ pub(crate) fn default_id_from_path(p: &Path) -> String {
     normalize_path_key(&p.to_string_lossy())
 }
 
-/// Decides which `.jsonl` FILES a source's transcripts are — checked after the
-/// extension gate, so it filters files, never directories. A source dir often
-/// holds SIBLINGS that must never be walked: grok's rewrite-on-resume
+/// Decides by PATH which `.jsonl` FILES can be a source's transcripts — checked
+/// after the extension gate, so it filters files, never directories. A source dir
+/// often holds SIBLINGS that must never be walked: grok's rewrite-on-resume
 /// `chat_history.jsonl`, Antigravity's duplicate `transcript_full.jsonl`, CC's
 /// foreign-schema workflow `journal.jsonl`. The default (`accept_all_paths`)
-/// admits every transcript.
+/// admits every transcript; a source whose own loader decides by content adds a
+/// [`HeadFilter`].
 pub type PathFilter = fn(&Path) -> bool;
 
 pub(crate) fn accept_all_paths(_p: &Path) -> bool {
@@ -152,7 +153,7 @@ pub(crate) enum HeadVerdict {
     Refuses,
     /// No deciding record yet (a transcript being born, or a head that could not
     /// be read), so it is judged again on its next walk.
-    Unwritten,
+    Undecided,
 }
 
 /// Judges a file's opening bytes, its whole lines only (see [`HeadVerdict`]).

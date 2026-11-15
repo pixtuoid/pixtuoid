@@ -136,7 +136,7 @@ pub(crate) fn omp_head(head: &[u8]) -> HeadVerdict {
     match records.flatten().next() {
         Some(v) if v["type"] == SESSION && v["id"].is_string() => HeadVerdict::Admits,
         Some(_) => HeadVerdict::Refuses,
-        None => HeadVerdict::Unwritten,
+        None => HeadVerdict::Undecided,
     }
 }
 
@@ -1348,10 +1348,10 @@ mod tests {
                 r#"{"type":"session","id":7}"#.to_owned() + "\n",
                 HeadVerdict::Refuses,
             ),
-            ("not json\n".to_owned(), HeadVerdict::Unwritten),
-            (format!("{slot}\n"), HeadVerdict::Unwritten),
-            (format!("{slot}\n{header}"), HeadVerdict::Unwritten),
-            (String::new(), HeadVerdict::Unwritten),
+            ("not json\n".to_owned(), HeadVerdict::Undecided),
+            (format!("{slot}\n"), HeadVerdict::Undecided),
+            (format!("{slot}\n{header}"), HeadVerdict::Undecided),
+            (String::new(), HeadVerdict::Undecided),
         ];
         for (head, want) in rows {
             assert_eq!(omp_head(head.as_bytes()), *want, "{head:?}");
