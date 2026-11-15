@@ -836,6 +836,39 @@ async fn a_refused_head_never_registers_and_an_unwritten_one_waits_for_its_recor
 }
 
 #[tokio::test]
+async fn a_header_past_the_first_read_is_still_found() {
+    let dir = tempfile::tempdir().unwrap();
+    let late = dir.path().join("late.jsonl");
+    let filler = "x\n".repeat(super::walk::HEAD_FIRST_READ / 2);
+    tokio::fs::write(
+        &late,
+        format!("{filler}{{\"type\":\"session\",\"id\":\"s\"}}\n"),
+    )
+    .await
+    .unwrap();
+    let source: Arc<str> = Arc::from("test");
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    let live = Arc::new(Mutex::new(HashSet::new()));
+    let decoders = SourceDecoders {
+        head_filter: Some(crate::source::omp::omp_head),
+        ..t_decoders()
+    };
+    let (tx, _rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
+    let ctx = WatchCtx {
+        source: &source,
+        cursors: &cursors,
+        seen: &seen,
+        tx: &tx,
+        window: Duration::from_secs(60),
+        live: &live,
+        follower: None,
+    };
+    walk_jsonl(dir.path(), decoders, &ctx, false).await;
+    assert!(cursors.lock().await.contains_key(&late));
+}
+
+#[tokio::test]
 async fn an_oversized_append_revives_an_ended_transcript_only_on_life() {
     // The last row's final line is longer than the activity tail's window.
     let long_tool = format!(

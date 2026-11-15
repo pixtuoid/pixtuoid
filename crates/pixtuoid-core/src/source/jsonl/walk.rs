@@ -681,7 +681,7 @@ async fn read_prefix(path: &Path, cap: usize) -> Option<Vec<u8>> {
 /// boot scan of every old transcript stays cheap. omp's own header read starts
 /// at the same size (`SESSION_HEADER_FIRST_READ`, `session/session-loader.ts:185`
 /// at v18.20.2).
-const HEAD_FIRST_READ: usize = 16 * 1024;
+pub(super) const HEAD_FIRST_READ: usize = 16 * 1024;
 
 /// `path`'s opening bytes judged by `filter`: the first [`HEAD_FIRST_READ`], then
 /// up to [`HEAD_BYTES`] only when those hold no deciding record. A read that

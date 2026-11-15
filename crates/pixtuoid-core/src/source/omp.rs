@@ -116,7 +116,8 @@ pub(crate) fn admits_transcript(path: &Path) -> bool {
 /// `session/session-loader.ts:147-181` at v18.20.2); its sub-session scan drops
 /// any other (`session/sub-sessions.ts:111-131`). The change journal beside each
 /// session's subagents opens with a tool call (`commit/selective/journal.ts`), so
-/// it is refused, as a sidecar omp adds later will be (#2087).
+/// it is refused, as a sidecar omp adds later will be (#2087). A prefix with no
+/// parseable record decides nothing: the record that does may lie past it.
 pub(crate) fn omp_head(head: &[u8]) -> Head {
     use crate::source::admit::{lines, whole};
     let parse = |line: std::result::Result<&str, std::str::Utf8Error>| {
@@ -130,20 +131,10 @@ pub(crate) fn omp_head(head: &[u8]) -> Head {
     {
         records.next();
     }
-    let mut malformed = false;
-    for record in records {
-        match record {
-            Some(v) => {
-                let header = v["type"] == SESSION && v["id"].is_string();
-                return if header { Head::Admits } else { Head::Refuses };
-            }
-            None => malformed = true,
-        }
-    }
-    if malformed {
-        Head::Refuses
-    } else {
-        Head::Unwritten
+    match records.flatten().next() {
+        Some(v) if v["type"] == SESSION && v["id"].is_string() => Head::Admits,
+        Some(_) => Head::Refuses,
+        None => Head::Unwritten,
     }
 }
 
@@ -1355,7 +1346,7 @@ mod tests {
                 r#"{"type":"session","id":7}"#.to_owned() + "\n",
                 Head::Refuses,
             ),
-            ("not json\n".to_owned(), Head::Refuses),
+            ("not json\n".to_owned(), Head::Unwritten),
             (format!("{slot}\n"), Head::Unwritten),
             (format!("{slot}\n{header}"), Head::Unwritten),
             (String::new(), Head::Unwritten),
