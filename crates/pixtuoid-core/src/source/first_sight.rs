@@ -28,7 +28,9 @@ pub(crate) enum Sight {
     /// transcript is.
     Ended,
     /// Its opening bytes proved it no transcript (`decoder::Head::Refuses`), so
-    /// no read of it registers, however much is appended.
+    /// no read of it registers, however much is appended. Only the watcher keeps
+    /// a refusal: the offline walk never lists the file.
+    #[cfg(feature = "native")]
     Refused,
 }
 
