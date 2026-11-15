@@ -225,10 +225,11 @@ pub(crate) fn live_omp_session_ids(sessions_root: &Path) -> Option<ProbeSnapshot
     )
 }
 
-/// The per-source RECOGNIZER: a held-open `.jsonl` under the root vouches. The
-/// id-space fold is applied by `from_open_fds`, not here.
+/// The per-source RECOGNIZER: a held-open file the row's path rule admits
+/// vouches, so an advisor's transcript never does. The id-space fold is applied
+/// by `from_open_fds`, not here.
 fn omp_recognize(path: &Path) -> bool {
-    path.extension().and_then(|e| e.to_str()) == Some("jsonl")
+    crate::source::admit::is_transcript(path, &super::admits_transcript)
 }
 
 pub(crate) const TRANSCRIPT: NativeTranscript = NativeTranscript {
@@ -329,7 +330,8 @@ mod tests {
         let outside = PathBuf::from(format!("/tmp/elsewhere/{STEM}.jsonl"));
         let wrong_ext = root.join(format!("-dev-proj/{STEM}/notes.txt"));
         let no_ext = root.join("-dev-proj/README");
-        let got = snap_of(root, vec![outside, wrong_ext, no_ext]);
+        let advisor = root.join(format!("-dev-proj/{STEM}/__advisor.jsonl"));
+        let got = snap_of(root, vec![outside, wrong_ext, no_ext, advisor]);
         assert!(got.is_empty());
     }
 

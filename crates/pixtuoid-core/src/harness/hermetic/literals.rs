@@ -899,7 +899,6 @@ mod tests {
         item("omp.rs", "with_omp_dotenv", PATH_AXIS),
         item("omp.rs", "from_process", PATH_AXIS),
         item("omp.rs", "parse_omp_env_file", PATH_AXIS),
-        item("omp/native.rs", "omp_recognize", PATH_AXIS),
         item("omp.rs", "KEYS", LABEL_DETAIL),
         item("reasonix.rs", "KEYS", LABEL_DETAIL),
         literal("copilot.rs", "approved", LOSS_APPROVE),
