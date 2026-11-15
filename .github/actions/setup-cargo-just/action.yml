@@ -1,5 +1,5 @@
 name: 'Setup Cargo & Just'
-description: 'Sets up the Rust toolchain, rust-cache, and just plus the given mise.toml tools'
+description: 'Sets up the Rust toolchain, rust-cache, and the given mise.toml tools'
 
 inputs:
   components:
@@ -19,9 +19,11 @@ inputs:
     required: false
     default: ''
   tools:
-    description: 'Space-separated mise.toml [tools] keys to install beside just'
+    # The shared setup-tools installs only these, so a list that leaves out
+    # just leaves the job without it.
+    description: 'Space-separated mise.toml [tools] keys, just included'
     required: false
-    default: ''
+    default: 'just'
 
 runs:
   using: 'composite'
@@ -43,6 +45,6 @@ runs:
         # main's full-tier entries out.
         save-if: ${{ github.ref == 'refs/heads/main' }}
 
-    - uses: ./.github/actions/setup-tools
+    - uses: pixtuoid/.github/.github/actions/setup-tools@main
       with:
         tools: ${{ inputs.tools }}

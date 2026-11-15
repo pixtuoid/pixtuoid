@@ -84,7 +84,7 @@ jobs:
         with:
           shared-key: hermetic
           # `Package::UvLocked` profiles (hermes) sync their tag's lock with uv.
-          tools: uv
+          tools: just uv
       # Node, and the repo's one npm, whose allowScripts policy the tier's CLI
       # installs rely on.
       - uses: ./.github/actions/setup-npm

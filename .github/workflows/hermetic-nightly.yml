@@ -40,7 +40,7 @@ jobs:
         with:
           shared-key: hermetic
           # The mise key every read-only job here and in hermetic.yml restores.
-          tools: uv
+          tools: just uv
       - run: just hermetic-build
 
   drift:
@@ -71,7 +71,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
-          tools: uv
+          tools: just uv
       - run: cargo build --release -q -p pixtuoid-core --example bump
       - id: plan
         env:
@@ -106,7 +106,7 @@ jobs:
         with:
           shared-key: hermetic
           # `Package::UvLocked` profiles (hermes) sync their tag's lock with uv.
-          tools: uv
+          tools: just uv
       - uses: ./.github/actions/setup-npm
         with:
           directory: crates/pixtuoid-core/tests/sources/hermetic/aimock
@@ -139,7 +139,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
-          tools: uv
+          tools: just uv
       # Built before any patch is on the runner, outside the workspace.
       - run: cargo build --release -q -p pixtuoid-core --example bump
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -220,7 +220,7 @@ jobs:
       - uses: ./.github/actions/setup-cargo-just
         with:
           shared-key: hermetic
-          tools: uv
+          tools: just uv
       # Built before any leg's verdicts are on the runner, outside the workspace.
       - run: cargo build --release -q -p pixtuoid-core --example issues --example hermetic
       # The unprofiled CLIs' latest releases, which no leg installs.

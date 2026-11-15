@@ -2,13 +2,13 @@ paths:
   .github/workflows/release*.yml:
     ignore:
       # GitHub supports concurrency.queue; actionlint does not yet know the
-      # field. Drop when https://github.com/rhysd/actionlint/pull/654 ships.
+      # field. Drop once workflow-lint's actionlint pin has https://github.com/rhysd/actionlint/pull/654.
       - 'unexpected key "queue" for "concurrency" section'
       # As in hermetic*.yml below.
       - 'unexpected key "cache-mode" for "workflow" section'
   .github/workflows/{fuzz*,hermetic*,scorecard}.yml:
     ignore:
       # GitHub enforces `cache-mode` on a job's cache token; actionlint does not
-      # yet know the key. Drop when https://github.com/rhysd/actionlint/pull/745 ships.
+      # yet know the key. Drop once workflow-lint's actionlint pin has https://github.com/rhysd/actionlint/pull/745.
       - 'unexpected key "cache-mode" for "workflow" section'
       - 'unexpected key "cache-mode" for "job" section'

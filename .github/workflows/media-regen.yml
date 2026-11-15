@@ -36,7 +36,7 @@ jobs:
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-cargo-just
         with:
-          tools: uv
+          tools: just uv
       # The `demo` gif's optimizer; the runner image doesn't ship it.
       - uses: ./.github/actions/apt-install
         with:

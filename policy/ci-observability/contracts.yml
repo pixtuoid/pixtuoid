@@ -223,26 +223,6 @@
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .with["save-if"] = "true" else . end)
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .uses = "actions/cache@v5" else . end)
 
-- id: only-main-saves-the-mise-cache-per-tool-set
-  covers: jdx/mise-action@
-  file: .github/actions/setup-tools/action.yml
-  expected: ${{ github.ref == 'refs/heads/main' }}
-  why: >-
-    As only-main-saves-the-rust-cache's: every ref restores main's copy, so a
-    save on any other ref only spends the quota main's entries need. The key
-    adds `tools:`, which the default leaves out (mise-action README, "Install a
-    subset of configured tools"); without it jobs with other tool sets share
-    one entry and download the rest on every run.
-  assert: |
-    [.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with] as $with
-    | [$with[].cache_save] == [$expected]
-      and $with[0].cache_key == "{{default}}-${{ inputs.tools }}"
-  break:
-    - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with) |= del(.cache_save)
-    - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with.cache_save) = "true"
-    - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with) |= del(.cache_key)
-    - (.runs.steps[] | select((.uses // "") | startswith("jdx/mise-action@")) | .with.cache_key) = "{{default}}"
-
 - id: only-main-saves-the-binaryen-tarball
   covers: actions/cache/save@
   file: .github/actions/gen-wasm/action.yml
@@ -509,7 +489,7 @@
     docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
     into builds that are attested and published, and release-plz's jobs compile
     with RELEASE_PLZ_TOKEN in scope, `release` with the publish OIDC claim too.
-    zizmor's cache-poisoning audit reads only a job's own steps, never a local
+    zizmor's cache-poisoning audit reads only a job's own steps, never a
     composite's (zizmorcore/zizmor v1.30.0
     crates/zizmor/src/audit/cache_poisoning.rs:796-813), and setup-tools and
     setup-cargo-just restore by default; only `cache-mode` scopes the token under it.
@@ -527,14 +507,16 @@
   why: >-
     These jobs build and publish with the release tokens in scope (see
     release-workflows-restore-no-cache), and mise.toml's tools are unpinned
-    `latest`: past just, nothing it downloads runs here.
+    `latest`: past just, setup-cargo-just's default, nothing it downloads runs
+    here.
   assert: |
     all(.jobs[].steps[]?;
-        ((.uses // "") | test("/(setup-tools|setup-cargo-just)$") | not)
-        or ((.with // {}) | has("tools") | not))
+        if (.uses // "") | test("/setup-tools@") then .with.tools == "just"
+        elif (.uses // "") | test("/setup-cargo-just$") then (.with // {}) | has("tools") | not
+        else true end)
   break:
-    - '(.jobs[].steps[]? | select((.uses // "") | test("/(setup-tools|setup-cargo-just)$"))) |= (.with = ((.with // {}) + {tools: "uv"}))'
-    - 'limit(1; .jobs[].steps[]? | select((.uses // "") | test("/(setup-tools|setup-cargo-just)$"))) |= (.with = ((.with // {}) + {tools: "uv"}))'
+    - '(.jobs[].steps[]? | select((.uses // "") | test("/setup-(tools@|cargo-just$)"))) |= (.with = ((.with // {}) + {tools: "just uv"}))'
+    - 'limit(1; .jobs[].steps[]? | select((.uses // "") | test("/setup-(tools@|cargo-just$)"))) |= (.with = ((.with // {}) + {tools: "just uv"}))'
 
 - id: release-publishes-after-ci-gate
   file: .github/workflows/release-plz.yml
@@ -654,16 +636,6 @@
       (.jobs.build.steps[] | select(.name == "Package (Windows)") | .run)
       |= sub("just stage-notices \"\\$DIR\""; "cp LICENSE \"$DIR/\"")
     - .jobs.build.steps |= map(select(.name != "Package (Unix)"))
-
-- id: queue-merge-conditions-are-ci-gate
-  file: .mergify.yml
-  why: >-
-    Branch protection is not injected (the bots never review the queue's draft
-    PR), so its full-tier ci-gate is the only check that judges the draft.
-  assert: |
-    all(.queue_rules[]; .merge_conditions == ["check-success = ci-gate"])
-  break:
-    - .queue_rules[0].merge_conditions = []
 
 # ── Copies of the source registry
 

@@ -51,8 +51,8 @@ WASM_CRATES := "pixtuoid-web pixtuoid-web-music"
 
 # Standalone shell FILES share one authority so formatting and lint coverage
 # cannot drift. Shell embedded in YAML is a second population this cannot cover:
-# workflow `run:` blocks go to actionlint, composite-action ones to
-# `actionlint-composites`. Both are shellcheck-only — shfmt cannot rewrite a
+# workflow and composite-action `run:` blocks go to the org's workflow-lint in
+# CI. Both are shellcheck-only — shfmt cannot rewrite a
 # scalar in place — so adding a file here is not enough for embedded shell.
 SHELL_SOURCES := "scripts/lib/*.sh .githooks/* policy/ci-observability/*.sh .clusterfuzzlite/*.sh"
 
@@ -137,68 +137,6 @@ shfmt-fix:
 [group('rust')]
 shellcheck:
     shellcheck -x {{ SHELL_SOURCES }}
-
-# Lint the GitHub Actions workflows (actionlint): YAML schema, expression types,
-# action input/output names, runner labels, AND shellcheck over every `run:`
-# block (so a shell bug inside a workflow is caught at author time, not on a red
-# main). Needs shellcheck on PATH for the run-block checks.
-[doc('Lint the GitHub Actions workflows (actionlint + shellcheck over run: blocks)')]
-[group('rust')]
-actionlint:
-    actionlint
-
-# The blind spot the recipe above cannot cover: actionlint models WORKFLOWS, so
-# it discovers only .github/workflows and rejects an action.yml outright
-# ("jobs section is missing"). Shell that moves from a workflow into a composite
-# action therefore loses its shellcheck coverage silently. Pull each `run:` out
-# ourselves and check it with the same linter.
-[doc('Shellcheck every run: block inside the composite actions (actionlint cannot parse action.yml)')]
-[group('rust')]
-actionlint-composites:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    shopt -s nullglob
-    actions=(.github/actions/*/action.y*ml) # GitHub accepts action.yaml too
-    work="$(mktemp -d)"
-    trap 'rm -rf "$work"' EXIT
-    checked=0
-    for action in "${actions[@]}"; do
-        count="$(yq '[.runs.steps[] | select(has("run"))] | length' "$action")"
-        ((count)) || continue # a pure `uses:` composite has no shell to check
-        for i in $(seq 0 $((count - 1))); do
-            shell="$(yq -r ".runs.steps | map(select(has(\"run\"))) | .[$i].shell" "$action")"
-            script="$work/$(echo "$action" | tr /. __)-$i.$shell"
-            { echo "#!/usr/bin/env $shell"; yq -r ".runs.steps | map(select(has(\"run\"))) | .[$i].run" "$action"; } >"$script"
-            shellcheck -s "$shell" "$script"
-            checked=$((checked + 1))
-        done
-    done
-    ((checked > 0)) || { echo "error: no composite run: blocks were checked" >&2; exit 1; }
-    echo "$checked composite run: blocks shellchecked"
-
-# Security audit for workflows/actions/Dependabot. zizmor owns the parser and
-# audit catalog; .github/zizmor.yml records its deliberate exceptions, and every
-# other accepted finding is suppressed at its exact source location with a WHY.
-# The operating MODE is env-derived, not chosen here, and the asymmetry is
-# deliberate: tokenless it runs OFFLINE (it says so on stderr) and skips every
-# audit that needs the GitHub API (`RUST_LOG=debug zizmor` names each;
-# typosquat-uses still runs, at reduced confidence). ci-lint.yml's hygiene job passes
-# GH_TOKEN, so those DO gate in CI: there the recipe refuses to run tokenless.
-# Same call as `links` (--offline) and `deny` (advisories in `deny-advisories`): a
-# check whose verdict depends on the network and an upstream feed must not
-# redden a push of unchanged code. Do NOT auto-export `gh auth token` to close
-# the gap — it puts a real token on the wire on every pre-push run and makes the
-# local gate depend on gh auth + API rate limits, the exact flakiness those two
-# siblings were written to avoid.
-[doc('Audit GitHub automation security with zizmor')]
-[group('rust')]
-zizmor:
-    @if [ -n "${GITHUB_ACTIONS:-}" ] && [ -z "${GH_TOKEN:-}" ]; then \
-        echo "error: zizmor would run offline in CI and skip its online audits; give this step a GH_TOKEN" >&2; \
-        exit 1; \
-    fi
-    # Explicit: a linked worktree's discovery finds the MAIN checkout's config.
-    zizmor --config .github/zizmor.yml --strict-collection .
 
 # action_behavior_test.sh runs the workflows' own shell against stubs, which no
 # static contract can do.
@@ -420,9 +358,6 @@ lint: (_npm ".")
     run ceiling just toolchain-ceiling   & pids+=($!)
     run shfmt   just shfmt-check         & pids+=($!)
     run shell   just shellcheck           & pids+=($!)
-    run actions just actionlint          & pids+=($!)
-    run composites just actionlint-composites & pids+=($!)
-    run zizmor  just zizmor              & pids+=($!)
     run ci-obs  just ci-observability     & pids+=($!)
     run wire    just wire-frozen          & pids+=($!)
     run wireself just wire-frozen-selftest & pids+=($!)

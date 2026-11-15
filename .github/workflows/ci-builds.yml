@@ -42,7 +42,7 @@ jobs:
       - uses: ./.github/actions/setup-alsa
       - uses: ./.github/actions/setup-cargo-just
         with:
-          tools: github:taiki-e/cargo-hack aqua:nextest-rs/nextest/cargo-nextest
+          tools: just github:taiki-e/cargo-hack aqua:nextest-rs/nextest/cargo-nextest
       - run: just hack
 
   other-unix-check:
@@ -70,7 +70,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-alsa
-      - uses: ./.github/actions/setup-tools
+      - uses: pixtuoid/.github/.github/actions/setup-tools@main
+        with:
+          tools: just
       # Before rust-cache, which keys on every installed toolchain, so a
       # HAWK_RUST bump starts a new cache instead of hitting the old one.
       - run: just _hawk-toolchain

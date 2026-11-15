@@ -20,9 +20,9 @@ jobs:
         with:
           persist-credentials: false
       # The same mise.toml key ci-lint's deny job installs; each resolves its version at run time.
-      - uses: ./.github/actions/setup-tools
+      - uses: pixtuoid/.github/.github/actions/setup-tools@main
         with:
-          tools: cargo-deny
+          tools: just cargo-deny
       - run: just deny-advisories
 
   npm:
