@@ -96,8 +96,10 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
 each step there before taking it, never from recall. The CI review applies
 REVIEW.md on every push; [arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says
-when the org's local-review skill runs it first. Any PR, an arc's or not,
-queues only once [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) holds.
+when the org's local-review skill
+([source](https://github.com/pixtuoid/.github/blob/main/plugins/pixtuoid-dev/skills/local-review/SKILL.md),
+for an agent without the plugin) runs it first. Any PR, an arc's or not,
+queues as [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) says.
 
 **At most 6 open PRs across the sessions** (bots' and outside contributors'
 aside), the owner's cap: the runners take
