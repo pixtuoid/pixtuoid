@@ -134,7 +134,7 @@ pub(crate) fn default_id_from_path(p: &Path) -> String {
 /// `chat_history.jsonl`, Antigravity's duplicate `transcript_full.jsonl`, CC's
 /// foreign-schema workflow `journal.jsonl`. The default (`accept_all_paths`)
 /// admits every transcript; a source whose own loader decides by content adds a
-/// [`HeadFilter`].
+/// `HeadFilter`.
 pub type PathFilter = fn(&Path) -> bool;
 
 pub(crate) fn accept_all_paths(_p: &Path) -> bool {
