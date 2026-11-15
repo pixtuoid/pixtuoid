@@ -23,7 +23,7 @@ use crate::source::registry;
 pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
     fn walk(
         admits: &dyn Fn(&Path) -> bool,
-        head: Option<crate::source::decoder::HeadFilter>,
+        head_filter: Option<crate::source::decoder::HeadFilter>,
         dir: &Path,
         out: &mut Vec<PathBuf>,
     ) {
@@ -36,9 +36,9 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
                 continue;
             };
             match crate::source::admit::classify(&meta, &p, admits) {
-                crate::source::admit::Entry::Recurse => walk(admits, head, &p, out),
+                crate::source::admit::Entry::Recurse => walk(admits, head_filter, &p, out),
                 crate::source::admit::Entry::Take
-                    if head.is_none_or(|filter| admits_head(&p, filter)) =>
+                    if head_filter.is_none_or(|head_filter| admits_head(&p, head_filter)) =>
                 {
                     out.push(p)
                 }
@@ -46,10 +46,10 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
             }
         }
     }
-    fn admits_head(path: &Path, filter: crate::source::decoder::HeadFilter) -> bool {
+    fn admits_head(path: &Path, head_filter: crate::source::decoder::HeadFilter) -> bool {
         let cap = crate::source::first_sight::HEAD_BYTES as u64;
         crate::source::read_bounded_bytes(path, cap)
-            .is_ok_and(|head| filter(&head) == crate::source::decoder::HeadVerdict::Admits)
+            .is_ok_and(|head| head_filter(&head) == crate::source::decoder::HeadVerdict::Admits)
     }
     let admits = registry::path_filter_for(source);
     let mut out = Vec::new();

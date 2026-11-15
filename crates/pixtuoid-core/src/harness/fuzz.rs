@@ -330,6 +330,7 @@ mod tests {
         assert!(omp("/s/session.jsonl", OMP_HEADER).is_some());
         assert!(omp("/s/session.txt", OMP_HEADER).is_none());
         assert!(omp("/s/session/changes.jsonl", "{\"type\":\"call\"}").is_none());
+        assert!(omp("/s/session.jsonl", "{\"type\":\"title\"}").is_none());
     }
 
     #[test]

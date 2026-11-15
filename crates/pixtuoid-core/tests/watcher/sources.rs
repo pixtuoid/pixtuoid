@@ -535,6 +535,52 @@ async fn omp_source_run_links_a_nested_subagent_to_its_root() {
     handle.abort();
 }
 
+/// omp's change journal shares the subagents' directory and path shape; the row's
+/// head filter, through the production watcher, keeps it from registering (#2087).
+#[tokio::test]
+async fn omp_source_run_never_registers_the_change_journal() {
+    use pixtuoid_core::AgentId;
+    use pixtuoid_core::source::omp::OmpSource;
+
+    fast_watch();
+    let dir = TempDir::new().unwrap();
+    const ROOT_STEM: &str = "2026-07-09T08-00-00-000Z_0197f0aa-0000-7000-8000-000000000031";
+    let cwd_dir = dir.path().join("-dev-proj");
+    let child_dir = cwd_dir.join(ROOT_STEM);
+    tokio::fs::create_dir_all(&child_dir).await.unwrap();
+    let root = cwd_dir.join(format!("{ROOT_STEM}.jsonl"));
+    let child = child_dir.join("Reader.jsonl");
+    let journal = child_dir.join("changes.jsonl");
+
+    let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
+    let src = OmpSource::single_root(dir.path().to_path_buf());
+    let handle = tokio::spawn(async move { Box::new(src).run(tx).await });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let call = r#"{"type":"call","agent":"Main","tool":"bash","start":1,"label":"ls","end":2}"#;
+    tokio::fs::write(&journal, format!("{call}\n"))
+        .await
+        .unwrap();
+    // The journal's own walk first, so a start for it would precede the done event.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    write_omp_header(&root, "0197f0aa-0000-7000-8000-000000000031").await;
+    write_omp_header(&child, "0197f0cc-0000-7000-8000-000000000033").await;
+
+    let child_id = AgentId::from_parts("omp", &omp_watcher_key(&child));
+    let journal_id = AgentId::from_parts("omp", &omp_watcher_key(&journal));
+    let events = collect_until(
+        &mut rx,
+        "the subagent written after the journal registers",
+        |e| start_id(e) == Some(child_id),
+    )
+    .await;
+    assert!(
+        !events.iter().any(|(_, e)| e.agent_id() == journal_id),
+        "the journal must never become an agent: {events:?}"
+    );
+    handle.abort();
+}
+
 #[tokio::test]
 async fn omp_ended_transcript_is_gated_at_first_sight_and_a_live_one_seeds() {
     use pixtuoid_core::source::omp::OmpSource;

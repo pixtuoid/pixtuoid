@@ -147,9 +147,11 @@ pub(crate) fn accept_all_paths(_p: &Path) -> bool {
 pub(crate) enum HeadVerdict {
     /// It opens the way the source's transcripts do.
     Admits,
-    /// Its first record proves it no transcript; nothing appended changes that.
+    /// Its first deciding record proves it no transcript; nothing appended
+    /// changes that.
     Refuses,
-    /// No whole record yet: a transcript being born, asked again on its next write.
+    /// No deciding record yet (a transcript being born, or a head that could not
+    /// be read), so it is judged again on its next walk.
     Unwritten,
 }
 
