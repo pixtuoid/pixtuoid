@@ -7,7 +7,7 @@ use super::walk::{SKIP_RESCAN_BYTES, park_if_truncated_below_cursor, scan_root, 
 use super::*;
 use crate::AgentId;
 use crate::source::claude_code::{cc_activity_recency, decode_cc_line};
-use crate::source::decoder::{accept_all_paths, default_id_from_path};
+use crate::source::decoder::{Head, accept_all_paths, default_id_from_path};
 use crate::source::first_sight::{Registration, first_sight_start};
 use crate::source::{AgentEvent, Transport};
 
@@ -772,6 +772,70 @@ async fn walk_jsonl_honors_the_path_filter() {
 }
 
 #[tokio::test]
+async fn a_refused_head_never_registers_and_an_unwritten_one_waits_for_its_record() {
+    fn head(bytes: &[u8]) -> Head {
+        match crate::source::admit::lines(crate::source::admit::whole(bytes)).next() {
+            None => Head::Unwritten,
+            Some(Ok(line)) if line.contains("\"header\"") => Head::Admits,
+            Some(_) => Head::Refuses,
+        }
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let sidecar = dir.path().join("journal.jsonl");
+    let born = dir.path().join("born.jsonl");
+    tokio::fs::write(&sidecar, "{\"type\":\"call\"}\n")
+        .await
+        .unwrap();
+    tokio::fs::write(&born, "{\"type\":\"header\"")
+        .await
+        .unwrap();
+
+    let source: Arc<str> = Arc::from("test");
+    let cursors = Arc::new(Mutex::new(HashMap::new()));
+    let seen = Arc::new(Mutex::new(HashMap::new()));
+    let live = Arc::new(Mutex::new(HashSet::new()));
+    let decoders = SourceDecoders {
+        head_filter: Some(head),
+        ..t_decoders()
+    };
+    let walk = async |tx: &TaggedSender| {
+        let ctx = WatchCtx {
+            source: &source,
+            cursors: &cursors,
+            seen: &seen,
+            tx,
+            window: Duration::from_secs(60),
+            live: &live,
+            follower: None,
+        };
+        walk_jsonl(dir.path(), decoders, &ctx, false).await;
+    };
+    let started = |events: Vec<(Transport, AgentEvent)>| -> Vec<AgentId> {
+        (events.into_iter())
+            .filter(|(_, ev)| matches!(ev, AgentEvent::SessionStart { .. }))
+            .map(|(_, ev)| ev.agent_id())
+            .collect()
+    };
+
+    assert_eq!(started(collected(walk).await), []);
+    assert_eq!(seen.lock().await.get(&sidecar), Some(&Sight::Refused));
+    assert!(
+        !cursors.lock().await.contains_key(&born),
+        "an unwritten head is asked again"
+    );
+
+    let append = |path: &Path, bytes: &str| {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        file.write_all(bytes.as_bytes()).unwrap();
+    };
+    append(&sidecar, "{\"type\":\"call\"}\n");
+    append(&born, "\n");
+    let id = |path: &Path| AgentId::from_parts("test", &default_id_from_path(path));
+    assert_eq!(started(collected(walk).await), [id(&born)]);
+}
+
+#[tokio::test]
 async fn an_oversized_append_revives_an_ended_transcript_only_on_life() {
     // The last row's final line is longer than the activity tail's window.
     let long_tool = format!(
@@ -1526,6 +1590,7 @@ fn t_decoders() -> SourceDecoders {
         activity_recency: super::no_activity_recency,
         id_derive: super::folded::FoldedDeriver::new(default_id_from_path),
         path_filter: accept_all_paths,
+        head_filter: None,
         cwd_derive: no_cwd_from_path,
         head_label: None,
     }

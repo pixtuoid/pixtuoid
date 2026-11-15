@@ -140,6 +140,22 @@ pub(crate) fn accept_all_paths(_p: &Path) -> bool {
     true
 }
 
+/// What a `.jsonl` file's opening bytes say of whether it is a transcript, for a
+/// source whose own loader decides that by content: a sibling with a
+/// transcript's path shape but a foreign schema is refused by what it holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Head {
+    /// It opens the way the source's transcripts do.
+    Admits,
+    /// Its first record proves it no transcript; nothing appended changes that.
+    Refuses,
+    /// No whole record yet: a transcript being born, asked again on its next write.
+    Unwritten,
+}
+
+/// Judges a file's opening bytes, its whole lines only (see [`Head`]).
+pub(crate) type HeadFilter = fn(&[u8]) -> Head;
+
 /// Narrow a raw JSON integer to a valid POSIX pid: `i32` range AND strictly
 /// positive — `kill(0)`/`kill(-n)` target process GROUPS, so a bogus or zero `_pid`
 /// would synthesize a phantom exit that flaps a LIVE gateway Down. Every JSON pid

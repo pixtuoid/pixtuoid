@@ -554,7 +554,7 @@ pub(crate) mod cc_probe;
 /// refresh, so an unbounded read lets a junk or runaway file balloon a per-scan
 /// allocation; truncated bytes just fail the caller's parse. The CAP stays at
 /// the call site, where its sizing rationale lives.
-#[cfg(all(unix, feature = "native"))]
+#[cfg(any(all(unix, feature = "native"), feature = "harness"))]
 pub(crate) fn read_bounded_bytes(path: &std::path::Path, cap: u64) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
     let file = std::fs::File::open(path)?;
@@ -562,7 +562,6 @@ pub(crate) fn read_bounded_bytes(path: &std::path::Path, cap: u64) -> std::io::R
     file.take(cap).read_to_end(&mut bytes)?;
     Ok(bytes)
 }
-#[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) mod admit;
 /// Claude Code transcript source: line/hook decoders + the `Source` adapter.
 pub mod claude_code;

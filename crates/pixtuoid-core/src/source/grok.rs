@@ -63,6 +63,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // Session dirs carry rewrite-on-resume siblings (chat_history /
             // rewind_points / events.jsonl) that must never be tailed.
             path_filter: is_updates_jsonl,
+            head_filter: None,
             // Always-None: grok lines carry no cwd — the URL-encoded group dir
             // does, applied via the watcher's cwd deriver.
             cwd_extractor: extract_grok_cwd,

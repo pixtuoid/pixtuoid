@@ -1,15 +1,19 @@
 //! The one rule for what the watcher reads of a source's tree: which entries are
 //! its transcripts (`classify`) and which bytes of one are its lines ([`lines`]).
 //!
-//! Built whenever `native` or `harness` is on, either alone being enough: the
-//! production watcher is behind `native` and the offline drivers behind
-//! `harness`, and the whole point is that both ask the same question. The
-//! TRAVERSAL stays with each caller — the watcher's is async and retires a
-//! vanished path's cursor, the harness's is a plain recursion.
+//! The entry rule is built whenever `native` or `harness` is on, either alone
+//! being enough: the production watcher is behind `native` and the offline
+//! drivers behind `harness`, and the whole point is that both ask the same
+//! question. The line rule is built in every build, as a source's head filter
+//! (a registry row's, so wasm32 too) reads its lines. The TRAVERSAL stays with
+//! each caller — the watcher's is async and retires a vanished path's cursor,
+//! the harness's is a plain recursion.
 
+#[cfg(any(feature = "native", feature = "harness"))]
 use std::path::Path;
 use std::str::Utf8Error;
 
+#[cfg(any(feature = "native", feature = "harness"))]
 /// What the walker should do with one directory entry.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Entry {
@@ -25,6 +29,7 @@ pub(crate) enum Entry {
     Skip,
 }
 
+#[cfg(any(feature = "native", feature = "harness"))]
 /// Classify one entry from its `symlink_metadata` and the source's own filter.
 ///
 /// A symlinked entry is refused before anything else: a directory link would
@@ -48,6 +53,7 @@ pub(crate) fn classify(
     }
 }
 
+#[cfg(any(feature = "native", feature = "harness"))]
 /// Whether a file at `path` is a transcript of the source whose filter is `admits`.
 pub(crate) fn is_transcript(path: &Path, admits: &dyn Fn(&Path) -> bool) -> bool {
     path.extension().and_then(|s| s.to_str()) == Some("jsonl") && admits(path)
@@ -81,7 +87,7 @@ pub(crate) fn first_whole_line(window: &[u8], from_start: bool) -> usize {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "native", feature = "harness")))]
 mod tests {
     use super::*;
 

@@ -27,6 +27,9 @@ pub(crate) enum Sight {
     /// re-vouch won't replay it however live the probe says the (still-open)
     /// transcript is.
     Ended,
+    /// Its opening bytes proved it no transcript (`decoder::Head::Refuses`), so
+    /// no read of it registers, however much is appended.
+    Refused,
 }
 
 impl Sight {

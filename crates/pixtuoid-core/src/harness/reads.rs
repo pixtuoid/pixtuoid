@@ -296,7 +296,7 @@ type Decoded = (
 fn events_of(source: &str, drive: &Drive, lines: &[Value], transcript: bool) -> Decoded {
     let d = drive.lines(lines.iter().map(Value::to_string));
     let parent = registry::parent_extractor_for(source);
-    let first_sight = lines
+    let mut first_sight: Vec<String> = lines
         .iter()
         .filter(|_| transcript)
         .map(|l| {
@@ -307,6 +307,11 @@ fn events_of(source: &str, drive: &Drive, lines: &[Value], transcript: bool) -> 
             )
         })
         .collect();
+    // Whether the watcher admits the file at all is a first-sight read too.
+    if let Some(filter) = registry::head_filter_for(source).filter(|_| transcript) {
+        let head: String = lines.iter().map(|l| format!("{l}\n")).collect();
+        first_sight.push(format!("{:?}", filter(head.as_bytes())));
+    }
     let presence = lines
         .iter()
         .map(|line| registry::presence_of(line.as_object()?)?.1.ok())

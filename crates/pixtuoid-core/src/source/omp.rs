@@ -23,7 +23,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
+    Head, MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
     generic_tool_display, non_empty,
 };
 use crate::source::registry::{
@@ -44,7 +44,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Oh My Pi",
     label_prefix: "om",
-    verified_version: "18.20.0",
+    verified_version: "18.20.2",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),
@@ -55,6 +55,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // sessions.
             id_from_path: omp_id_from_path,
             path_filter: admits_transcript,
+            head_filter: Some(omp_head),
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]
@@ -97,14 +98,53 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: native::NATIVE,
 };
 
-/// omp's change journal shares a session's artifacts directory with its
-/// subagent transcripts, but its records are tool calls and file writes, never a
-/// session (`JOURNAL_FILE` in `packages/coding-agent/src/commit/selective/journal.ts`
-/// at v18.20.2). omp's own sub-session scan drops it, its first record being no
-/// `session` header (`session/sub-sessions.ts:111-131`, `session-loader.ts:147-149`);
-/// read as a transcript, it was a subagent that never ended (#2087).
+/// An advisor's transcript shares a session's artifacts directory with its
+/// subagents', and omp's own sub-session scan leaves it out by name: an advisor
+/// reviews the session, it is no subagent of it (`isAdvisorTranscriptName` in
+/// `advisor/transcript-recorder.ts:29-35`, read at `session/sub-sessions.ts:101-106`,
+/// v18.20.2).
 pub(crate) fn admits_transcript(path: &Path) -> bool {
-    path.file_name().and_then(|s| s.to_str()) != Some("changes.jsonl")
+    !path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .is_some_and(|name| name.starts_with("__advisor."))
+}
+
+/// omp's loader takes a file as a session only when its first record, past the
+/// optional title slot on line 1 and any malformed line, is a `session` header
+/// with a string `id` (`parseSessionContent` and `isValidSessionHeader`,
+/// `session/session-loader.ts:147-181` at v18.20.2); its sub-session scan drops
+/// any other (`session/sub-sessions.ts:111-131`). The change journal beside each
+/// session's subagents opens with a tool call (`commit/selective/journal.ts`), so
+/// it is refused, as a sidecar omp adds later will be (#2087).
+pub(crate) fn omp_head(head: &[u8]) -> Head {
+    use crate::source::admit::{lines, whole};
+    let parse = |line: std::result::Result<&str, std::str::Utf8Error>| {
+        line.ok()
+            .and_then(|l| serde_json::from_str::<Value>(l).ok())
+    };
+    let mut records = lines(whole(head)).map(parse).peekable();
+    if records
+        .peek()
+        .is_some_and(|first| first.as_ref().is_some_and(|v| v["type"] == TITLE))
+    {
+        records.next();
+    }
+    let mut malformed = false;
+    for record in records {
+        match record {
+            Some(v) => {
+                let header = v["type"] == SESSION && v["id"].is_string();
+                return if header { Head::Admits } else { Head::Refuses };
+            }
+            None => malformed = true,
+        }
+    }
+    if malformed {
+        Head::Refuses
+    } else {
+        Head::Unwritten
+    }
 }
 
 /// omp's SESSIONS root, mirroring `dirs.ts` — deliberately NOT
@@ -1301,11 +1341,27 @@ mod tests {
     }
 
     #[test]
-    fn the_change_journal_beside_a_session_is_not_a_transcript() {
-        let journal = Path::new(ROOT).with_extension("").join("changes.jsonl");
-        assert!(!admits_transcript(&journal));
-        for path in [ROOT, CHILD, GRANDCHILD] {
-            assert!(admits_transcript(Path::new(path)), "{path}");
+    fn only_a_session_header_after_the_title_slot_opens_a_transcript() {
+        let slot = r#"{"type":"title","v":1,"title":"","updatedAt":"2026-11-15T15:03:28.516Z","pad":"  "}"#;
+        let header = r#"{"type":"session","version":3,"id":"01a1dfbc-1804-7305-8a93-79095dc0a8e3","cwd":"/p"}"#;
+        let journal = r#"{"type":"call","agent":"Main","tool":"bash","start":1,"label":"cat NOTE.txt","end":2}"#;
+        let rows: &[(String, Head)] = &[
+            (format!("{slot}\n{header}\n"), Head::Admits),
+            (format!("{header}\n"), Head::Admits),
+            (format!("not json\n{header}\n"), Head::Admits),
+            (format!("{journal}\n"), Head::Refuses),
+            (format!("{slot}\n{journal}\n"), Head::Refuses),
+            (
+                r#"{"type":"session","id":7}"#.to_owned() + "\n",
+                Head::Refuses,
+            ),
+            ("not json\n".to_owned(), Head::Refuses),
+            (format!("{slot}\n"), Head::Unwritten),
+            (format!("{slot}\n{header}"), Head::Unwritten),
+            (String::new(), Head::Unwritten),
+        ];
+        for (head, want) in rows {
+            assert_eq!(omp_head(head.as_bytes()), *want, "{head:?}");
         }
     }
 

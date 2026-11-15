@@ -12,15 +12,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::source::registry;
 
-/// Every `.jsonl` under `root` that this source's registry `path_filter` admits,
-/// recursed without following a symlinked entry.
+/// Every `.jsonl` under `root` that this source's registry `path_filter` and
+/// `head_filter` admit, recursed without following a symlinked entry.
 ///
-/// The per-entry rule is `admit::classify`, shared with the production watcher —
-/// the recorder COMMITS one of these files as a golden, so a predicate it did
-/// not apply would let a fixture teach the decoder a shape production never
-/// reads. Only the traversal is local.
+/// The per-entry rule is `admit::classify` and the row's head filter, shared with
+/// the production watcher — the recorder COMMITS one of these files as a golden,
+/// so a predicate it did not apply would let a fixture teach the decoder a shape
+/// production never reads. Only the traversal is local; a file whose head is
+/// still unwritten holds nothing to record.
 pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
-    fn walk(admits: &dyn Fn(&Path) -> bool, dir: &Path, out: &mut Vec<PathBuf>) {
+    fn walk(
+        admits: &dyn Fn(&Path) -> bool,
+        head: Option<crate::source::decoder::HeadFilter>,
+        dir: &Path,
+        out: &mut Vec<PathBuf>,
+    ) {
         let Ok(rd) = std::fs::read_dir(dir) else {
             return;
         };
@@ -30,15 +36,24 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
                 continue;
             };
             match crate::source::admit::classify(&meta, &p, admits) {
-                crate::source::admit::Entry::Recurse => walk(admits, &p, out),
-                crate::source::admit::Entry::Take => out.push(p),
+                crate::source::admit::Entry::Recurse => walk(admits, head, &p, out),
+                crate::source::admit::Entry::Take
+                    if head.is_none_or(|filter| admits_head(&p, filter)) =>
+                {
+                    out.push(p)
+                }
                 _ => {}
             }
         }
     }
+    fn admits_head(path: &Path, filter: crate::source::decoder::HeadFilter) -> bool {
+        let cap = crate::source::first_sight::HEAD_BYTES as u64;
+        crate::source::read_bounded_bytes(path, cap)
+            .is_ok_and(|head| filter(&head) == crate::source::decoder::Head::Admits)
+    }
     let admits = registry::path_filter_for(source);
     let mut out = Vec::new();
-    walk(&admits, root, &mut out);
+    walk(&admits, registry::head_filter_for(source), root, &mut out);
     out
 }
 
@@ -1172,6 +1187,17 @@ mod tests {
         let got = transcripts_under("grok", d.path());
         assert_eq!(got.len(), 1, "only the transcript is admitted, got {got:?}");
         assert!(got[0].ends_with("updates.jsonl"));
+    }
+
+    #[test]
+    fn the_walk_applies_the_sources_own_head_filter() {
+        // omp's change journal shares its subagents' directory and path shape.
+        let d = tempfile::tempdir().expect("tempdir");
+        let header = "{\"type\":\"session\",\"id\":\"01a1dfbc\",\"cwd\":\"/p\"}\n";
+        std::fs::write(d.path().join("Reader.jsonl"), header).expect("write");
+        std::fs::write(d.path().join("changes.jsonl"), "{\"type\":\"call\"}\n").expect("write");
+        let got = transcripts_under("omp", d.path());
+        assert_eq!(got, [d.path().join("Reader.jsonl")]);
     }
 
     #[test]
