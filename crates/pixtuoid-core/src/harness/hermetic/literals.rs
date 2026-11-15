@@ -889,6 +889,7 @@ mod tests {
         item("hermes.rs", "resolve_hermes_home", PATH_AXIS),
         item("hermes.rs", "expand_home", PATH_AXIS),
         item("hermes.rs", "python_home", PATH_AXIS),
+        item("omp.rs", "admits_transcript", PATH_AXIS),
         item("omp.rs", "AGENT_SUBDIR", PATH_AXIS),
         item("omp.rs", "EXTENSIONS_SUBDIR", PATH_AXIS),
         item("omp.rs", "PROFILES_SUBDIR", PATH_AXIS),

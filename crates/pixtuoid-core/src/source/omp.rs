@@ -23,8 +23,8 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd,
-    first_non_blank_str, generic_tool_display, non_empty,
+    MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
+    generic_tool_display, non_empty,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -54,7 +54,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // The nested stem CHAIN, so a subagent task id can't collide across
             // sessions.
             id_from_path: omp_id_from_path,
-            path_filter: accept_all_paths,
+            path_filter: admits_transcript,
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]
@@ -96,6 +96,16 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     #[cfg(feature = "native")]
     native: native::NATIVE,
 };
+
+/// omp's change journal shares a session's artifacts directory with its
+/// subagent transcripts, but its records are tool calls and file writes, never a
+/// session (`JOURNAL_FILE` in `packages/coding-agent/src/commit/selective/journal.ts`
+/// at v18.20.2). omp's own sub-session scan drops it, its first record being no
+/// `session` header (`session/sub-sessions.ts:111-131`, `session-loader.ts:147-149`);
+/// read as a transcript, it was a subagent that never ended (#2087).
+pub(crate) fn admits_transcript(path: &Path) -> bool {
+    path.file_name().and_then(|s| s.to_str()) != Some("changes.jsonl")
+}
 
 /// omp's SESSIONS root, mirroring `dirs.ts` — deliberately NOT
 /// `omp_agent_dir().join("sessions")`, because the XDG redirect FLATTENS the
@@ -1288,6 +1298,15 @@ mod tests {
             omp_parent_key_from_path(Path::new(GRANDCHILD)),
             Some(format!("{ROOT_KEY}/Alpha"))
         );
+    }
+
+    #[test]
+    fn the_change_journal_beside_a_session_is_not_a_transcript() {
+        let journal = Path::new(ROOT).with_extension("").join("changes.jsonl");
+        assert!(!admits_transcript(&journal));
+        for path in [ROOT, CHILD, GRANDCHILD] {
+            assert!(admits_transcript(Path::new(path)), "{path}");
+        }
     }
 
     #[test]
