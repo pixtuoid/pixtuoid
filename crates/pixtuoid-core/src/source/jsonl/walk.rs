@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
-use crate::source::decoder::{Head, HeadFilter};
+use crate::source::decoder::{HeadFilter, HeadVerdict};
 use crate::source::first_sight::{
     HEAD_BYTES, HeadFields, Life, Registration, Sight, each_life, extract_head_fields,
     first_sight_start, holds_life, last_life, transcript_session,
@@ -315,10 +315,10 @@ pub(super) async fn walk_jsonl(
             return;
         }
         if !cursors.lock().await.contains_key(path) {
-            match head_of(path, filter).await {
-                Head::Admits => {}
-                Head::Unwritten => return,
-                Head::Refuses => {
+            match judge_head(path, filter).await {
+                HeadVerdict::Admits => {}
+                HeadVerdict::Unwritten => return,
+                HeadVerdict::Refuses => {
                     seen.lock().await.insert(path.to_path_buf(), Sight::Refused);
                     return;
                 }
@@ -685,15 +685,15 @@ pub(super) const HEAD_FIRST_READ: usize = 16 * 1024;
 
 /// `path`'s opening bytes judged by `filter`: the first [`HEAD_FIRST_READ`], then
 /// up to [`HEAD_BYTES`] only when those hold no deciding record. A read that
-/// fails leaves it [`Head::Unwritten`], asked again on the path's next walk.
-async fn head_of(path: &Path, filter: HeadFilter) -> Head {
+/// fails leaves it [`HeadVerdict::Unwritten`], asked again on the path's next walk.
+async fn judge_head(path: &Path, filter: HeadFilter) -> HeadVerdict {
     let Some(first) = read_prefix(path, HEAD_FIRST_READ).await else {
-        return Head::Unwritten;
+        return HeadVerdict::Unwritten;
     };
     match filter(&first) {
-        Head::Unwritten if first.len() == HEAD_FIRST_READ => read_head(path)
+        HeadVerdict::Unwritten if first.len() == HEAD_FIRST_READ => read_head(path)
             .await
-            .map_or(Head::Unwritten, |head| filter(&head)),
+            .map_or(HeadVerdict::Unwritten, |head| filter(&head)),
         verdict => verdict,
     }
 }

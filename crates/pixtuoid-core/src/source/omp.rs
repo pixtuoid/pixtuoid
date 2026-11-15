@@ -23,7 +23,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    Head, MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
+    HeadVerdict, MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
     generic_tool_display, non_empty,
 };
 use crate::source::registry::{
@@ -116,9 +116,11 @@ pub(crate) fn admits_transcript(path: &Path) -> bool {
 /// `session/session-loader.ts:147-181` at v18.20.2); its sub-session scan drops
 /// any other (`session/sub-sessions.ts:111-131`). The change journal beside each
 /// session's subagents opens with a tool call (`commit/selective/journal.ts`), so
-/// it is refused, as a sidecar omp adds later will be (#2087). A prefix with no
-/// parseable record decides nothing: the record that does may lie past it.
-pub(crate) fn omp_head(head: &[u8]) -> Head {
+/// it is refused (#2087), as is a later sidecar with no session header; one omp
+/// writes as a session and leaves out by name, as the advisor's, needs a name
+/// rule. A prefix with no parseable record decides nothing: the record that does
+/// may lie past it.
+pub(crate) fn omp_head(head: &[u8]) -> HeadVerdict {
     use crate::source::admit::{lines, whole};
     let parse = |line: std::result::Result<&str, std::str::Utf8Error>| {
         line.ok()
@@ -132,9 +134,9 @@ pub(crate) fn omp_head(head: &[u8]) -> Head {
         records.next();
     }
     match records.flatten().next() {
-        Some(v) if v["type"] == SESSION && v["id"].is_string() => Head::Admits,
-        Some(_) => Head::Refuses,
-        None => Head::Unwritten,
+        Some(v) if v["type"] == SESSION && v["id"].is_string() => HeadVerdict::Admits,
+        Some(_) => HeadVerdict::Refuses,
+        None => HeadVerdict::Unwritten,
     }
 }
 
@@ -1336,20 +1338,20 @@ mod tests {
         let slot = r#"{"type":"title","v":1,"title":"","updatedAt":"2026-11-15T15:03:28.516Z","pad":"  "}"#;
         let header = r#"{"type":"session","version":3,"id":"01a1dfbc-1804-7305-8a93-79095dc0a8e3","cwd":"/p"}"#;
         let journal = r#"{"type":"call","agent":"Main","tool":"bash","start":1,"label":"cat NOTE.txt","end":2}"#;
-        let rows: &[(String, Head)] = &[
-            (format!("{slot}\n{header}\n"), Head::Admits),
-            (format!("{header}\n"), Head::Admits),
-            (format!("not json\n{header}\n"), Head::Admits),
-            (format!("{journal}\n"), Head::Refuses),
-            (format!("{slot}\n{journal}\n"), Head::Refuses),
+        let rows: &[(String, HeadVerdict)] = &[
+            (format!("{slot}\n{header}\n"), HeadVerdict::Admits),
+            (format!("{header}\n"), HeadVerdict::Admits),
+            (format!("not json\n{header}\n"), HeadVerdict::Admits),
+            (format!("{journal}\n"), HeadVerdict::Refuses),
+            (format!("{slot}\n{journal}\n"), HeadVerdict::Refuses),
             (
                 r#"{"type":"session","id":7}"#.to_owned() + "\n",
-                Head::Refuses,
+                HeadVerdict::Refuses,
             ),
-            ("not json\n".to_owned(), Head::Unwritten),
-            (format!("{slot}\n"), Head::Unwritten),
-            (format!("{slot}\n{header}"), Head::Unwritten),
-            (String::new(), Head::Unwritten),
+            ("not json\n".to_owned(), HeadVerdict::Unwritten),
+            (format!("{slot}\n"), HeadVerdict::Unwritten),
+            (format!("{slot}\n{header}"), HeadVerdict::Unwritten),
+            (String::new(), HeadVerdict::Unwritten),
         ];
         for (head, want) in rows {
             assert_eq!(omp_head(head.as_bytes()), *want, "{head:?}");

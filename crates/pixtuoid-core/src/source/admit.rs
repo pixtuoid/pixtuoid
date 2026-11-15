@@ -1,5 +1,6 @@
 //! The one rule for what the watcher reads of a source's tree: which entries are
-//! its transcripts (`classify`) and which bytes of one are its lines ([`lines`]).
+//! its transcripts by path (`classify`; a row's head filter decides the rest by
+//! content) and which bytes of one are its lines ([`lines`]).
 //!
 //! The entry rule is built whenever `native` or `harness` is on, either alone
 //! being enough: the production watcher is behind `native` and the offline
@@ -19,13 +20,13 @@ use std::str::Utf8Error;
 pub(crate) enum Entry {
     /// A real directory — descend.
     Recurse,
-    /// A transcript this source watches.
+    /// A file this source's path rule admits.
     Take,
     /// A symlink of either kind. Its own variant because the watcher logs this
     /// case and only this case — folded into `Skip`, the caller has to re-ask
     /// `is_symlink()` to tell them apart.
     SkipSymlink,
-    /// Not a transcript: wrong extension, or the source's filter declined it.
+    /// Not a transcript: wrong extension, or the source's path filter declined it.
     Skip,
 }
 

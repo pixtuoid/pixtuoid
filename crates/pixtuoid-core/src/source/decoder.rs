@@ -144,7 +144,7 @@ pub(crate) fn accept_all_paths(_p: &Path) -> bool {
 /// source whose own loader decides that by content: a sibling with a
 /// transcript's path shape but a foreign schema is refused by what it holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Head {
+pub(crate) enum HeadVerdict {
     /// It opens the way the source's transcripts do.
     Admits,
     /// Its first record proves it no transcript; nothing appended changes that.
@@ -153,8 +153,8 @@ pub(crate) enum Head {
     Unwritten,
 }
 
-/// Judges a file's opening bytes, its whole lines only (see [`Head`]).
-pub(crate) type HeadFilter = fn(&[u8]) -> Head;
+/// Judges a file's opening bytes, its whole lines only (see [`HeadVerdict`]).
+pub(crate) type HeadFilter = fn(&[u8]) -> HeadVerdict;
 
 /// Narrow a raw JSON integer to a valid POSIX pid: `i32` range AND strictly
 /// positive — `kill(0)`/`kill(-n)` target process GROUPS, so a bogus or zero `_pid`

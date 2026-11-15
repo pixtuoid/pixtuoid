@@ -7,7 +7,7 @@ use super::walk::{SKIP_RESCAN_BYTES, park_if_truncated_below_cursor, scan_root, 
 use super::*;
 use crate::AgentId;
 use crate::source::claude_code::{cc_activity_recency, decode_cc_line};
-use crate::source::decoder::{Head, accept_all_paths, default_id_from_path};
+use crate::source::decoder::{HeadVerdict, accept_all_paths, default_id_from_path};
 use crate::source::first_sight::{Registration, first_sight_start};
 use crate::source::{AgentEvent, Transport};
 
@@ -773,11 +773,14 @@ async fn walk_jsonl_honors_the_path_filter() {
 
 #[tokio::test]
 async fn a_refused_head_never_registers_and_an_unwritten_one_waits_for_its_record() {
-    fn head(bytes: &[u8]) -> Head {
-        match crate::source::admit::lines(crate::source::admit::whole(bytes)).next() {
-            None => Head::Unwritten,
-            Some(Ok(line)) if line.contains("\"header\"") => Head::Admits,
-            Some(_) => Head::Refuses,
+    // A title line decides nothing, as omp's title slot doesn't.
+    fn head(bytes: &[u8]) -> HeadVerdict {
+        let mut lines = crate::source::admit::lines(crate::source::admit::whole(bytes))
+            .filter(|line| !line.as_ref().is_ok_and(|l| l.contains("\"title\"")));
+        match lines.next() {
+            None => HeadVerdict::Unwritten,
+            Some(Ok(line)) if line.contains("\"header\"") => HeadVerdict::Admits,
+            Some(_) => HeadVerdict::Refuses,
         }
     }
     let dir = tempfile::tempdir().unwrap();
@@ -786,7 +789,7 @@ async fn a_refused_head_never_registers_and_an_unwritten_one_waits_for_its_recor
     tokio::fs::write(&sidecar, "{\"type\":\"call\"}\n")
         .await
         .unwrap();
-    tokio::fs::write(&born, "{\"type\":\"header\"")
+    tokio::fs::write(&born, "{\"type\":\"title\"}\n")
         .await
         .unwrap();
 
@@ -830,7 +833,7 @@ async fn a_refused_head_never_registers_and_an_unwritten_one_waits_for_its_recor
         file.write_all(bytes.as_bytes()).unwrap();
     };
     append(&sidecar, "{\"type\":\"call\"}\n");
-    append(&born, "\n");
+    append(&born, "{\"type\":\"header\"}\n");
     let id = |path: &Path| AgentId::from_parts("test", &default_id_from_path(path));
     assert_eq!(started(collected(walk).await), [id(&born)]);
 }

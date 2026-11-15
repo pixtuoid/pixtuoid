@@ -109,7 +109,7 @@ mod folded {
 struct WatchCtx<'a> {
     source: &'a Arc<str>,
     cursors: &'a Arc<Mutex<HashMap<PathBuf, u64>>>,
-    /// First-sight claims, by path.
+    /// First-sight state, by path: a claim, an end, or a head refusal.
     seen: &'a Arc<Mutex<HashMap<PathBuf, Sight>>>,
     tx: &'a TaggedSender,
     /// Recency window for the first-sight gate (an older file is seeded at EOF

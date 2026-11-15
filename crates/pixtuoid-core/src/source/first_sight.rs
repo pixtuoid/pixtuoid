@@ -15,8 +15,8 @@ use crate::source::decoder::{CwdExtractor, ParentExtractor, SUBAGENTS_DIR};
 /// reads a whole multi-MB transcript.
 pub(crate) const HEAD_BYTES: usize = 1 << 20;
 
-/// What a transcript's first sight still holds. Absent = never registered, or
-/// fully retired by an exit un-claim.
+/// What a path's first sight still holds. Absent = never seen, or fully retired
+/// by an exit un-claim.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Sight {
     /// Registered as its reads last resolved it: a read [`Sight::registers`]
@@ -27,7 +27,7 @@ pub(crate) enum Sight {
     /// re-vouch won't replay it however live the probe says the (still-open)
     /// transcript is.
     Ended,
-    /// Its opening bytes proved it no transcript (`decoder::Head::Refuses`), so
+    /// Its opening bytes proved it no transcript (`decoder::HeadVerdict::Refuses`), so
     /// no read of it registers, however much is appended. Only the watcher keeps
     /// a refusal: the offline walk never lists the file.
     #[cfg(feature = "native")]

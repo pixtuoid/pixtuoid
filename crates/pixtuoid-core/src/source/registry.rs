@@ -205,7 +205,7 @@ pub(crate) struct Transcript {
     /// `harness::Drive` — ONE derivation, so a driven transcript keys exactly as
     /// production does. `default_id_from_path` is the path-keyed default.
     pub(crate) id_from_path: IdDeriver,
-    /// WHICH `.jsonl` files under this source's root are its transcripts. Read
+    /// WHICH `.jsonl` files under this source's root are its transcripts by path. Read
     /// by the JSONL watcher AND by any offline driver that WALKS a tree — a
     /// census over the unfiltered set counts files production never reads.
     /// `accept_all_paths` is the admit-everything default.
@@ -398,8 +398,8 @@ impl SourceDescriptor {
         self.transcript().map(|t| t.id_from_path)
     }
 
-    /// Which `.jsonl` files are this source's transcripts (`None` without a
-    /// transcript tree to walk).
+    /// Which `.jsonl` files are this source's transcripts by path (`None` without
+    /// a transcript tree to walk).
     #[cfg(feature = "harness")]
     pub(crate) fn path_filter(&self) -> Option<PathFilter> {
         self.transcript().map(|t| t.path_filter)
@@ -589,7 +589,7 @@ pub fn id_deriver_for(source: &str) -> IdDeriver {
         .unwrap_or(default_id_from_path)
 }
 
-/// Which `.jsonl` files under this source's root ARE its transcripts: an offline
+/// Which `.jsonl` files under this source's root ARE its transcripts by path: an offline
 /// driver that walks a tree must select the SAME files the watcher's row does, or
 /// its census counts what production never reads.
 /// Admits everything for an unregistered source name.

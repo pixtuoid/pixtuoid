@@ -49,7 +49,7 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
     fn admits_head(path: &Path, filter: crate::source::decoder::HeadFilter) -> bool {
         let cap = crate::source::first_sight::HEAD_BYTES as u64;
         crate::source::read_bounded_bytes(path, cap)
-            .is_ok_and(|head| filter(&head) == crate::source::decoder::Head::Admits)
+            .is_ok_and(|head| filter(&head) == crate::source::decoder::HeadVerdict::Admits)
     }
     let admits = registry::path_filter_for(source);
     let mut out = Vec::new();
