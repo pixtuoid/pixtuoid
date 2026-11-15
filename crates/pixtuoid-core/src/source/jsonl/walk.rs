@@ -308,8 +308,9 @@ pub(super) async fn walk_jsonl(
     if entry != Entry::Take {
         return;
     }
-    // Judged once, before the path is known: an admitted file takes a cursor,
-    // and a refused one stays refused however it grows.
+    // Judged until it decides, and only before the path is known: an admitted
+    // file takes a cursor, a refused one stays refused however it grows, and an
+    // undecided one is asked again on its next walk.
     if let Some(filter) = decoders.head_filter {
         if seen.lock().await.get(path) == Some(&Sight::Refused) {
             return;
