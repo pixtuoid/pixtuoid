@@ -39,9 +39,9 @@ jobs:
       - if: steps.lockfile.outputs.changed == 'true'
         run: npm run audit
 
-  # A PR that changes the page or its web crates runs `check` on the light
-  # tier too: the queue can merge it on that tier alone, which is how #1978
-  # reached main past the landing page's Lighthouse budget.
+  # A PR that changes the page, a doc it renders or its web crates runs `check`
+  # on the light tier too: the queue can merge it on that tier alone, which is
+  # how #1978 reached main past the landing page's Lighthouse budget.
   scope:
     name: site runtime in scope
     runs-on: ubuntu-latest
@@ -57,7 +57,7 @@ jobs:
       - uses: ./.github/actions/path-changed
         id: scope
         with:
-          paths: site crates/pixtuoid-web crates/pixtuoid-web-music .github/workflows/site.yml
+          paths: site docs/CONFIGURATION.md docs/ARCHITECTURE.md docs/CONTRIBUTING.md crates/pixtuoid-web crates/pixtuoid-web-music .github/workflows/site.yml
 
   check:
     name: demos · build · e2e
