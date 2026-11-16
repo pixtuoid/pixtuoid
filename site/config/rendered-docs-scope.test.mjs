@@ -15,8 +15,8 @@ test("site.yml's scope paths name exactly the docs content.config.ts renders", (
   // A loader the regex cannot read would drop out of both sides of the comparison below.
   assert.equal(
     docs.length,
-    config.match(/\bglob\(/g)?.length,
-    "every glob( loader in content.config.ts must be a one-line `pattern: '…', base: '../docs'`"
+    config.match(/['"]\.\.\/docs\/?['"]/g)?.length,
+    "every loader naming '../docs' in content.config.ts must be a one-line `pattern: '…', base: '../docs'`"
   );
   const scope = /id: scope\n\s+with:(?:\n\s+#.*)*\n\s+paths: (.+)/.exec(
     read('../../.github/workflows/site.yml')
