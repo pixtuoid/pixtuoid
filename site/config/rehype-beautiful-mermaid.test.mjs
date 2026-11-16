@@ -42,10 +42,20 @@ function run(tree) {
   return tree;
 }
 
+function find(node, test) {
+  if (test(node)) return node;
+  for (const c of node.children ?? []) {
+    const hit = find(c, test);
+    if (hit) return hit;
+  }
+}
+const svgOf = (tree) => find(tree, (n) => n.tagName === 'svg');
+const classed = (name) => (n) => n.properties?.className?.includes(name);
+
 test('a ```mermaid block becomes one inline <svg> with no client-side script', () => {
   const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });
   assert.equal(tree.children.length, 1);
-  const svg = tree.children[0];
+  const svg = svgOf(tree);
   assert.equal(svg.tagName, 'svg');
   assert.ok(textOf(svg).includes('Reducer::apply'), 'node labels render as text');
   assert.equal(hasElement(svg, 'script'), false);
@@ -53,7 +63,7 @@ test('a ```mermaid block becomes one inline <svg> with no client-side script', (
 
 test('accTitle / accDescr become the <title>/<desc> the SVG is labelled by, not nodes', () => {
   const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });
-  const svg = tree.children[0];
+  const svg = svgOf(tree);
   const [title, desc] = svg.children;
   assert.equal(title.tagName, 'title');
   assert.equal(textOf(title), 'pixtuoid data flow');
@@ -74,7 +84,7 @@ function stylesheetOf(svg) {
 
 test('colors are the page theme: the root declares no --bg/--fg of its own', () => {
   const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });
-  const svg = tree.children[0];
+  const svg = svgOf(tree);
   assert.doesNotMatch(String(svg.properties.style ?? ''), /--(bg|fg)\s*:/);
   const sheet = stylesheetOf(svg);
   assert.match(sheet, /var\(--bg\)/);
@@ -84,7 +94,7 @@ test('colors are the page theme: the root declares no --bg/--fg of its own', () 
 
 test('the stylesheet fetches nothing: no @import, no URL (CSP style-src/font-src self)', () => {
   const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });
-  const svg = tree.children[0];
+  const svg = svgOf(tree);
   assert.doesNotMatch(stylesheetOf(svg), /@import|https?:/);
   const tree_ = JSON.stringify({ ...svg, properties: { ...svg.properties, xmlns: undefined } });
   assert.doesNotMatch(tree_, /https?:|url\((?!#)/, 'nothing in the tree points off-page');
@@ -101,7 +111,7 @@ test('the committed architecture diagram renders every subgraph, node and edge i
   const doc = readFileSync(new URL('../../docs/ARCHITECTURE.md', import.meta.url), 'utf8');
   const source = /```mermaid\n([\s\S]*?)```/.exec(doc)[1];
   const tree = run({ type: 'root', children: [codeBlock('mermaid', source)] });
-  const svg = tree.children[0];
+  const svg = svgOf(tree);
   const withClass = (name) => (n) =>
     n.type === 'element' && (n.properties?.className ?? []).includes(name);
   assert.equal(count(svg, withClass('subgraph')), (source.match(/^\s*subgraph\s/gm) ?? []).length);
@@ -110,6 +120,24 @@ test('the committed architecture diagram renders every subgraph, node and edge i
     count(svg, (n) => n.type === 'element' && n.tagName === 'polyline'),
     source.match(/->/g).length
   );
+});
+
+test('the diagram sits in a figure: a bar, then a body holding it at its drawn size', () => {
+  const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });
+  const [figure] = tree.children;
+  assert.deepEqual(figure.properties.className, ['fig', 'fig--flow']);
+  const [bar, body] = figure.children;
+  assert.deepEqual(bar.properties.className, ['fig__bar']);
+  assert.deepEqual(body.properties.className, ['fig__body']);
+  const svg = svgOf(body);
+  assert.match(svg.properties.style, new RegExp(`min-width:${svg.properties.width}px$`));
+});
+
+test('the nodes the path starts and ends at are marked', () => {
+  const src = `flowchart LR\n  accTitle: t\n  accDescr: d\n  A --> B --> C\n`;
+  const svg = svgOf(run({ type: 'root', children: [codeBlock('mermaid', src)] }));
+  const ends = svg.children.filter(classed('fig__end')).map((n) => n.properties.dataId);
+  assert.deepEqual(ends, ['A', 'C']);
 });
 
 test('a non-mermaid code block is left alone', () => {

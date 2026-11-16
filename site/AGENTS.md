@@ -43,8 +43,8 @@ the mechanism; `pages.yml`'s pins carry their own.
 
 **Docs shell**: the doc routes (`src/docs.json` is the roster) mount the
 Statusline doc variant (no PR feed fetch); `Docs.astro`'s sidebar reads the
-one `FLOORS` manifest. `<!-- figure: <kind> -->` above a doc's table or Mermaid
-block draws it as a figure (`config/rehype-figures.mjs`, whose header owns it).
+one `FLOORS` manifest. `<!-- figure: <kind> -->` above a doc's table draws it
+as a figure (`config/rehype-figures.mjs`, whose header owns it).
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
 unit-tested, registered AFTER `rehypeRepoLinks`). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its

@@ -35,37 +35,12 @@ test('cards turn each row into a role card that keeps its links, and the marker 
     nl,
     table(CARDS, ['<a href="x">The CI review</a>', 'Posting a <code>verdict</code>']),
   ]);
-  assert.ok(!tree.children.some((c) => c.type === 'raw'));
+  // The marker and the table are gone: the figure is the one copy on the page.
+  assert.deepEqual(tree.children, [figure(tree)]);
   assert.deepEqual(figure(tree).properties.className, ['fig', 'fig--cards']);
-  const card = byClass(tree, 'fig-cards').children[0];
+  const card = byClass(tree, 'fig__cards').children[0];
   assert.equal(byClass(card, 'fig-card__role').children[0].tagName, 'a');
   assert.equal(toText(byClass(card, 'fig-card__acts')), 'Posting a verdict');
-});
-
-test('a flow marker wraps the diagram the Mermaid plugin already drew', () => {
-  const svg = html('<svg role="img"><g></g></svg>');
-  const tree = run([marker('flow'), nl, svg]);
-  assert.deepEqual(figure(tree).properties.className, ['fig', 'fig--flow']);
-  assert.ok(byClass(tree, 'fig__body').children.includes(svg));
-});
-
-test('a flow keeps its diagram at its drawn size inside a body that scrolls', () => {
-  const svg = html('<svg width="790.9" height="188" style="--x:1"></svg>');
-  const body = byClass(run([marker('flow'), nl, svg]), 'fig__body');
-  assert.ok(body.children.includes(svg));
-  assert.equal(svg.properties.style, '--x:1;min-width:790.9px');
-});
-
-test('a flow marks the nodes its path starts and ends at', () => {
-  const svg = html(
-    '<svg width="1"><polyline class="edge" data-from="A" data-to="B"></polyline><polyline class="edge" data-from="B" data-to="C"></polyline>' +
-      '<g class="node" data-id="A"></g><g class="node" data-id="B"></g><g class="node" data-id="C"></g></svg>'
-  );
-  run([marker('flow'), nl, svg]);
-  const ends = svg.children
-    .filter((c) => c.properties?.className?.includes('fig-flow__end'))
-    .map((c) => c.properties.dataId);
-  assert.deepEqual(ends, ['A', 'C']);
 });
 
 test('an unknown kind fails the build', () => {
@@ -76,10 +51,6 @@ test('a marker must sit right above what it marks', () => {
   assert.throws(
     () => run([marker('cards'), nl, html('<p>text</p>'), table(CARDS)]),
     /figure "cards" needs a table/
-  );
-  assert.throws(
-    () => run([marker('flow'), nl, table(CARDS)]),
-    /figure "flow" needs a Mermaid diagram/
   );
 });
 
@@ -101,5 +72,5 @@ test("through Astro's own markdown processor, a marked table becomes a figure", 
     '<!-- figure: cards -->\n\n| Role | Acts by |\n| - | - |\n| a | b |\n'
   );
   assert.match(code, /<figure class="fig fig--cards">/);
-  assert.doesNotMatch(code, /figure: cards/);
+  assert.doesNotMatch(code, /figure: cards|<table/);
 });

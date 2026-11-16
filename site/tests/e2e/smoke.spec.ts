@@ -2488,73 +2488,77 @@ atOfficeMoments(
   }
 );
 
-test('the architecture diagram: every SVG text clears WCAG AA and every box has a 3:1 boundary, in every theme', async ({
+test('a doc diagram: every SVG text clears WCAG AA and every box has a 3:1 boundary, in every theme', async ({
   page,
 }) => {
   // The diagram's ink is SVG `fill`, which axe / Lighthouse color-contrast never
   // read, and its plate is the last <rect> before the <text> in its own <g>
   // (node fill, subgraph header, edge-label backing) — never a CSS background.
-  // Every shape in the committed diagram is a rectangle; a <path> shape
+  // Every shape in the committed diagrams is a rectangle; a <path> shape
   // (diamond, stadium) would fall back to the frame and grade vacuously.
   for (const theme of ['day', 'night', 'dracula'] as const) {
     await page.addInitScript((t) => {
       sessionStorage.setItem('pix-booted', '1');
       localStorage.setItem('pix-theme', t);
     }, theme);
-    await page.goto('./architecture/');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    const boxes = await page.evaluate(() =>
-      Array.from(
-        document.querySelectorAll('.prose svg[role="img"] :is(.node, .subgraph) > rect:first-child')
-      ).map((rect) => ({
-        label: rect.parentElement?.getAttribute('data-label') ?? '',
-        fill: getComputedStyle(rect).fill,
-        stroke: getComputedStyle(rect).stroke,
-      }))
-    );
-    expect(boxes.length, `${theme}: no diagram boxes to sweep`).toBeGreaterThan(0);
-    for (const { label, fill, stroke } of boxes) {
-      // A box a reader must parse needs a 3:1 boundary (WCAG 1.4.11); the
-      // page's 12% --border hairline measured 1.27:1 before `.prose svg`
-      // routed the library's --border hook to --fg-muted.
-      const interior = parseRgb(fill).slice(0, 3) as [number, number, number];
-      const [r, g, b, a] = parseRgb(stroke);
-      const ratio = contrastRatio(compositeOver([r, g, b, a], interior), interior);
-      expect(
-        ratio,
-        `${theme} diagram box "${label}": stroke vs fill floor is 3:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(3);
-    }
-    const samples = await page.evaluate(() => {
-      const svg = document.querySelector('.prose svg[role="img"]');
-      if (!svg) return [];
-      const frame = getComputedStyle(svg).backgroundColor;
-      return Array.from(svg.querySelectorAll('text')).map((text) => {
-        let plate: Element | null = null;
-        for (const sib of Array.from(text.parentElement?.children ?? [])) {
-          if (sib === text) break;
-          if (sib.tagName === 'rect') plate = sib;
-        }
-        return {
-          label: text.textContent?.trim() ?? '',
-          ink: getComputedStyle(text).fill,
-          plate: plate ? getComputedStyle(plate).fill : frame,
-          frame,
-        };
-      });
-    });
-    expect(samples.length, `${theme}: no diagram text to sweep`).toBeGreaterThan(0);
-    for (const { label, ink, plate, frame } of samples) {
-      const ground = compositeOver(
-        parseRgb(plate),
-        parseRgb(frame).slice(0, 3) as [number, number, number]
+    for (const route of ['./architecture/', './how-we-build/']) {
+      await page.goto(route);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      const boxes = await page.evaluate(() =>
+        Array.from(
+          document.querySelectorAll(
+            '.prose svg[role="img"] :is(.node, .subgraph) > rect:first-child'
+          )
+        ).map((rect) => ({
+          label: rect.parentElement?.getAttribute('data-label') ?? '',
+          fill: getComputedStyle(rect).fill,
+          stroke: getComputedStyle(rect).stroke,
+        }))
       );
-      const [r, g, b, a] = parseRgb(ink);
-      const ratio = contrastRatio(compositeOver([r, g, b, a], ground), ground);
-      expect(
-        ratio,
-        `${theme} diagram "${label}": WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+      expect(boxes.length, `${theme} ${route}: no diagram boxes to sweep`).toBeGreaterThan(0);
+      for (const { label, fill, stroke } of boxes) {
+        // A box a reader must parse needs a 3:1 boundary (WCAG 1.4.11); the
+        // page's 12% --border hairline measured 1.27:1, so Docs.astro routes the
+        // library's --border hook to a chip tone.
+        const interior = parseRgb(fill).slice(0, 3) as [number, number, number];
+        const [r, g, b, a] = parseRgb(stroke);
+        const ratio = contrastRatio(compositeOver([r, g, b, a], interior), interior);
+        expect(
+          ratio,
+          `${theme} ${route} diagram box "${label}": stroke vs fill floor is 3:1; measured ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(3);
+      }
+      const samples = await page.evaluate(() => {
+        const svg = document.querySelector('.prose svg[role="img"]');
+        if (!svg) return [];
+        const frame = getComputedStyle(svg).backgroundColor;
+        return Array.from(svg.querySelectorAll('text')).map((text) => {
+          let plate: Element | null = null;
+          for (const sib of Array.from(text.parentElement?.children ?? [])) {
+            if (sib === text) break;
+            if (sib.tagName === 'rect') plate = sib;
+          }
+          return {
+            label: text.textContent?.trim() ?? '',
+            ink: getComputedStyle(text).fill,
+            plate: plate ? getComputedStyle(plate).fill : frame,
+            frame,
+          };
+        });
+      });
+      expect(samples.length, `${theme} ${route}: no diagram text to sweep`).toBeGreaterThan(0);
+      for (const { label, ink, plate, frame } of samples) {
+        const ground = compositeOver(
+          parseRgb(plate),
+          parseRgb(frame).slice(0, 3) as [number, number, number]
+        );
+        const [r, g, b, a] = parseRgb(ink);
+        const ratio = contrastRatio(compositeOver([r, g, b, a], ground), ground);
+        expect(
+          ratio,
+          `${theme} ${route} diagram "${label}": WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(4.5);
+      }
     }
   }
 });

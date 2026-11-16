@@ -32,8 +32,6 @@ Non-trivial work runs as the [arc loop](CONTRIBUTING.md#the-arc-loop), from pick
 arc's or not, lands through [the merge gate](CONTRIBUTING.md#the-merge-gate), each
 finding at a terminal state [dispositions](CONTRIBUTING.md#dispositions) defines.
 
-<!-- figure: flow -->
-
 ```mermaid
 flowchart TB
   accTitle: A change's path to main

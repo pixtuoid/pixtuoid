@@ -188,7 +188,7 @@ export default defineConfig({
       rehypePlugins: [
         // inline <svg> at build time, in-process: zero client JS, no browser.
         rehypeBeautifulMermaid,
-        rehypeFigures, // after the diagram: a flow figure wraps its <svg>
+        rehypeFigures, // before the scrollers: a figure replaces the table it marks
         rehypeScrollFocus, // after the diagram, whose `pre` leaves as an <svg>
         [rehypeRepoLinks, { docs, base: BASE }], // after the diagram so it walks the final tree
         rehypeCallouts, // last: promotes doc blockquotes to terminal-window chrome

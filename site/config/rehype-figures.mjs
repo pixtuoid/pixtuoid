@@ -1,8 +1,7 @@
-// `<!-- figure: <kind> -->` above a GFM table or a ```mermaid block marks a
-// figure: GitHub hides the comment
+// `<!-- figure: <kind> -->` above a GFM table marks a figure: GitHub hides the comment
 // (docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#hiding-content-with-comments)
-// and shows the table or diagram, and this build turns the same block into the
-// figure, so a doc holds one copy of its data. Figures.astro styles the markup.
+// and shows the table, and this build turns the same table into the figure, so a
+// doc holds one copy of its data. Docs.astro styles the markup.
 import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
 
@@ -15,7 +14,6 @@ const el = (tagName, className, children = [], properties = {}) => ({
   properties: { ...(className && { className: [className] }), ...properties },
   children,
 });
-const text = (value) => ({ type: 'text', value });
 
 const isElement = (node, tagName) => node?.type === 'element' && node.tagName === tagName;
 
@@ -39,68 +37,36 @@ function rows(kind, tableNode, columns) {
   );
 }
 
-const hasClass = (node, name) => node.properties?.className?.includes(name);
-
-// Shrunk to a phone's width a ten-node diagram's labels are unreadable, so the
-// body scrolls instead: the diagram never draws smaller than Mermaid laid it out.
-function atDrawnSize(svg) {
-  const style = [svg.properties.style, `min-width:${svg.properties.width}px`].filter(Boolean);
-  svg.properties.style = style.join(';');
-  return svg;
-}
-
-// The nodes edges only leave (where the path starts) or only enter (where it ends).
-function markEnds(svg) {
-  const edges = svg.children.filter((c) => hasClass(c, 'edge'));
-  const from = new Set(edges.map((e) => e.properties.dataFrom));
-  const to = new Set(edges.map((e) => e.properties.dataTo));
-  for (const node of svg.children.filter((c) => hasClass(c, 'node'))) {
-    const id = node.properties.dataId;
-    if (from.has(id) !== to.has(id)) node.properties.className.push('fig-flow__end');
-  }
-  return svg;
-}
-
+// Each kind draws its figure's children from the table it marks.
 const KINDS = {
-  cards: {
-    needs: 'table',
-    build(node) {
-      const cards = rows('cards', node, ['role', 'acts by']).map(([role, acts]) =>
+  cards: (table) => [
+    el(
+      'ul',
+      'fig__cards',
+      rows('cards', table, ['role', 'acts by']).map(([role, acts]) =>
         el('li', 'fig-card', [el('p', 'fig-card__role', role), el('p', 'fig-card__acts', acts)])
-      );
-      return [el('ul', 'fig-cards', cards)];
-    },
-  },
-  flow: {
-    // rehype-beautiful-mermaid runs first, so the block is already an <svg>.
-    needs: 'svg',
-    build: (svg) => [
-      // A terminal bar like the callouts'.
-      el('div', 'fig__bar', [el('span', 'fig__title', [text('~ flow')])], { ariaHidden: 'true' }),
-      el('div', 'fig__body', [atDrawnSize(markEnds(svg))]),
-    ],
-  },
+      )
+    ),
+  ],
 };
 
 const FIGURE_KINDS = Object.keys(KINDS);
-
-const NEEDS = { table: 'a table', svg: 'a Mermaid diagram' };
 
 export default function rehypeFigures() {
   return (tree) => {
     visit(tree, 'raw', (node, i, parent) => {
       const kind = MARKER.exec(node.value.trim())?.[1];
       if (!kind || !parent) return;
-      const spec = KINDS[kind];
-      if (!spec)
+      const draw = KINDS[kind];
+      if (!draw)
         throw new Error(`unknown figure kind "${kind}" (known: ${FIGURE_KINDS.join(', ')})`);
       let j = i + 1;
       while (parent.children[j]?.type === 'text' && !parent.children[j].value.trim()) j++;
       const target = parent.children[j];
-      if (!isElement(target, spec.needs)) {
-        throw new Error(`figure "${kind}" needs ${NEEDS[spec.needs]} right below its marker`);
+      if (!isElement(target, 'table')) {
+        throw new Error(`figure "${kind}" needs a table right below its marker`);
       }
-      const figure = el('figure', null, spec.build(target), { className: ['fig', `fig--${kind}`] });
+      const figure = el('figure', null, draw(target), { className: ['fig', `fig--${kind}`] });
       parent.children.splice(i, j - i + 1, figure);
       return i;
     });

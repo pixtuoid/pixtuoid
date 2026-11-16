@@ -1,9 +1,9 @@
-// ```mermaid → inline <svg> at build time, with no browser: beautiful-mermaid
-// lays the graph out in-process, so the site build needs no browser to render
-// /architecture. The SVG's colors ride the page's tokens — --bg/--fg by
+// ```mermaid → a figure holding an inline <svg>, at build time, with no browser:
+// beautiful-mermaid lays the graph out in-process, so the site build needs no
+// browser to render a doc. The SVG's colors ride tokens — --bg/--fg by
 // inheritance, the library's --surface/--border/--muted hooks by name
-// (global.css's `.prose svg` owns that pairing, and Figures.astro's
-// `.prose .fig--flow svg` a flow figure's) — so one render follows every theme.
+// (Docs.astro's `.fig--flow svg` owns that pairing) — so one render follows
+// every theme.
 import { renderMermaidSVG } from 'beautiful-mermaid';
 import { fromHtml } from 'hast-util-from-html';
 import { SKIP, visit } from 'unist-util-visit';
@@ -76,6 +76,49 @@ function labelled(svg, index, title, descr) {
   return svg;
 }
 
+const el = (tagName, className, children, properties = {}) => ({
+  type: 'element',
+  tagName,
+  properties: { className: [className].flat(), ...properties },
+  children,
+});
+
+const hasClass = (node, name) => node.properties?.className?.includes(name);
+
+// Shrunk to a phone's width a ten-node diagram's labels are unreadable, so its
+// body scrolls instead: the diagram never draws smaller than Mermaid laid it out.
+function atDrawnSize(svg) {
+  const style = [svg.properties.style, `min-width:${svg.properties.width}px`].filter(Boolean);
+  svg.properties.style = style.join(';');
+  return svg;
+}
+
+// The nodes edges only leave (where the path starts) or only enter (where it ends).
+function markEnds(svg) {
+  const edges = svg.children.filter((c) => hasClass(c, 'edge'));
+  const from = new Set(edges.map((e) => e.properties.dataFrom));
+  const to = new Set(edges.map((e) => e.properties.dataTo));
+  for (const node of svg.children.filter((c) => hasClass(c, 'node'))) {
+    const id = node.properties.dataId;
+    if (from.has(id) !== to.has(id)) node.properties.className.push('fig__end');
+  }
+  return svg;
+}
+
+// A terminal window like a callout's: a bar, then a body that scrolls a diagram
+// wider than the page (rehype-scroll-focus.mjs makes that body a tab stop).
+const framed = (svg) =>
+  el(
+    'figure',
+    ['fig', 'fig--flow'],
+    [
+      el('div', 'fig__bar', [el('span', 'fig__title', [{ type: 'text', value: '~ flow' }])], {
+        ariaHidden: 'true',
+      }),
+      el('div', 'fig__body', [atDrawnSize(markEnds(svg))]),
+    ]
+  );
+
 function render(raw, index) {
   const { source, title, descr } = splitAccessibility(raw);
   const html = renderMermaidSVG(source, { transparent: true });
@@ -83,7 +126,7 @@ function render(raw, index) {
     (c) => c.type === 'element' && c.tagName === 'svg'
   );
   if (!svg) throw new Error('beautiful-mermaid returned no <svg>');
-  return labelled(inheritPageTokens(svg), index, title, descr);
+  return framed(labelled(inheritPageTokens(svg), index, title, descr));
 }
 
 export default function rehypeBeautifulMermaid() {

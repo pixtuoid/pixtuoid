@@ -4,7 +4,6 @@ import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import Figures from '../components/Figures.astro';
 import { asset, DOCS, FLOORS, type DocPage } from '../consts';
 import { REPO_BLOB } from '../../config/github.mjs';
 
@@ -107,7 +106,6 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   </main>
   <Footer />
   <Statusline doc={current} />
-  <Figures />
 </Base>
 
 <script is:inline>
@@ -245,7 +243,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: inherit;
   }
   /* rendered markdown carries no astro scope hash, hence :global throughout */
-  /* One terminal chrome for a callout and a flow figure (config/rehype-figures.mjs). */
+  /* One terminal chrome for a callout and a diagram's figure
+     (config/rehype-beautiful-mermaid.mjs). */
   .docs :global(:is(.callout, .fig--flow)) {
     margin: 1.4rem 0;
     background: var(--screen);
@@ -260,6 +259,63 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-family: var(--font-mono);
     font-size: 0.76rem;
     color: var(--chip-dim);
+  }
+  /* The padding is the body's, so the svg's min-width bounds exactly what Mermaid drew. */
+  .docs :global(.fig__body) {
+    overflow-x: auto;
+    padding: 1.1rem;
+  }
+  /* The library's hooks read the cascade: the diagram's ground is the screen,
+     and its text, fills and strokes take the chip tones that clear AA and a
+     box's 3:1 on it (smoke.spec.ts's diagram tests grade both). */
+  .docs :global(.fig--flow svg) {
+    --bg: var(--screen);
+    --fg: var(--chip-bright);
+    --surface: var(--hw-hover);
+    --muted: var(--chip-ink);
+    --border: var(--chip-dim);
+    display: block;
+    width: 100%;
+    height: auto;
+    background: var(--bg);
+  }
+  .docs :global(.fig__end > :is(rect, polygon, path, circle, ellipse)) {
+    stroke: var(--amber);
+    stroke-width: 1.5;
+  }
+  .docs :global(.fig__cards) {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+    gap: 0.9rem;
+    margin: 1.8rem 0;
+    padding: 0;
+    list-style: none;
+  }
+  .docs :global(.fig-card) {
+    margin: 0;
+    padding: 1rem 1.1rem 1.1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+  }
+  .docs :global(.fig-card__role) {
+    margin: 0 0 0.6rem;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    line-height: 1.1;
+    color: var(--fg);
+  }
+  /* (0,4,1), past global.css's theme-prefixed `.prose a` (0,3,1), which tints
+     night's and dracula's links: a role's name reads as the card's title. */
+  .docs :global(.fig-card .fig-card__role a) {
+    color: inherit;
+    font-weight: inherit;
+  }
+  .docs :global(.fig-card__acts) {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.45;
   }
   .docs :global(.callout__body) {
     margin: 0;

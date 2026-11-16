@@ -6,7 +6,7 @@
 import { visit } from 'unist-util-visit';
 
 const SCROLLERS = new Set(['pre', 'table']);
-// rehype-figures.mjs's flow body, which scrolls a diagram wider than the page.
+// rehype-beautiful-mermaid.mjs's diagram body, which scrolls one wider than the page.
 const SCROLLER_CLASS = 'fig__body';
 
 export default function rehypeScrollFocus() {

@@ -1041,26 +1041,3 @@ code {
   overflow-wrap: normal;
   white-space: nowrap;
 }
-/* A Mermaid diagram outside a figure (build-time inline SVG; its colors ride
-   the page's --bg/--fg, see config/rehype-beautiful-mermaid.mjs; a flow figure
-   re-pairs them in Figures.astro): frame it on the page
-   ground and keep it responsive (the SVG keeps its viewBox aspect). The
-   library's override hooks read the cascade, so node fill is the page's own
-   --surface (the site's card idiom) while node stroke and secondary text take
-   --fg-muted: the library's 60% text mix misses AA on the day palette, and the
-   page's 12% --border hairline is no 3:1 boundary for a box a reader must
-   parse (smoke.spec.ts's diagram sweep grades every <text>). */
-.prose svg {
-  --muted: var(--fg-muted);
-  --border: var(--fg-muted);
-  display: block;
-  width: 100%;
-  max-width: 820px;
-  height: auto;
-  margin: 1.8rem auto;
-  padding: clamp(0.8rem, 2vw, 1.4rem);
-  background: var(--bg);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow);
-}
