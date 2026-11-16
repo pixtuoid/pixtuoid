@@ -1,6 +1,6 @@
 ---
 import { CRATES, SPONSOR, asset } from '../consts';
-import { DISCORD } from '../../config/links.mjs';
+import { DISCORD } from '../../config/discord.mjs';
 import { REPO } from '../../config/github.mjs';
 ---
 
@@ -101,10 +101,10 @@ import { REPO } from '../../config/github.mjs';
      GROUP that itself wraps to start a new line still leads that line with
      its own dot (#wb-3: "· built in Rust" opening line 2) — each "·"
      introduces its FOLLOWING item, so it can only ever land at a line's
-     leading edge, never trailing. Below the width where the row visibly
-     wraps (.footer__line's own flex-wrap, measured ≤960px), drop the dots
-     and let the row's gap carry the separation instead. */
-  @media (max-width: 960px) {
+     leading edge, never trailing. Below the width where the row wraps at its
+     longest, the night clock's words included (measured: it fits from 1070px),
+     drop the dots and let the row's gap carry the separation instead. */
+  @media (max-width: 1100px) {
     .footer__sep {
       display: none;
     }

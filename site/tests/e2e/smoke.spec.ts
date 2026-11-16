@@ -4,7 +4,7 @@ import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
 import { E2E_STAR_COUNT, REPO } from '../../config/github.mjs';
 import { FLOORS, floorById } from '../../config/floors.mjs';
-import { DISCORD } from '../../config/links.mjs';
+import { DISCORD } from '../../config/discord.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
@@ -219,12 +219,19 @@ async function officeGrounds(
  * `opacity` folded into the ink, over the office composite where a live office is the ground and the page's own plate where it is not.
  * Folding `opacity` is the difference between graded and rendered — a group at `opacity: .7` shows 30% of its ground through the glyph.
  */
-async function paintedContrast(page: Page, selector: string, nth = 0): Promise<number> {
+async function paintedContrast(
+  page: Page,
+  selector: string,
+  nth = 0,
+  inkOf: 'color' | 'outlineColor' = 'color'
+): Promise<number> {
   const { ink, chain } = await page.evaluate(
-    ([sel, i]) => {
+    ([sel, i, prop]) => {
       const el = document.querySelectorAll(sel)[i as number];
       const chain: { bg: string; opacity: number; isPageRoot: boolean }[] = [];
-      for (let n: Element | null = el; n; n = n.parentElement) {
+      // An outline is drawn outside its element's box, so that element's own background is not under it.
+      const start = prop === 'outlineColor' ? el.parentElement : el;
+      for (let n: Element | null = start; n; n = n.parentElement) {
         const cs = getComputedStyle(n);
         chain.push({
           bg: cs.backgroundColor,
@@ -232,9 +239,9 @@ async function paintedContrast(page: Page, selector: string, nth = 0): Promise<n
           isPageRoot: n === document.body || n === document.documentElement,
         });
       }
-      return { ink: getComputedStyle(el).color, chain };
+      return { ink: getComputedStyle(el)[prop], chain };
     },
-    [selector, nth] as const
+    [selector, nth, inkOf] as const
   );
   const inkRgb = parseRgb(ink).slice(0, 3) as [number, number, number];
   // `opacity` fades a node's OWN background and everything inside it, never an
@@ -2242,10 +2249,17 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
   const m = await ctx.newPage();
   await m.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await m.goto('./config/');
-  await m.locator('#nav-burger').click();
+  await m.locator('#nav-burger').focus();
+  await m.keyboard.press('Enter');
   await expect(m.locator('#nav-links')).toHaveClass(/is-open/);
   await expect(m.locator('#nav-burger')).toHaveAttribute('aria-expanded', 'true');
-  await m.locator('#nav-links a').first().focus();
+  // Focus follows the panel in, and Tab then walks its links in order.
+  const panelLinks = m.locator('#nav-links a');
+  const count = await panelLinks.count();
+  for (let i = 0; i < count; i++) {
+    await expect(panelLinks.nth(i)).toBeFocused();
+    if (i < count - 1) await m.keyboard.press('Tab');
+  }
   await m.keyboard.press('Escape');
   await expect(m.locator('#nav-links')).not.toHaveClass(/is-open/);
   await expect(m.locator('#nav-burger')).toBeFocused();
@@ -2484,16 +2498,15 @@ test.describe('the office moments still span the light range', () => {
   });
 });
 
-// The floating nav's controls, which lie bare over the office: the App link, GitHub, the Install pill, the Docs button.
+// The floating nav's text controls, which lie bare over the office.
 const NAV_OVER_OFFICE = [
-  '#nav-links > a',
+  `#nav-links > a[href$="#${floorById('app').id}"]`,
   '#nav-links > a[target="_blank"]',
-  '.nav__install',
   '.nav__docs-btn',
 ];
 
 atOfficeMoments(
-  'bare hero text clears WCAG AA at the real office composite',
+  'bare text over the office clears WCAG AA at the real office composite',
   VALID_THEMES,
   async (page, theme, moment) => {
     // The hero copy has no plate, so legibility rests entirely on the ink token clearing contrast against what the office
@@ -2533,12 +2546,33 @@ atOfficeMoments(
       ).toBeGreaterThanOrEqual(4.5);
     }
     for (const selector of NAV_OVER_OFFICE) {
+      const ink = () => page.locator(selector).evaluate((el) => getComputedStyle(el).color);
+      const atRest = await ink();
       await page.hover(selector);
+      await expect
+        .poll(ink, `${theme} ${moment} ${selector}: hover changes nothing`)
+        .not.toBe(atRest);
+      await settleAnimations(page);
       const ratio = await paintedContrast(page, selector);
       expect(
         ratio,
         `${theme} ${moment} ${selector} hovered: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5);
+    }
+    for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install']) {
+      const ringShown = await page
+        .locator(selector)
+        .first()
+        .evaluate((el) => {
+          (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
+          return getComputedStyle(el).outlineStyle !== 'none';
+        });
+      expect(ringShown, `${theme} ${moment} ${selector}: no focus ring`).toBe(true);
+      const ring = await paintedContrast(page, selector, 0, 'outlineColor');
+      expect(
+        ring,
+        `${theme} ${moment} ${selector} focus ring: WCAG 1.4.11 floor is 3:1; measured ${ring.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(3);
     }
   }
 );
@@ -2555,6 +2589,7 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
       '.footer__line a',
       '.footer__sep',
       '.nav__version',
+      '.nav__install',
       '.app__copy .eyebrow',
       '.app__copy .statement',
       '.app__lead',
@@ -3173,39 +3208,36 @@ test('footer separators never strand alone at a wrap boundary', async ({ page })
   }
 });
 
-test('no footer line begins or ends with a separator dot once the row wraps', async ({ page }) => {
+test('no footer line begins or ends with a separator dot, at any width', async ({ page }) => {
   // Each dot introduces its FOLLOWING item, so a group that itself wraps still leads the new line with its own dot.
-  // Check RENDERED rows (grouped by top position): a display:none dot still shows up in textContent.
   await gotoLive(page);
-  await page.setViewportSize({ width: 768, height: 900 });
-  await page.evaluate(() =>
-    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' })
-  );
-  const bad = await page.evaluate(() => {
-    const line = document.querySelector('.footer__line')!;
-    const items = Array.from(line.children).filter(
-      (el) => (el as HTMLElement).offsetParent !== null
-    );
-    const rows = new Map<number, Element[]>();
-    for (const el of items) {
-      const top = Math.round(el.getBoundingClientRect().top);
-      (rows.get(top) ?? rows.set(top, []).get(top)!).push(el);
-    }
-    const findings: string[] = [];
-    for (const rowEls of rows.values()) {
-      rowEls.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
-      const leadingSep = rowEls[0].querySelector('.footer__sep');
-      if (leadingSep && getComputedStyle(leadingSep).display !== 'none') {
-        findings.push(`leading: "${(rowEls[0].textContent || '').trim()}"`);
-      }
-      const lastText = (rowEls[rowEls.length - 1].textContent || '').trim();
-      if (lastText.endsWith('·')) {
-        findings.push(`trailing: "${lastText}"`);
-      }
-    }
-    return findings;
-  });
-  expect(bad).toEqual([]);
+  // The row at its longest: the night clock's words show.
+  await page.evaluate(() => document.documentElement.setAttribute('data-clock-night', '1'));
+  await expect(page.locator('.footer__clock')).toBeVisible();
+  for (let width = 320; width <= 1440; width += 10) {
+    await page.setViewportSize({ width, height: 900 });
+    const bad = await page.evaluate(() => {
+      const line = document.querySelector('.footer__line')!;
+      const items = Array.from(line.children).filter(
+        (el) => (el as HTMLElement).offsetParent !== null
+      );
+      const findings: string[] = [];
+      items.forEach((el, i) => {
+        const wrapped =
+          i > 0 && el.getBoundingClientRect().left < items[i - 1].getBoundingClientRect().left;
+        const sep = el.querySelector('.footer__sep');
+        if ((i === 0 || wrapped) && sep && getComputedStyle(sep).display !== 'none')
+          findings.push(`leading: "${(el.textContent || '').trim()}"`);
+        const text = (el.textContent || '').trim();
+        const endsRow =
+          i === items.length - 1 ||
+          items[i + 1].getBoundingClientRect().left < el.getBoundingClientRect().left;
+        if (endsRow && text.endsWith('·')) findings.push(`trailing: "${text}"`);
+      });
+      return findings;
+    });
+    expect(bad, `${width}px`).toEqual([]);
+  }
 });
 
 test('the pause control never overlaps a footer link across the mobile wrap range', async ({
@@ -3415,7 +3447,7 @@ for (const viewport of [
   }) => {
     const context = await browser.newContext({ javaScriptEnabled: false, viewport });
     const page = await context.newPage();
-    // The home page's floating nav, whose floors the script-only statusline otherwise carries.
+    // The home page too: its floating nav has no ground of its own until this state gives it one.
     for (const path of ['./config/', './']) {
       await page.goto(path);
       const links = page.locator('#nav-links a');

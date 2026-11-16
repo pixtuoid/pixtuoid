@@ -1,10 +1,7 @@
 ---
-import { asset, DOCS } from '../consts';
-import { floorById } from '../../config/floors.mjs';
+import { asset, DOCS, floorHref } from '../consts';
 import { REPO } from '../../config/github.mjs';
-// Absolute home so the floor anchors work from any page (e.g. /config/).
 const home = asset('');
-const floorHref = (id: string) => `${home}#${floorById(id).id}`;
 // `floating` = the index treatment: corner chrome over the live office that
 // scrolls away, because the statusline is that page's persistent chrome.
 const { floating = false } = Astro.props;
@@ -101,7 +98,13 @@ const { floating = false } = Astro.props;
         trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
         if (opts.icon) opts.icon.textContent = open ? opts.iconOpen : opts.iconClosed;
         if (open && opts.focusFirst) {
-          const first = panel.querySelector('a, button');
+          // The Docs button leads the panel and is not rendered while the burger is.
+          const first = Array.prototype.find.call(
+            panel.querySelectorAll('a, button'),
+            function (el) {
+              return el.getClientRects().length > 0;
+            }
+          );
           if (first) first.focus();
         }
       };
@@ -227,7 +230,7 @@ const { floating = false } = Astro.props;
     display: flex;
   }
   .nav__links a {
-    color: var(--fg-muted);
+    color: var(--nav-ink, var(--fg-muted));
     text-decoration: none;
     padding: 0.55rem 0.2rem;
     border-radius: var(--radius-sm);
@@ -242,7 +245,7 @@ const { floating = false } = Astro.props;
     font-size: 0.68rem;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--coral-deep);
+    color: var(--nav-ink-accent, var(--coral-deep));
     border: 1px solid currentColor;
     border-radius: 999px;
   }
@@ -270,22 +273,6 @@ const { floating = false } = Astro.props;
     display: none;
   }
   @media (min-width: 760px) {
-    /* The floating bar's links lie bare over the office: --office-ink is the ink for that ground. */
-    .nav--floating .nav__links > a:not(.nav__install),
-    .nav--floating .nav__docs-btn {
-      color: var(--office-ink);
-    }
-    .nav--floating .nav__soon {
-      color: var(--office-ink-accent);
-    }
-    /* The one call to action; --coral-cta is the AA-capped coral a white label clears. */
-    .nav__links a.nav__install {
-      padding: 0.4rem 0.95rem;
-      color: #fff;
-      background: var(--coral-cta);
-      border-radius: 999px;
-      text-shadow: none;
-    }
     .nav__links {
       display: flex;
       position: static;
@@ -315,7 +302,7 @@ const { floating = false } = Astro.props;
       gap: 0.25rem;
       font-family: var(--font-mono);
       font-size: 0.88rem;
-      color: var(--fg-muted);
+      color: var(--nav-ink, var(--fg-muted));
       background: none;
       border: 0;
       padding: 0;
@@ -377,6 +364,38 @@ const { floating = false } = Astro.props;
       height: 44px;
     }
   }
+  /* With script the home page's bar lies bare over the office, so its text and its
+     focus rings take the inks global.css tunes for that ground. */
+  @media (scripting: enabled) {
+    .nav--floating .nav__logo:focus-visible {
+      outline-color: var(--office-ink);
+    }
+  }
+  @media (min-width: 760px) and (scripting: enabled) {
+    .nav--floating {
+      --nav-ink: var(--office-ink);
+      --nav-ink-accent: var(--office-ink-accent);
+    }
+    /* The Docs menu has a ground of its own. */
+    .nav--floating .nav__menu {
+      --nav-ink: initial;
+    }
+    .nav--floating :is(.nav__links > a, .nav__docs-btn):focus-visible {
+      outline-color: var(--office-ink);
+    }
+    /* The bar's one call to action; --coral-cta is the coral a white label clears. */
+    .nav__links a.nav__install {
+      padding: 0.4rem 0.95rem;
+      color: #fff;
+      background: var(--coral-cta);
+      border-radius: 999px;
+      text-shadow: none;
+    }
+    .nav__links a.nav__install:hover {
+      color: #fff;
+      filter: var(--cta-hover);
+    }
+  }
   /* Scripting off: nothing opens the burger or the Docs menu or flips the theme,
      so the buttons go and every link lays out open on rows of its own. The bar
      keeps to the page's flow, so the rows never cover the page, on a ground of
@@ -408,14 +427,8 @@ const { floating = false } = Astro.props;
     .nav__menu {
       display: contents;
     }
-    .nav__links a,
-    .nav__links a.nav__install {
+    .nav__links a {
       padding: 0.3rem 0;
-    }
-    /* A row like the others: the links lie open here, so no one of them is the bar's button. */
-    .nav__links a.nav__install {
-      color: var(--fg-muted);
-      background: none;
     }
   }
 </style>
