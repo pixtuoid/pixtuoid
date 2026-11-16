@@ -3,7 +3,7 @@ import Base from '../layouts/Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import { asset, pageTitle } from '../consts';
+import { asset, floorHref, pageTitle } from '../consts';
 ---
 
 <Base
@@ -25,7 +25,7 @@ import { asset, pageTitle } from '../consts';
         </p>
         <div class="lost__cta">
           <a class="btn btn-primary" href={asset('')}>Back to the lobby</a>
-          <a class="btn btn-ghost" href={`${asset('')}#install`}>Install pixtuoid</a>
+          <a class="btn btn-ghost" href={floorHref('install')}>Install pixtuoid</a>
         </div>
       </div>
       <figure class="terminal lost__scene">

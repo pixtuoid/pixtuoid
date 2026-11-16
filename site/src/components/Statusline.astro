@@ -3,8 +3,8 @@
 // elevator's organs (floor readout, scrollspy, digit keys, jump list). Sits on
 // --screen (the office's own hardware black) and is NEVER subject to the dimmer.
 import sources from '../sources.json';
-import { DIM_RESTING, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX, asset } from '../consts';
-import { FLOORS, floorName } from '../../config/floors.mjs';
+import { DIM_RESTING, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX, floorHref } from '../consts';
+import { FLOORS, floorById, floorName } from '../../config/floors.mjs';
 import { GH_API_REPO, GH_FETCH_TIMEOUT_MS, REPO } from '../../config/github.mjs';
 
 interface Props {
@@ -171,7 +171,7 @@ const FEED_ROTATE_MS = 6000;
     </a>}
     <a
       class="sl__copy"
-      href={doc ? `${asset('')}#install` : '#install'}
+      href={doc ? floorHref('install') : `#${floorById('install').id}`}
       data-sl-install-link
       aria-label="Jump to the install section"
     >

@@ -34,7 +34,7 @@ const nameRules = badges
       </p>
       <div class="hero__chips">
         <p class="hero__prompt">
-          <a class="hero__prompt-default" href="#tools">
+          <a class="hero__prompt-default" href={`#${floorById('tools').id}`}>
             <span aria-hidden="true">$ </span>works with {badges.length} coding CLIs
             <span aria-hidden="true">→</span></a>
           {badges.map((s) => <span class="hero__badge-name" data-for={s.id} aria-hidden="true">
@@ -53,7 +53,9 @@ const nameRules = badges
         </ul>
       </div>
       <div class="hero__cta">
-        <a class="btn btn-primary" href="#install">[ install <span aria-hidden="true">→</span> ]</a>
+        <a class="btn btn-primary" href={`#${floorById('install').id}`}
+          >[ install <span aria-hidden="true">→</span> ]</a
+        >
         <a class="hero__ghost" href="#showcase-vibing"
           ><span aria-hidden="true">▸</span> play with it live</a
         >
