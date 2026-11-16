@@ -1,5 +1,5 @@
 //! The §3 proof panel and the statusline's agent-activity ticker are two
-//! agent-narration surfaces sharing one viewport at 4F: a reused file name or
+//! agent-narration surfaces sharing one viewport on the amenities floor: a reused file name or
 //! task phrase would read as the same event narrated twice.
 //!
 //! Runtime read of `site/...`, NOT `include_str!`: a published `.crate` tarball
@@ -101,7 +101,7 @@ fn proof_session_story_is_disjoint_from_the_statusline_ticker_corpus() {
             assert!(
                 !session_str.contains(phrase.as_str()) && !phrase.contains(session_str.as_str()),
                 "proof session string {session_str:?} collides with the statusline \
-                 ticker's FALLBACK phrase {phrase:?} — the two share a viewport at 4F and must \
+                 ticker's FALLBACK phrase {phrase:?} — the two share a viewport on the amenities floor and must \
                  read as distinct events (STATUSLINE-COLLISION handoff, pick different session \
                  content)"
             );

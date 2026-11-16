@@ -2251,6 +2251,32 @@ test('landing fixed chrome: floating nav, statusline readouts, floor popover', a
   await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 10_000 });
 });
 
+test('on a short landscape phone every row of the floor popover can be reached', async ({
+  browser,
+}) => {
+  // Shorter than the rows are tall together, so the popover has to scroll.
+  const context = await browser.newContext({
+    viewport: { width: 800, height: 340 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  await page.locator('[data-floor-toggle]').tap();
+  const rows = page.locator('#sl-floors [data-floor-btn]');
+  await expect(rows).toHaveCount(FLOORS.length);
+  const bar = (await page.locator('#statusline').boundingBox())!;
+  for (const { fl } of FLOORS) {
+    const row = page.locator(`#sl-floors [data-floor-btn="${fl}"]`);
+    await row.scrollIntoViewIfNeeded();
+    const box = (await row.boundingBox())!;
+    expect(box.y, `${fl} starts above the viewport`).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height, `${fl} runs under the statusline`).toBeLessThanOrEqual(bar.y);
+  }
+  await context.close();
+});
+
 test('no horizontal overflow at phone widths (mobile pan guard)', async ({ browser }) => {
   // `body { overflow-x: hidden }` masks the desktop scrollbar, so a full-width block whose ::before glow pokes past the viewport
   // is INVISIBLE on desktop yet PANS on mobile — and a pseudo-element dodges every querySelectorAll('*') scan.

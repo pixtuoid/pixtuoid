@@ -216,7 +216,7 @@ const officeDriverUrl = asset('office-driver.js');
   .office-ctl {
     position: fixed;
     right: var(--office-ctl-edge);
-    bottom: calc(2rem + env(safe-area-inset-bottom, 0px) + 10px);
+    bottom: calc(var(--statusline-h) + 10px);
     z-index: 50;
     width: var(--office-ctl-w);
     height: var(--office-ctl-w);
@@ -236,7 +236,7 @@ const officeDriverUrl = asset('office-driver.js');
   /* Footer.astro's row wraps non-monotonically with viewport width, so no flat offset clears it — --footer-h tracks its REAL height, the fallback shows pre-JS only. */
   @media (max-width: 960px) {
     .office-ctl {
-      bottom: calc(2rem + env(safe-area-inset-bottom, 0px) + var(--footer-h, 74px) + 10px);
+      bottom: calc(var(--statusline-h) + var(--footer-h, 74px) + 10px);
     }
   }
   @media (max-width: 760px) {
@@ -279,14 +279,11 @@ const officeDriverUrl = asset('office-driver.js');
     color: var(--led);
   }
   #office-audio {
-    bottom: calc(2rem + env(safe-area-inset-bottom, 0px) + 10px + var(--office-ctl-w) + 8px);
+    bottom: calc(var(--statusline-h) + 10px + var(--office-ctl-w) + 8px);
   }
   @media (max-width: 960px) {
     #office-audio {
-      bottom: calc(
-        2rem + env(safe-area-inset-bottom, 0px) + var(--footer-h, 74px) + 10px +
-          var(--office-ctl-w) + 8px
-      );
+      bottom: calc(var(--statusline-h) + var(--footer-h, 74px) + 10px + var(--office-ctl-w) + 8px);
     }
   }
   .office-ctl .office-ctl__soundon {

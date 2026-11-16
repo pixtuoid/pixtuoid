@@ -191,7 +191,7 @@ const FEED_ROTATE_MS = 6000;
 <style is:global>
   /* Reserve room for the fixed bar (the footer must never hide under it). */
   body {
-    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--statusline-h);
   }
 </style>
 
@@ -203,7 +203,7 @@ const FEED_ROTATE_MS = 6000;
     display: flex;
     align-items: center;
     gap: 1rem;
-    height: calc(2rem + env(safe-area-inset-bottom, 0px));
+    height: var(--statusline-h);
     padding: 0 0.9rem env(safe-area-inset-bottom, 0px);
     background: var(--screen);
     border-top: 1px solid var(--chip-line);
@@ -245,8 +245,9 @@ const FEED_ROTATE_MS = 6000;
     display: none;
   }
   .sl__floors {
+    --pop-gap: 0.4rem;
     position: absolute;
-    bottom: calc(100% + 0.4rem);
+    bottom: calc(100% + var(--pop-gap));
     left: 0;
     display: flex;
     flex-direction: column;
@@ -254,6 +255,10 @@ const FEED_ROTATE_MS = 6000;
     border: 1px solid var(--chip-line);
     padding: 0.3rem;
     min-width: 12rem;
+    /* On a short landscape phone the rows outgrow the room above the bar, and a
+       popover in fixed chrome can't be scrolled to by the page. */
+    max-height: calc(100dvh - var(--statusline-h) - var(--pop-gap));
+    overflow-y: auto;
   }
   .sl__floorbtn {
     display: flex;

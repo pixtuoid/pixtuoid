@@ -7,6 +7,9 @@
    ============================================================ */
 
 :root {
+  /* The fixed statusline's height: what the page, the popover above it and the
+     office's controls each keep clear of. */
+  --statusline-h: calc(2rem + env(safe-area-inset-bottom, 0px));
   /* Brand constants */
   /* Warm "Coworking" palette — cream lightened from the office carpet (#8A765F)
      + Claude coral. Analogous warm harmony so the office art sits INTO the page. */
