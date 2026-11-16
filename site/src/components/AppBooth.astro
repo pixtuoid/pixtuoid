@@ -5,6 +5,7 @@ import iphoneOffice from '../assets/app/iphone-office.png';
 import { floorById, floorName } from '../../config/floors.mjs';
 
 const floor = floorById('app');
+const AUTO_SIZES = 'auto, 100vw';
 ---
 
 <section id={floor.id} class="app" data-lit data-floor={floor.fl} data-floor-label={floor.label}>
@@ -35,15 +36,24 @@ const floor = floorById('app');
     </div>
     <div class="app__devices reveal">
       <div class="app__stack">
-        {/* `densities`, not `sizes`: a `sizes` list would copy this layout's widths. */}
+        {/* Each image's width follows the viewport, which rules out `x` descriptors
+            (html.spec.whatwg.org/multipage/images.html#device-pixel-ratio), and a written
+            `sizes` list would copy this layout's widths: `auto` reads the laid-out width,
+            and `100vw` serves a browser without it. */}
         <Image
           class="app__ipad"
           src={ipadOffice}
           alt="The pixtuoid App on an iPad and an iPhone, each showing the pixel office with agents at their desks."
-          width={700}
-          densities={[1, 2]}
+          widths={[700, ipadOffice.width]}
+          sizes={AUTO_SIZES}
         />
-        <Image class="app__iphone" src={iphoneOffice} alt="" width={300} densities={[1, 2]} />
+        <Image
+          class="app__iphone"
+          src={iphoneOffice}
+          alt=""
+          widths={[300, iphoneOffice.width]}
+          sizes={AUTO_SIZES}
+        />
       </div>
       <p class="app__note text-scrim">
         The App is still in development. Features and screenshots may change before release.
