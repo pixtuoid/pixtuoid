@@ -11,7 +11,10 @@ test("site.yml's scope paths name exactly the docs content.config.ts renders", (
   const docs = [
     ...read('../src/content.config.ts').matchAll(/pattern: '([^']+)', base: '\.\.\/docs'/g),
   ].map((m) => `docs/${m[1]}`);
-  assert.ok(docs.length > 0, 'content.config.ts renders no docs/ page');
+  assert.ok(
+    docs.length > 0,
+    "content.config.ts has no one-line `pattern: '…', base: '../docs'` loader"
+  );
   const scope = /id: scope\n\s+with:(?:\n\s+#.*)*\n\s+paths: (.+)/.exec(
     read('../../.github/workflows/site.yml')
   );
