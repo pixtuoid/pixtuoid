@@ -205,6 +205,6 @@ local-review skill ([AGENTS.md](AGENTS.md#org-rules)) runs them.
 A local review that [CONTRIBUTING.md](docs/CONTRIBUTING.md#the-arc-loop)'s step 7
 calls for is held the same way, from the first push that makes it due: the body
 names the head it ran at and the findings it kept, each dispositioned in its
-thread, and later pushes answer the CI review. One without is blocking. A fork's PR
-owes none: [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) names what stands
-in for it.
+thread, and later pushes answer the CI review. One without is blocking. A fork's PR,
+and the same-repo PR [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) opens on its
+commits, owe none: it names what stands in for them.
