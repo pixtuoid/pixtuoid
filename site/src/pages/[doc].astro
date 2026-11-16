@@ -2,7 +2,8 @@
 import type { InferGetStaticPropsType } from 'astro';
 import { getEntry, render } from 'astro:content';
 import Docs from '../layouts/Docs.astro';
-import { DOCS, docSlug } from '../consts';
+import { DOCS } from '../consts';
+import { docSlug } from '../../config/docs.mjs';
 
 export async function getStaticPaths() {
   return Promise.all(

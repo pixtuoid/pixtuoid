@@ -30,7 +30,7 @@ test('cards turn each row into a role card that keeps its links, and the marker 
   ]);
   // The marker and the table are gone: the figure is the one copy on the page.
   assert.deepEqual(tree.children, [figure(tree)]);
-  assert.deepEqual(figure(tree).properties.className, ['fig', 'fig--cards']);
+  assert.deepEqual(figure(tree).properties.className, ['fig--cards']);
   const [cards] = figure(tree).children;
   assert.deepEqual(cards.properties.className, ['fig__cards']);
   const [role, acts] = cards.children[0].children;
@@ -68,6 +68,6 @@ test("through Astro's own markdown processor, a marked table becomes a figure", 
   const { code } = await proc.render(
     '<!-- figure: cards -->\n\n| Role | Acts by |\n| - | - |\n| a | b |\n'
   );
-  assert.match(code, /<figure class="fig fig--cards">/);
+  assert.match(code, /<figure class="fig--cards">/);
   assert.doesNotMatch(code, /figure: cards|<table/);
 });

@@ -1,7 +1,7 @@
 import { defineCollection } from 'astro:content';
 import { glob } from 'astro/loaders';
 import { DOCS } from './consts';
-import { DOC_DIR } from '../config/github.mjs';
+import { DOC_DIR } from '../config/docs.mjs';
 
 export const collections = {
   docs: defineCollection({

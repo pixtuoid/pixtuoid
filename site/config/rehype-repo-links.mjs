@@ -4,7 +4,8 @@
 import { posix } from 'node:path';
 import { visit } from 'unist-util-visit';
 import { withBase } from './base-path.mjs';
-import { DOC_DIR, REPO_BLOB } from './github.mjs';
+import { DOC_DIR } from './docs.mjs';
+import { REPO_BLOB } from './github.mjs';
 
 // An absolute URL: one with a scheme, or protocol-relative.
 const ABSOLUTE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;

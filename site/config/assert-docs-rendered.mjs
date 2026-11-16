@@ -13,7 +13,7 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
-import { DOC_DIR } from './github.mjs';
+import { DOC_DIR, docSlug } from './docs.mjs';
 
 // A generous floor: flags a collapsed render without coupling to any page's size.
 export const MIN_BODY_CHARS = 500;
@@ -21,8 +21,12 @@ export const MIN_BODY_CHARS = 500;
 // appended Astro scoped class doesn't drop the article → redden every deploy.
 const DOC_ARTICLE = /<article class="[^"]*\bprose\b[^"]*"[^>]*>([\s\S]*?)<\/article>/;
 
+// A fenced block opens with backticks or tildes, indented up to three spaces
+// (spec.commonmark.org/0.31.2/#fenced-code-blocks).
 export const mermaidFences = (markdown) =>
-  [...markdown.matchAll(/```mermaid\n([\s\S]*?)```/g)].map((m) => m[1]);
+  [...markdown.matchAll(/^ {0,3}(`{3,}|~{3,})mermaid[ \t]*\n([\s\S]*?)^ {0,3}\1/gm)].map(
+    (m) => m[2]
+  );
 
 /**
  * Given doc-page entries `[{ name, html }]` and `diagrams`, the count of
@@ -44,6 +48,10 @@ export function checkDocPages(entries, diagrams) {
       failures.push(
         `/${name}: doc body only ${body.length} chars (< ${MIN_BODY_CHARS}) — render collapsed`
       );
+    }
+    if (!(name in diagrams)) {
+      failures.push(`/${name}: a Docs-layout page src/docs.json does not list`);
+      continue;
     }
     const drawn = (m[1].match(/<svg[\s>]/g) ?? []).length;
     const declared = diagrams[name];
@@ -69,7 +77,7 @@ function main(dist) {
   const docs = JSON.parse(readFileSync(join(site, 'src/docs.json'), 'utf8'));
   const diagrams = Object.fromEntries(
     docs.map((d) => [
-      d.route.replace(/\/$/, ''),
+      docSlug(d),
       mermaidFences(readFileSync(join(site, '..', DOC_DIR, d.file), 'utf8')).length,
     ])
   );

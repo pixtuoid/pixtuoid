@@ -8,7 +8,7 @@ import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
 import rehypeBeautifulMermaid from './rehype-beautiful-mermaid.mjs';
 import { mermaidFences } from './assert-docs-rendered.mjs';
-import { DOC_DIR } from './github.mjs';
+import { DOC_DIR } from './docs.mjs';
 import docs from '../src/docs.json' with { type: 'json' };
 
 const SOURCE = `flowchart TB
@@ -106,12 +106,13 @@ for (const { file } of docs) {
 test('the diagram sits in a figure: a bar, then a tab-stop body holding it at its drawn size', () => {
   const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });
   const [figure] = tree.children;
-  assert.deepEqual(figure.properties.className, ['fig', 'fig--diagram']);
+  assert.deepEqual(figure.properties.className, ['fig--diagram']);
   const [bar, body] = figure.children;
   assert.deepEqual(bar.properties.className, ['fig__bar']);
   assert.deepEqual(body.properties.className, ['fig__body']);
   assert.equal(body.properties.tabIndex, 0);
   const svg = svgOf(body);
+  assert.ok(Number(svg.properties.width) > 0);
   assert.match(svg.properties.style, new RegExp(`min-width:${svg.properties.width}px$`));
 });
 

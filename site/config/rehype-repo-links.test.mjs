@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import rehypeRepoLinks from './rehype-repo-links.mjs';
 import { h } from 'hastscript';
-import { DOC_DIR, REPO_BLOB } from './github.mjs';
+import { DOC_DIR } from './docs.mjs';
+import { REPO_BLOB } from './github.mjs';
 
 const DOCS = [
   { file: 'ARCHITECTURE.md', route: 'architecture/' },

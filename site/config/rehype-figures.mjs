@@ -47,9 +47,8 @@ const KINDS = {
 
 const FIGURE_KINDS = Object.keys(KINDS);
 
-// The shell every figure shares: Docs.astro styles `.fig` and `.fig--<kind>`.
-export const figure = (kind, children) =>
-  h('figure', { className: ['fig', `fig--${kind}`] }, children);
+// The shell every figure shares: its class names its kind, which Docs.astro's rules select.
+export const figure = (kind, children) => h('figure', { className: [`fig--${kind}`] }, children);
 
 export default function rehypeFigures() {
   return (tree) => {

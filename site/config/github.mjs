@@ -8,8 +8,6 @@ import process from 'node:process';
 export const REPO_SLUG = 'pixtuoid/pixtuoid';
 export const REPO = `https://github.com/${REPO_SLUG}`;
 export const REPO_BLOB = `${REPO}/blob/main`;
-// The repository directory that holds the rendered docs.
-export const DOC_DIR = 'docs';
 export const GH_API_REPO = `https://api.github.com/repos/${REPO_SLUG}`;
 // Shared with Statusline.astro's PR-feed fetch, so an offline/slow CI runner
 // fails every build-time GitHub call the same way.

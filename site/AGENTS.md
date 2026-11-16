@@ -27,7 +27,8 @@ build:
   `docs.json` entry (the collection, the route, `Nav.astro`, `Docs.astro`'s
   sidebar/pager, the in-site doc links and Lighthouse's URLs derive from it;
   `assert-docs-rendered` globs every rendered `article.prose` and needs no
-  edit) and `site.yml`'s `scope` paths.
+  edit), `site.yml`'s `scope` paths, and the e2e rows that name a route (smoke's
+  pan and `PLATE_SURFACES` tables, `docs-lobby.spec.ts`).
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:
@@ -50,7 +51,7 @@ Statusline doc variant (no PR feed fetch); `Docs.astro`'s sidebar reads the
 one `FLOORS` manifest. `<!-- figure: <kind> -->` above a doc's table draws it
 as a figure (`config/rehype-figures.mjs`, whose header owns it).
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
-unit-tested, registered AFTER `rehypeRepoLinks`). Adding a `.prose` colour rule
+unit-tested). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its
 theme-prefixed tie are on the rule itself in `Docs.astro`, and the smoke
 suite's callout AA sweep grades it.

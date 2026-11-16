@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { DOC_DIR } from './github.mjs';
+import { DOC_DIR } from './docs.mjs';
 import docs from '../src/docs.json' with { type: 'json' };
 
 test("site.yml's scope paths name exactly the docs the site renders", () => {

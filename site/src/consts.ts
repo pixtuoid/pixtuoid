@@ -10,8 +10,9 @@ import type { VALID_THEMES } from '../config/page-themes.mjs';
 export const CRATES = 'https://crates.io/crates/pixtuoid';
 export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
 
-// Every internal URL goes through asset()/BASE_URL, so a change of
-// astro.config.mjs's `base` can never silently break links.
+// Every internal URL joins astro.config.mjs's `base` through withBase(), as
+// asset() in components and by rehype-repo-links in rendered markdown, so a
+// change of `base` can never silently break links.
 const BASE = import.meta.env.BASE_URL;
 export const asset = (p: string): string => withBase(BASE, p);
 
@@ -68,12 +69,11 @@ export const DIM_RESTING = 0.55;
 export interface DocPage {
   route: string; // base-path-relative, slashed as its page's canonical URL (asset(route))
   label: string;
-  file: string; // under the repo's DOC_DIR, the page's single source
+  file: string; // under the repo's DOC_DIR (config/docs.mjs), the page's single source
   description: string;
   sourceNote?: string; // what the page's source line adds about how it renders the file
 }
 export const DOCS: readonly DocPage[] = docsData;
-export const docSlug = (d: DocPage): string => d.route.replace(/\/$/, '');
 export const pageTitle = (name: string): string => `${name} — pixtuoid`;
 
 export interface ThemeShot {

@@ -4,8 +4,9 @@ import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import { asset, DOCS, docSlug, FLOORS, pageTitle, type DocPage } from '../consts';
-import { DOC_DIR, REPO_BLOB } from '../../config/github.mjs';
+import { asset, DOCS, FLOORS, pageTitle, type DocPage } from '../consts';
+import { DOC_DIR, docSlug } from '../../config/docs.mjs';
+import { REPO_BLOB } from '../../config/github.mjs';
 
 interface Props {
   page: DocPage;

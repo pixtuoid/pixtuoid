@@ -32,6 +32,23 @@ test('a page with fewer <svg> than its doc declares mermaid blocks fails', () =>
   assert.ok(failures.some((f) => f.includes('/how-we-build: 1 inline <svg> for the 2')));
 });
 
+test('a page with more <svg> than its doc declares mermaid blocks fails', () => {
+  const { failures } = checkDocPages(
+    [{ name: 'config', html: doc(`${SVG}${SVG}${body(MIN_BODY_CHARS)}`) }],
+    { config: 1 }
+  );
+  assert.ok(failures.some((f) => f.includes('/config: 2 inline <svg> for the 1')));
+});
+
+test('a Docs-layout page the roster does not list fails', () => {
+  const { failures } = checkDocPages([{ name: 'stray', html: doc(body(MIN_BODY_CHARS)) }], {});
+  assert.ok(failures.some((f) => f.includes('/stray') && f.includes('does not list')));
+});
+
+test('mermaidFences reads a tilde fence and an indented one', () => {
+  assert.deepEqual(mermaidFences('~~~mermaid\nA\n~~~\n   ```mermaid\nB\n   ```\n'), ['A\n', 'B\n']);
+});
+
 test('mermaidFences returns the source of every mermaid block', () => {
   assert.deepEqual(
     mermaidFences('a\n```mermaid\nA --> B\n```\n```js\nx\n```\n```mermaid\nC\n```\n'),

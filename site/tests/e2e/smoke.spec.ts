@@ -2229,7 +2229,8 @@ test('landing fixed chrome: floating nav, statusline readouts, floor popover', a
 test('no horizontal overflow at phone widths (mobile pan guard)', async ({ browser }) => {
   // `body { overflow-x: hidden }` masks the desktop scrollbar, so a full-width block whose ::before glow pokes past the viewport
   // is INVISIBLE on desktop yet PANS on mobile — and a pseudo-element dodges every querySelectorAll('*') scan.
-  // What overflows instead scrolls inside a doc's own scroller, which config/rehype-scroll-focus.mjs makes a tab stop.
+  // What overflows instead scrolls inside a doc's own scroller: a code block or table
+  // (config/rehype-scroll-focus.mjs) or a diagram body (config/rehype-beautiful-mermaid.mjs), each a tab stop.
   let scrollersSeen = 0;
   for (const [path, width] of [
     ['./', 320], // iPhone SE — the narrowest supported
@@ -2570,7 +2571,7 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
             `${theme} ${route} diagram "${label}": WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
           ).toBeGreaterThanOrEqual(4.5);
         }
-        // The diagram's body is a tab stop on every diagram (rehype-scroll-focus.mjs),
+        // The diagram's body is a tab stop on every diagram (rehype-beautiful-mermaid.mjs),
         // so its focus ring is a state of the page: 3:1 against the screen inside it
         // and the page outside it (WCAG 1.4.11).
         expect(focus.style, `${theme} ${route}: the diagram body shows no focus ring`).not.toBe(

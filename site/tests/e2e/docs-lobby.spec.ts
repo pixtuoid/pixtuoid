@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
-import { DOC_DIR, REPO_BLOB } from '../../config/github.mjs';
+import { DOC_DIR } from '../../config/docs.mjs';
+import { REPO_BLOB } from '../../config/github.mjs';
 import docs from '../../src/docs.json' with { type: 'json' };
 
 // Runs against the PRODUCTION build (see playwright.config.ts).
