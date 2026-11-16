@@ -13,6 +13,8 @@ import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { visit } from 'unist-util-visit';
 import { DOC_DIR, docSlug } from './docs.mjs';
 
 // A generous floor: flags a collapsed render without coupling to any page's size.
@@ -21,12 +23,14 @@ export const MIN_BODY_CHARS = 500;
 // appended Astro scoped class doesn't drop the article → redden every deploy.
 const DOC_ARTICLE = /<article class="[^"]*\bprose\b[^"]*"[^>]*>([\s\S]*?)<\/article>/;
 
-// A fenced block opens with backticks or tildes, indented up to three spaces
-// (spec.commonmark.org/0.31.2/#fenced-code-blocks).
-export const mermaidFences = (markdown) =>
-  [...markdown.matchAll(/^ {0,3}(`{3,}|~{3,})mermaid[ \t]*\n([\s\S]*?)^ {0,3}\1/gm)].map(
-    (m) => m[2]
-  );
+/** The source of every Mermaid code block a Markdown document holds. */
+export function mermaidFences(markdown) {
+  const sources = [];
+  visit(fromMarkdown(markdown), { type: 'code', lang: 'mermaid' }, (code) => {
+    sources.push(code.value);
+  });
+  return sources;
+}
 
 /**
  * Given doc-page entries `[{ name, html }]` and `diagrams`, the count of

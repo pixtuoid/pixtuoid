@@ -45,15 +45,18 @@ test('a Docs-layout page the roster does not list fails', () => {
   assert.ok(failures.some((f) => f.includes('/stray') && f.includes('does not list')));
 });
 
-test('mermaidFences reads a tilde fence and an indented one', () => {
-  assert.deepEqual(mermaidFences('~~~mermaid\nA\n~~~\n   ```mermaid\nB\n   ```\n'), ['A\n', 'B\n']);
+test('mermaidFences returns the source of every mermaid block, whatever its fence', () => {
+  const md = [
+    '```mermaid\nA --> B\n```',
+    '```js\nx\n```',
+    '~~~mermaid\nC\n~~~',
+    '   ```mermaid\nD\n   ```',
+  ].join('\n\n');
+  assert.deepEqual(mermaidFences(md), ['A --> B', 'C', 'D']);
 });
 
-test('mermaidFences returns the source of every mermaid block', () => {
-  assert.deepEqual(
-    mermaidFences('a\n```mermaid\nA --> B\n```\n```js\nx\n```\n```mermaid\nC\n```\n'),
-    ['A --> B\n', 'C\n']
-  );
+test('a mermaid fence quoted inside another code block is no diagram', () => {
+  assert.deepEqual(mermaidFences('````text\n```mermaid\nA --> B\n```\n````\n'), []);
 });
 
 test('no doc pages at all (selector drift) fails loudly, never vacuously passes', () => {

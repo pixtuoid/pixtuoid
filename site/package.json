@@ -51,6 +51,7 @@
     "hastscript": "^9.0.1",
     "knip": "^6.44.1",
     "lighthouse": "^13.6.0",
+    "mdast-util-from-markdown": "^2.1.0",
     "playwright": "^1.62.1",
     "prettier": "^3.9.10",
     "prettier-plugin-astro": "^1.1.1",

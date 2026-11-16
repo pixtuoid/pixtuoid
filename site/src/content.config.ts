@@ -8,7 +8,7 @@ export const collections = {
     loader: glob({
       pattern: DOCS.map((d) => d.file),
       base: `../${DOC_DIR}`,
-      // An entry's id is its roster `file`, so a page looks its entry up by name.
+      // An entry's id is its roster `file`, so a page looks its entry up by its `file`.
       generateId: ({ entry }) => entry,
     }),
   }),
