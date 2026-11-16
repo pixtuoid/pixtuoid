@@ -5,7 +5,6 @@ import featuresData from './features.json';
 import docsData from './docs.json';
 import { featureText } from '../config/feature-text.mjs';
 import { withBase } from '../config/base-path.mjs';
-import { FLOORS as floors } from '../config/floors.mjs';
 import type { VALID_THEMES } from '../config/page-themes.mjs';
 
 export const CRATES = 'https://crates.io/crates/pixtuoid';
@@ -28,22 +27,6 @@ export const THEME_BG: Record<ThemeId, string> = {
   night: '#1d1813',
   dracula: '#282a36',
 };
-
-// The Statusline lift, the Base.astro key handler, the ElevatorShaft, and every
-// narrative section stamp their id / data-floor / data-floor-label / eyebrow
-// from config/floors.mjs's ONE array, so a renumber / rename / add can't silently desync them.
-export interface Floor {
-  id: string; // section id + the digit-key / elevator jump target (getElementById)
-  fl: string; // the data-floor stamp, lift readout and digit-key vocabulary; '1F' is the bottom
-  label: string;
-}
-export const FLOORS: Floor[] = floors;
-export const floorById = (id: string): Floor => {
-  const f = FLOORS.find((x) => x.id === id);
-  if (!f) throw new Error(`consts: no FLOORS entry for floor id "${id}"`);
-  return f;
-};
-export const floorName = (f: Floor): string => f.label.split(' — ')[0];
 
 // The ONE floor-spy IntersectionObserver band: the Statusline scrollspy and the
 // ElevatorShaft LED each build their own observer over the SAME [data-floor]

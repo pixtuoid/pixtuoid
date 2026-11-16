@@ -3,14 +3,8 @@
 // elevator's organs (floor readout, scrollspy, digit keys, jump list). Sits on
 // --screen (the office's own hardware black) and is NEVER subject to the dimmer.
 import sources from '../sources.json';
-import {
-  FLOORS,
-  floorName,
-  DIM_RESTING,
-  FLOOR_SPY_ROOT_MARGIN,
-  BOTTOM_CLAMP_EPSILON_PX,
-  asset,
-} from '../consts';
+import { DIM_RESTING, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX, asset } from '../consts';
+import { FLOORS, floorName } from '../../config/floors.mjs';
 import { GH_API_REPO, GH_FETCH_TIMEOUT_MS, REPO } from '../../config/github.mjs';
 
 interface Props {
@@ -459,12 +453,6 @@ const FEED_ROTATE_MS = 6000;
     }
     .sl__copy.is-flash .sl__copy-icon-flash {
       display: inline;
-    }
-  }
-  /* In a window this narrow the bar has no room for the hint: it clipped mid-word. */
-  @media (max-width: 520px) {
-    .sl__keys {
-      display: none;
     }
   }
   @media (pointer: coarse) {

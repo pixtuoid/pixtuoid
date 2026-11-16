@@ -1,6 +1,7 @@
 ---
 import { Code } from 'astro:components';
-import { CRATES, floorById, floorName } from '../consts';
+import { CRATES } from '../consts';
+import { floorById, floorName } from '../../config/floors.mjs';
 import { REPO } from '../../config/github.mjs';
 
 const floor = floorById('install');

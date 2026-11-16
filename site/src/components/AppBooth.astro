@@ -2,18 +2,9 @@
 import { Image } from 'astro:assets';
 import ipadOffice from '../assets/app/ipad-office.png';
 import iphoneOffice from '../assets/app/iphone-office.png';
-import { floorById, floorName } from '../consts';
+import { floorById, floorName } from '../../config/floors.mjs';
 
 const floor = floorById('app');
-// Each line states what pixtuoid/apple's main does today: the App is unreleased,
-// so none names a price, a date or another platform.
-const features = [
-  'A demo office, a companion cat or dog, and lofi that follows the agents: no computer needed.',
-  'A widget for the Home Screen, StandBy and the Lock Screen.',
-  'Tap anyone to see what they’re working on, and open the list to see who’s waiting for you.',
-  'Pair once: scan or paste the link <code>pixtuoid pair</code> prints, and your agents move in live from <code>pixtuoid serve</code>, straight from your computer over your own network, with no server in between.',
-  'Connecting a computer is paid; the demo office, lofi and your companion stay free.',
-];
 ---
 
 <section id={floor.id} class="app" data-lit data-floor={floor.fl} data-floor-label={floor.label}>
@@ -24,33 +15,40 @@ const features = [
       <p class="app__lead">
         No agents? The demo office, a cat or dog and lofi still keep you company.
       </p>
+      {/* The App is unreleased, so no line names a price, a date or another platform. */}
       <ul class="app__features">
-        {features.map((f) => (
-          <li set:html={f} />
-        ))}
+        <li>
+          A demo office, a companion cat or dog, and lofi that follows the office: no computer
+          needed.
+        </li>
+        <li>A widget for the Home Screen, StandBy and the Lock Screen.</li>
+        <li>
+          Tap anyone to see what they’re working on, and open the list to see who’s waiting for you.
+        </li>
+        <li>
+          Pair once: scan or paste the link <code>pixtuoid pair</code> prints, and your agents move
+          in live from <code>pixtuoid serve</code>, straight from your computer over your own
+          network, with no server in between.
+        </li>
+        <li>Connecting a computer is paid; the demo office, lofi and your companion stay free.</li>
       </ul>
     </div>
-    <figure class="app__devices reveal">
-      <div class="app__stack" aria-hidden="true">
+    <div class="app__devices reveal">
+      <div class="app__stack">
+        {/* `densities`, not `sizes`: a `sizes` list would copy this layout's widths. */}
         <Image
           class="app__ipad"
           src={ipadOffice}
-          alt=""
-          widths={[700, 1400]}
-          sizes="(min-width: 900px) 46vw, 86vw"
+          alt="The pixtuoid App on an iPad and an iPhone, each showing the pixel office with agents at their desks."
+          width={700}
+          densities={[1, 2]}
         />
-        <Image
-          class="app__iphone"
-          src={iphoneOffice}
-          alt=""
-          widths={[300, 600]}
-          sizes="(min-width: 900px) 13vw, 24vw"
-        />
+        <Image class="app__iphone" src={iphoneOffice} alt="" width={300} densities={[1, 2]} />
       </div>
-      <figcaption class="app__note text-scrim">
+      <p class="app__note text-scrim">
         The App is still in development. Features and screenshots may change before release.
-      </figcaption>
-    </figure>
+      </p>
+    </div>
   </div>
 </section>
 
@@ -96,13 +94,9 @@ const features = [
     left: 0;
     color: var(--coral-deep);
   }
-  .app__features :global(code) {
-    font-family: var(--font-mono);
+  .app__features code {
     font-size: 0.85em;
     color: var(--fg);
-  }
-  .app__devices {
-    margin: 0;
   }
   /* The iPad sits back; the iPhone steps in front of its lower left. */
   .app__stack {

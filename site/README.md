@@ -62,7 +62,7 @@ someone else's publish would short-circuit every check below it). npm 12 is requ
   focus-gated (WCAG 2.1.4); the statusline popover carries the persisted keys
   off-switch. 404 is the office at 3 a.m.
 - **Cross-component seams** (what a new section wires): `data-lit` (dimmer)
-  and a `FLOORS` row in `consts.ts` (statusline, shaft, section ids all
+  and a row in `src/floors.json` (statusline, shaft, section ids all
   derive from it). The backdrop publishes `window.__pixLights`, `pix:onair` /
   `.is-live`, and `pix:paused` (every >5s auto-motion listens — one control
   governs page motion). `Install.astro` fires `pix:install-copy` → the

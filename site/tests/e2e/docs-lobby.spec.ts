@@ -1,6 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 import { DOC_DIR } from '../../config/docs.mjs';
-import { FLOORS } from '../../config/floors.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
 import docs from '../../src/docs.json' with { type: 'json' };
 
@@ -124,10 +123,6 @@ test('tenant board: hw-panel screen, LED dots with shape distinction, sr-only va
   expect(await board.locator('.tools__led--exp').count()).toBeGreaterThan(0);
   await expect(board.locator('td.tools__cell .sr-only').first()).toHaveText(
     /supported|experimental/
-  );
-  await expect(page.locator('#tools')).toHaveAttribute(
-    'data-floor',
-    FLOORS.find((f) => f.id === 'tools')!.fl
   );
 });
 

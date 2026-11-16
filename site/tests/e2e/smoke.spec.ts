@@ -3,6 +3,7 @@ import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
 import { E2E_STAR_COUNT } from '../../config/github.mjs';
+import { FLOORS } from '../../config/floors.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
@@ -624,6 +625,30 @@ test('digit keys ride between floors (scrollspy round-trip)', async ({ page }) =
   await expect(page.locator('[data-lift-digit]')).toHaveText('3F', { timeout: 10_000 });
   await page.keyboard.press('1');
   await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 10_000 });
+  // From the bottom, so the top floor's own digit has to do the riding.
+  await page.keyboard.press(String(FLOORS.length));
+  await expect(page.locator('[data-lift-digit]')).toHaveText(FLOORS[0].fl, { timeout: 10_000 });
+});
+
+test('the statusline names the digit keys the floors have, and the next digit rides nowhere', async ({
+  browser,
+}) => {
+  // Reduced motion: a ride is then one synchronous scroll, so a digit that leaked would have moved the page.
+  const context = await browser.newContext({ reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  const errors = watchErrors(page);
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  await expect(page.locator('.sl__keys')).toHaveText(`keys 1–${FLOORS.length}`);
+  await expect(page.locator('.sl__keyslabel')).toHaveText(`keys 1–${FLOORS.length}`);
+  await page.keyboard.press('1');
+  await expect(page.locator('[data-lift-digit]')).toHaveText('1F');
+  const before = await page.evaluate(() => window.scrollY);
+  expect(before).toBeGreaterThan(0);
+  await page.keyboard.press(String(FLOORS.length + 1));
+  expect(await page.evaluate(() => window.scrollY)).toBe(before);
+  expect(errors()).toEqual([]);
+  await context.close();
 });
 
 test('scrolled to the true page bottom, the statusline clamps to the last floor', async ({

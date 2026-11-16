@@ -13,7 +13,8 @@ import AppBooth from '../components/AppBooth.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
 import ElevatorShaft from '../components/ElevatorShaft.astro';
-import { asset, floorById, floorName } from '../consts';
+import { asset } from '../consts';
+import { floorById, floorName } from '../../config/floors.mjs';
 
 const amenities = floorById('amenities');
 ---

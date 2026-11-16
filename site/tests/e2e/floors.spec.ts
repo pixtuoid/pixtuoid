@@ -1,10 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { FLOORS } from '../../config/floors.mjs';
+import { FLOORS, floorById } from '../../config/floors.mjs';
 import featuresData from '../../src/features.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 
 const TOP = FLOORS[0].fl;
-const floorOf = (id: string) => FLOORS.find((f) => f.id === id)!.fl;
+// A floor in the middle of the building, between the ends the tests ride from and to.
+const MID = floorById('how').fl;
 
 // Read the manifests directly rather than hand-copying expected strings, which
 // would silently go stale.
@@ -118,7 +119,7 @@ test('the floors declare the elevator anchor contract, top floor down', async ({
   const shimFloor = await page.$eval('#features', (el) =>
     el.closest('[data-floor]')?.getAttribute('data-floor')
   );
-  expect(shimFloor).toBe(floorOf('showcase'));
+  expect(shimFloor).toBe(floorById('showcase').fl);
 });
 
 test('the floating-window still gap is retired (wb-4 owns the slot)', async ({ page }) => {
@@ -191,11 +192,11 @@ test('elevator shaft: the current-floor LED dot is actually lit, not just text-c
   await expect(page.locator(`[data-shaft-stop="${TOP}"]`)).toHaveAttribute('aria-current', 'true');
   expect(await dotColor(TOP)).toBe(litColor);
   expect(await dotColor(FLOORS[1].fl)).not.toBe(litColor);
-  await page.locator('[data-shaft-stop="3F"]').click();
-  await expect(page.locator('[data-shaft-stop="3F"]')).toHaveAttribute('aria-current', 'true', {
+  await page.locator(`[data-shaft-stop="${MID}"]`).click();
+  await expect(page.locator(`[data-shaft-stop="${MID}"]`)).toHaveAttribute('aria-current', 'true', {
     timeout: 10_000,
   });
-  expect(await dotColor('3F')).toBe(litColor);
+  expect(await dotColor(MID)).toBe(litColor);
   expect(await dotColor(TOP)).not.toBe(litColor);
 });
 
@@ -250,8 +251,8 @@ test('elevator shaft: reduced motion is a static indicator', async ({ browser })
     return { transition: car.transitionDuration };
   });
   expect(parseFloat(styles.transition)).toBeLessThan(0.001);
-  await page.locator('[data-shaft-stop="3F"]').click();
-  await expect(page.locator('[data-shaft-stop="3F"]')).toHaveAttribute('aria-current', 'true', {
+  await page.locator(`[data-shaft-stop="${MID}"]`).click();
+  await expect(page.locator(`[data-shaft-stop="${MID}"]`)).toHaveAttribute('aria-current', 'true', {
     timeout: 10_000,
   });
   await ctx.close();
