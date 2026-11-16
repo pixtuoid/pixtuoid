@@ -5,6 +5,7 @@ import featuresData from './features.json';
 import docsData from './docs.json';
 import { featureText } from '../config/feature-text.mjs';
 import { withBase } from '../config/base-path.mjs';
+import { floorById } from '../config/floors.mjs';
 import type { VALID_THEMES } from '../config/page-themes.mjs';
 
 export const CRATES = 'https://crates.io/crates/pixtuoid';
@@ -15,6 +16,8 @@ export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
 // change of `base` can never silently break links.
 const BASE = import.meta.env.BASE_URL;
 export const asset = (p: string): string => withBase(BASE, p);
+// A floor's anchor on the home page, from any page.
+export const floorHref = (id: string): string => `${asset('')}#${floorById(id).id}`;
 
 // Seeded parse-first into window.__pixTheme (Base.astro head) via define:vars.
 // THEME_BG is the mobile browser-chrome tint; its hexes MIRROR global.css's

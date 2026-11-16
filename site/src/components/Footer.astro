@@ -1,5 +1,6 @@
 ---
 import { CRATES, SPONSOR, asset } from '../consts';
+import { DISCORD } from '../../config/discord.mjs';
 import { REPO } from '../../config/github.mjs';
 ---
 
@@ -21,6 +22,10 @@ import { REPO } from '../../config/github.mjs';
     <span class="footer__grp">
       <span class="footer__sep">·</span>
       <a href={REPO} target="_blank" rel="noreferrer">GitHub</a>
+    </span>
+    <span class="footer__grp">
+      <span class="footer__sep">·</span>
+      <a href={DISCORD} target="_blank" rel="noreferrer">Discord</a>
     </span>
     <span class="footer__grp">
       <span class="footer__sep">·</span>
@@ -96,10 +101,11 @@ import { REPO } from '../../config/github.mjs';
      GROUP that itself wraps to start a new line still leads that line with
      its own dot (#wb-3: "· built in Rust" opening line 2) — each "·"
      introduces its FOLLOWING item, so it can only ever land at a line's
-     leading edge, never trailing. Below the width where the row visibly
-     wraps (.footer__line's own flex-wrap, measured ≤960px), drop the dots
-     and let the row's gap carry the separation instead. */
-  @media (max-width: 960px) {
+     leading edge, never trailing. Below the width where the row wraps at its
+     longest, the night clock's words included, drop the dots and let the row's
+     gap carry the separation instead: smoke's footer one-line test fails when the
+     row outgrows this width. */
+  @media (max-width: 1100px) {
     .footer__sep {
       display: none;
     }
@@ -113,8 +119,7 @@ import { REPO } from '../../config/github.mjs';
   .footer__line a:hover {
     color: #fff;
   }
-  /* support CTA — the same brighten-on-hover IDEA as Nav's coffee (#686), but via
-     a colour-mix toward white rather than Nav's deep→full token swap. Rests on
+  /* support CTA — brightens on hover by a colour-mix toward white. Rests on
      --chip-accent, NOT --coral: this line's whole point is theme-independent ink
      on the --screen chip (see .footer__line above), and the theme token broke
      that — it measured 3.70:1 in day and 4.26:1 in night against the chip, one

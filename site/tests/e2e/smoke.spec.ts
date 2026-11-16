@@ -2,10 +2,15 @@ import { expect, test, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
-import { E2E_STAR_COUNT } from '../../config/github.mjs';
-import { FLOORS } from '../../config/floors.mjs';
+import { E2E_STAR_COUNT, REPO } from '../../config/github.mjs';
+import { FLOORS, floorById } from '../../config/floors.mjs';
+import { DISCORD } from '../../config/discord.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
+
+// WCAG 2.2's AA floors: text (SC 1.4.3) and non-text (SC 1.4.11).
+const AA_TEXT = 4.5;
+const AA_NON_TEXT = 3;
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
 const supportedSources = (sourcesData as SourceRow[]).filter((s) => s.status === 'supported');
@@ -214,27 +219,39 @@ async function officeGrounds(
 }
 
 /**
- * The worst contrast ratio the element's text ACTUALLY renders at: every ancestor background composited down and every ancestor
+ * The worst contrast ratio the element's text, or with `inkOf: 'outlineColor'` its outline, ACTUALLY renders at: every ancestor background composited down and every ancestor
  * `opacity` folded into the ink, over the office composite where a live office is the ground and the page's own plate where it is not.
  * Folding `opacity` is the difference between graded and rendered — a group at `opacity: .7` shows 30% of its ground through the glyph.
  */
-async function paintedContrast(page: Page, selector: string, nth = 0): Promise<number> {
+async function paintedContrast(
+  page: Page,
+  selector: string,
+  nth = 0,
+  inkOf: 'color' | 'outlineColor' = 'color'
+): Promise<number> {
   const { ink, chain } = await page.evaluate(
-    ([sel, i]) => {
+    ([sel, i, inkOf]) => {
       const el = document.querySelectorAll(sel)[i as number];
-      const chain: { bg: string; opacity: number; isPageRoot: boolean }[] = [];
-      for (let n: Element | null = el; n; n = n.parentElement) {
+      const chain: { bg: string; image: string; opacity: number; isPageRoot: boolean }[] = [];
+      // An outline is drawn outside its element's box, so that element's own background is not under it.
+      const start = inkOf === 'outlineColor' ? el.parentElement : el;
+      for (let n: Element | null = start; n; n = n.parentElement) {
         const cs = getComputedStyle(n);
         chain.push({
           bg: cs.backgroundColor,
+          image: cs.backgroundImage,
           opacity: parseFloat(cs.opacity),
           isPageRoot: n === document.body || n === document.documentElement,
         });
       }
-      return { ink: getComputedStyle(el).color, chain };
+      return { ink: getComputedStyle(el)[inkOf], chain };
     },
-    [selector, nth] as const
+    [selector, nth, inkOf] as const
   );
+  expect(
+    chain.filter((c) => c.image !== 'none').map((c) => c.image),
+    `${selector}[${nth}]: a background-image lies under the ink, and only background-color is composited`
+  ).toEqual([]);
   const inkRgb = parseRgb(ink).slice(0, 3) as [number, number, number];
   // `opacity` fades a node's OWN background and everything inside it, never an
   // ancestor's — so a layer's group factor is the product from the ROOT down.
@@ -1459,7 +1476,30 @@ test('reduced motion: an install copy writes the clipboard but hires nobody', as
   await context.close();
 });
 
-test('docs pages keep the sticky nav with section links', async ({ page }) => {
+test('the nav links the docs, the App floor, GitHub and the install floor, from any page', async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  for (const path of ['./', './config/']) {
+    await page.goto(path);
+    const links = await page
+      .locator('#nav-links a')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    expect(links, path).toEqual([
+      ...docs.map((d) => `/${d.route}`),
+      `/#${floorById('app').id}`,
+      REPO,
+      `/#${floorById('install').id}`,
+    ]);
+  }
+});
+
+test("the footer links the project's Discord invite", async ({ page }) => {
+  await page.goto('./');
+  await expect(page.locator(`.footer a[href="${DISCORD}"]`)).toHaveText('Discord');
+});
+
+test('docs pages keep the sticky nav with its links', async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto('./config/');
   const nav = page.locator('.nav');
@@ -1467,7 +1507,7 @@ test('docs pages keep the sticky nav with section links', async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.querySelector('.nav')!).position))
     .toBe('sticky');
-  await expect(page.locator('.nav__section-link').first()).toBeVisible();
+  await expect(page.locator('#nav-links .nav__install')).toBeVisible();
   expect(errors()).toEqual([]);
 });
 
@@ -2218,10 +2258,17 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
   const m = await ctx.newPage();
   await m.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await m.goto('./config/');
-  await m.locator('#nav-burger').click();
+  await m.locator('#nav-burger').focus();
+  await m.keyboard.press('Enter');
   await expect(m.locator('#nav-links')).toHaveClass(/is-open/);
   await expect(m.locator('#nav-burger')).toHaveAttribute('aria-expanded', 'true');
-  await m.locator('#nav-links a').first().focus();
+  // Focus follows the panel in, and Tab then walks its links in order.
+  const panelLinks = m.locator('#nav-links a');
+  const count = await panelLinks.count();
+  for (let i = 0; i < count; i++) {
+    await expect(panelLinks.nth(i)).toBeFocused();
+    if (i < count - 1) await m.keyboard.press('Tab');
+  }
   await m.keyboard.press('Escape');
   await expect(m.locator('#nav-links')).not.toHaveClass(/is-open/);
   await expect(m.locator('#nav-burger')).toBeFocused();
@@ -2460,8 +2507,15 @@ test.describe('the office moments still span the light range', () => {
   });
 });
 
+// The floating nav's text controls, which lie bare over the office.
+const NAV_OVER_OFFICE = [
+  `#nav-links > a[href$="#${floorById('app').id}"]`,
+  '#nav-links > a[target="_blank"]',
+  '.nav__docs-btn',
+];
+
 atOfficeMoments(
-  'bare hero text clears WCAG AA at the real office composite',
+  'bare text over the office clears WCAG AA at the real office composite',
   VALID_THEMES,
   async (page, theme, moment) => {
     // The hero copy has no plate, so legibility rests entirely on the ink token clearing contrast against what the office
@@ -2472,6 +2526,9 @@ atOfficeMoments(
     await settleAnimations(page);
 
     for (const selector of [
+      '.nav__logo',
+      ...NAV_OVER_OFFICE,
+      '.nav__soon',
       '.hero .eyebrow',
       '.hero .statement-sub',
       '.hero__avail',
@@ -2494,9 +2551,76 @@ atOfficeMoments(
       const ratio = await paintedContrast(page, selector);
       expect(
         ratio,
-        `${theme} ${moment} ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} ${moment} ${selector}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
+    for (const selector of NAV_OVER_OFFICE) {
+      const ink = () => page.locator(selector).evaluate((el) => getComputedStyle(el).color);
+      const atRest = await ink();
+      await page.hover(selector);
+      await expect
+        .poll(ink, `${theme} ${moment} ${selector}: hover changes nothing`)
+        .not.toBe(atRest);
+      await settleAnimations(page);
+      const ratio = await paintedContrast(page, selector);
+      expect(
+        ratio,
+        `${theme} ${moment} ${selector} hovered: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
+    const ringClears = async (selector: string, where: string) => {
+      const ringShown = await page
+        .locator(selector)
+        .first()
+        .evaluate((el) => {
+          (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
+          return getComputedStyle(el).outlineStyle !== 'none';
+        });
+      expect(ringShown, `${theme} ${moment} ${selector} ${where}: no focus ring`).toBe(true);
+      const ring = await paintedContrast(page, selector, 0, 'outlineColor');
+      expect(
+        ring,
+        `${theme} ${moment} ${selector} ${where} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    };
+    for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install', '#theme-toggle'])
+      await ringClears(selector, 'over the office');
+
+    for (const selector of ['.nav__install', '.btn-primary']) {
+      const fill = () =>
+        page
+          .locator(selector)
+          .first()
+          .evaluate((el) => {
+            const style = getComputedStyle(el);
+            return `${style.backgroundImage} ${style.backgroundColor}`;
+          });
+      const restFill = await fill();
+      await page.locator(selector).first().hover();
+      expect(await fill(), `${theme} ${moment} ${selector}: hover changes nothing`).not.toBe(
+        restFill
+      );
+      // Graded at once and settled: a fill that fades in is see-through on its first frames.
+      for (const frame of ['at once', 'settled']) {
+        if (frame === 'settled') await settleAnimations(page);
+        const hovered = await paintedContrast(page, selector);
+        expect(
+          hovered,
+          `${theme} ${moment} ${selector} hovered, ${frame}: WCAG AA floor is ${AA_TEXT}:1; measured ${hovered.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(AA_TEXT);
+      }
+    }
+
+    // The bar's ring ink also rings the links on its two plates: the Docs menu and the burger's panel.
+    await page.click('#docs-btn');
+    await ringClears('#docs-menu a', 'in the Docs menu');
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({ width: 480, height: 800 });
+    await page.click('#nav-burger');
+    await ringClears('#nav-links > a', "in the burger's panel");
+    await page.keyboard.press('Escape');
+    for (const selector of ['#nav-burger', '#theme-toggle'])
+      await ringClears(selector, 'over the office at 480px');
   }
 );
 
@@ -2509,9 +2633,10 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
       '.osd__chip',
       '.stage__caption',
       '.vibing__ticks span',
-      '.footer__line a.footer__coffee',
+      '.footer__line a',
       '.footer__sep',
       '.nav__version',
+      '.nav__install',
       '.app__copy .eyebrow',
       '.app__copy .statement',
       '.app__lead',
@@ -2520,7 +2645,13 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
       '.app__note',
     ],
     './404.html': ['.terminal__title'],
-    './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
+    './architecture/': [
+      '.prose :not(pre) > code',
+      '.prose a > code',
+      '.docs__pager-dir',
+      '.nav__install',
+      '.nav__soon',
+    ],
     './how-we-build/': ['.fig__title', '.fig-card__role', '.fig-card__acts'],
   };
 
@@ -2537,8 +2668,8 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
         const ratio = await paintedContrast(page, selector, i);
         expect(
           ratio,
-          `${theme} ${moment} ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-        ).toBeGreaterThanOrEqual(4.5);
+          `${theme} ${moment} ${route} ${selector}[${i}]: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(AA_TEXT);
         swept++;
       }
     }
@@ -2607,16 +2738,14 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
           shapes
         );
         for (const { label, fill, stroke } of boxes) {
-          // A box a reader must parse needs a 3:1 boundary (WCAG 1.4.11); the
-          // page's 12% --border hairline measured 1.27:1, so Docs.astro routes the
-          // library's --border hook to a chip tone.
+          // A box a reader must parse needs a boundary (WCAG 1.4.11).
           const interior = parseRgb(fill).slice(0, 3) as [number, number, number];
           const [r, g, b, a] = parseRgb(stroke);
           const ratio = contrastRatio(compositeOver([r, g, b, a], interior), interior);
           expect(
             ratio,
-            `${theme} ${route} diagram box "${label}": stroke vs fill floor is 3:1; measured ${ratio.toFixed(2)}:1`
-          ).toBeGreaterThanOrEqual(3);
+            `${theme} ${route} diagram box "${label}": stroke vs fill floor is ${AA_NON_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(AA_NON_TEXT);
         }
         expect(samples.length, `${theme} ${route}: no diagram text to sweep`).toBeGreaterThan(0);
         for (const { label, ink, plate, frame } of samples) {
@@ -2628,11 +2757,11 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
           const ratio = contrastRatio(compositeOver([r, g, b, a], ground), ground);
           expect(
             ratio,
-            `${theme} ${route} diagram "${label}": WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-          ).toBeGreaterThanOrEqual(4.5);
+            `${theme} ${route} diagram "${label}": WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(AA_TEXT);
         }
         // The diagram's body is a tab stop on every diagram (rehype-beautiful-mermaid.mjs),
-        // so its focus ring is a state of the page: 3:1 against the screen inside it
+        // so its focus ring is a state of the page, graded against the screen inside it
         // and the page outside it (WCAG 1.4.11).
         expect(focus.style, `${theme} ${route}: the diagram body shows no focus ring`).not.toBe(
           'none'
@@ -2643,7 +2772,7 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
           expect(
             contrastRatio(compositeOver([r, g, b, a], under), under),
             `${theme} ${route}: focus ring against ${ground}`
-          ).toBeGreaterThanOrEqual(3);
+          ).toBeGreaterThanOrEqual(AA_NON_TEXT);
         }
       }
       swept += diagrams.length;
@@ -2785,8 +2914,8 @@ atOfficeMoments(
     for (const [what, ratio] of ratios) {
       expect(
         ratio,
-        `${theme} ${moment} ${what}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} ${moment} ${what}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   }
 );
@@ -2847,8 +2976,8 @@ test('hero badge hues clear WCAG AA against their theme-aware chip surface (day 
       const ratio = contrastRatio(fg, bg);
       expect(
         ratio,
-        `${theme} "${label}" code: WCAG AA floor is 4.5:1; ${codeColor} on cell ${chipBg} measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} "${label}" code: WCAG AA floor is ${AA_TEXT}:1; ${codeColor} on cell ${chipBg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   }
 });
@@ -2878,8 +3007,8 @@ test('tenant board text (badges, legend, planned rows, soon marks, star plaque) 
       const ratio = contrastRatio(fg, bg);
       expect(
         ratio,
-        `${theme} "${label}": WCAG AA floor is 4.5:1; color ${codeColor} on board ${boardBg} measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} "${label}": WCAG AA floor is ${AA_TEXT}:1; color ${codeColor} on board ${boardBg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     };
 
     const badges = await page.evaluate(() =>
@@ -2910,8 +3039,8 @@ test('tenant board text (badges, legend, planned rows, soon marks, star plaque) 
       const ratio = contrastRatio(fg, parseRgb(plaqueBg).slice(0, 3) as [number, number, number]);
       expect(
         ratio,
-        `${theme} "${label}": WCAG AA floor is 4.5:1; color ${codeColor} on plaque ${plaqueBg} measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} "${label}": WCAG AA floor is ${AA_TEXT}:1; color ${codeColor} on plaque ${plaqueBg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     };
     const plaqueColors = await page.evaluate(() => ({
       stars: getComputedStyle(document.querySelector('.tools__plaque-stars')!).color,
@@ -2970,8 +3099,8 @@ test('pantry chitchat bubble text clears WCAG AA against its own dark ground (da
       const ratio = contrastRatio(fg, bgRgb);
       expect(
         ratio,
-        `${theme} "${label}": WCAG AA floor is 4.5:1; ${color} on ${bg} measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} "${label}": WCAG AA floor is ${AA_TEXT}:1; ${color} on ${bg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   }
 });
@@ -3010,8 +3139,8 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
         );
         expect(
           ratio,
-          `${theme} ${route} <${tag}> "${text}": WCAG AA floor is 4.5:1; ${color} on ${bg} measured ${ratio.toFixed(2)}:1`
-        ).toBeGreaterThanOrEqual(4.5);
+          `${theme} ${route} <${tag}> "${text}": WCAG AA floor is ${AA_TEXT}:1; ${color} on ${bg} measured ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(AA_TEXT);
       }
       swept += rows.length;
     }
@@ -3124,39 +3253,40 @@ test('footer separators never strand alone at a wrap boundary', async ({ page })
   }
 });
 
-test('no footer line begins or ends with a separator dot once the row wraps', async ({ page }) => {
-  // Each dot introduces its FOLLOWING item, so a group that itself wraps still leads the new line with its own dot.
-  // Check RENDERED rows (grouped by top position): a display:none dot still shows up in textContent.
+test("the footer's row fits on one line at the first width that shows its dots", async ({
+  page,
+}) => {
+  // A dot opens its group, so a wrapped row starts a line with one.
   await gotoLive(page);
-  await page.setViewportSize({ width: 768, height: 900 });
-  await page.evaluate(() =>
-    window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' })
-  );
-  const bad = await page.evaluate(() => {
-    const line = document.querySelector('.footer__line')!;
-    const items = Array.from(line.children).filter(
-      (el) => (el as HTMLElement).offsetParent !== null
-    );
-    const rows = new Map<number, Element[]>();
-    for (const el of items) {
-      const top = Math.round(el.getBoundingClientRect().top);
-      (rows.get(top) ?? rows.set(top, []).get(top)!).push(el);
-    }
-    const findings: string[] = [];
-    for (const rowEls of rows.values()) {
-      rowEls.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
-      const leadingSep = rowEls[0].querySelector('.footer__sep');
-      if (leadingSep && getComputedStyle(leadingSep).display !== 'none') {
-        findings.push(`leading: "${(rowEls[0].textContent || '').trim()}"`);
-      }
-      const lastText = (rowEls[rowEls.length - 1].textContent || '').trim();
-      if (lastText.endsWith('·')) {
-        findings.push(`trailing: "${lastText}"`);
-      }
-    }
-    return findings;
+  // The row at its longest: the night clock's words show.
+  await page.evaluate(() => document.documentElement.setAttribute('data-clock-night', '1'));
+  await expect(page.locator('.footer__clock')).toBeVisible();
+  const dotsShow = async (width: number) => {
+    await page.setViewportSize({ width, height: 900 });
+    return page
+      .locator('.footer__sep')
+      .first()
+      .evaluate((el) => getComputedStyle(el).display !== 'none');
+  };
+  let [hidden, shown] = [320, 1440];
+  expect(await dotsShow(hidden)).toBe(false);
+  expect(await dotsShow(shown)).toBe(true);
+  // A wider viewport only gives the row more room, so the narrowest width that shows the dots decides.
+  while (shown - hidden > 1) {
+    const mid = Math.floor((hidden + shown) / 2);
+    if (await dotsShow(mid)) shown = mid;
+    else hidden = mid;
+  }
+  await page.setViewportSize({ width: shown, height: 900 });
+  // The row centres items of unequal height, so one line is every item starting above the highest bottom.
+  const wrapped = await page.evaluate(() => {
+    const boxes = Array.from(document.querySelector('.footer__line')!.children)
+      .filter((el) => (el as HTMLElement).offsetParent !== null)
+      .map((el) => el.getBoundingClientRect());
+    const highestBottom = Math.min(...boxes.map((box) => box.bottom));
+    return boxes.filter((box) => box.top >= highestBottom).length;
   });
-  expect(bad).toEqual([]);
+  expect(wrapped, `${shown}px: items on a second line`).toBe(0);
 });
 
 test('the pause control never overlaps a footer link across the mobile wrap range', async ({
@@ -3366,7 +3496,7 @@ for (const viewport of [
   }) => {
     const context = await browser.newContext({ javaScriptEnabled: false, viewport });
     const page = await context.newPage();
-    // The home page's floating nav, whose floors the script-only statusline otherwise carries.
+    // The home page too: its floating nav has no ground of its own until this state gives it one.
     for (const path of ['./config/', './']) {
       await page.goto(path);
       const links = page.locator('#nav-links a');
@@ -3403,7 +3533,7 @@ for (const viewport of [
         const worst = Math.min(
           ...ground.map((px) => contrastRatio(ink, px as [number, number, number]))
         );
-        expect(worst, `${path} link ${i}`).toBeGreaterThanOrEqual(4.5);
+        expect(worst, `${path} link ${i}`).toBeGreaterThanOrEqual(AA_TEXT);
       }
       for (const button of ['#nav-burger', '#docs-btn', '#theme-toggle'])
         await expect(page.locator(button), path).toBeHidden();

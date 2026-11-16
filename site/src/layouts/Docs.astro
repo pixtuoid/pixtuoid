@@ -4,7 +4,7 @@ import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import { asset, DOCS, pageTitle, type DocPage } from '../consts';
+import { asset, DOCS, floorHref, pageTitle, type DocPage } from '../consts';
 import { FLOORS } from '../../config/floors.mjs';
 import { DOC_DIR, docSlug } from '../../config/docs.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
@@ -47,7 +47,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
       <p class="docs__bank">the building</p>
       <ul class="docs__list docs__list--building">
         {FLOORS.map((f) => <li>
-          <a href={`${asset('')}#${f.id}`}>
+          <a href={floorHref(f.id)}>
             <span class="docs__fl" aria-hidden="true">
               {f.fl}
             </span>

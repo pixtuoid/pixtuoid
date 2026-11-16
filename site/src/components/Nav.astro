@@ -1,7 +1,6 @@
 ---
-import { SPONSOR, asset, DOCS } from '../consts';
+import { asset, DOCS, floorHref } from '../consts';
 import { REPO } from '../../config/github.mjs';
-// Absolute home so the section anchors work from any page (e.g. /config/).
 const home = asset('');
 // `floating` = the index treatment: corner chrome over the live office that
 // scrolls away, because the statusline is that page's persistent chrome.
@@ -23,9 +22,6 @@ const { floating = false } = Astro.props;
     </a>
     <span class="nav__version" aria-hidden="true">v{__PIXTUOID_VERSION__}</span>
     <nav id="nav-links" class="nav__links" aria-label="Primary">
-      <a class="nav__section-link" href={`${home}#showcase`}>Showcase</a>
-      <a class="nav__section-link" href={`${home}#tools`}>Tools</a>
-      <a class="nav__section-link" href={`${home}#install`}>Install</a>
       <div class="nav__docs">
         <button
           id="docs-btn"
@@ -40,16 +36,9 @@ const { floating = false } = Astro.props;
           {DOCS.map((d) => <a href={asset(d.route)}>{d.label}</a>)}
         </div>
       </div>
+      <a href={floorHref('app')}>App <span class="nav__soon">soon</span></a>
       <a href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a>
-      <a
-        class="nav__coffee"
-        href={SPONSOR}
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Buy me a coffee (opens in a new tab)"
-      >
-        ☕ Coffee
-      </a>
+      <a class="nav__install" href={floorHref('install')}>Install</a>
     </nav>
     <button
       id="nav-burger"
@@ -109,7 +98,13 @@ const { floating = false } = Astro.props;
         trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
         if (opts.icon) opts.icon.textContent = open ? opts.iconOpen : opts.iconClosed;
         if (open && opts.focusFirst) {
-          const first = panel.querySelector('a, button');
+          // The Docs button leads the panel and is not rendered while the burger is.
+          const first = Array.prototype.find.call(
+            panel.querySelectorAll('a, button'),
+            function (el) {
+              return el.getClientRects().length > 0;
+            }
+          );
           if (first) first.focus();
         }
       };
@@ -235,7 +230,7 @@ const { floating = false } = Astro.props;
     display: flex;
   }
   .nav__links a {
-    color: var(--fg-muted);
+    color: var(--nav-ink, var(--fg-muted));
     text-decoration: none;
     padding: 0.55rem 0.2rem;
     border-radius: var(--radius-sm);
@@ -244,17 +239,15 @@ const { floating = false } = Astro.props;
   .nav__links a:hover {
     color: var(--fg);
   }
-  /* --coral-deep, not --coral: contrast-safe on both the cream day bar and the
-     dark night bar, and exempt from the gallery retint. */
-  .nav__links a.nav__coffee {
-    color: var(--coral-deep);
-    white-space: nowrap;
-  }
-  .nav__links a.nav__coffee:hover {
-    /* --coral dips below AA on the cream day bar, but ONLY in this transient
-       hover state, so the row can share one hover mechanism instead of the
-       coffee link alone underlining. Deliberate — don't "re-fix" it. */
-    color: var(--coral);
+  .nav__soon {
+    margin-left: 0.3rem;
+    padding: 0.05rem 0.35rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--nav-ink-accent, var(--coral-deep));
+    border: 1px solid currentColor;
+    border-radius: 999px;
   }
   .nav__burger {
     margin-left: auto;
@@ -280,13 +273,11 @@ const { floating = false } = Astro.props;
     display: none;
   }
   @media (min-width: 760px) {
-    .nav--floating .nav__section-link {
-      display: none; /* index only: floors live in the statusline; corners stay sparse */
-    }
     .nav__links {
       display: flex;
       position: static;
       flex-direction: row;
+      align-items: center;
       gap: 1.4rem;
       margin-left: auto;
       padding: 0;
@@ -311,7 +302,7 @@ const { floating = false } = Astro.props;
       gap: 0.25rem;
       font-family: var(--font-mono);
       font-size: 0.88rem;
-      color: var(--fg-muted);
+      color: var(--nav-ink, var(--fg-muted));
       background: none;
       border: 0;
       padding: 0;
@@ -373,6 +364,31 @@ const { floating = false } = Astro.props;
       height: 44px;
     }
   }
+  /* With script the home page's bar lies bare over the office, so its focus rings, and
+     on the wide bar its text links and Docs button, take the inks global.css tunes for that ground. */
+  @media (scripting: enabled) {
+    .nav--floating {
+      --focus-ring: var(--office-ink);
+    }
+  }
+  @media (min-width: 760px) and (scripting: enabled) {
+    .nav--floating :is(.nav__links > a, .nav__docs-btn) {
+      --nav-ink: var(--office-ink);
+      --nav-ink-accent: var(--office-ink-accent);
+    }
+    /* The bar's one call to action; --coral-cta is the coral a white label clears. */
+    .nav__links a.nav__install {
+      padding: 0.4rem 0.95rem;
+      color: #fff;
+      background: var(--coral-cta);
+      border-radius: 999px;
+      text-shadow: none;
+    }
+    .nav__links a.nav__install:hover {
+      color: #fff;
+      background: var(--coral-cta-deep);
+    }
+  }
   /* Scripting off: nothing opens the burger or the Docs menu or flips the theme,
      so the buttons go and every link lays out open on rows of its own. The bar
      keeps to the page's flow, so the rows never cover the page, on a ground of
@@ -403,10 +419,6 @@ const { floating = false } = Astro.props;
     .nav__docs,
     .nav__menu {
       display: contents;
-    }
-    /* The statusline that carries the home page's floors needs script. */
-    .nav--floating .nav__section-link {
-      display: inline;
     }
     .nav__links a {
       padding: 0.3rem 0;
