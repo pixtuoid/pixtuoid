@@ -7,7 +7,7 @@ import { floorById, floorName } from '../../config/floors.mjs';
 
 const floor = floorById('app');
 const AUTO_SIZES = 'auto, 100vw';
-// A screenshot's own width and half of it, rounded: a width descriptor holds "a valid
+// Rounded: a width descriptor is "a valid
 // non-negative integer" (html.spec.whatwg.org/multipage/images.html#srcset-attributes).
 const candidates = (asset: ImageMetadata) => [Math.round(asset.width / 2), asset.width];
 ---
