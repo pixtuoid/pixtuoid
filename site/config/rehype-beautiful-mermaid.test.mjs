@@ -104,8 +104,8 @@ test('the committed architecture diagram renders every subgraph, node and edge i
   const svg = tree.children[0];
   const withClass = (name) => (n) =>
     n.type === 'element' && (n.properties?.className ?? []).includes(name);
-  assert.equal(count(svg, withClass('subgraph')), source.match(/^\s*subgraph\s/gm).length);
-  assert.equal(count(svg, withClass('node')), new Set(source.match(/^\s*\w+(?=\[)/gm)).size);
+  assert.equal(count(svg, withClass('subgraph')), (source.match(/^\s*subgraph\s/gm) ?? []).length);
+  assert.equal(count(svg, withClass('node')), new Set(source.match(/\b\w+(?=\[)/g)).size);
   assert.equal(
     count(svg, (n) => n.type === 'element' && n.tagName === 'polyline'),
     source.match(/->/g).length

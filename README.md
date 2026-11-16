@@ -36,6 +36,7 @@
   &nbsp;·&nbsp; <a href="https://pixtuoid.dev/architecture/">Architecture</a>
   &nbsp;·&nbsp; <a href="https://pixtuoid.dev/config/">Configuration</a>
   &nbsp;·&nbsp; <a href="https://pixtuoid.dev/contributing/">Contributing</a>
+  &nbsp;·&nbsp; <a href="https://discord.gg/hCGX8WRggN">Discord</a>
 </p>
 
 <p align="center">
