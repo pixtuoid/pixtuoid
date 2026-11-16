@@ -1,8 +1,10 @@
 ---
-import { SPONSOR, asset, DOCS } from '../consts';
+import { asset, DOCS } from '../consts';
+import { floorById } from '../../config/floors.mjs';
 import { REPO } from '../../config/github.mjs';
-// Absolute home so the section anchors work from any page (e.g. /config/).
+// Absolute home so the floor anchors work from any page (e.g. /config/).
 const home = asset('');
+const floorHref = (id: string) => `${home}#${floorById(id).id}`;
 // `floating` = the index treatment: corner chrome over the live office that
 // scrolls away, because the statusline is that page's persistent chrome.
 const { floating = false } = Astro.props;
@@ -23,9 +25,6 @@ const { floating = false } = Astro.props;
     </a>
     <span class="nav__version" aria-hidden="true">v{__PIXTUOID_VERSION__}</span>
     <nav id="nav-links" class="nav__links" aria-label="Primary">
-      <a class="nav__section-link" href={`${home}#showcase`}>Showcase</a>
-      <a class="nav__section-link" href={`${home}#tools`}>Tools</a>
-      <a class="nav__section-link" href={`${home}#install`}>Install</a>
       <div class="nav__docs">
         <button
           id="docs-btn"
@@ -40,16 +39,9 @@ const { floating = false } = Astro.props;
           {DOCS.map((d) => <a href={asset(d.route)}>{d.label}</a>)}
         </div>
       </div>
+      <a href={floorHref('app')}>App <span class="nav__soon">soon</span></a>
       <a href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a>
-      <a
-        class="nav__coffee"
-        href={SPONSOR}
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Buy me a coffee (opens in a new tab)"
-      >
-        ☕ Coffee
-      </a>
+      <a class="nav__install" href={floorHref('install')}>Install</a>
     </nav>
     <button
       id="nav-burger"
@@ -244,17 +236,15 @@ const { floating = false } = Astro.props;
   .nav__links a:hover {
     color: var(--fg);
   }
-  /* --coral-deep, not --coral: contrast-safe on both the cream day bar and the
-     dark night bar, and exempt from the gallery retint. */
-  .nav__links a.nav__coffee {
+  .nav__soon {
+    margin-left: 0.3rem;
+    padding: 0.05rem 0.35rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
     color: var(--coral-deep);
-    white-space: nowrap;
-  }
-  .nav__links a.nav__coffee:hover {
-    /* --coral dips below AA on the cream day bar, but ONLY in this transient
-       hover state, so the row can share one hover mechanism instead of the
-       coffee link alone underlining. Deliberate — don't "re-fix" it. */
-    color: var(--coral);
+    border: 1px solid currentColor;
+    border-radius: 999px;
   }
   .nav__burger {
     margin-left: auto;
@@ -280,13 +270,27 @@ const { floating = false } = Astro.props;
     display: none;
   }
   @media (min-width: 760px) {
-    .nav--floating .nav__section-link {
-      display: none; /* index only: floors live in the statusline; corners stay sparse */
+    /* The floating bar's links lie bare over the office: --office-ink is the ink for that ground. */
+    .nav--floating .nav__links > a:not(.nav__install),
+    .nav--floating .nav__docs-btn {
+      color: var(--office-ink);
+    }
+    .nav--floating .nav__soon {
+      color: var(--office-ink-accent);
+    }
+    /* The one call to action; --coral-cta is the AA-capped coral a white label clears. */
+    .nav__links a.nav__install {
+      padding: 0.4rem 0.95rem;
+      color: #fff;
+      background: var(--coral-cta);
+      border-radius: 999px;
+      text-shadow: none;
     }
     .nav__links {
       display: flex;
       position: static;
       flex-direction: row;
+      align-items: center;
       gap: 1.4rem;
       margin-left: auto;
       padding: 0;
@@ -404,12 +408,14 @@ const { floating = false } = Astro.props;
     .nav__menu {
       display: contents;
     }
-    /* The statusline that carries the home page's floors needs script. */
-    .nav--floating .nav__section-link {
-      display: inline;
-    }
-    .nav__links a {
+    .nav__links a,
+    .nav__links a.nav__install {
       padding: 0.3rem 0;
+    }
+    /* A row like the others: the links lie open here, so no one of them is the bar's button. */
+    .nav__links a.nav__install {
+      color: var(--fg-muted);
+      background: none;
     }
   }
 </style>

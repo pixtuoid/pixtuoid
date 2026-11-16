@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import docs from '../src/docs.json' with { type: 'json' };
 import floors from '../src/floors.json' with { type: 'json' };
+import { DISCORD } from './links.mjs';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const floorIds = floors.map((f) => f.id);
@@ -34,3 +35,11 @@ for (const rel of ['../../README.md', '../../docs/ARCHITECTURE.md']) {
       assert.ok(docRoutes.includes(p), `/${p} is not a DOCS route (${docRoutes})`);
   });
 }
+
+test("the README's Discord link is the invite the site's footer links", () => {
+  const invites = [...read('../../README.md').matchAll(/https:\/\/discord\.gg\/\w+/g)].map(
+    (m) => m[0]
+  );
+  assert.ok(invites.length > 0, 'the README links no Discord invite');
+  for (const invite of invites) assert.equal(invite, DISCORD);
+});

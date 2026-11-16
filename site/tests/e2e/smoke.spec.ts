@@ -2,8 +2,9 @@ import { expect, test, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
-import { E2E_STAR_COUNT } from '../../config/github.mjs';
-import { FLOORS } from '../../config/floors.mjs';
+import { E2E_STAR_COUNT, REPO } from '../../config/github.mjs';
+import { FLOORS, floorById } from '../../config/floors.mjs';
+import { DISCORD } from '../../config/links.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
@@ -1459,7 +1460,30 @@ test('reduced motion: an install copy writes the clipboard but hires nobody', as
   await context.close();
 });
 
-test('docs pages keep the sticky nav with section links', async ({ page }) => {
+test('the nav links the docs, the App floor, GitHub and the install floor, from any page', async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  for (const path of ['./', './config/']) {
+    await page.goto(path);
+    const links = await page
+      .locator('#nav-links a')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    expect(links, path).toEqual([
+      ...docs.map((d) => `/${d.route}`),
+      `/#${floorById('app').id}`,
+      REPO,
+      `/#${floorById('install').id}`,
+    ]);
+  }
+});
+
+test("the footer links the project's Discord invite", async ({ page }) => {
+  await page.goto('./');
+  await expect(page.locator(`.footer a[href="${DISCORD}"]`)).toHaveText('Discord');
+});
+
+test('docs pages keep the sticky nav with its links', async ({ page }) => {
   const errors = watchErrors(page);
   await page.goto('./config/');
   const nav = page.locator('.nav');
@@ -1467,7 +1491,7 @@ test('docs pages keep the sticky nav with section links', async ({ page }) => {
   await expect
     .poll(() => page.evaluate(() => getComputedStyle(document.querySelector('.nav')!).position))
     .toBe('sticky');
-  await expect(page.locator('.nav__section-link').first()).toBeVisible();
+  await expect(page.locator('#nav-links .nav__install')).toBeVisible();
   expect(errors()).toEqual([]);
 });
 
@@ -2460,6 +2484,14 @@ test.describe('the office moments still span the light range', () => {
   });
 });
 
+// The floating nav's controls, which lie bare over the office: the App link, GitHub, the Install pill, the Docs button.
+const NAV_OVER_OFFICE = [
+  '#nav-links > a',
+  '#nav-links > a[target="_blank"]',
+  '.nav__install',
+  '.nav__docs-btn',
+];
+
 atOfficeMoments(
   'bare hero text clears WCAG AA at the real office composite',
   VALID_THEMES,
@@ -2472,6 +2504,9 @@ atOfficeMoments(
     await settleAnimations(page);
 
     for (const selector of [
+      '.nav__logo',
+      ...NAV_OVER_OFFICE,
+      '.nav__soon',
       '.hero .eyebrow',
       '.hero .statement-sub',
       '.hero__avail',
@@ -2497,6 +2532,14 @@ atOfficeMoments(
         `${theme} ${moment} ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5);
     }
+    for (const selector of NAV_OVER_OFFICE) {
+      await page.hover(selector);
+      const ratio = await paintedContrast(page, selector);
+      expect(
+        ratio,
+        `${theme} ${moment} ${selector} hovered: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(4.5);
+    }
   }
 );
 
@@ -2509,7 +2552,7 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
       '.osd__chip',
       '.stage__caption',
       '.vibing__ticks span',
-      '.footer__line a.footer__coffee',
+      '.footer__line a',
       '.footer__sep',
       '.nav__version',
       '.app__copy .eyebrow',
@@ -2520,7 +2563,13 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
       '.app__note',
     ],
     './404.html': ['.terminal__title'],
-    './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
+    './architecture/': [
+      '.prose :not(pre) > code',
+      '.prose a > code',
+      '.docs__pager-dir',
+      '.nav__install',
+      '.nav__soon',
+    ],
     './how-we-build/': ['.fig__title', '.fig-card__role', '.fig-card__acts'],
   };
 

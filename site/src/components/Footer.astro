@@ -1,5 +1,6 @@
 ---
 import { CRATES, SPONSOR, asset } from '../consts';
+import { DISCORD } from '../../config/links.mjs';
 import { REPO } from '../../config/github.mjs';
 ---
 
@@ -21,6 +22,10 @@ import { REPO } from '../../config/github.mjs';
     <span class="footer__grp">
       <span class="footer__sep">·</span>
       <a href={REPO} target="_blank" rel="noreferrer">GitHub</a>
+    </span>
+    <span class="footer__grp">
+      <span class="footer__sep">·</span>
+      <a href={DISCORD} target="_blank" rel="noreferrer">Discord</a>
     </span>
     <span class="footer__grp">
       <span class="footer__sep">·</span>
@@ -113,8 +118,7 @@ import { REPO } from '../../config/github.mjs';
   .footer__line a:hover {
     color: #fff;
   }
-  /* support CTA — the same brighten-on-hover IDEA as Nav's coffee (#686), but via
-     a colour-mix toward white rather than Nav's deep→full token swap. Rests on
+  /* support CTA — brightens on hover by a colour-mix toward white. Rests on
      --chip-accent, NOT --coral: this line's whole point is theme-independent ink
      on the --screen chip (see .footer__line above), and the theme token broke
      that — it measured 3.70:1 in day and 4.26:1 in night against the chip, one
