@@ -3530,15 +3530,21 @@ test('a flow figure lights its edges in source order, holds a pause at AA, and l
   const edges = await pairs('svg .edge');
   expect(edges.length).toBeGreaterThan(1);
 
-  // Every edge that becomes the current step, in the order it does.
+  // Every edge that becomes the current step, in the order it does, and when.
+  type Probe = { __lit: string[]; __at: number[] };
   await fig.evaluate((el) => {
-    const lit: string[] = ((window as unknown as { __lit: string[] }).__lit = []);
+    const probe = window as unknown as Probe;
+    const lit: string[] = (probe.__lit = []);
+    const at: number[] = (probe.__at = []);
     new MutationObserver((records) => {
       for (const { target } of records) {
         const e = target as HTMLElement;
         const edge = `${e.dataset.from}>${e.dataset.to}`;
         // One class change per toggle, so an edge still current reports again.
-        if (e.matches('.edge.is-now') && lit.at(-1) !== edge) lit.push(edge);
+        if (e.matches('.edge.is-now') && lit.at(-1) !== edge) {
+          lit.push(edge);
+          at.push(performance.now());
+        }
       }
     }).observe(el, { subtree: true, attributes: true, attributeFilter: ['class'] });
   });
@@ -3547,19 +3553,25 @@ test('a flow figure lights its edges in source order, holds a pause at AA, and l
   // The click scrolled the figure into view; a reader who scrolls on stays put.
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(play).toHaveText('Replay', { timeout: 20_000 });
-  expect(await page.evaluate(() => (window as unknown as { __lit: string[] }).__lit)).toEqual(
-    edges
-  );
+  const { __lit: lit, __at: at } = await page.evaluate(() => {
+    const { __lit, __at } = window as unknown as Probe;
+    return { __lit, __at };
+  });
+  expect(lit).toEqual(edges);
+  // The script's own step, measured: this test holds no copy of its interval.
+  const step = (at[at.length - 1] - at[0]) / (at.length - 1);
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
   await expect(fig.locator('svg .is-off, svg .is-now')).toHaveCount(0);
 
   await play.click();
-  await expect(fig.locator('svg .edge:not(.is-off)')).toHaveCount(2);
+  await expect(fig.locator('svg .edge.is-now')).toHaveCount(1);
   await play.click();
   await expect(play).toHaveText('Play');
-  // Longer than a step: a paused flow does not move on.
-  await page.waitForTimeout(1500);
-  expect(await pairs('svg .edge:not(.is-off)')).toEqual(edges.slice(0, 2));
+  const held = await pairs('svg .edge:not(.is-off)');
+  expect(held.length).toBeLessThan(edges.length);
+  // Two steps on, a paused flow has not moved.
+  await page.waitForTimeout(step * 2);
+  expect(await pairs('svg .edge:not(.is-off)')).toEqual(held);
   // A group's opacity composites its text and its plate onto the screen together.
   const dimmed = await fig.locator('svg .node.is-off').evaluateAll((nodes) =>
     nodes.map((node) => {

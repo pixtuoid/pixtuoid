@@ -12,8 +12,7 @@ const SCROLLER_CLASS = 'fig__body';
 export default function rehypeScrollFocus() {
   return (tree) => {
     visit(tree, 'element', (node) => {
-      const classes = [node.properties?.className ?? []].flat();
-      if (SCROLLERS.has(node.tagName) || classes.includes(SCROLLER_CLASS)) {
+      if (SCROLLERS.has(node.tagName) || node.properties?.className?.includes(SCROLLER_CLASS)) {
         (node.properties ||= {}).tabIndex = 0;
       }
     });

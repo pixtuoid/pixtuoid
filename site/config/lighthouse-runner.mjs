@@ -4,9 +4,10 @@
 // docs/variability.md, reading the SAME lighthouserc.json the retired
 // @lhci/cli wrapper did — LHCI's last publish (2025-06) pinned lighthouse 12,
 // which dragged the @puppeteer/browsers and chrome-launcher overrides.
-// Divergences from LHCI: every assertion fails CI whatever its level, and one
+// Divergences from LHCI: every assertion fails CI whatever its level, one
 // without an explicit aggregationMethod aggregates by MEDIAN (LHCI defaulted
-// to optimistic; median is stricter-or-equal).
+// to optimistic; median is stricter-or-equal), and the audited URLs are the
+// config's plus every route src/docs.json renders.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

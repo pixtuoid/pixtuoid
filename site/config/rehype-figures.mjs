@@ -40,7 +40,7 @@ function rows(kind, tableNode, columns) {
   );
 }
 
-const hasClass = (node, name) => [node.properties?.className ?? []].flat().includes(name);
+const hasClass = (node, name) => node.properties?.className?.includes(name);
 
 // Shrunk to a phone's width a ten-node diagram's labels are unreadable, so the
 // body scrolls instead: the diagram never draws smaller than Mermaid laid it out.
