@@ -5,9 +5,11 @@
   </picture>
 </p>
 
+<!-- tagline:start · generated from Cargo.toml's `description` by `just gen-readme` — edit Cargo.toml, not this line -->
 <p align="center">
-  <samp>Your AI coding agents, visualized as pixel-art coworkers in a terminal office.</samp>
+  <samp>A cozy pixel office where your AI coding agents come to life.</samp>
 </p>
+<!-- tagline:end -->
 
 <p align="center">
   <sub><samp><b>pix</b>el + <b>tu</b>i + (agent-)<b>oid</b></samp></sub>

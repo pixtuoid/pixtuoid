@@ -18,6 +18,7 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { workspacePackageField } from "../site/config/workspace-package.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "generate.mjs");
 
@@ -110,6 +111,12 @@ test("stamps launcher + every platform package", (t) => {
 
   const launcher = JSON.parse(readFileSync(join(npmDir, "pixtuoid", "package.json"), "utf8"));
   assert.equal(launcher.version, "1.2.3", "launcher version stamped");
+  const cargoToml = readFileSync(join(dirname(SCRIPT), "..", "Cargo.toml"), "utf8");
+  assert.equal(
+    launcher.description,
+    workspacePackageField(cargoToml, "description"),
+    "the launcher's description is the workspace's tagline",
+  );
   assert.deepEqual(
     Object.keys(launcher.optionalDependencies).sort(),
     TARGETS.map((tg) => `@pixtuoid/cli-${tg.pkg}`).sort(),

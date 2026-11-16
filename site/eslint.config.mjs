@@ -17,6 +17,7 @@ export default [
       globals: {
         ...globals.browser,
         __PIXTUOID_VERSION__: 'readonly',
+        __PIXTUOID_TAGLINE__: 'readonly',
         __GH_STARS__: 'readonly',
       },
     },

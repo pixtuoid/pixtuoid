@@ -1,6 +1,8 @@
 // Injected at build time: the latest release TAG, or the workspace Cargo.toml
 // version as the tag-less fallback (config/released-version.mjs via astro.config.mjs).
 declare const __PIXTUOID_VERSION__: string;
+// The workspace Cargo.toml's `description`, the tagline.
+declare const __PIXTUOID_TAGLINE__: string;
 // Build-time GitHub star count, or null when the API was unreachable at build
 // (offline builds must not fail) — consumers omit the count then.
 declare const __GH_STARS__: string | null;

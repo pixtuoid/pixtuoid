@@ -4,11 +4,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use pixtuoid_scene::look::LookKind;
 
 #[derive(Debug, Parser)]
-#[command(
-    name = "pixtuoid",
-    version,
-    about = "Terminal pixel-art office for AI coding agents"
-)]
+#[command(name = "pixtuoid", version, about)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
@@ -375,6 +371,14 @@ fn parse_nonempty_path(s: &str) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The description is the tagline's source: a literal here would be a second.
+    #[test]
+    fn the_root_about_is_the_crate_description() {
+        let command = <Cli as clap::CommandFactory>::command();
+        let about = command.get_about().map(ToString::to_string);
+        assert_eq!(about.as_deref(), Some(env!("CARGO_PKG_DESCRIPTION")));
+    }
 
     // It binds a free hook endpoint and leaves its lock, so "read-only" would lie.
     #[test]

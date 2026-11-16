@@ -23,9 +23,12 @@ interface Props {
   preloadImage?: string;
 }
 
+const TAGLINE = __PIXTUOID_TAGLINE__;
 const {
-  title = 'pixtuoid — your coding agents, alive in a pixel office',
-  description = 'A terminal-native pixel-art office that visualizes your AI coding agents (Claude Code, Codex, and more) as little animated coworkers — day/night lighting, weather, themes, and pets included.',
+  title = `pixtuoid — ${TAGLINE.replace(/\.$/, '')}`,
+  // Google may show this as the snippet under the title
+  // (developers.google.com/search/docs/appearance/snippet), so it says what the title doesn't.
+  description = "pixtuoid shows every running AI coding agent (Claude Code, Codex, Cursor and more) as a pixel-art coworker, so you can see at a glance who's working, who's waiting for you, and who's done.",
   preloadImage,
 } = Astro.props;
 

@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 import sourcesData from '../../src/sources.json' with { type: 'json' };
+import { readFileSync } from 'node:fs';
 import { E2E_STAR_COUNT } from '../../config/github.mjs';
+import { workspacePackageField } from '../../config/workspace-package.mjs';
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
 const supportedSources = (sourcesData as SourceRow[]).filter((s) => s.status === 'supported');
@@ -3493,4 +3495,14 @@ test('audit C5: ♩ hides and never persists a silent "playing" when the AudioCo
   await expect(btn).toHaveAttribute('aria-pressed', 'false');
   expect(await page.evaluate(() => localStorage.getItem('pix:audio'))).not.toBe('1');
   expect(errors()).toEqual([]);
+});
+
+// The tagline is baked into the page at build; no other test reads the built title.
+test("the home page's title carries Cargo.toml's tagline", async ({ page }) => {
+  const tagline = workspacePackageField(
+    readFileSync(new URL('../../../Cargo.toml', import.meta.url), 'utf8'),
+    'description'
+  );
+  await page.goto('./');
+  await expect(page).toHaveTitle(`pixtuoid — ${tagline.replace(/\.$/, '')}`);
 });
