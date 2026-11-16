@@ -47,48 +47,28 @@ degrades, and walks out when it goes down.
 
 ```mermaid
 flowchart TB
-  accTitle: pixtuoid data flow
-  accDescr: A hook or transcript event flows from a coding agent (Claude Code, Codex) through the pixtuoid-hook shim into pixtuoid-core, where a HookRouter demuxes agent payloads to the Transport-tagged reducer and SceneState.agents. A daemon gateway (OpenClaw) shares the same shim and socket but is routed instead to apply_presence and SceneState.daemons over a sibling channel that bypasses the reducer. The pixtuoid TUI renderer then paints the whole scene through the pixtuoid-scene engine's terminal-agnostic pixel pass and flushes it as terminal images where the terminal draws them, else as half-block cells.
-  CC["Claude Code / Codex<br/>(agent source)"]
-  OC["OpenClaw gateway<br/>(daemon source)"]
-
-  subgraph hook["pixtuoid-hook (shim)"]
-    SH["enrich + forward<br/>WRITE_TIMEOUT-bounded · exit 0"]
-  end
-
-  subgraph core["pixtuoid-core (headless)"]
-    L["HookRouter<br/>(shared socket: Unix / named pipe)"]
-    D["decode_hook_object"]
-    J["JsonlWatcher · walk_jsonl"]
-    R["Reducer::apply<br/>(Transport-tagged)"]
-    AP["apply_presence<br/>(AgentId-free · bypasses Reducer)"]
-    S["SceneState<br/>agents + daemons"]
-    L -->|agent payload| D
-    L -.->|"daemon payload<br/>is_daemon()"| AP
-    D -->|"(Hook, AgentEvent)"| R
-    J -->|"(Jsonl, AgentEvent)"| R
-    R --> S
-    AP -.->|"PresenceMsg{key, delta}<br/>sibling channel"| S
-    R -.->|"scope tree:<br/>cascade ↓ · liveness ↑"| R
-  end
-
-  subgraph bin["pixtuoid (binary · TUI)"]
-    W["watch&lt;Arc&lt;SceneState&gt;&gt;"]
-    TR["TuiRenderer"]
-    FL["flush · images or ½-block cells"]
-  end
-
-  subgraph scene["pixtuoid-scene (engine)"]
-    PX["look::render<br/>(desks + mascots)"]
-  end
-
-  W --> TR --> PX --> FL
-
-  CC -->|hook event| SH
-  OC -->|hook event| SH
-  SH --> L
-  CC -.->|writes transcript JSONL| J
-  S -. Arc per mutation .-> W
+  accTitle: How a coding session becomes a sprite
+  accDescr: Your coding agent reports each step through pixtuoid-hook, a tiny relay, and pixtuoid also reads the transcript the agent writes. Both become events that update one picture of the office, who is there and what each is doing, which the engine draws in the terminal or a desktop window; pixtuoid serve can send it to a paired phone. A gateway such as OpenClaw reports through the same relay and shows up as a wandering mascot instead of a desk.
+  AG["Your coding agent<br/>Claude Code, Codex, …"]
+  GW["A gateway<br/>OpenClaw"]
+  HK["pixtuoid-hook<br/>a tiny relay"]
+  TR["Transcript reader"]
+  EV["Events<br/>what each session just did"]
+  MS["Mascots<br/>one per running gateway"]
+  ST["The office<br/>who is here and what each is doing"]
+  EN["The engine draws a frame"]
+  AG -->|each step| HK
+  AG -.->|writes a transcript| TR
+  GW -->|its status| HK
+  HK -->|from an agent| EV
+  HK -->|from a gateway| MS
+  TR --> EV
+  EV --> ST
+  MS --> ST
+  ST --> EN
+  EN --> T1["Terminal"]
+  EN --> T2["Desktop window"]
+  ST -.-> SV["pixtuoid serve<br/>to a paired phone"]
 ```
 
 **Walking the pipeline:**
