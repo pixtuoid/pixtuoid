@@ -63,8 +63,7 @@
   "overrides": {
     "esbuild": "0.28.1",
     "glob": "^14.0.2",
-    "minimatch": "^11.0.1",
-    "uuid": "^11.1.1"
+    "minimatch": "^11.0.1"
   },
   "allowScripts": {
     "esbuild@0.28.1": true,
