@@ -325,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn paths_the_row_would_not_read_never_vouch() {
+    fn paths_the_rows_path_rule_refuses_never_vouch() {
         let root = Path::new("/home/u/.omp/agent/sessions");
         let outside = PathBuf::from(format!("/tmp/elsewhere/{STEM}.jsonl"));
         let wrong_ext = root.join(format!("-dev-proj/{STEM}/notes.txt"));
