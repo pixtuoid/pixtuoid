@@ -10,7 +10,7 @@
  */
 export function workspacePackageField(cargoToml, key) {
   const table = cargoToml.match(/\[workspace\.package\]([\s\S]*?)(?:\n\[|$)/)?.[1] ?? '';
-  const value = table.match(new RegExp(`^${key}\\s*=\\s*"([^"]+)"`, 'm'))?.[1];
-  if (!value) throw new Error(`Cargo.toml: [workspace.package] has no ${key}`);
-  return value;
+  const raw = table.match(new RegExp(`^${key}\\s*=\\s*"((?:[^"\\\\]|\\\\.)+)"`, 'm'))?.[1];
+  if (!raw) throw new Error(`Cargo.toml: [workspace.package] has no ${key}`);
+  return raw.replace(/\\(["\\])/g, '$1');
 }

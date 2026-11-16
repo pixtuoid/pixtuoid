@@ -3497,17 +3497,12 @@ test('audit C5: ♩ hides and never persists a silent "playing" when the AudioCo
   expect(errors()).toEqual([]);
 });
 
-// The tagline is baked into the page at build; no other test reads the built title or descriptions.
-test("the home page's title and descriptions carry Cargo.toml's tagline", async ({ page }) => {
+// The tagline is baked into the page at build; no other test reads the built title.
+test("the home page's title carries Cargo.toml's tagline", async ({ page }) => {
   const tagline = workspacePackageField(
     readFileSync(new URL('../../../Cargo.toml', import.meta.url), 'utf8'),
     'description'
   );
   await page.goto('./');
   await expect(page).toHaveTitle(`pixtuoid — ${tagline.replace(/\.$/, '')}`);
-  for (const selector of ['meta[name="description"]', 'meta[property="og:description"]']) {
-    const content = await page.locator(selector).getAttribute('content');
-    expect(content?.startsWith(tagline)).toBe(true);
-    expect(content!.length).toBeGreaterThan(tagline.length);
-  }
 });

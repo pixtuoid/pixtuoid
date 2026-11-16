@@ -1,7 +1,6 @@
 {
   "name": "pixtuoid",
   "version": "0.0.0",
-  "description": "A cozy pixel office where your AI coding agents come to life.",
   "keywords": [
     "cli",
     "tui",

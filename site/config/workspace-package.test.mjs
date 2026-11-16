@@ -24,3 +24,8 @@ test("reads a key from [workspace.package], not another table's line-anchored co
 test('a key the table lacks fails, naming the key', () => {
   assert.throws(() => workspacePackageField(TOML, 'repository'), /repository/);
 });
+
+test('an escaped quote or backslash in a value is read as the character it stands for', () => {
+  const toml = '[workspace.package]\ndescription = "A \\"cozy\\" office, C:\\\\ and all"\n';
+  assert.equal(workspacePackageField(toml, 'description'), 'A "cozy" office, C:\\ and all');
+});

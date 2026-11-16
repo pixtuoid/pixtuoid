@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 // The launcher's own naming, so each package lands where it looks.
 import { exeName, packageName } from "./pixtuoid/bin/resolve.js";
+import { workspacePackageField } from "../site/config/workspace-package.mjs";
 
 const BINS = ["pixtuoid", "pixtuoid-hook"];
 // What the release archive carries beside the binaries (`just stage-notices`):
@@ -118,5 +119,9 @@ for (const t of TARGETS) {
 // The launcher ships no binary, but its license field names the fonts too.
 copyNotices(join(artifacts, TARGETS[0].rust), dirname(launcherPath));
 launcher.version = version;
+launcher.description = workspacePackageField(
+  readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "Cargo.toml"), "utf8"),
+  "description",
+);
 writeFileSync(launcherPath, JSON.stringify(launcher, null, 2) + "\n");
 console.log(`stamped launcher pixtuoid@${version} (${TARGETS.length} optionalDependencies)`);
