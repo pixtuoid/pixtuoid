@@ -8,12 +8,15 @@ import { fileURLToPath } from 'node:url';
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
 test("site.yml's scope paths name exactly the docs content.config.ts renders", () => {
-  const docs = [
-    ...read('../src/content.config.ts').matchAll(/pattern: '([^']+)', base: '\.\.\/docs'/g),
-  ].map((m) => `docs/${m[1]}`);
-  assert.ok(
-    docs.length > 0,
-    "content.config.ts has no one-line `pattern: '…', base: '../docs'` loader"
+  const config = read('../src/content.config.ts');
+  const docs = [...config.matchAll(/pattern: '([^']+)', base: '\.\.\/docs'/g)].map(
+    (m) => `docs/${m[1]}`
+  );
+  // A loader the regex cannot read would drop out of both sides of the comparison below.
+  assert.equal(
+    docs.length,
+    config.match(/\bglob\(/g)?.length,
+    "every glob( loader in content.config.ts must be a one-line `pattern: '…', base: '../docs'`"
   );
   const scope = /id: scope\n\s+with:(?:\n\s+#.*)*\n\s+paths: (.+)/.exec(
     read('../../.github/workflows/site.yml')
