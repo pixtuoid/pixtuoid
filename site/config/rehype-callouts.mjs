@@ -3,6 +3,7 @@
 // "~ warning" when the quote OPENS with an imperative-warning strong.
 // The red dot reuses global.css's .terminal__dot--r — no second red literal.
 import { toText } from 'hast-util-to-text';
+import { h } from 'hastscript';
 import { EXIT, SKIP, visit } from 'unist-util-visit';
 
 const WARN_RE = /^(don'?t|never|warning|danger|caution)\b/i;
@@ -24,38 +25,16 @@ function calloutFor(blockquote) {
   const opener = firstStrongText(blockquote).trim().replace(/’/g, "'");
   const warn = WARN_RE.test(opener);
   const kind = warn ? 'warn' : 'note';
-  const barChildren = [];
-  if (warn) {
-    barChildren.push({
-      type: 'element',
-      tagName: 'span',
-      properties: { className: ['terminal__dot', 'terminal__dot--r'] },
-      children: [],
-    });
-  }
-  barChildren.push({
-    type: 'element',
-    tagName: 'span',
-    properties: { className: ['callout__title'] },
-    children: [{ type: 'text', value: warn ? '~ warning' : '~ note' }],
-  });
-  return {
-    type: 'element',
-    tagName: 'div',
-    properties: { className: ['callout', `callout--${kind}`] },
-    children: [
-      {
-        type: 'element',
-        tagName: 'div',
-        properties: { className: ['callout__bar'], ariaHidden: 'true' },
-        children: barChildren,
-      },
-      {
-        ...blockquote,
-        properties: { ...(blockquote.properties || {}), className: ['callout__body'] },
-      },
-    ],
-  };
+  return h('div', { className: ['callout', `callout--${kind}`] }, [
+    h('div.callout__bar', { ariaHidden: 'true' }, [
+      ...(warn ? [h('span.terminal__dot.terminal__dot--r')] : []),
+      h('span.callout__title', warn ? '~ warning' : '~ note'),
+    ]),
+    {
+      ...blockquote,
+      properties: { ...(blockquote.properties || {}), className: ['callout__body'] },
+    },
+  ]);
 }
 
 export default function rehypeCallouts() {
