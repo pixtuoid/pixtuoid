@@ -138,9 +138,8 @@ renders with the same engine.
   `pixtuoid_core::remote` lines with `pixtuoid-scene`, both built in from one
   pinned revision of this repository.
 - **[pixtuoid/.github](https://github.com/pixtuoid/.github)**: what every
-  repository shares: the CI review, the merge queue, the org rules and the
-  agents' skills. [How we build](HOW-WE-BUILD.md) is how the work runs across
-  them.
+  repository shares. [How we build](HOW-WE-BUILD.md) lists the repositories
+  and how the work runs across them.
 
 ## Seams & invariants
 
