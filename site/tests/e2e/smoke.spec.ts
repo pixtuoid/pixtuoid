@@ -8,7 +8,7 @@ import { DISCORD } from '../../config/discord.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
-// WCAG 2.2's AA floors: text (SC 1.4.3), and a control's boundary or focus ring (SC 1.4.11).
+// WCAG 2.2's AA floors: text (SC 1.4.3) and non-text (SC 1.4.11).
 const AA_TEXT = 4.5;
 const AA_NON_TEXT = 3;
 
@@ -2592,15 +2592,18 @@ atOfficeMoments(
           });
       const restFill = await fill();
       await page.locator(selector).first().hover();
-      // Graded at once, not settled: a fill that fades in is see-through on its first frames.
       expect(await fill(), `${theme} ${moment} ${selector}: hover changes nothing`).not.toBe(
         restFill
       );
-      const hovered = await paintedContrast(page, selector);
-      expect(
-        hovered,
-        `${theme} ${moment} ${selector} hovered: WCAG AA floor is ${AA_TEXT}:1; measured ${hovered.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(AA_TEXT);
+      // Graded at once and settled: a fill that fades in is see-through on its first frames.
+      for (const frame of ['at once', 'settled']) {
+        if (frame === 'settled') await settleAnimations(page);
+        const hovered = await paintedContrast(page, selector);
+        expect(
+          hovered,
+          `${theme} ${moment} ${selector} hovered, ${frame}: WCAG AA floor is ${AA_TEXT}:1; measured ${hovered.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(AA_TEXT);
+      }
     }
 
     // The bar's ring ink also rings the links on its two plates: the Docs menu, and below 760px the burger's panel.
@@ -2730,9 +2733,7 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
           shapes
         );
         for (const { label, fill, stroke } of boxes) {
-          // A box a reader must parse needs a 3:1 boundary (WCAG 1.4.11); the
-          // page's 12% --border hairline measured 1.27:1, so Docs.astro routes the
-          // library's --border hook to a chip tone.
+          // A box a reader must parse needs a boundary (WCAG 1.4.11).
           const interior = parseRgb(fill).slice(0, 3) as [number, number, number];
           const [r, g, b, a] = parseRgb(stroke);
           const ratio = contrastRatio(compositeOver([r, g, b, a], interior), interior);
@@ -2755,7 +2756,7 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
           ).toBeGreaterThanOrEqual(AA_TEXT);
         }
         // The diagram's body is a tab stop on every diagram (rehype-beautiful-mermaid.mjs),
-        // so its focus ring is a state of the page: 3:1 against the screen inside it
+        // so its focus ring is a state of the page, graded against the screen inside it
         // and the page outside it (WCAG 1.4.11).
         expect(focus.style, `${theme} ${route}: the diagram body shows no focus ring`).not.toBe(
           'none'

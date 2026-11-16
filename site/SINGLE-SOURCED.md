@@ -67,7 +67,7 @@ Notes no gate carries:
   hues need theme-aware tokens (`--office-ink*`, `--led-ink`) measured
   against the real composite. `--led-glow` stays theme-independent lime on
   purpose: a shadow the glyph paints is decoration, not the ground WCAG
-  grades against (measured worst case 5.28:1) — don't theme it.
+  grades against — don't theme it.
 - **♩ audio**: muted-by-default, gesture-gated (`AudioContext` only on first
   click); the office host synthesizes the foley (when: OfficeBackdrop's
   `prewarm`), music streams from `public/music-worker.js`
