@@ -9,8 +9,8 @@ two disagree.
 
 | Repository | What it holds |
 | --- | --- |
-| [pixtuoid](https://github.com/pixtuoid/pixtuoid) | The CLI, the office engine and this site |
-| pixtuoid/apple (private) | The App for iPhone and iPad, coming soon |
+| [pixtuoid](https://github.com/pixtuoid/pixtuoid) | The CLI, the office engine and the [pixtuoid.dev](https://pixtuoid.dev) site |
+| pixtuoid/apple (private) | The App for iPhone and iPad |
 | [lofi](https://github.com/pixtuoid/lofi) | The procedural music the office plays |
 | [.github](https://github.com/pixtuoid/.github) | What every repository shares: the CI review, the merge queue, the org rules and the agents' skills |
 | [coderabbit](https://github.com/pixtuoid/coderabbit) | CodeRabbit's configuration for every repository |
