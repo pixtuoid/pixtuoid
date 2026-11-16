@@ -22,7 +22,7 @@ test(
       .split('\0')
       .filter(Boolean);
     const invites = files.flatMap((file) =>
-      [...readFileSync(`${root}${file}`, 'utf8').matchAll(/https:\/\/discord\.gg\/\w+/g)].map(
+      [...readFileSync(`${root}${file}`, 'utf8').matchAll(/https:\/\/discord\.gg\/[\w-]+/g)].map(
         ([invite]) => ({ file, invite })
       )
     );
