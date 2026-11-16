@@ -10,7 +10,8 @@ members  = [
 ]
 
 [workspace.package]
-# The tagline: the README, the site, `--help` and the npm launcher read it.
+# The tagline: crates.io (the pixtuoid crate inherits it), `--help` and the man page, the README, the
+# site's title and the npm launcher read it.
 description  = "A cozy pixel office where your AI coding agents come to life."
 version      = "0.23.0"
 edition      = "2024"
