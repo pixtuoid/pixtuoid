@@ -38,8 +38,3 @@ test('a nested table or code block is reached, and inline code is not a scroller
   assert.equal(table.properties.tabIndex, 0);
   assert.deepEqual(tree.children[1].children[0].properties, {}, 'inline code stays untouched');
 });
-
-test("a diagram's body is a tab stop", () => {
-  const [body] = run([el('div', [], { className: ['fig__body'] })]).children;
-  assert.equal(body.properties.tabIndex, 0);
-});

@@ -20,13 +20,6 @@ const run = (children) => {
   rehypeFigures()(tree);
   return tree;
 };
-const byClass = (node, name) => {
-  for (const c of node.children ?? []) {
-    if (c.properties?.className?.includes(name)) return c;
-    const deep = byClass(c, name);
-    if (deep) return deep;
-  }
-};
 const figure = (tree) => tree.children.find((c) => c.tagName === 'figure');
 
 test('cards turn each row into a role card that keeps its links, and the marker leaves', () => {
@@ -38,9 +31,13 @@ test('cards turn each row into a role card that keeps its links, and the marker 
   // The marker and the table are gone: the figure is the one copy on the page.
   assert.deepEqual(tree.children, [figure(tree)]);
   assert.deepEqual(figure(tree).properties.className, ['fig', 'fig--cards']);
-  const card = byClass(tree, 'fig__cards').children[0];
-  assert.equal(byClass(card, 'fig-card__role').children[0].tagName, 'a');
-  assert.equal(toText(byClass(card, 'fig-card__acts')), 'Posting a verdict');
+  const [cards] = figure(tree).children;
+  assert.deepEqual(cards.properties.className, ['fig__cards']);
+  const [role, acts] = cards.children[0].children;
+  assert.deepEqual(role.properties.className, ['fig-card__role']);
+  assert.equal(role.children[0].tagName, 'a');
+  assert.deepEqual(acts.properties.className, ['fig-card__acts']);
+  assert.equal(toText(acts), 'Posting a verdict');
 });
 
 test('an unknown kind fails the build', () => {

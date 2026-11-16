@@ -1,7 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
+import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
 import { E2E_STAR_COUNT } from '../../config/github.mjs';
+import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
@@ -2239,10 +2241,9 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./config/', 768],
     ['./architecture/', 375],
     ['./contributing/', 375],
-    ['./architecture/', 320], // #503's wide ASCII pre
     ['./architecture/', 768],
-    ['./contributing/', 320], // #503's long link: `crates/pixtuoid-core/tests/AGENTS.md`
-    ['./how-we-build/', 320], // its diagram, wider than the page at its drawn size
+    // Every doc at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
+    ...docs.map((d) => [`./${d.route}`, 320] as const),
   ] as const) {
     const context = await browser.newContext({
       viewport: { width, height: 820 },
@@ -2406,7 +2407,7 @@ test.describe('the office moments still span the light range', () => {
 
 atOfficeMoments(
   'bare hero text clears WCAG AA at the real office composite',
-  ['day', 'night', 'dracula'],
+  VALID_THEMES,
   async (page, theme, moment) => {
     // The hero copy has no plate, so legibility rests entirely on the ink token clearing contrast against what the office
     // ACTUALLY renders behind it — hence `paintedContrast` over real canvas pixels, not a --screen proxy.
@@ -2444,147 +2445,150 @@ atOfficeMoments(
   }
 );
 
-atOfficeMoments(
-  'plate and chip text clears WCAG AA',
-  ['day', 'night', 'dracula'],
-  async (page, theme, moment) => {
-    // Two DOM-plate populations: the page's OPAQUE plates, and the TRANSLUCENT --screen chips whose ground is the office pixel behind them.
-    // DRACULA is visitor-reachable via `?theme=dracula`, yet Lighthouse scores one pinned theme.
-    const PLATE_SURFACES: Record<string, string[]> = {
-      './': [
-        '.terminal__title',
-        '.osd__chip',
-        '.stage__caption',
-        '.vibing__ticks span',
-        '.footer__line a.footer__coffee',
-        '.footer__sep',
-        '.nav__version',
-      ],
-      './404.html': ['.terminal__title'],
-      './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
-      './how-we-build/': ['.fig__title', '.fig-card__role', '.fig-card__acts'],
-    };
+atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page, theme, moment) => {
+  // Two DOM-plate populations: the page's OPAQUE plates, and the TRANSLUCENT --screen chips whose ground is the office pixel behind them.
+  // DRACULA is visitor-reachable via `?theme=dracula`, yet Lighthouse scores one pinned theme.
+  const PLATE_SURFACES: Record<string, string[]> = {
+    './': [
+      '.terminal__title',
+      '.osd__chip',
+      '.stage__caption',
+      '.vibing__ticks span',
+      '.footer__line a.footer__coffee',
+      '.footer__sep',
+      '.nav__version',
+    ],
+    './404.html': ['.terminal__title'],
+    './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
+    './how-we-build/': ['.fig__title', '.fig-card__role', '.fig-card__acts'],
+  };
 
-    let swept = 0;
-    for (const [route, selectors] of Object.entries(PLATE_SURFACES)) {
-      await page.goto(route);
-      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-      await settleReveals(page);
-      await settleAnimations(page);
-      for (const selector of selectors) {
-        const count = await page.locator(selector).count();
-        expect(count, `${theme} ${route}: no ${selector} to sweep`).toBeGreaterThan(0);
-        for (let i = 0; i < count; i++) {
-          const ratio = await paintedContrast(page, selector, i);
-          expect(
-            ratio,
-            `${theme} ${moment} ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-          ).toBeGreaterThanOrEqual(4.5);
-          swept++;
-        }
+  let swept = 0;
+  for (const [route, selectors] of Object.entries(PLATE_SURFACES)) {
+    await page.goto(route);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await settleReveals(page);
+    await settleAnimations(page);
+    for (const selector of selectors) {
+      const count = await page.locator(selector).count();
+      expect(count, `${theme} ${route}: no ${selector} to sweep`).toBeGreaterThan(0);
+      for (let i = 0; i < count; i++) {
+        const ratio = await paintedContrast(page, selector, i);
+        expect(
+          ratio,
+          `${theme} ${moment} ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(4.5);
+        swept++;
       }
     }
-    expect(swept, `${theme}: swept nothing`).toBeGreaterThan(0);
   }
-);
+  expect(swept, `${theme}: swept nothing`).toBeGreaterThan(0);
+});
 
-test('a doc diagram: every SVG text clears WCAG AA and every box has a 3:1 boundary, in every theme', async ({
+test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 boundary and its body a 3:1 focus ring, in every theme', async ({
   page,
 }) => {
-  // The diagram's ink is SVG `fill`, which axe / Lighthouse color-contrast never
-  // read, and its plate is the last <rect> before the <text> in its own <g>
+  // The diagram's ink is SVG `fill`, which axe's color-contrast, Lighthouse's
+  // too, never reads (axe-core's axe.js reads `color`, at package-lock's
+  // version), and its plate is the last <rect> before the <text> in its own <g>
   // (node fill, subgraph header, edge-label backing) — never a CSS background.
-  // Every shape in the committed diagrams is a rectangle; a <path> shape
-  // (diamond, stadium) would fall back to the frame and grade vacuously.
-  for (const theme of ['day', 'night', 'dracula'] as const) {
+  // A <path> shape (diamond, stadium) would fall back to the frame and grade vacuously.
+  for (const theme of VALID_THEMES) {
     await page.addInitScript((t) => {
       sessionStorage.setItem('pix-booted', '1');
       localStorage.setItem('pix-theme', t);
     }, theme);
-    for (const route of ['./architecture/', './how-we-build/']) {
-      await page.goto(route);
+    let swept = 0;
+    for (const { route } of docs) {
+      await page.goto(`./${route}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-      const boxes = await page.evaluate(() =>
-        Array.from(
-          document.querySelectorAll(
-            '.prose svg[role="img"] :is(.node, .subgraph) > rect:first-child'
-          )
-        ).map((rect) => ({
-          label: rect.parentElement?.getAttribute('data-label') ?? '',
-          fill: getComputedStyle(rect).fill,
-          stroke: getComputedStyle(rect).stroke,
-        }))
-      );
-      expect(boxes.length, `${theme} ${route}: no diagram boxes to sweep`).toBeGreaterThan(0);
-      for (const { label, fill, stroke } of boxes) {
-        // A box a reader must parse needs a 3:1 boundary (WCAG 1.4.11); the
-        // page's 12% --border hairline measured 1.27:1, so Docs.astro routes the
-        // library's --border hook to a chip tone.
-        const interior = parseRgb(fill).slice(0, 3) as [number, number, number];
-        const [r, g, b, a] = parseRgb(stroke);
-        const ratio = contrastRatio(compositeOver([r, g, b, a], interior), interior);
-        expect(
-          ratio,
-          `${theme} ${route} diagram box "${label}": stroke vs fill floor is 3:1; measured ${ratio.toFixed(2)}:1`
-        ).toBeGreaterThanOrEqual(3);
-      }
-      const samples = await page.evaluate(() => {
-        const svg = document.querySelector('.prose svg[role="img"]');
-        if (!svg) return [];
-        const frame = getComputedStyle(svg).backgroundColor;
-        return Array.from(svg.querySelectorAll('text')).map((text) => {
-          let plate: Element | null = null;
-          for (const sib of Array.from(text.parentElement?.children ?? [])) {
-            if (sib === text) break;
-            if (sib.tagName === 'rect') plate = sib;
-          }
+      const diagrams = await page.evaluate(() =>
+        [...document.querySelectorAll('.fig--diagram')].map((figure) => {
+          const svg = figure.querySelector('svg[role="img"]')!;
+          const frame = getComputedStyle(svg).backgroundColor;
+          const body = figure.querySelector<HTMLElement>('.fig__body')!;
+          body.focus({ focusVisible: true } as FocusOptions);
+          const ring = getComputedStyle(body);
           return {
-            label: text.textContent?.trim() ?? '',
-            ink: getComputedStyle(text).fill,
-            plate: plate ? getComputedStyle(plate).fill : frame,
-            frame,
+            shapes: svg.querySelectorAll(':is(.node, .subgraph)').length,
+            boxes: [...svg.querySelectorAll(':is(.node, .subgraph) > rect:first-child')].map(
+              (rect) => ({
+                label: rect.parentElement?.getAttribute('data-label') ?? '',
+                fill: getComputedStyle(rect).fill,
+                stroke: getComputedStyle(rect).stroke,
+              })
+            ),
+            samples: [...svg.querySelectorAll('text')].map((text) => {
+              let plate: Element | null = null;
+              for (const sib of Array.from(text.parentElement?.children ?? [])) {
+                if (sib === text) break;
+                if (sib.tagName === 'rect') plate = sib;
+              }
+              return {
+                label: text.textContent?.trim() ?? '',
+                ink: getComputedStyle(text).fill,
+                plate: plate ? getComputedStyle(plate).fill : frame,
+                frame,
+              };
+            }),
+            focus: {
+              style: ring.outlineStyle,
+              ring: ring.outlineColor,
+              screen: getComputedStyle(figure).backgroundColor,
+              page: getComputedStyle(document.body).backgroundColor,
+            },
           };
-        });
-      });
-      expect(samples.length, `${theme} ${route}: no diagram text to sweep`).toBeGreaterThan(0);
-      for (const { label, ink, plate, frame } of samples) {
-        const ground = compositeOver(
-          parseRgb(plate),
-          parseRgb(frame).slice(0, 3) as [number, number, number]
-        );
-        const [r, g, b, a] = parseRgb(ink);
-        const ratio = contrastRatio(compositeOver([r, g, b, a], ground), ground);
-        expect(
-          ratio,
-          `${theme} ${route} diagram "${label}": WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-        ).toBeGreaterThanOrEqual(4.5);
-      }
-      // The diagram's body is a tab stop on every diagram (rehype-scroll-focus.mjs),
-      // so its focus ring is a state of the page: 3:1 against the screen inside it
-      // and the page outside it (WCAG 1.4.11).
-      const focus = await page.evaluate(() => {
-        const body = document.querySelector<HTMLElement>('.fig__body')!;
-        body.focus({ focusVisible: true } as FocusOptions);
-        const ring = getComputedStyle(body);
-        return {
-          style: ring.outlineStyle,
-          ring: ring.outlineColor,
-          screen: getComputedStyle(body.closest('.fig--diagram')!).backgroundColor,
-          page: getComputedStyle(document.body).backgroundColor,
-        };
-      });
-      expect(focus.style, `${theme} ${route}: the diagram body shows no focus ring`).not.toBe(
-        'none'
+        })
       );
-      for (const ground of [focus.screen, focus.page]) {
-        const under = parseRgb(ground).slice(0, 3) as [number, number, number];
-        const [r, g, b, a] = parseRgb(focus.ring);
-        expect(
-          contrastRatio(compositeOver([r, g, b, a], under), under),
-          `${theme} ${route}: focus ring against ${ground}`
-        ).toBeGreaterThanOrEqual(3);
+      for (const { shapes, boxes, samples, focus } of diagrams) {
+        expect(boxes.length, `${theme} ${route}: no diagram boxes to sweep`).toBeGreaterThan(0);
+        expect(boxes.length, `${theme} ${route}: a shape that is no rectangle goes ungraded`).toBe(
+          shapes
+        );
+        for (const { label, fill, stroke } of boxes) {
+          // A box a reader must parse needs a 3:1 boundary (WCAG 1.4.11); the
+          // page's 12% --border hairline measured 1.27:1, so Docs.astro routes the
+          // library's --border hook to a chip tone.
+          const interior = parseRgb(fill).slice(0, 3) as [number, number, number];
+          const [r, g, b, a] = parseRgb(stroke);
+          const ratio = contrastRatio(compositeOver([r, g, b, a], interior), interior);
+          expect(
+            ratio,
+            `${theme} ${route} diagram box "${label}": stroke vs fill floor is 3:1; measured ${ratio.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(3);
+        }
+        expect(samples.length, `${theme} ${route}: no diagram text to sweep`).toBeGreaterThan(0);
+        for (const { label, ink, plate, frame } of samples) {
+          const ground = compositeOver(
+            parseRgb(plate),
+            parseRgb(frame).slice(0, 3) as [number, number, number]
+          );
+          const [r, g, b, a] = parseRgb(ink);
+          const ratio = contrastRatio(compositeOver([r, g, b, a], ground), ground);
+          expect(
+            ratio,
+            `${theme} ${route} diagram "${label}": WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+        // The diagram's body is a tab stop on every diagram (rehype-scroll-focus.mjs),
+        // so its focus ring is a state of the page: 3:1 against the screen inside it
+        // and the page outside it (WCAG 1.4.11).
+        expect(focus.style, `${theme} ${route}: the diagram body shows no focus ring`).not.toBe(
+          'none'
+        );
+        for (const ground of [focus.screen, focus.page]) {
+          const under = parseRgb(ground).slice(0, 3) as [number, number, number];
+          const [r, g, b, a] = parseRgb(focus.ring);
+          expect(
+            contrastRatio(compositeOver([r, g, b, a], under), under),
+            `${theme} ${route}: focus ring against ${ground}`
+          ).toBeGreaterThanOrEqual(3);
+        }
       }
+      swept += diagrams.length;
     }
+    // teeth: a docs tree that stopped framing diagrams would pass vacuously
+    expect(swept, `${theme}: no diagram swept across ${docs.length} doc routes`).toBeGreaterThan(0);
   }
 });
 
@@ -2702,7 +2706,7 @@ test('reduced motion: the prompt reveals the hovered name instantly', async ({ b
 
 atOfficeMoments(
   'hero prompt ink (default, hover, every chip name) clears WCAG AA at the real office composite',
-  ['day', 'night', 'dracula'],
+  VALID_THEMES,
   async (page, theme, moment) => {
     await page.goto('./');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
@@ -2917,20 +2921,12 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
   // `.prose p`/`.prose li` match the callout's own <p>/<li> DIRECTLY, and a direct match always beats the --chip-ink
   // .callout__body hands DOWN — hence the sibling `a`/`code` overrides, and hence sweeping every tag.
   const TEXT_TAGS = 'p, li, strong, em, a, code';
-  for (const theme of ['day', 'night', 'dracula'] as const) {
+  for (const theme of VALID_THEMES) {
     await page.addInitScript((t) => localStorage.setItem('pix-theme', t), theme);
-    await page.goto('./config/');
-    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    const routes = await page.evaluate(() =>
-      [...document.querySelectorAll('.docs__sidebar .docs__list:not(.docs__list--building) a')].map(
-        (a) => (a as HTMLAnchorElement).getAttribute('href')!
-      )
-    );
-    expect(routes.length, `${theme}: no doc routes in the sidebar`).toBeGreaterThan(0);
-
     let swept = 0;
-    for (const route of routes) {
-      await page.goto(`.${route}`);
+    for (const { route } of docs) {
+      await page.goto(`./${route}`);
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const rows = await page.evaluate((tags) => {
         const transparent = (c: string) => /,\s*0\)\s*$/.test(c);
         return [...document.querySelectorAll('.callout__body')].flatMap((body) => {
@@ -2961,7 +2957,7 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
     // teeth: a docs tree that stopped emitting callouts would pass vacuously
     expect(
       swept,
-      `${theme}: no .callout__body text swept across ${routes.length} doc routes`
+      `${theme}: no .callout__body text swept across ${docs.length} doc routes`
     ).toBeGreaterThan(0);
   }
 });

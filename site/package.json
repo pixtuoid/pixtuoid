@@ -48,6 +48,7 @@
     "globals": "^17.14.0",
     "hast-util-from-html": "^2.0.3",
     "hast-util-to-text": "^4.0.2",
+    "hastscript": "^9.0.1",
     "knip": "^6.44.1",
     "lighthouse": "^13.6.0",
     "playwright": "^1.62.1",

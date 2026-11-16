@@ -4,8 +4,8 @@ import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import { asset, DOCS, FLOORS, type DocPage } from '../consts';
-import { REPO_BLOB } from '../../config/github.mjs';
+import { asset, DOCS, docSlug, FLOORS, pageTitle, type DocPage } from '../consts';
+import { DOC_DIR, REPO_BLOB } from '../../config/github.mjs';
 
 interface Props {
   page: DocPage;
@@ -13,34 +13,29 @@ interface Props {
 }
 
 const { page, headings } = Astro.props;
-const { title, description, sourceNote = 'this page renders it verbatim.' } = page;
-const current = page.id;
-const sourcePath = `docs/${page.file}`;
+const sourcePath = `${DOC_DIR}/${page.file}`;
 
 const idx = DOCS.indexOf(page);
 const prev = idx > 0 ? DOCS[idx - 1] : undefined;
 const next = idx < DOCS.length - 1 ? DOCS[idx + 1] : undefined;
 
 // h2 sections, folding in h3s when a doc has few. Trailing parentheticals are
-// stripped so a long heading doesn't wrap to three lines in the 13rem rail.
+// stripped so a long heading doesn't wrap to three lines in the rail.
 const h2s = headings.filter((h) => h.depth === 2);
 const raw = h2s.length < 3 ? headings.filter((h) => h.depth === 2 || h.depth === 3) : h2s;
 const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '') }));
 ---
 
-<Base title={title} description={description}>
+<Base title={pageTitle(page.label)} description={page.description}>
   <Nav />
   <main id="main" tabindex="-1" class="docs">
     <nav class="docs__rail docs__sidebar hw-panel" aria-label="Docs">
       <p class="docs__bank">elevator — docs wing</p>
       <ul class="docs__list">
         {DOCS.map((d) => <li>
-          <a href={asset(d.route)} aria-current={d.id === current ? 'page' : undefined}>
+          <a href={asset(d.route)} aria-current={d === page ? 'page' : undefined}>
             <span
-              class:list={[
-                'led-dot',
-                { 'led-selected': d.id === current, 'is-on': d.id === current },
-              ]}
+              class:list={['led-dot', { 'led-selected': d === page, 'is-on': d === page }]}
               aria-hidden="true"
             />
             {d.label}
@@ -89,7 +84,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
         <a href={`${REPO_BLOB}/${sourcePath}`} target="_blank" rel="noreferrer">
           {sourcePath}
         </a>
-        — {sourceNote}
+        — this page renders it verbatim{page.sourceNote && ` (${page.sourceNote})`}.
       </p>
     </div>
 
@@ -105,7 +100,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     </nav>}
   </main>
   <Footer />
-  <Statusline doc={current} />
+  <Statusline doc={docSlug(page)} />
 </Base>
 
 <script is:inline>
@@ -260,7 +255,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-size: 0.76rem;
     color: var(--chip-dim);
   }
-  /* The padding is the body's, so the svg's min-width bounds exactly what Mermaid drew. */
+  /* The padding is the body's, so the svg's min-width bounds exactly what beautiful-mermaid drew. */
   .docs :global(.fig__body) {
     overflow-x: auto;
     padding: 1.1rem;

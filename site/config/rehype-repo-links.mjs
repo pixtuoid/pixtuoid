@@ -4,9 +4,8 @@
 import { posix } from 'node:path';
 import { visit } from 'unist-util-visit';
 import { withBase } from './base-path.mjs';
-import { REPO_BLOB } from './github.mjs';
+import { DOC_DIR, REPO_BLOB } from './github.mjs';
 
-const DOC_DIR = 'docs'; // the rendered docs live in docs/, so links resolve from there
 // An absolute URL: one with a scheme, or protocol-relative.
 const ABSOLUTE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
@@ -22,7 +21,7 @@ export default function rehypeRepoLinks({ docs, base }) {
     const href = node.properties.href;
     if (href.startsWith('#') || ABSOLUTE.test(href)) return;
     const [path, hash = ''] = href.split(/(?=#)/);
-    // resolve from docs/, clamp any climb above the repo root
+    // A doc's links resolve from its own directory; a climb above the repo root is clamped.
     const joined = path.startsWith('/') ? path : posix.join(DOC_DIR, path);
     const rel = posix
       .normalize(joined)

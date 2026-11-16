@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // The official programmatic-Lighthouse pattern (lighthouse docs/readme.md)
 // with the multi-run + median-aggregation CI guidance from
-// docs/variability.md, reading the SAME lighthouserc.json the retired
-// @lhci/cli wrapper did — LHCI's last publish (2025-06) pinned lighthouse 12,
-// which dragged the @puppeteer/browsers and chrome-launcher overrides.
+// docs/variability.md, reading lighthouserc.json in @lhci/cli's format.
 // Divergences from LHCI: every assertion fails CI whatever its level, one
-// without an explicit aggregationMethod aggregates by MEDIAN (LHCI defaulted
-// to optimistic; median is stricter-or-equal), and the audited URLs are the
+// without an explicit aggregationMethod aggregates by MEDIAN (LHCI's default
+// is optimistic,
+// github.com/GoogleChrome/lighthouse-ci/blob/main/docs/configuration.md#assertions;
+// median is stricter-or-equal), and the audited URLs are the
 // config's plus every route src/docs.json renders.
 
 import { spawn, spawnSync } from 'node:child_process';

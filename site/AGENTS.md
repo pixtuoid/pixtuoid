@@ -27,7 +27,7 @@ build:
   `docs.json` entry (the collection, the route, `Nav.astro`, `Docs.astro`'s
   sidebar/pager, the in-site doc links and Lighthouse's URLs derive from it;
   `assert-docs-rendered` globs every rendered `article.prose` and needs no
-  edit), `site.yml`'s `scope` paths, and the smoke viewport table.
+  edit) and `site.yml`'s `scope` paths.
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:
@@ -37,7 +37,9 @@ which `astro.config.mjs`'s `demoAssets()` fails on a missing demo, and before
 
 **Every Mermaid diagram in a rendered doc renders at build**, as a framed
 figure, in process (`config/rehype-beautiful-mermaid.mjs` — no browser; a
-local build keeps a doc's cached render across a rehype plugin edit, so run
+local build keeps a doc's cached render across a rehype plugin edit: astro's
+`content/content-layer.js`, at `package.json`'s version, clears the store only
+when the Astro config, the content config or the Astro version changes, so run
 `astro build --force` after one); Playwright's Chromium is
 installed only for `site.yml`'s e2e step. The empty-render class is
 gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns

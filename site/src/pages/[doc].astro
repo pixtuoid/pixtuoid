@@ -1,21 +1,21 @@
 ---
 import type { InferGetStaticPropsType } from 'astro';
-import { getCollection, render } from 'astro:content';
+import { getEntry, render } from 'astro:content';
 import Docs from '../layouts/Docs.astro';
-import { DOCS } from '../consts';
+import { DOCS, docSlug } from '../consts';
 
 export async function getStaticPaths() {
-  const entries = await getCollection('docs');
-  return DOCS.map((page) => {
-    // The glob loader keeps `filePath` relative to site/: `../docs/<file>`.
-    const entry = entries.find((e) => e.filePath?.endsWith(`/${page.file}`));
-    if (!entry) {
-      throw new Error(
-        `[doc].astro: no rendered entry for docs/${page.file}: is the file present? src/docs.json names it, and feeds the glob loader in content.config.ts.`
-      );
-    }
-    return { params: { doc: page.route.replace(/\/$/, '') }, props: { page, entry } };
-  });
+  return Promise.all(
+    DOCS.map(async (page) => {
+      const entry = await getEntry('docs', page.file);
+      if (!entry) {
+        throw new Error(
+          `[doc].astro: no rendered entry for ${page.file}: is the file present? src/docs.json names it, and feeds the glob loader in content.config.ts.`
+        );
+      }
+      return { params: { doc: docSlug(page) }, props: { page, entry } };
+    })
+  );
 }
 
 type Props = InferGetStaticPropsType<typeof getStaticPaths>;

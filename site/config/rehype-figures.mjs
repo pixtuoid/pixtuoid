@@ -4,9 +4,12 @@
 // doc holds one copy of its data. Docs.astro styles the markup.
 import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
-import { el } from './hast.mjs';
+import { h } from 'hastscript';
 
-// Astro keeps a doc's HTML comment as a `raw` node: it never parses raw HTML.
+// The marker is still a `raw` node here: remark-rehype keeps HTML raw
+// (`allowDangerousHtml`), and Astro runs rehype-raw only after the site's
+// rehypePlugins (@astrojs/markdown-remark's dist/index.js:55-80, at
+// package-lock's version).
 const MARKER = /^<!--\s*figure:\s*([\w-]+)\s*-->$/;
 
 const isElement = (node, tagName) => node?.type === 'element' && node.tagName === tagName;
@@ -31,20 +34,22 @@ function rows(kind, tableNode, columns) {
   );
 }
 
-// Each kind draws its figure's children from the table it marks.
+// Each kind draws its figure's content from the table it marks.
 const KINDS = {
-  cards: (table) => [
-    el(
-      'ul',
-      'fig__cards',
+  cards: (table) =>
+    h(
+      'ul.fig__cards',
       rows('cards', table, ['role', 'acts by']).map(([role, acts]) =>
-        el('li', 'fig-card', [el('p', 'fig-card__role', role), el('p', 'fig-card__acts', acts)])
+        h('li.fig-card', [h('p.fig-card__role', role), h('p.fig-card__acts', acts)])
       )
     ),
-  ],
 };
 
 const FIGURE_KINDS = Object.keys(KINDS);
+
+// The shell every figure shares: Docs.astro styles `.fig` and `.fig--<kind>`.
+export const figure = (kind, children) =>
+  h('figure', { className: ['fig', `fig--${kind}`] }, children);
 
 export default function rehypeFigures() {
   return (tree) => {
@@ -60,8 +65,7 @@ export default function rehypeFigures() {
       if (!isElement(target, 'table')) {
         throw new Error(`figure "${kind}" needs a table right below its marker`);
       }
-      const figure = el('figure', ['fig', `fig--${kind}`], draw(target));
-      parent.children.splice(i, j - i + 1, figure);
+      parent.children.splice(i, j - i + 1, figure(kind, draw(target)));
       return i;
     });
   };

@@ -7,18 +7,21 @@
 import { renderMermaidSVG } from 'beautiful-mermaid';
 import { fromHtml } from 'hast-util-from-html';
 import { SKIP, visit } from 'unist-util-visit';
-import { el } from './hast.mjs';
+import { h } from 'hastscript';
+import { figure } from './rehype-figures.mjs';
 
 // Mermaid's accessibility directives are not part of beautiful-mermaid's grammar
-// (it draws them as nodes), so they are lifted out here and put back as the
+// (its src/parser.ts has no rule for them, at package.json's version, so it
+// draws each as a node): they are lifted out here and put back as the
 // <title>/<desc> the SVG is labelled by.
 const ACC_DIRECTIVE = /^\s*acc(Title|Descr)\s*:\s*(.*?)\s*$/;
 
-// The library's stylesheet opens with an @import of Google Fonts: the site's CSP
+// The library's stylesheet opens with an @import of Google Fonts
+// (beautiful-mermaid's src/theme.ts:239-243, at package.json's version): the site's CSP
 // (style-src 'self') blocks it — smoke.spec.ts's office-less first-visit console
 // watchdog reds on the block — and the text falls to the same system-ui either way.
 // The stack stays the library's own: node boxes are sized from Inter's glyph
-// widths, so binding --font-body (a serif) can overflow them.
+// widths (its src/styles.ts:2-4), so binding --font-body (a serif) can overflow them.
 const FONT_IMPORT = /@import\s+url\([^)]*\)[^;]*;\s*/g;
 
 // The root carries literal --bg/--fg (the library's defaults). Passing the page's
@@ -42,7 +45,7 @@ function splitAccessibility(source) {
 function mermaidSource(node) {
   if (node.type !== 'element' || node.tagName !== 'pre') return null;
   const code = node.children.find((c) => c.type === 'element' && c.tagName === 'code');
-  if (!code || !(code.properties?.className ?? []).includes('language-mermaid')) return null;
+  if (!code || !hasClass(code, 'language-mermaid')) return null;
   return code.children.map((c) => c.value ?? '').join('');
 }
 
@@ -60,12 +63,7 @@ function inheritPageTokens(svg) {
 
 function labelled(svg, index, title, descr) {
   const id = `diagram-${index}`;
-  const label = (tagName, value) => ({
-    type: 'element',
-    tagName,
-    properties: { id: `${id}-${tagName}` },
-    children: [{ type: 'text', value }],
-  });
+  const label = (tagName, value) => h(tagName, { id: `${id}-${tagName}` }, value);
   // WCAG 1.1.1: a diagram is non-text content, so it ships its text alternative
   if (!title || !descr) {
     throw new Error(`mermaid diagram ${index} needs accTitle and accDescr (WCAG 1.1.1)`);
@@ -80,14 +78,15 @@ function labelled(svg, index, title, descr) {
 const hasClass = (node, name) => node.properties?.className?.includes(name);
 
 // Shrunk to a phone's width a ten-node diagram's labels are unreadable, so its
-// body scrolls instead: the diagram never draws smaller than Mermaid laid it out.
+// body scrolls instead: the diagram never draws smaller than beautiful-mermaid laid it out.
 function atDrawnSize(svg) {
   const style = [svg.properties.style, `min-width:${svg.properties.width}px`].filter(Boolean);
   svg.properties.style = style.join(';');
   return svg;
 }
 
-// The nodes edges only leave (where the path starts) or only enter (where it ends).
+// A reader finds where the path starts and ends by the outline Docs.astro gives
+// `fig__end`: the nodes edges only leave, or only enter.
 function markEnds(svg) {
   const edges = svg.children.filter((c) => hasClass(c, 'edge'));
   const from = new Set(edges.map((e) => e.properties.dataFrom));
@@ -100,18 +99,13 @@ function markEnds(svg) {
 }
 
 // A terminal window like a callout's: a bar, then a body that scrolls a diagram
-// wider than the page (rehype-scroll-focus.mjs makes that body a tab stop).
+// wider than it, so that body is a tab stop as rehype-scroll-focus.mjs's header
+// says a scroller is.
 const framed = (svg) =>
-  el(
-    'figure',
-    ['fig', 'fig--diagram'],
-    [
-      el('div', 'fig__bar', [el('span', 'fig__title', [{ type: 'text', value: '~ diagram' }])], {
-        ariaHidden: 'true',
-      }),
-      el('div', 'fig__body', [atDrawnSize(markEnds(svg))]),
-    ]
-  );
+  figure('diagram', [
+    h('div.fig__bar', { ariaHidden: 'true' }, [h('span.fig__title', '~ diagram')]),
+    h('div.fig__body', { tabIndex: 0 }, [atDrawnSize(markEnds(svg))]),
+  ]);
 
 function render(raw, index) {
   const { source, title, descr } = splitAccessibility(raw);

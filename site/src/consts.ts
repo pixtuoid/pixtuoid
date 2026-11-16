@@ -5,12 +5,13 @@ import featuresData from './features.json';
 import docsData from './docs.json';
 import { featureText } from '../config/feature-text.mjs';
 import { withBase } from '../config/base-path.mjs';
+import type { VALID_THEMES } from '../config/page-themes.mjs';
 
 export const CRATES = 'https://crates.io/crates/pixtuoid';
 export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
 
-// Base is '/' today, but every internal URL still goes through asset()/BASE_URL
-// so a base change can never silently break links.
+// Every internal URL goes through asset()/BASE_URL, so a change of
+// astro.config.mjs's `base` can never silently break links.
 const BASE = import.meta.env.BASE_URL;
 export const asset = (p: string): string => withBase(BASE, p);
 
@@ -19,7 +20,6 @@ export const asset = (p: string): string => withBase(BASE, p);
 // per-theme --bg, a CSS↔JS pairing that can't share a literal — retune both
 // together (config/theme-bg.test.mjs asserts they agree).
 export const THEME_STORAGE_KEY = 'pix-theme';
-export const VALID_THEMES = ['day', 'night', 'dracula'] as const;
 export type ThemeId = (typeof VALID_THEMES)[number];
 export const THEME_BG: Record<ThemeId, string> = {
   day: '#f4eee2',
@@ -66,15 +66,15 @@ export const DIM_RESTING = 0.55;
 // The rendered docs, in reading order: the prev/next sequence AND the Nav
 // dropdown order.
 export interface DocPage {
-  id: string;
   route: string; // base-path-relative, slashed as its page's canonical URL (asset(route))
   label: string;
-  file: string; // under the repo's docs/, the page's single source
-  title: string;
+  file: string; // under the repo's DOC_DIR, the page's single source
   description: string;
-  sourceNote?: string;
+  sourceNote?: string; // what the page's source line adds about how it renders the file
 }
 export const DOCS: readonly DocPage[] = docsData;
+export const docSlug = (d: DocPage): string => d.route.replace(/\/$/, '');
+export const pageTitle = (name: string): string => `${name} — pixtuoid`;
 
 export interface ThemeShot {
   id: string;
