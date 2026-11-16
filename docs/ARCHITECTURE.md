@@ -48,7 +48,7 @@ degrades, and walks out when it goes down.
 ```mermaid
 flowchart TB
   accTitle: How a coding session becomes a sprite
-  accDescr: Your coding agent reports each step through pixtuoid-hook, a tiny shim, and pixtuoid also reads the transcript the agent writes. Both become events that update one picture of the office, who is there and what each is doing, which the engine draws in the terminal or a desktop window; pixtuoid serve can send it to a paired device. A gateway such as OpenClaw reports through the same shim and shows up as a wandering mascot instead of a desk.
+  accDescr: Your coding agent reports each step through pixtuoid-hook, a tiny shim, or pixtuoid reads the transcript it writes; some agents do both. Either way the steps become events that update one picture of the office, who is there and what each is doing, which the engine draws in the terminal or a desktop window; pixtuoid serve can send it to a paired device. A gateway such as OpenClaw reports through the same shim and shows up as a wandering mascot instead of a desk.
   AG["Your coding agent<br/>Claude Code, Codex, …"]
   GW["A gateway<br/>OpenClaw"]
   HK["pixtuoid-hook<br/>a tiny shim"]
@@ -58,7 +58,7 @@ flowchart TB
   ST["The office<br/>who is here and what each is doing"]
   EN["The engine draws a frame"]
   AG -->|each step| HK
-  AG -.->|writes a transcript| TR
+  AG -->|writes a transcript| TR
   GW -->|its status| HK
   HK -->|from an agent| EV
   HK -->|from a gateway| MS
