@@ -9,6 +9,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import {
   aggregate,
+  auditUrls,
   evaluateAssertions,
   median,
   previewServer,
@@ -131,9 +132,14 @@ async function answersWithin(url, ms) {
   return true;
 }
 
-test('the preview stays a foreground child under an agent, so stop() frees its port', async () => {
+test('the preview stays a foreground child under an agent, so stop() frees its port', async (t) => {
   // CI is no agent: force astro's detection (am-i-vibing 0.5.0 lists CLAUDECODE:
   // node_modules/am-i-vibing/dist/detector-1yx2Hoe0.mjs:26-29).
+  const ambient = process.env.CLAUDECODE;
+  t.after(() => {
+    if (ambient === undefined) delete process.env.CLAUDECODE;
+    else process.env.CLAUDECODE = ambient;
+  });
   process.env.CLAUDECODE = '1';
   const root = mkdtempSync(join(tmpdir(), 'lh-preview-'));
   mkdirSync(join(root, 'dist'));
@@ -224,4 +230,14 @@ test('a squatted audit port fails the start instead of auditing the squatter', a
     squatter.close();
     start.then(stop, () => {});
   }
+});
+
+test("every rendered doc is audited at the home URL's origin and theme", () => {
+  const cfg = { collect: { url: ['http://localhost:4321/?theme=day'] } };
+  const docs = [{ route: 'config/' }, { route: 'how-we-build/' }];
+  assert.deepEqual(auditUrls(cfg, docs), [
+    'http://localhost:4321/?theme=day',
+    'http://localhost:4321/config/?theme=day',
+    'http://localhost:4321/how-we-build/?theme=day',
+  ]);
 });

@@ -12,7 +12,8 @@ import loraLatinWoff2 from '@fontsource/lora/files/lora-latin-400-normal.woff2?u
 import '../styles/fonts.css';
 import 'prismjs/themes/prism-tomorrow.css';
 import '../styles/global.css';
-import { asset, THEMES, THEME_BG, THEME_STORAGE_KEY, VALID_THEMES } from '../consts';
+import { asset, THEMES, THEME_BG, THEME_STORAGE_KEY } from '../consts';
+import { VALID_THEMES } from '../../config/page-themes.mjs';
 import sources from '../sources.json';
 
 const CLI_COUNT = sources.filter((s) => s.status === 'supported').length;

@@ -3,11 +3,11 @@ import Base from '../layouts/Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import { asset } from '../consts';
+import { asset, pageTitle } from '../consts';
 ---
 
 <Base
-  title="404 — pixtuoid"
+  title={pageTitle('404')}
   description="Session not found — this desk has been swept."
   preloadImage={asset('demos/empty.png')}
 >

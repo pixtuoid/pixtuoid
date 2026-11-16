@@ -1,6 +1,7 @@
-import { existsSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
+import { DOC_DIR } from '../../config/docs.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
+import docs from '../../src/docs.json' with { type: 'json' };
 
 // Runs against the PRODUCTION build (see playwright.config.ts).
 
@@ -29,22 +30,13 @@ test('docs mount the statusline: route path left, install chip right, no landing
 
 test("every doc page's source link names its own file in this repo", async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./config/');
-  const pages = await page
-    .locator('.docs__sidebar .docs__list:not(.docs__list--building) a')
-    .evaluateAll((links) => links.map((a) => (a as HTMLAnchorElement).href));
-  expect(pages.length, 'the docs wing lists no page').toBeGreaterThan(0);
-  const hrefs = new Set<string>();
-  for (const url of pages) {
-    await page.goto(url);
-    const href = (await page.locator('.docs__source a').getAttribute('href')) ?? '';
-    expect(href.startsWith(`${REPO_BLOB}/`), `${url} links ${href}`).toBe(true);
-    const file = new URL(`../../../${href.slice(REPO_BLOB.length + 1)}`, import.meta.url);
-    expect(existsSync(file), `${url} links ${href}, no file of this repo`).toBe(true);
-    hrefs.add(href);
+  for (const { route, file } of docs) {
+    await page.goto(`./${route}`);
+    await expect(page.locator('.docs__source a'), route).toHaveAttribute(
+      'href',
+      `${REPO_BLOB}/${DOC_DIR}/${file}`
+    );
   }
-  // Each page renders a different doc, so a link that names another page's file repeats.
-  expect(hrefs.size, `the source links repeat: ${[...hrefs]}`).toBe(pages.length);
 });
 
 test('404 mounts the statusline too', async ({ page }) => {
@@ -52,8 +44,9 @@ test('404 mounts the statusline too', async ({ page }) => {
   await expect(page.locator('#statusline')).toContainText('~ pixtuoid docs · /404');
 });
 
-// GitHub Pages 301s a page's unslashed URL to its canonical, slashed one, so a
-// link that differs costs every click and hover-prefetch a round trip.
+// GitHub Pages redirects a page's unslashed URL to its slashed one
+// (github.com/slorber/trailing-slash-guide#summary), so a link that differs
+// from the canonical costs every click and hover-prefetch a round trip.
 test("every link to one of the site's pages names that page's canonical URL", async ({
   page,
   request,
@@ -61,7 +54,7 @@ test("every link to one of the site's pages names that page's canonical URL", as
   const canonicalPath = (html: string) =>
     new URL(/<link rel="canonical" href="([^"]+)"/.exec(html)![1]).pathname;
   const targets = new Set<string>();
-  for (const from of ['./', './config/', './architecture/', './contributing/']) {
+  for (const from of ['./', ...docs.map((d) => `./${d.route}`)]) {
     await page.goto(from);
     const canonical = await page.locator('link[rel="canonical"]').getAttribute('href');
     const site = new URL(canonical!).origin;
@@ -91,10 +84,12 @@ test('the docs sidebar is an elevator panel: current-doc LED + a building bank f
   await expect(panel).toHaveClass(/hw-panel/);
   await expect(panel.locator('a[aria-current="page"] .led-dot')).toHaveClass(/led-selected/);
   expect(await panel.locator('.led-dot.led-selected').count()).toBe(1);
-  // the building bank reads the shared FLOORS manifest
+  // the building bank lists every floor the landing page stamps from FLOORS
   const building = panel.locator('.docs__list--building a');
-  await expect(building).toHaveCount(6);
   await expect(building.first()).toHaveAttribute('href', /^\/#/);
+  const listed = await building.count();
+  await page.goto('./');
+  await expect(page.locator('[data-floor]')).toHaveCount(listed);
 });
 
 test('markdown callouts render as terminal windows (note + warning)', async ({ page }) => {
@@ -121,8 +116,10 @@ test('tenant board: hw-panel screen, LED dots with shape distinction, sr-only va
   );
   const board = page.locator('#tools .tools__board');
   await expect(board).toHaveClass(/hw-panel/);
-  // ten supported CLIs × macOS = at least ten lit LEDs
-  expect(await board.locator('.tools__led--on').count()).toBeGreaterThanOrEqual(10);
+  // every supported CLI runs on macOS, so each row lights at least one LED
+  expect(await board.locator('.tools__led--on').count()).toBeGreaterThanOrEqual(
+    await board.locator('tbody:not(.tools__planned) tr').count()
+  );
   expect(await board.locator('.tools__led--exp').count()).toBeGreaterThan(0);
   await expect(board.locator('td.tools__cell .sr-only').first()).toHaveText(
     /supported|experimental/

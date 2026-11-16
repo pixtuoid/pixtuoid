@@ -1,17 +1,21 @@
-// Assert every rendered doc page has a body and that /architecture kept its
-// inline diagram <svg>. Born for the silent empty-render class — a render step
+// Assert every rendered doc page has a body and drew every diagram its doc
+// declares. Born for the silent empty-render class — a render step
 // collapsed a doc's <Content /> to an EMPTY <article> WITHOUT failing `astro
 // build` (#680) — and GENERIC on purpose: it globs every page carrying the Docs
-// layout's `<article class="prose">`, so no per-page string can drift. It stays
-// after the in-process renderer: `astro build` exits 0 on a render that throws
-// (the glob loader catches it, logs, and stores the entry unrendered —
-// astro/dist/content/loaders/glob.js), so any render step can repeat it unseen.
+// layout's `<article class="prose">`, so no per-page string can drift. A render
+// step that throws fails `astro build` by itself (the glob loader logs and
+// rethrows: astro's content/loaders/glob.js:148-150, at package.json's version);
+// this is for the one that
+// returns nothing without throwing.
 //
 // Usage: node config/assert-docs-rendered.mjs [distDir=dist]
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { visit } from 'unist-util-visit';
+import { DOC_DIR, docSlug } from './docs.mjs';
 
 // A generous floor: flags a collapsed render without coupling to any page's size.
 export const MIN_BODY_CHARS = 500;
@@ -19,11 +23,21 @@ export const MIN_BODY_CHARS = 500;
 // appended Astro scoped class doesn't drop the article → redden every deploy.
 const DOC_ARTICLE = /<article class="[^"]*\bprose\b[^"]*"[^>]*>([\s\S]*?)<\/article>/;
 
+/** The source of every Mermaid code block a Markdown document holds. */
+export function mermaidFences(markdown) {
+  const sources = [];
+  visit(fromMarkdown(markdown), { type: 'code', lang: 'mermaid' }, (code) => {
+    sources.push(code.value);
+  });
+  return sources;
+}
+
 /**
- * Given doc-page entries `[{ name, html }]`, return the failures + how many
- * Docs-layout pages were seen.
+ * Given doc-page entries `[{ name, html }]` and `diagrams`, the count of
+ * Mermaid blocks each page's doc declares by page name, return the failures +
+ * how many Docs-layout pages were seen.
  */
-export function checkDocPages(entries) {
+export function checkDocPages(entries, diagrams) {
   const failures = [];
   let docPages = 0;
   for (const { name, html } of entries) {
@@ -39,8 +53,16 @@ export function checkDocPages(entries) {
         `/${name}: doc body only ${body.length} chars (< ${MIN_BODY_CHARS}) — render collapsed`
       );
     }
-    if (name === 'architecture' && !/<svg[\s>]/.test(m[1])) {
-      failures.push('/architecture: no inline <svg> — the mermaid diagram did not render');
+    if (!(name in diagrams)) {
+      failures.push(`/${name}: a Docs-layout page src/docs.json does not list`);
+      continue;
+    }
+    const drawn = (m[1].match(/<svg[\s>]/g) ?? []).length;
+    const declared = diagrams[name];
+    if (drawn !== declared) {
+      failures.push(
+        `/${name}: ${drawn} inline <svg> for the ${declared} mermaid blocks its doc declares`
+      );
     }
   }
   if (docPages === 0) {
@@ -55,12 +77,22 @@ function main(dist) {
     .map((e) => ({ name: e.name, file: join(dist, e.name, 'index.html') }))
     .filter((e) => existsSync(e.file))
     .map((e) => ({ name: e.name, html: readFileSync(e.file, 'utf8') }));
-  const { failures, docPages } = checkDocPages(entries);
+  const site = fileURLToPath(new URL('../', import.meta.url));
+  const docs = JSON.parse(readFileSync(join(site, 'src/docs.json'), 'utf8'));
+  const diagrams = Object.fromEntries(
+    docs.map((d) => [
+      docSlug(d),
+      mermaidFences(readFileSync(join(site, '..', DOC_DIR, d.file), 'utf8')).length,
+    ])
+  );
+  const { failures, docPages } = checkDocPages(entries, diagrams);
   if (failures.length > 0) {
     console.error(`✗ doc-render check FAILED (${dist}):\n  ${failures.join('\n  ')}`);
     process.exit(1);
   }
-  console.log(`✓ doc-render check: ${docPages} doc pages have a body; /architecture <svg> present`);
+  console.log(
+    `✓ doc-render check: ${docPages} doc pages have a body and every diagram their doc declares`
+  );
 }
 
 // Only when invoked directly, so the test can import checkDocPages without

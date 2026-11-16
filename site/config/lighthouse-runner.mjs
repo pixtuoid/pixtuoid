@@ -1,17 +1,31 @@
 #!/usr/bin/env node
 // The official programmatic-Lighthouse pattern (lighthouse docs/readme.md)
 // with the multi-run + median-aggregation CI guidance from
-// docs/variability.md, reading the SAME lighthouserc.json the retired
-// @lhci/cli wrapper did — LHCI's last publish (2025-06) pinned lighthouse 12,
-// which dragged the @puppeteer/browsers and chrome-launcher overrides.
-// Divergences from LHCI: every assertion fails CI whatever its level, and one
-// without an explicit aggregationMethod aggregates by MEDIAN (LHCI defaulted
-// to optimistic; median is stricter-or-equal).
+// docs/variability.md, reading lighthouserc.json in @lhci/cli's format.
+// Divergences from LHCI: every assertion fails CI whatever its level, one
+// without an explicit aggregationMethod aggregates by MEDIAN (LHCI's default
+// is optimistic,
+// github.com/GoogleChrome/lighthouse-ci/blob/main/docs/configuration.md#assertions;
+// median is stricter-or-equal), and the audited URLs are the
+// config's plus every route src/docs.json renders.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
+import docs from '../src/docs.json' with { type: 'json' };
+
+/**
+ * The URLs to audit: the configured ones (the home page), then each rendered
+ * doc's route at the first one's origin and query, so the roster adds a page here.
+ * @param {{ collect: { url: string[] } }} cfg
+ * @param {readonly { route: string }[]} rendered
+ * @returns {string[]}
+ */
+export function auditUrls(cfg, rendered) {
+  const home = new URL(cfg.collect.url[0]);
+  return [...cfg.collect.url, ...rendered.map((d) => new URL(d.route + home.search, home).href)];
+}
 
 export function median(values) {
   const sorted = [...values].sort((a, b) => a - b);
@@ -157,9 +171,10 @@ async function main() {
   // detached preview down, or it squats its port for the next local run.
   let chrome;
   const failures = [];
+  const urls = auditUrls(cfg, docs);
   try {
     chrome = await chromeLauncher.launch({ chromeFlags: ['--headless'] });
-    for (const url of cfg.collect.url) {
+    for (const url of urls) {
       const lhrs = [];
       const slug = new URL(url).pathname.replaceAll('/', '_') || '_';
       for (let run = 0; run < cfg.collect.numberOfRuns; run += 1) {
@@ -186,7 +201,7 @@ async function main() {
     process.exit(1);
   }
   const n = Object.keys(cfg.assert.assertions).length;
-  console.log(`lighthouse: ${n} assertions passed on ${cfg.collect.url.length} urls`);
+  console.log(`lighthouse: ${n} assertions passed on ${urls.length} urls`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -5,12 +5,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import docs from '../src/docs.json' with { type: 'json' };
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const floorIds = [...read('../src/consts.ts').matchAll(/\{ id: '([^']+)', fl: /g)].map((m) => m[1]);
-const docRoutes = [...read('../src/consts.ts').matchAll(/\{ id: '[^']+', route: '([^']+)'/g)].map(
-  (m) => m[1]
-);
+const docRoutes = docs.map((d) => d.route);
 
 for (const rel of [
   '../../integrations/raycast/src/manage-sources.tsx',
