@@ -23,11 +23,10 @@ the conversation that produced it.
 | Role | Reads | Never sees | Acts by |
 | --- | --- | --- | --- |
 | The owner | The Roadmap, every PR, the agents' reports | Nothing is hidden from the owner | Deciding direction and taste, merging what no queue merges, cutting releases |
-| A repository's session | Its repository, the org rules, the Roadmap | Another session's working tree | Designing, building test-first and opening PRs from its own worktree |
-| The lead session | Every repository | Another session's working tree | The org-wide work and keeping the sessions aligned |
-| A subagent | The brief its session writes | The session's conversation | One scoped task in its own worktree, then a report |
+| A repository's session | Its repository, the org rules, the Roadmap | Another session's working tree | Designing, building test-first and opening PRs from its own [worktree](CONTRIBUTING.md#parallel-sessions) |
+| A subagent | The brief its session writes | The session's conversation | One scoped task, then a report |
 | The CI review | The PR's title, body, diff and review threads, `AGENTS.md`, `REVIEW.md` | The author's conversation; it runs no code | A `Blocking: <n>` verdict and one thread per finding |
-| CodeRabbit | The PR's diff and `REVIEW.md` | The author's conversation | Review threads |
+| CodeRabbit | The PR, with the repository's files as context and `REVIEW.md` as its guidelines | The author's conversation | Review threads |
 | Mergify | The PR's checks and threads | The code | Merging once the queue's conditions hold |
 
 ## A change, end to end
