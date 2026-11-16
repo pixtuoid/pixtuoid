@@ -38,7 +38,8 @@ The owner's bar: every change is best practice, the best architecture design and
 - **TDD.** A failing test, then the minimal implementation, then the commit.
 - **Comments are WHY only**, doc prose included, and sit on the narrowest thing they constrain; a PR body says what the change does and why (the problem, why this approach, its shortcomings) as claims each checked against the diff, never how it got there, and is re-read against the head before it queues. Name the authority instead of restating its value. Measurements go in the PR body.
 - **No magic numbers.** Reuse the existing authority, else one named constant at the narrowest scope; when a copy of a value must cross a boundary, a test pins the pair. No `unwrap()` outside tests.
-- **Review findings.** A finding's premise is checked against the item it names before it is accepted. A refuted finding produces a mechanism (a test, a compile-time constraint, a CI gate) or nothing.
+- **Review findings.** A finding's premise is checked against the item it names before it is accepted. A refuted finding produces a mechanism (a test, a compile-time constraint, a CI gate) or nothing. A fix lengthens prose only when its disposition names a reader who would act wrongly without the added words.
+- **Local review.** A session runs `/pixtuoid-dev:local-review` on its own work before a PR from the repo's own branches opens for review, and before a push to it, once open for review, carrying a change that neither answers a review thread, the owner's included, nor merges the base branch. The PR body names the head that review ended on, its last fold included, and such a change after that head is a finding; the rest is left to the [CI review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml).
 - **Docs** change in the same commit as what they describe, and no new doc lands unless the owner asks.
 - **Git.** Never force-push and never skip hooks. A change reaches `main` only through a pull request and the org's Mergify queue, a release PR aside, which merges by hand. The session that opened a PR queues it (`@mergifyio queue`) once every finding has its disposition and the repo's must-run results are in the body; whoever queues a bot's PR reads it first.
 - **The [Roadmap](https://github.com/orgs/pixtuoid/projects/1) is the plan of record**, the owner's rule: every step (an item started or finished, a PR opened, merged or closed, a reorder) updates its item, the draft or the issue it tracks, in the same turn. Agents add Roadmap draft items, never issues.
@@ -95,8 +96,8 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 
 Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
 each step there before taking it, never from recall. The CI review applies
-REVIEW.md on every push; [arc step 7](docs/CONTRIBUTING.md#the-arc-loop) says
-when the org's local-review skill
+REVIEW.md; [the org rules](#org-rules)' Local review says when the org's
+local-review skill
 ([source](https://github.com/pixtuoid/.github/blob/main/plugins/pixtuoid-dev/skills/local-review/SKILL.md),
 for an agent without the plugin) runs it first. Any PR, an arc's or not,
 queues as [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) says.
