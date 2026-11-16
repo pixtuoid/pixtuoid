@@ -1,7 +1,7 @@
 {
   "name": "pixtuoid",
   "version": "0.0.0",
-  "description": "Terminal-native pixel-art visualizer for AI coding agents — watch Claude Code, Codex, Cursor, Copilot, and more sessions as coworkers in an ASCII office.",
+  "description": "Your AI coding agents, at work in a pixel office.",
   "keywords": [
     "cli",
     "tui",
