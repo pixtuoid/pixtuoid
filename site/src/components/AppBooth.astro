@@ -1,4 +1,5 @@
 ---
+import type { ImageMetadata } from 'astro';
 import { Image } from 'astro:assets';
 import ipadOffice from '../assets/app/ipad-office.png';
 import iphoneOffice from '../assets/app/iphone-office.png';
@@ -6,6 +7,9 @@ import { floorById, floorName } from '../../config/floors.mjs';
 
 const floor = floorById('app');
 const AUTO_SIZES = 'auto, 100vw';
+// A screenshot's own width and half of it, rounded: a width descriptor holds "a valid
+// non-negative integer" (html.spec.whatwg.org/multipage/images.html#srcset-attributes).
+const candidates = (asset: ImageMetadata) => [Math.round(asset.width / 2), asset.width];
 ---
 
 <section id={floor.id} class="app" data-lit data-floor={floor.fl} data-floor-label={floor.label}>
@@ -44,7 +48,7 @@ const AUTO_SIZES = 'auto, 100vw';
           class="app__ipad"
           src={ipadOffice}
           alt="The pixtuoid App on an iPad and an iPhone, each showing the pixel office with agents at their desks."
-          widths={[ipadOffice.width / 2, ipadOffice.width]}
+          widths={candidates(ipadOffice)}
           sizes={AUTO_SIZES}
           loading="lazy"
         />
@@ -52,7 +56,7 @@ const AUTO_SIZES = 'auto, 100vw';
           class="app__iphone"
           src={iphoneOffice}
           alt=""
-          widths={[iphoneOffice.width / 2, iphoneOffice.width]}
+          widths={candidates(iphoneOffice)}
           sizes={AUTO_SIZES}
           loading="lazy"
         />
