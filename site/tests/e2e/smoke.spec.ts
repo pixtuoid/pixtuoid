@@ -3,6 +3,7 @@ import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
 import { E2E_STAR_COUNT } from '../../config/github.mjs';
+import { FLOORS } from '../../config/floors.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
@@ -624,6 +625,30 @@ test('digit keys ride between floors (scrollspy round-trip)', async ({ page }) =
   await expect(page.locator('[data-lift-digit]')).toHaveText('3F', { timeout: 10_000 });
   await page.keyboard.press('1');
   await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 10_000 });
+  // From the bottom, so the top floor's own digit has to do the riding.
+  await page.keyboard.press(String(FLOORS.length));
+  await expect(page.locator('[data-lift-digit]')).toHaveText(FLOORS[0].fl, { timeout: 10_000 });
+});
+
+test('the statusline names the digit keys the floors have, and the next digit rides nowhere', async ({
+  browser,
+}) => {
+  // Reduced motion: a ride is then one synchronous scroll, so a digit that leaked would have moved the page.
+  const context = await browser.newContext({ reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  const errors = watchErrors(page);
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  await expect(page.locator('.sl__keys')).toHaveText(`keys 1–${FLOORS.length}`);
+  await expect(page.locator('.sl__keyslabel')).toHaveText(`keys 1–${FLOORS.length}`);
+  await page.keyboard.press('1');
+  await expect(page.locator('[data-lift-digit]')).toHaveText('1F');
+  const before = await page.evaluate(() => window.scrollY);
+  expect(before).toBeGreaterThan(0);
+  await page.keyboard.press(String(FLOORS.length + 1));
+  expect(await page.evaluate(() => window.scrollY)).toBe(before);
+  expect(errors()).toEqual([]);
+  await context.close();
 });
 
 test('scrolled to the true page bottom, the statusline clamps to the last floor', async ({
@@ -2226,6 +2251,35 @@ test('landing fixed chrome: floating nav, statusline readouts, floor popover', a
   await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 10_000 });
 });
 
+test('on a short landscape phone every row of the floor popover can be reached', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    viewport: { width: 800, height: 340 },
+    isMobile: true,
+    hasTouch: true,
+  });
+  const page = await context.newPage();
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  await page.locator('[data-floor-toggle]').tap();
+  const rows = page.locator('#sl-floors [data-floor-btn]');
+  await expect(rows).toHaveCount(FLOORS.length);
+  expect(
+    await page.locator('#sl-floors').evaluate((el) => el.scrollHeight > el.clientHeight),
+    'the popover must overflow at this height for the test to bite'
+  ).toBe(true);
+  const bar = (await page.locator('#statusline').boundingBox())!;
+  for (const { fl } of FLOORS) {
+    const row = page.locator(`#sl-floors [data-floor-btn="${fl}"]`);
+    await row.scrollIntoViewIfNeeded();
+    const box = (await row.boundingBox())!;
+    expect(box.y, `${fl} starts above the viewport`).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height, `${fl} runs under the statusline`).toBeLessThanOrEqual(bar.y);
+  }
+  await context.close();
+});
+
 test('no horizontal overflow at phone widths (mobile pan guard)', async ({ browser }) => {
   // `body { overflow-x: hidden }` masks the desktop scrollbar, so a full-width block whose ::before glow pokes past the viewport
   // is INVISIBLE on desktop yet PANS on mobile — and a pseudo-element dodges every querySelectorAll('*') scan.
@@ -2458,6 +2512,12 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
       '.footer__line a.footer__coffee',
       '.footer__sep',
       '.nav__version',
+      '.app__copy .eyebrow',
+      '.app__copy .statement',
+      '.app__lead',
+      '.app__features li',
+      '.app__features code',
+      '.app__note',
     ],
     './404.html': ['.terminal__title'],
     './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],

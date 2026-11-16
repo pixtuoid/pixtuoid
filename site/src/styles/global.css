@@ -7,6 +7,9 @@
    ============================================================ */
 
 :root {
+  /* The fixed statusline's height: what the page, the popover above it and the
+     office's controls each keep clear of. */
+  --statusline-h: calc(2rem + env(safe-area-inset-bottom, 0px));
   /* Brand constants */
   /* Warm "Coworking" palette — cream lightened from the office carpet (#8A765F)
      + Claude coral. Analogous warm harmony so the office art sits INTO the page. */
@@ -44,7 +47,7 @@
   --led: #8de069;
   --led-glow: rgba(141, 224, 105, 0.55);
   --led-off: #6f675a; /* an unlit LED (also the statusline idle dot) */
-  /* The LED hue for the one place it is NOT on --screen: the 5F studio dial,
+  /* The LED hue for the one place it is NOT on --screen: the studio dial,
      whose active channel number + "live" tag sit BARE over the office. --led is
      tuned for the always-dark hardware ground, so day's light office composite
      dropped it to 1.13:1 (measured, worst office pixel + dimmer). This is the
@@ -123,9 +126,8 @@
      it is night's --coral-deep value rather than a fourth invented orange. */
   --chip-accent: #f0a07f;
 
-  /* Bare-over-office ink (no plate/scrim behind it) — the hero subcopy/eyebrow/
-     platform-line and the 4F intro paragraph read directly against the live
-     office at its RESTING dim level (the hero caps at 0.74, other sections at
+  /* Bare-over-office ink (no plate/scrim behind it): text read directly against
+     the live office at its RESTING dim level (the hero caps at 0.74, other sections at
      the shared 0.86 DIM_MAX). Real-canvas-sampled worst case: the office's
      rendered luminance spans a bright sprite (~236,236,236 — a monitor/window
      highlight) to a dark floor pixel (~26-29), and DAY's dimmer LIGHTENS that
@@ -404,7 +406,7 @@ h3 {
 }
 section {
   /* compression (§4): the pre-redesign clamp(3.2rem, 7vw, 6rem) carried
-     30–39% empty scroll (audit top12 #9); the merged 5F band + retired gap
+     30–39% empty scroll (audit top12 #9); the merged studio band + retired gap
      do the heavy lifting, this trims the per-section breathing to match.
      Tightened a second notch (4rem → 3rem ceiling) toward the measured
      scroll-budget pin below — see that spec for why 6.5vh itself isn't the
@@ -620,14 +622,11 @@ section {
    caller needing a tighter plate overrides just that one property and the
    cancellation stays exact — no way for padding and margin to desync again
    (#wb-3: a raw padding override left the margin canceling the OLD 0.75em,
-   pushing text ~7px past the edge). No current consumer uses that override;
-   the one live consumer, .install__note, instead deliberately zeroes
-   margin-inline — the IN-CARD exception where the plate edge must align
-   with its column (see Install.astro's own comment). */
+   pushing text ~7px past the edge). */
 /* Every bare muted-text surface over the office rides the hero's tuned inks
    (day LIGHTENS the composite, night DARKENS it — stock --fg-muted clears
    neither extreme; see --office-ink's doc comment above). Lens B measured the
-   5F lead at 2.69-3.88:1 day before this rule; .roster__body gets the same
+   studio lead at 2.69-3.88:1 day before this rule; .roster__body gets the same
    token in Showcase.astro's scoped styles (scoped specificity wins there). */
 section[data-lit] .section-head .lead {
   color: var(--office-ink);

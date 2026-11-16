@@ -209,14 +209,16 @@ const officeDriverUrl = asset('office-driver.js');
   :root {
     --office-ctl-edge: 10px;
     --office-ctl-w: 36px;
+    --office-ctl-gap: 8px;
   }
   .office-ctl[hidden] {
     display: none;
   }
   .office-ctl {
     position: fixed;
+    --ctl-bottom: calc(var(--statusline-h) + var(--office-ctl-edge));
     right: var(--office-ctl-edge);
-    bottom: calc(2rem + env(safe-area-inset-bottom, 0px) + 10px);
+    bottom: var(--ctl-bottom);
     z-index: 50;
     width: var(--office-ctl-w);
     height: var(--office-ctl-w);
@@ -236,18 +238,20 @@ const officeDriverUrl = asset('office-driver.js');
   /* Footer.astro's row wraps non-monotonically with viewport width, so no flat offset clears it — --footer-h tracks its REAL height, the fallback shows pre-JS only. */
   @media (max-width: 960px) {
     .office-ctl {
-      bottom: calc(2rem + env(safe-area-inset-bottom, 0px) + var(--footer-h, 74px) + 10px);
+      --ctl-bottom: calc(var(--statusline-h) + var(--footer-h, 74px) + var(--office-ctl-edge));
     }
   }
   @media (max-width: 760px) {
     .container {
       padding-inline-end: calc(
-        var(--container-pad-x) + var(--office-ctl-edge) + var(--office-ctl-w) + 8px
+        var(--container-pad-x) + var(--office-ctl-edge) + var(--office-ctl-w) +
+          var(--office-ctl-gap)
       );
     }
     .gap-caption {
       max-width: calc(
-        100% - var(--gap-caption-inset) - var(--office-ctl-edge) - var(--office-ctl-w) - 8px
+        100% - var(--gap-caption-inset) - var(--office-ctl-edge) - var(--office-ctl-w) -
+          var(--office-ctl-gap)
       );
     }
   }
@@ -279,15 +283,7 @@ const officeDriverUrl = asset('office-driver.js');
     color: var(--led);
   }
   #office-audio {
-    bottom: calc(2rem + env(safe-area-inset-bottom, 0px) + 10px + var(--office-ctl-w) + 8px);
-  }
-  @media (max-width: 960px) {
-    #office-audio {
-      bottom: calc(
-        2rem + env(safe-area-inset-bottom, 0px) + var(--footer-h, 74px) + 10px +
-          var(--office-ctl-w) + 8px
-      );
-    }
+    bottom: calc(var(--ctl-bottom) + var(--office-ctl-w) + var(--office-ctl-gap));
   }
   .office-ctl .office-ctl__soundon {
     display: none;

@@ -124,7 +124,6 @@ test('tenant board: hw-panel screen, LED dots with shape distinction, sr-only va
   await expect(board.locator('td.tools__cell .sr-only').first()).toHaveText(
     /supported|experimental/
   );
-  await expect(page.locator('#tools')).toHaveAttribute('data-floor', '2F');
 });
 
 // The lobby row wraps (`flex-wrap`), so the plaque sits beside the board only

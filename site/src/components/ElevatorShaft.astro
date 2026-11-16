@@ -1,7 +1,8 @@
 ---
-import { FLOORS, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX } from '../consts';
+import { FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX } from '../consts';
+import { FLOORS } from '../../config/floors.mjs';
 
-// A slim pixel shaft fixed at the right edge; a pixel car rides 6F→1F with
+// A slim pixel shaft fixed at the right edge; a pixel car rides the floors with
 // scroll. index-only chrome — the docs pages get the elevator-PANEL sidebar.
 ---
 
@@ -11,14 +12,14 @@ import { FLOORS, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX } from '../const
       class="shaft__stop"
       data-shaft-stop={f.fl}
       aria-label={`${f.fl} ${f.label}`}
-      aria-current={f.fl === '6F' ? 'true' : undefined}
+      aria-current={f === FLOORS[0] ? 'true' : undefined}
     >
       <span class="led-dot" aria-hidden="true" />
       <span class="shaft__plate hw-panel" aria-hidden="true"> <b>{f.fl}</b> {f.label} </span>
     </button>)}
     <span class="shaft__car" data-shaft-car aria-hidden="true"></span>
   </nav>
-  {/* no keys hint here — the statusline owns the ONE "keys 1–6" affordance */}
+  {/* no keys hint here — the statusline owns the ONE "keys 1–N" affordance */}
 </aside>
 
 <script

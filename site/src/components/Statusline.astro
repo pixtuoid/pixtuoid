@@ -1,16 +1,10 @@
 ---
 // The page's one piece of fixed chrome: a build-time merged-PR feed plus the
-// elevator's organs (floor readout, scrollspy, keys 1–6, jump list). Sits on
+// elevator's organs (floor readout, scrollspy, digit keys, jump list). Sits on
 // --screen (the office's own hardware black) and is NEVER subject to the dimmer.
 import sources from '../sources.json';
-import {
-  FLOORS,
-  floorName,
-  DIM_RESTING,
-  FLOOR_SPY_ROOT_MARGIN,
-  BOTTOM_CLAMP_EPSILON_PX,
-  asset,
-} from '../consts';
+import { DIM_RESTING, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX, asset } from '../consts';
+import { FLOORS, floorName } from '../../config/floors.mjs';
 import { GH_API_REPO, GH_FETCH_TIMEOUT_MS, REPO } from '../../config/github.mjs';
 
 interface Props {
@@ -131,7 +125,7 @@ const FEED_ROTATE_MS = 6000;
             {f.fl} <span class="sl__floorname">{floorName(f)}</span>
           </button>)}
           <div class="sl__keysrow">
-            <span class="sl__keyslabel">keys 1–6</span>
+            <span class="sl__keyslabel">keys 1–{FLOORS.length}</span>
             <button
               class="sl__keystoggle"
               type="button"
@@ -190,14 +184,14 @@ const FEED_ROTATE_MS = 6000;
   {
     /* deliberately AFTER #sl-install: bundling this into the index fragment
       above silently swaps the two rightmost items */
-    !doc && <span class="sl__keys" aria-hidden="true"> keys 1–6 </span>
+    !doc && <span class="sl__keys" aria-hidden="true"> keys 1–{FLOORS.length} </span>
   }
 </div>
 
 <style is:global>
   /* Reserve room for the fixed bar (the footer must never hide under it). */
   body {
-    padding-bottom: calc(2rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--statusline-h);
   }
 </style>
 
@@ -209,7 +203,7 @@ const FEED_ROTATE_MS = 6000;
     display: flex;
     align-items: center;
     gap: 1rem;
-    height: calc(2rem + env(safe-area-inset-bottom, 0px));
+    height: var(--statusline-h);
     padding: 0 0.9rem env(safe-area-inset-bottom, 0px);
     background: var(--screen);
     border-top: 1px solid var(--chip-line);
@@ -251,8 +245,9 @@ const FEED_ROTATE_MS = 6000;
     display: none;
   }
   .sl__floors {
+    --pop-gap: 0.4rem;
     position: absolute;
-    bottom: calc(100% + 0.4rem);
+    bottom: calc(100% + var(--pop-gap));
     left: 0;
     display: flex;
     flex-direction: column;
@@ -260,6 +255,10 @@ const FEED_ROTATE_MS = 6000;
     border: 1px solid var(--chip-line);
     padding: 0.3rem;
     min-width: 12rem;
+    /* On a short landscape phone the rows outgrow the room above the bar, and a
+       popover in fixed chrome can't be scrolled to by the page. */
+    max-height: calc(100dvh - var(--statusline-h) - var(--pop-gap));
+    overflow-y: auto;
   }
   .sl__floorbtn {
     display: flex;

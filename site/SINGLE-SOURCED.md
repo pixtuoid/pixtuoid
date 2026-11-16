@@ -22,14 +22,14 @@ Notes no gate carries:
 ## Manifest seams (build-guarded)
 
 - **`features.json` is the total feature collection, partitioned by
-  `channel`**: a `channel`-bearing row joins `showcase.json` and drives the 5F
+  `channel`**: a `channel`-bearing row joins `showcase.json` and drives the
   studio dial (`consts.ts` `featureForChannel`); channel↔id is a BIJECTION
   enforced by the `astro.config.mjs` guard — build fails loud on the offending
   id. Rows without `channel` render as the quiet roster grid.
-- The six-floor vocabulary (`data-floor`/`data-floor-label`) stamps from the
-  ONE `FLOORS` manifest in `consts.ts`; statusline lift, `ElevatorShaft`, and
+- The floor vocabulary (`data-floor`/`data-floor-label`) stamps from the
+  ONE `FLOORS` manifest (`src/floors.json`, numbered in `config/floors.mjs`); statusline lift, `ElevatorShaft`, and
   the scrollspy all read the same `FLOOR_SPY_ROOT_MARGIN` band so readouts
-  can't disagree. `#features` is an anchor-compat shim atop the merged 5F
+  can't disagree. `#features` is an anchor-compat shim atop the merged studio
   band. `data-keys-scope="channels"` on `#showcase` claims digits locally.
 - `__GH_STARS__` is a build-time `vite.define`, null on offline builds — every
   consumer omits its ★ segment on null (`config/plaque-stars.mjs` is the
