@@ -201,3 +201,6 @@ local-review skill ([AGENTS.md](AGENTS.md#org-rules)) runs them.
 - **Fetch** another CLI's upstream that is not on GitHub, for its config's
   resolution axes.
 - **`cargo tree -e normal`** for a new dependency.
+- **Local review** before the first push of a change touching 5+ counted files
+  ([CONTRIBUTING.md](docs/CONTRIBUTING.md#the-arc-loop) step 7): its findings
+  and their dispositions; later pushes answer the CI review instead.

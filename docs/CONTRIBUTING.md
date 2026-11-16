@@ -219,7 +219,8 @@ diff, fixtures included.
 
 The review skips a fork's or a bot's PR, and its skipped check passes. A
 maintainer reviews a fork's or Dependabot's PR by hand, holding it to its claims and
-must-run results, before queueing it; a fork's author can resolve their own threads,
+must-run results (a fork's local review is the review run on its commits below, where
+it can run), before queueing it; a fork's author can resolve their own threads,
 so read each thread's `resolvedBy` and its reply. To run the review on a fork's
 commits once its diff is read and touches no workflow, open them as a same-repo PR and
 close it unmerged: merging it would take the author's credit. Its checks share the
