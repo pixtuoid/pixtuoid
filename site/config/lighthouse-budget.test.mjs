@@ -11,9 +11,11 @@ test('performance budgets use stable samples', () => {
 
 // LHCI's defaults pass what should fail: a `warn` exits 0, and an assertion without an aggregationMethod takes the
 // run "most likely to pass" (github.com/GoogleChrome/lighthouse-ci/blob/main/docs/configuration.md#assertions).
-test('every assertion fails CI and names how its runs aggregate', () => {
+// One without a bound it knows is graded as `minScore: 0.9` (`realMinScore` in @lhci/utils' assertions.js).
+test('every assertion fails CI, has a bound and names how its runs aggregate', () => {
   for (const [audit, [level, options]] of Object.entries(asserted.assertions)) {
     assert.equal(level, 'error', audit);
+    assert.ok('minScore' in options || 'maxNumericValue' in options, audit);
     assert.ok(['median', 'pessimistic'].includes(options.aggregationMethod), audit);
   }
 });
