@@ -30,6 +30,9 @@ test("any other repo-relative link goes to the file on GitHub, resolved from the
   assert.equal(rewritten('../AGENTS.md#org-rules'), `${REPO_BLOB}/AGENTS.md#org-rules`);
   assert.equal(rewritten('images/demo.gif'), `${REPO_BLOB}/${DOC_DIR}/images/demo.gif`);
   assert.equal(rewritten('../crates/ARCHITECTURE.md'), `${REPO_BLOB}/crates/ARCHITECTURE.md`);
+});
+
+test('a root-relative link resolves from the repo root, and a climb above it is clamped', () => {
   assert.equal(rewritten('/AGENTS.md'), `${REPO_BLOB}/AGENTS.md`);
   assert.equal(rewritten('../../x.md'), `${REPO_BLOB}/x.md`);
 });
