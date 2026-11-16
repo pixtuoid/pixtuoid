@@ -1,0 +1,28 @@
+[
+  {
+    "route": "config/",
+    "label": "Configuration",
+    "file": "CONFIGURATION.md",
+    "description": "Configure pixtuoid: config.toml keys, themes, logging and troubleshooting."
+  },
+  {
+    "route": "architecture/",
+    "label": "Architecture",
+    "file": "ARCHITECTURE.md",
+    "description": "How pixtuoid turns a running coding-agent session into a moving sprite: the producer → reducer → renderer pipeline across its Rust crates.",
+    "sourceNote": "the diagram is the same Mermaid block GitHub shows"
+  },
+  {
+    "route": "contributing/",
+    "label": "Contributing",
+    "file": "CONTRIBUTING.md",
+    "description": "Contribute to pixtuoid: build & test workflow, conventions, the review process, and how to add a new agent CLI."
+  },
+  {
+    "route": "how-we-build/",
+    "label": "How we build",
+    "file": "HOW-WE-BUILD.md",
+    "description": "Who does what when AI coding agents build and maintain pixtuoid for one owner, and the path every change takes to main.",
+    "sourceNote": "each figure is drawn from the table or Mermaid block GitHub shows"
+  }
+]

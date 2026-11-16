@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       full:
-        description: 'False on a PR outside the merge queue: `check` then runs only when `scope` finds the site runtime changed'
+        description: "False on a PR outside the merge queue: `check` then runs only when `scope` finds the site runtime changed"
         type: boolean
         required: true
 
@@ -57,7 +57,7 @@ jobs:
       - uses: ./.github/actions/path-changed
         id: scope
         with:
-          paths: site docs/CONFIGURATION.md docs/ARCHITECTURE.md docs/CONTRIBUTING.md crates/pixtuoid-web crates/pixtuoid-web-music .github/workflows/site.yml
+          paths: site docs/CONFIGURATION.md docs/ARCHITECTURE.md docs/CONTRIBUTING.md docs/HOW-WE-BUILD.md crates/pixtuoid-web crates/pixtuoid-web-music .github/workflows/site.yml
 
   check:
     name: demos · build · e2e
@@ -100,7 +100,7 @@ jobs:
       # system Chrome) and the diagram renders in-process, so Chromium lands here,
       # not in the composite pages.yml also runs.
       # --with-deps would run its own apt-get update and install
-      # (playwright-core registry/dependencies.ts), outside apt-install's bound
+      # (playwright-core's lib/coreBundle.js, at site/package-lock.json's version), outside apt-install's bound
       # and mirror rotation; its dry run only names what is missing, which
       # apt-install then fetches.
       - name: Find Chromium's missing system packages
@@ -114,7 +114,7 @@ jobs:
         uses: ./.github/actions/apt-install
         with:
           packages: ${{ steps.pw-deps.outputs.packages }}
-          recommends: 'false'
+          recommends: "false"
       - run: npx playwright install chromium chromium-headless-shell
         timeout-minutes: 10
       - run: npm run e2e

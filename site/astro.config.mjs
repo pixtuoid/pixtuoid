@@ -2,15 +2,19 @@
 import { defineConfig } from 'astro/config';
 import { readFileSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { posix, join } from 'node:path';
+import { join } from 'node:path';
 import sitemap from '@astrojs/sitemap';
 import { unified } from '@astrojs/markdown-remark';
-import { visit } from 'unist-util-visit';
 import { rewriteCspMeta } from './config/csp-hashes.mjs';
 import rehypeCallouts from './config/rehype-callouts.mjs';
 import rehypeBeautifulMermaid from './config/rehype-beautiful-mermaid.mjs';
+import rehypeFigures from './config/rehype-figures.mjs';
+import rehypeRepoLinks from './config/rehype-repo-links.mjs';
+import docs from './src/docs.json' with { type: 'json' };
+import features from './src/features.json' with { type: 'json' };
+import showcaseData from './src/showcase.json' with { type: 'json' };
 import rehypeScrollFocus from './config/rehype-scroll-focus.mjs';
-import { REPO_BLOB, fetchStarCount } from './config/github.mjs';
+import { fetchStarCount } from './config/github.mjs';
 import { latestReleaseTag, resolveDisplayedVersion } from './config/released-version.mjs';
 import { COMPRESS_HTML } from './config/compress-html.mjs';
 import { workspacePackageField } from './config/workspace-package.mjs';
@@ -28,9 +32,8 @@ console.log(`[pixtuoid] displayed version ${version} (from ${versionSource})`);
 // Baked at build time — the CSP forbids a runtime fetch. null on any failure.
 const ghStars = await fetchStarCount();
 
-const showcase = /** @type {any[]} */ (
-  JSON.parse(readFileSync(fileURLToPath(new URL('./src/showcase.json', import.meta.url)), 'utf8'))
-);
+// The guards below read fields no row of the manifest holds, which its inferred type lacks.
+const showcase = /** @type {any[]} */ (showcaseData);
 const scDefaults = showcase.filter((c) => c.default);
 if (scDefaults.length !== 1 || scDefaults[0].status !== 'live') {
   throw new Error(
@@ -85,9 +88,6 @@ for (const c of showcase) {
 // Studio Wall ↔ Features bridge: showcase.json channels and the features.json
 // rows carrying `channel:` must be a bijection, or the dial silently shows an
 // empty accordion / a feature silently has no home.
-const features = /** @type {any[]} */ (
-  JSON.parse(readFileSync(fileURLToPath(new URL('./src/features.json', import.meta.url)), 'utf8'))
-);
 const featureChannelOwner = new Map();
 for (const f of features) {
   if (!f.channel) continue;
@@ -110,39 +110,11 @@ for (const [chId, name] of featureChannelOwner) {
     );
 }
 
-// Rewrite repo-relative markdown links to GitHub so they resolve once deployed.
-function rehypeRepoLinks() {
-  const DOC_DIR = 'docs'; // the rendered docs live in docs/ — links resolve from there
-  const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
-  const DANGEROUS = /^\s*(?:javascript|data|vbscript):/i;
-  /** @param {any} node */
-  const rewrite = (node) => {
-    if (node.tagName === 'a' && node.properties && typeof node.properties.href === 'string') {
-      const href = node.properties.href;
-      if (DANGEROUS.test(href)) {
-        // defense-in-depth — the rendered doc is trusted today
-        node.properties.href = '#';
-      } else if (!href.startsWith('#') && !SCHEME.test(href)) {
-        // resolve from docs/, clamp any climb above the repo root
-        const joined = href.startsWith('/') ? href : posix.join(DOC_DIR, href);
-        const rel = posix
-          .normalize(joined)
-          .replace(/^(?:\.\.\/)+/, '')
-          .replace(/^\/+/, '');
-        node.properties.href = `${REPO_BLOB}/${rel}`;
-      }
-    }
-  };
-  /** @param {any} tree */
-  const transform = (tree) => visit(tree, 'element', rewrite);
-  return transform;
-}
-
-// Astro's built-in CSP (`security.csp` below) does NOT hash template-level
-// `is:inline` scripts (verified vs Astro 7.0.5) — the only kind this site has —
-// nor style attributes, and it emits its <meta> BELOW scripts the layout
-// already wrote, which a meta policy does not govern. This hook hashes every
-// inline script, <style> and style attribute from the BUILT html.
+// Astro's built-in CSP (`security.csp` below) hashes the scripts it bundles and
+// never adds a hash to `style-src-attr`
+// (docs.astro.build/en/reference/configuration-reference/#securitycsp); this
+// site's scripts are template-level `is:inline`, which it does not bundle. This
+// hook hashes every inline script, <style> and style attribute from the BUILT html.
 function cspInlineHashes() {
   return {
     name: 'csp-inline-hashes',
@@ -191,30 +163,33 @@ function demoAssets() {
   };
 }
 
+const BASE = '/';
+
 // The custom domain lives in the repo's Settings → Pages, not in the artifact —
 // Actions deploys need no CNAME file.
 export default defineConfig({
   site: workspacePackageField(cargoToml, 'homepage'),
-  base: '/',
+  base: BASE,
   trailingSlash: 'always',
   compressHTML: COMPRESS_HTML,
   markdown: {
     // excludeLangs keeps ```mermaid a RAW code node — the highlighter would
     // otherwise split the source into token spans the diagram plugin cannot read
-    // back. Prism
-    // emits classes, not Shiki's inline style attributes, so it needs no CSP
+    // back. Prism emits classes, not Shiki's inline style attributes
+    // (docs.astro.build/en/guides/syntax-highlighting/), so it needs no CSP
     // style hash.
     syntaxHighlight: { type: 'prism', excludeLangs: ['mermaid'] },
-    // Astro 7 deprecated the legacy `markdown.rehypePlugins` key (a hard error
-    // without @astrojs/markdown-remark): opt back into the remark/rehype
-    // pipeline explicitly — the diagram plugin needs it.
+    // Astro 7 deprecated the legacy `markdown.rehypePlugins` key, a hard error
+    // without @astrojs/markdown-remark (astro's core/config/validate.js:51 and
+    // :77, at package.json's version): opt back into the remark/rehype pipeline
+    // explicitly — the diagram plugin needs it.
     processor: unified({
       rehypePlugins: [
-        // inline <svg> at build time, in-process: zero client JS, no browser.
         rehypeBeautifulMermaid,
-        rehypeScrollFocus, // after the diagram, whose `pre` leaves as an <svg>
-        rehypeRepoLinks, // after the diagram so it walks the final tree
-        rehypeCallouts, // last: promotes doc blockquotes to terminal-window chrome
+        rehypeFigures,
+        rehypeScrollFocus,
+        [rehypeRepoLinks, { docs, base: BASE }],
+        rehypeCallouts,
       ],
     }),
   },

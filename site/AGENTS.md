@@ -22,13 +22,13 @@ build:
   unit-tested — main runs ahead of it mid-cycle). Both workflows checkout with
   `fetch-depth: 0`. `pages.yml` deploys on push to `main`, not on tag push, so
   a fresh tag shows after the next `main` commit or a `workflow_dispatch`.
-- `docs/{CONFIGURATION, ARCHITECTURE, CONTRIBUTING}.md`
-  → rendered routes via glob loaders in `src/content.config.ts`. **Adding,
-  renaming, or REMOVING a rendered doc is a multi-point edit**: glob
-  pattern, `src/pages/*.astro`, the `DOCS` entry in `consts.ts` (`Nav.astro`
-  and `Docs.astro`'s sidebar/pager derive from it; `assert-docs-rendered`
-  globs every rendered `article.prose` and needs no edit), `lighthouserc.json`,
-  `site.yml`'s `scope` paths, and the smoke viewport table.
+- the `docs/*.md` files `src/docs.json` names → rendered routes. **Adding,
+  renaming, or REMOVING a rendered doc is a multi-point edit**: its
+  `docs.json` entry (the collection, the route, `Nav.astro`, `Docs.astro`'s
+  sidebar/pager, the in-site doc links and Lighthouse's URLs derive from it;
+  `assert-docs-rendered` globs every rendered `article.prose` and needs no
+  edit), `site.yml`'s `scope` paths, and the e2e rows that name a route (smoke's
+  pan and `PLATE_SURFACES` tables, `docs-lobby.spec.ts`).
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:
@@ -36,17 +36,20 @@ silently stays on its poster. `public/demos/` is gitignored too:
 which `astro.config.mjs`'s `demoAssets()` fails on a missing demo, and before
 `test:demos`), and CI renders it per build.
 
-**The architecture diagram renders at build**, in process
-(`config/rehype-beautiful-mermaid.mjs` — no browser); Playwright's Chromium is
+**Every Mermaid diagram in a rendered doc renders at build**, as a framed
+figure, in process (`config/rehype-beautiful-mermaid.mjs` — no browser).
+`npm run build` passes `--force` because astro's content store outlives a
+rehype plugin edit (its `content/content-layer.js`, at `package.json`'s version,
+clears it only on a config or version change). Playwright's Chromium is
 installed only for `site.yml`'s e2e step. The empty-render class is
 gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
 the mechanism; `pages.yml`'s pins carry their own.
 
-**Docs shell**: the doc routes (the `DOCS` manifest in `consts.ts` is the
-roster) mount the Statusline doc variant (no PR feed fetch); `Docs.astro`'s
-sidebar reads the one `FLOORS` manifest.
+**Docs shell**: the doc routes (`src/docs.json` is the roster) mount the
+Statusline doc variant (no PR feed fetch); `Docs.astro`'s sidebar reads the
+one `FLOORS` manifest.
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
-unit-tested, registered AFTER `rehypeRepoLinks`). Adding a `.prose` colour rule
+unit-tested). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its
 theme-prefixed tie are on the rule itself in `Docs.astro`, and the smoke
 suite's callout AA sweep grades it.

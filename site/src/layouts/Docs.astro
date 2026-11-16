@@ -4,57 +4,39 @@ import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import { posix } from 'node:path';
-import { asset, DOCS, FLOORS, type DocId } from '../consts';
+import { asset, DOCS, FLOORS, pageTitle, type DocPage } from '../consts';
+import { DOC_DIR, docSlug } from '../../config/docs.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
 
 interface Props {
-  title: string;
-  description: string;
+  page: DocPage;
   headings: MarkdownHeading[];
-  current: DocId;
-  /** The rendered collection entry, whose file the source line links. */
-  entry: { filePath?: string };
-  sourceNote?: string;
 }
 
-const {
-  title,
-  description,
-  headings,
-  current,
-  entry,
-  sourceNote = 'this page renders it verbatim.',
-} = Astro.props;
+const { page, headings } = Astro.props;
+const sourcePath = `${DOC_DIR}/${page.file}`;
 
-// The glob loader keeps `filePath` relative to the project root (site/), which sits in the repo root.
-if (!entry.filePath) throw new Error(`Docs.astro: the "${current}" entry carries no filePath`);
-const sourcePath = posix.relative('..', entry.filePath);
-
-const idx = DOCS.findIndex((d) => d.id === current);
+const idx = DOCS.indexOf(page);
 const prev = idx > 0 ? DOCS[idx - 1] : undefined;
 const next = idx < DOCS.length - 1 ? DOCS[idx + 1] : undefined;
 
 // h2 sections, folding in h3s when a doc has few. Trailing parentheticals are
-// stripped so a long heading doesn't wrap to three lines in the 13rem rail.
+// stripped so a long heading doesn't wrap to three lines in the rail.
 const h2s = headings.filter((h) => h.depth === 2);
 const raw = h2s.length < 3 ? headings.filter((h) => h.depth === 2 || h.depth === 3) : h2s;
 const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '') }));
 ---
 
-<Base title={title} description={description}>
+<Base title={pageTitle(page.label)} description={page.description}>
   <Nav />
   <main id="main" tabindex="-1" class="docs">
     <nav class="docs__rail docs__sidebar hw-panel" aria-label="Docs">
       <p class="docs__bank">elevator — docs wing</p>
       <ul class="docs__list">
         {DOCS.map((d) => <li>
-          <a href={asset(d.route)} aria-current={d.id === current ? 'page' : undefined}>
+          <a href={asset(d.route)} aria-current={d === page ? 'page' : undefined}>
             <span
-              class:list={[
-                'led-dot',
-                { 'led-selected': d.id === current, 'is-on': d.id === current },
-              ]}
+              class:list={['led-dot', { 'led-selected': d === page, 'is-on': d === page }]}
               aria-hidden="true"
             />
             {d.label}
@@ -103,7 +85,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
         <a href={`${REPO_BLOB}/${sourcePath}`} target="_blank" rel="noreferrer">
           {sourcePath}
         </a>
-        — {sourceNote}
+        — this page renders it verbatim{page.sourceNote && ` (${page.sourceNote})`}.
       </p>
     </div>
 
@@ -119,7 +101,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     </nav>}
   </main>
   <Footer />
-  <Statusline doc={current} />
+  <Statusline doc={docSlug(page)} />
 </Base>
 
 <script is:inline>
@@ -257,12 +239,14 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: inherit;
   }
   /* rendered markdown carries no astro scope hash, hence :global throughout */
-  .docs :global(.callout) {
+  /* One terminal chrome for a callout and a diagram's figure
+     (config/rehype-beautiful-mermaid.mjs). */
+  .docs :global(:is(.callout, .fig--diagram)) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
   }
-  .docs :global(.callout__bar) {
+  .docs :global(:is(.callout__bar, .fig__bar)) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -271,6 +255,64 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-family: var(--font-mono);
     font-size: 0.76rem;
     color: var(--chip-dim);
+  }
+  /* The padding is the body's, so the svg's min-width bounds exactly what beautiful-mermaid drew. */
+  .docs :global(.fig__body) {
+    overflow-x: auto;
+    padding: 1.1rem;
+  }
+  /* The library's hooks read the cascade: the diagram's ground is the screen,
+     and its text, fills and strokes take the chip tones that clear AA and a
+     box's 3:1 on it (smoke.spec.ts's diagram tests grade both). */
+  .docs :global(.fig--diagram svg) {
+    --bg: var(--screen);
+    --fg: var(--chip-bright);
+    --surface: var(--hw-hover);
+    --muted: var(--chip-ink);
+    --border: var(--chip-dim);
+    display: block;
+    width: 100%;
+    height: auto;
+    background: var(--bg);
+  }
+  .docs :global(.fig__end > :is(rect, polygon, path, circle, ellipse)) {
+    stroke: var(--amber);
+    stroke-width: 1.5;
+  }
+  .docs :global(.fig__cards) {
+    display: grid;
+    /* min(): at an enlarged font size a card is no wider than the column it sits in. */
+    grid-template-columns: repeat(auto-fill, minmax(min(15.5rem, 100%), 1fr));
+    gap: 0.9rem;
+    margin: 1.8rem 0;
+    padding: 0;
+    list-style: none;
+  }
+  .docs :global(.fig-card) {
+    margin: 0;
+    padding: 1rem 1.1rem 1.1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+  }
+  .docs :global(.fig-card__role) {
+    margin: 0 0 0.6rem;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    line-height: 1.1;
+    color: var(--fg);
+  }
+  /* (0,4,1), past global.css's theme-prefixed `.prose a` (0,3,1), which tints
+     night's and dracula's links: a role's name reads as the card's title. */
+  .docs :global(.fig-card .fig-card__role a) {
+    color: inherit;
+    font-weight: inherit;
+  }
+  .docs :global(.fig-card__acts) {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.45;
   }
   .docs :global(.callout__body) {
     margin: 0;

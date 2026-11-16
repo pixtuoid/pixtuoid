@@ -2,22 +2,25 @@ import themesData from './themes.json';
 import weatherData from './weather.json';
 import showcaseData from './showcase.json';
 import featuresData from './features.json';
+import docsData from './docs.json';
 import { featureText } from '../config/feature-text.mjs';
+import { withBase } from '../config/base-path.mjs';
+import type { VALID_THEMES } from '../config/page-themes.mjs';
 
 export const CRATES = 'https://crates.io/crates/pixtuoid';
 export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
 
-// Base is '/' today, but every internal URL still goes through asset()/BASE_URL
-// so a base change can never silently break links.
+// Every internal URL joins astro.config.mjs's `base` through withBase(), as
+// asset() in components and by rehype-repo-links in rendered markdown, so a
+// change of `base` can never silently break links.
 const BASE = import.meta.env.BASE_URL;
-export const asset = (p: string): string => `${BASE.replace(/\/$/, '')}/${p.replace(/^\//, '')}`;
+export const asset = (p: string): string => withBase(BASE, p);
 
 // Seeded parse-first into window.__pixTheme (Base.astro head) via define:vars.
 // THEME_BG is the mobile browser-chrome tint; its hexes MIRROR global.css's
 // per-theme --bg, a CSS↔JS pairing that can't share a literal — retune both
 // together (config/theme-bg.test.mjs asserts they agree).
 export const THEME_STORAGE_KEY = 'pix-theme';
-export const VALID_THEMES = ['day', 'night', 'dracula'] as const;
 export type ThemeId = (typeof VALID_THEMES)[number];
 export const THEME_BG: Record<ThemeId, string> = {
   day: '#f4eee2',
@@ -61,19 +64,17 @@ export const BOTTOM_CLAMP_EPSILON_PX = 2;
 // 'lights N%' readout from it (100·(1 − DIM_RESTING)).
 export const DIM_RESTING = 0.55;
 
-// Reading order = the prev/next sequence AND the Nav dropdown order. Adding a
-// rendered doc still needs its content collection + page file (site/AGENTS.md).
+// The rendered docs, in reading order: the prev/next sequence AND the Nav
+// dropdown order.
 export interface DocPage {
-  id: string;
   route: string; // base-path-relative, slashed as its page's canonical URL (asset(route))
   label: string;
+  file: string; // under the repo's DOC_DIR (config/docs.mjs), the page's single source
+  description: string;
+  sourceNote?: string; // what the page's source line adds about how it renders the file
 }
-export const DOCS = [
-  { id: 'config', route: 'config/', label: 'Configuration' },
-  { id: 'architecture', route: 'architecture/', label: 'Architecture' },
-  { id: 'contributing', route: 'contributing/', label: 'Contributing' },
-] as const satisfies readonly DocPage[];
-export type DocId = (typeof DOCS)[number]['id'];
+export const DOCS: readonly DocPage[] = docsData;
+export const pageTitle = (name: string): string => `${name} — pixtuoid`;
 
 export interface ThemeShot {
   id: string;
