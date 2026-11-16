@@ -12,7 +12,6 @@ each part links the file that holds it, which wins wherever the two disagree.
 | pixtuoid/apple (private) | The App for iPhone and iPad |
 | [lofi](https://github.com/pixtuoid/lofi) | The procedural music the office plays |
 | [.github](https://github.com/pixtuoid/.github) | What every repository shares, as its [AGENTS.md](https://github.com/pixtuoid/.github/blob/main/AGENTS.md) lists |
-| [coderabbit](https://github.com/pixtuoid/coderabbit) | CodeRabbit's configuration for every repository |
 
 ## Who does what
 
@@ -23,8 +22,7 @@ each part links the file that holds it, which wins wherever the two disagree.
 | The owner ([AGENTS.md](../AGENTS.md)) | Setting the bar and the Roadmap, reviewing every doc change, merging the release PR by hand |
 | A session ([Parallel sessions](CONTRIBUTING.md#parallel-sessions)) | Working one branch in its own worktree, through the arc when the work is non-trivial and always through the merge gate |
 | A subagent ([local review](https://github.com/pixtuoid/.github/blob/main/plugins/pixtuoid-dev/skills/local-review/SKILL.md)) | Reviewing or verifying one scope for its session, then reporting |
-| [The CI review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml) | Posting a verdict and its findings on the PR |
-| [CodeRabbit](https://github.com/pixtuoid/coderabbit/blob/main/.coderabbit.yaml) | Review threads, with `REVIEW.md` as its guidelines |
+| [The AI code review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml), run by Claude Code | Posting a verdict and its findings on the PR |
 | [Mergify](https://github.com/pixtuoid/.github/blob/main/.mergify.yml) | Merging once the queue's conditions hold |
 
 ## A change, end to end
@@ -42,8 +40,7 @@ flowchart TB
   accDescr: A Roadmap item goes, through the arc when the work is non-trivial, to a pull request; its checks must pass and every review finding must reach a terminal state before the merge queue lands it on main.
   P[Roadmap item] --> A[The arc, for non-trivial work] --> PR[Pull request]
   PR --> C[CI checks] --> G[All green]
-  PR --> R[CI review] --> T[Every finding at a terminal state]
-  PR --> CR[CodeRabbit] --> T
+  PR --> R[AI code review] --> T[Every finding at a terminal state]
   G --> Q[Merge queue]
   T --> Q --> M[main]
 ```
