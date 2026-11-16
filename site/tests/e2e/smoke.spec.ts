@@ -2738,8 +2738,8 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
           const ratio = contrastRatio(compositeOver([r, g, b, a], interior), interior);
           expect(
             ratio,
-            `${theme} ${route} diagram box "${label}": stroke vs fill floor is 3:1; measured ${ratio.toFixed(2)}:1`
-          ).toBeGreaterThanOrEqual(3);
+            `${theme} ${route} diagram box "${label}": stroke vs fill floor is ${AA_NON_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(AA_NON_TEXT);
         }
         expect(samples.length, `${theme} ${route}: no diagram text to sweep`).toBeGreaterThan(0);
         for (const { label, ink, plate, frame } of samples) {
@@ -2751,8 +2751,8 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
           const ratio = contrastRatio(compositeOver([r, g, b, a], ground), ground);
           expect(
             ratio,
-            `${theme} ${route} diagram "${label}": WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-          ).toBeGreaterThanOrEqual(4.5);
+            `${theme} ${route} diagram "${label}": WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(AA_TEXT);
         }
         // The diagram's body is a tab stop on every diagram (rehype-beautiful-mermaid.mjs),
         // so its focus ring is a state of the page: 3:1 against the screen inside it
@@ -2766,7 +2766,7 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
           expect(
             contrastRatio(compositeOver([r, g, b, a], under), under),
             `${theme} ${route}: focus ring against ${ground}`
-          ).toBeGreaterThanOrEqual(3);
+          ).toBeGreaterThanOrEqual(AA_NON_TEXT);
         }
       }
       swept += diagrams.length;
@@ -2908,8 +2908,8 @@ atOfficeMoments(
     for (const [what, ratio] of ratios) {
       expect(
         ratio,
-        `${theme} ${moment} ${what}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} ${moment} ${what}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   }
 );
@@ -2970,8 +2970,8 @@ test('hero badge hues clear WCAG AA against their theme-aware chip surface (day 
       const ratio = contrastRatio(fg, bg);
       expect(
         ratio,
-        `${theme} "${label}" code: WCAG AA floor is 4.5:1; ${codeColor} on cell ${chipBg} measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} "${label}" code: WCAG AA floor is ${AA_TEXT}:1; ${codeColor} on cell ${chipBg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   }
 });
@@ -3001,8 +3001,8 @@ test('tenant board text (badges, legend, planned rows, soon marks, star plaque) 
       const ratio = contrastRatio(fg, bg);
       expect(
         ratio,
-        `${theme} "${label}": WCAG AA floor is 4.5:1; color ${codeColor} on board ${boardBg} measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} "${label}": WCAG AA floor is ${AA_TEXT}:1; color ${codeColor} on board ${boardBg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     };
 
     const badges = await page.evaluate(() =>
@@ -3033,8 +3033,8 @@ test('tenant board text (badges, legend, planned rows, soon marks, star plaque) 
       const ratio = contrastRatio(fg, parseRgb(plaqueBg).slice(0, 3) as [number, number, number]);
       expect(
         ratio,
-        `${theme} "${label}": WCAG AA floor is 4.5:1; color ${codeColor} on plaque ${plaqueBg} measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} "${label}": WCAG AA floor is ${AA_TEXT}:1; color ${codeColor} on plaque ${plaqueBg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     };
     const plaqueColors = await page.evaluate(() => ({
       stars: getComputedStyle(document.querySelector('.tools__plaque-stars')!).color,
@@ -3093,8 +3093,8 @@ test('pantry chitchat bubble text clears WCAG AA against its own dark ground (da
       const ratio = contrastRatio(fg, bgRgb);
       expect(
         ratio,
-        `${theme} "${label}": WCAG AA floor is 4.5:1; ${color} on ${bg} measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} "${label}": WCAG AA floor is ${AA_TEXT}:1; ${color} on ${bg} measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
   }
 });
@@ -3133,8 +3133,8 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
         );
         expect(
           ratio,
-          `${theme} ${route} <${tag}> "${text}": WCAG AA floor is 4.5:1; ${color} on ${bg} measured ${ratio.toFixed(2)}:1`
-        ).toBeGreaterThanOrEqual(4.5);
+          `${theme} ${route} <${tag}> "${text}": WCAG AA floor is ${AA_TEXT}:1; ${color} on ${bg} measured ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(AA_TEXT);
       }
       swept += rows.length;
     }
@@ -3527,7 +3527,7 @@ for (const viewport of [
         const worst = Math.min(
           ...ground.map((px) => contrastRatio(ink, px as [number, number, number]))
         );
-        expect(worst, `${path} link ${i}`).toBeGreaterThanOrEqual(4.5);
+        expect(worst, `${path} link ${i}`).toBeGreaterThanOrEqual(AA_TEXT);
       }
       for (const button of ['#nav-burger', '#docs-btn', '#theme-toggle'])
         await expect(page.locator(button), path).toBeHidden();
