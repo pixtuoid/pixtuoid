@@ -96,8 +96,8 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 
 Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop): read
 each step there before taking it, never from recall. The CI review applies
-REVIEW.md on every push; [the org rules](#org-rules)' Local review says when
-the org's local-review skill
+REVIEW.md; [the org rules](#org-rules)' Local review says when the org's
+local-review skill
 ([source](https://github.com/pixtuoid/.github/blob/main/plugins/pixtuoid-dev/skills/local-review/SKILL.md),
 for an agent without the plugin) runs it first. Any PR, an arc's or not,
 queues as [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) says.

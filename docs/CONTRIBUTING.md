@@ -165,9 +165,8 @@ fix with its pinning test) runs as an **arc**: design → build → gate → wra
 5. **Mock gate** (taste/visual work only) — ratify the AFTER visual before code
    (`beautify-decoration` skill).
 6. **Build** — TDD: failing test → minimal impl → commit.
-7. **Local review** — as [the org rules](../AGENTS.md#org-rules)' Local review
-   says: the org's local-review skill runs [`REVIEW.md`](../REVIEW.md) with
-   the reviewers CI runs; the cleanup rides the same PR.
+7. **Local review** — the org's local-review skill, when
+   [the org rules](../AGENTS.md#org-rules)' Local review says.
 8. **Merge gate** — [the gate](#the-merge-gate).
 9. **Wrap** — retro; a durable lesson becomes a mechanism (a test, a gate) or
    a line on the narrowest rule it amends — never an agent's private memory,
