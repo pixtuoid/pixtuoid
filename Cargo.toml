@@ -10,7 +10,7 @@ members  = [
 ]
 
 [workspace.package]
-# The project's one positioning line: the README, the site and `--help` read it.
+# The tagline: the README, the site and `--help` read it, and a test pins npm's copy.
 description  = "A cozy pixel office where your AI coding agents come to life."
 version      = "0.23.0"
 edition      = "2024"

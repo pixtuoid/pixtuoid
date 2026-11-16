@@ -372,7 +372,7 @@ fn parse_nonempty_path(s: &str) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
-    // The description is the positioning line's one copy: a literal here would be a second.
+    // The description is the tagline's source: a literal here would be a second.
     #[test]
     fn the_root_about_is_the_crate_description() {
         let command = <Cli as clap::CommandFactory>::command();

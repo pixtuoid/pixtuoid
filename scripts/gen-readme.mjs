@@ -2,7 +2,8 @@
 // Regenerate the README's marker-delimited blocks from the site's single-source
 // JSON (features.json, sources.json, install.json) — the same files
 // Showcase/SupportedTools/Install read, so README and site can't drift — and
-// its captioned images from scripts/media.json's jobs; links take Cargo.toml's `homepage`.
+// its captioned images from scripts/media.json's jobs; links take Cargo.toml's `homepage`
+// and the tagline its `description`.
 // `--check` writes nothing and exits non-zero on drift.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -70,7 +71,7 @@ function regenSection(label, start, end, body) {
     return;
   }
   if (check) {
-    errors.push(`README ${label} is stale — run \`just gen-readme\` after editing the JSON.`);
+    errors.push(`README ${label} is stale — run \`just gen-readme\` after editing its source.`);
   } else {
     readme = next;
     writeFileSync(readmePath, readme);

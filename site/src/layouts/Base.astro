@@ -25,9 +25,10 @@ interface Props {
 
 const TAGLINE = __PIXTUOID_TAGLINE__;
 const {
-  title = `pixtuoid — ${TAGLINE[0].toLowerCase()}${TAGLINE.slice(1).replace(/\.$/, '')}`,
-  // A search snippet shows this under the title, so it says more than the title does.
-  description = `${TAGLINE} Every Claude Code, Codex or other agent session is an animated coworker, in your terminal, a desktop window or the browser.`,
+  title = `pixtuoid — ${TAGLINE.replace(/\.$/, '')}`,
+  // Google may show this as the snippet under the title
+  // (developers.google.com/search/docs/appearance/snippet), so it says more than the title.
+  description = `${TAGLINE} Every Claude Code, Codex or other agent session is an animated coworker, in your terminal or a desktop window.`,
   preloadImage,
 } = Astro.props;
 
