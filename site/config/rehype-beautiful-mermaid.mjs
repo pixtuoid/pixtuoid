@@ -2,7 +2,7 @@
 // beautiful-mermaid lays the graph out in-process, so the site build needs no
 // browser to render a doc. The SVG's colors ride tokens — --bg/--fg by
 // inheritance, the library's --surface/--border/--muted hooks by name
-// (Docs.astro's `.fig--flow svg` owns that pairing) — so one render follows
+// (Docs.astro's `.fig--diagram svg` owns that pairing) — so one render follows
 // every theme.
 import { renderMermaidSVG } from 'beautiful-mermaid';
 import { fromHtml } from 'hast-util-from-html';
@@ -104,9 +104,9 @@ function markEnds(svg) {
 const framed = (svg) =>
   el(
     'figure',
-    ['fig', 'fig--flow'],
+    ['fig', 'fig--diagram'],
     [
-      el('div', 'fig__bar', [el('span', 'fig__title', [{ type: 'text', value: '~ flow' }])], {
+      el('div', 'fig__bar', [el('span', 'fig__title', [{ type: 'text', value: '~ diagram' }])], {
         ariaHidden: 'true',
       }),
       el('div', 'fig__body', [atDrawnSize(markEnds(svg))]),

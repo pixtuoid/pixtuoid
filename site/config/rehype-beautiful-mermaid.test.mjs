@@ -132,7 +132,7 @@ for (const { file } of docs) {
 test('the diagram sits in a figure: a bar, then a body holding it at its drawn size', () => {
   const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });
   const [figure] = tree.children;
-  assert.deepEqual(figure.properties.className, ['fig', 'fig--flow']);
+  assert.deepEqual(figure.properties.className, ['fig', 'fig--diagram']);
   const [bar, body] = figure.children;
   assert.deepEqual(bar.properties.className, ['fig__bar']);
   assert.deepEqual(body.properties.className, ['fig__body']);

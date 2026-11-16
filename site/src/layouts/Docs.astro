@@ -245,7 +245,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   /* rendered markdown carries no astro scope hash, hence :global throughout */
   /* One terminal chrome for a callout and a diagram's figure
      (config/rehype-beautiful-mermaid.mjs). */
-  .docs :global(:is(.callout, .fig--flow)) {
+  .docs :global(:is(.callout, .fig--diagram)) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
@@ -268,7 +268,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   /* The library's hooks read the cascade: the diagram's ground is the screen,
      and its text, fills and strokes take the chip tones that clear AA and a
      box's 3:1 on it (smoke.spec.ts's diagram tests grade both). */
-  .docs :global(.fig--flow svg) {
+  .docs :global(.fig--diagram svg) {
     --bg: var(--screen);
     --fg: var(--chip-bright);
     --surface: var(--hw-hover);

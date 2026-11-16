@@ -2569,7 +2569,7 @@ test('a doc diagram: every SVG text clears WCAG AA and every box has a 3:1 bound
         return {
           style: ring.outlineStyle,
           ring: ring.outlineColor,
-          screen: getComputedStyle(body.closest('.fig--flow')!).backgroundColor,
+          screen: getComputedStyle(body.closest('.fig--diagram')!).backgroundColor,
           page: getComputedStyle(document.body).backgroundColor,
         };
       });
