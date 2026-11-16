@@ -26,7 +26,7 @@ the conversation that produced it.
 | A repository's session | Its repository, the org rules, the Roadmap | Another session's working tree | Designing, building test-first and opening PRs from its own worktree |
 | The lead session | Every repository | Another session's working tree | The org-wide work and keeping the sessions aligned |
 | A subagent | The brief its session writes | The session's conversation | One scoped task in its own worktree, then a report |
-| The CI review | The PR's diff, `AGENTS.md`, `REVIEW.md` | The author's conversation; it runs no code | A `Blocking: <n>` verdict and one thread per finding |
+| The CI review | The PR's title, body, diff and review threads, `AGENTS.md`, `REVIEW.md` | The author's conversation; it runs no code | A `Blocking: <n>` verdict and one thread per finding |
 | CodeRabbit | The PR's diff and `REVIEW.md` | The author's conversation | Review threads |
 | Mergify | The PR's checks and threads | The code | Merging once the queue's conditions hold |
 
@@ -35,36 +35,29 @@ the conversation that produced it.
 ```mermaid
 flowchart LR
   accTitle: A change's path to main
-  accDescr: A change moves from a Roadmap item through design, a test-first build and a pull request; the light CI tier, the CI review and CodeRabbit check it, every finding is answered in its thread, and the merge queue lands the change on main.
+  accDescr: A change moves from a Roadmap item through design, a test-first build and a pull request; the light CI tier must pass, every CI review and CodeRabbit finding reaches a terminal state in its thread, and the merge queue lands the change on main.
   P[Roadmap item] --> D[Design] --> B[Build, test first] --> PR[Pull request]
-  PR --> C[Light CI tier]
-  PR --> R[CI review]
-  PR --> CR[CodeRabbit]
-  C --> T[Every finding answered]
-  R --> T
-  CR --> T
-  T --> Q[Merge queue] --> M[main]
+  PR --> C[Light CI tier] --> G[Checks green]
+  PR --> R[CI review] --> T[Every finding at a terminal state]
+  PR --> CR[CodeRabbit] --> T
+  G --> Q[Merge queue]
+  T --> Q --> M[main]
 ```
 
 1. **Pick** a [Roadmap](https://github.com/orgs/pixtuoid/projects/1) item, an
-   issue or a draft. The Roadmap is the plan of record, and every step
-   updates its item.
-2. **Design** before code ([arc steps 2-3](CONTRIBUTING.md#the-arc-loop)): the
-   open questions one at a time, the idiom checked against fetched docs.
-3. **Build** test-first ([arc step 6](CONTRIBUTING.md#the-arc-loop)).
-4. **Review locally** when [CONTRIBUTING's step 7](CONTRIBUTING.md#the-arc-loop)
-   calls for it.
-5. **Open a PR** whose body states its claims, each checked against the diff,
-   and the results of the [must-run](../REVIEW.md#must-run) checks.
-6. **CI checks it.** The light tier runs on every push; the
-   [CI review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)
-   runs a correctness and a design reviewer over the diff; CodeRabbit and
-   GitGuardian run beside them.
+   issue or a draft, kept current as the org rules' [Roadmap bullet](../AGENTS.md#org-rules) says.
+2. **Design** before code, as the arc's [Grill the design and Design gate](CONTRIBUTING.md#the-arc-loop) say.
+3. **Build** test-first, as the arc's [Build](CONTRIBUTING.md#the-arc-loop) says.
+4. **Review locally** when the arc's [Local review](CONTRIBUTING.md#the-arc-loop) calls for it.
+5. **Open a PR** whose body is what the org rules' [Comments bullet](../AGENTS.md#org-rules)
+   asks of one, with the [must-run](../REVIEW.md#must-run) results.
+6. **CI checks it**: the light tier ([Build & test](../AGENTS.md#build--test)), the
+   [CI review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml),
+   CodeRabbit and GitGuardian.
 7. **Every finding reaches a terminal state** in its own thread, one of the
    states [dispositions](CONTRIBUTING.md#dispositions) defines.
-8. **Queue it.** The session comments `@mergifyio queue`; the
-   [queue](https://github.com/pixtuoid/.github/blob/main/.mergify.yml) merges
-   it once the full tier passes where [AGENTS.md](../AGENTS.md#build--test) says.
+8. **Queue it** as [the merge gate](CONTRIBUTING.md#the-merge-gate) says; the
+   [queue](https://github.com/pixtuoid/.github/blob/main/.mergify.yml) merges it once its conditions hold.
 
 ## What keeps it honest
 
@@ -73,8 +66,8 @@ flowchart LR
   are copied into every agent guide (`AGENTS.md`), and CI fails when a copy
   drifts. Each of those repositories adds a `REVIEW.md` for what a review checks.
 - **Evidence, not recall.** Every external claim follows the org rules'
-  [Evidence rule](../AGENTS.md#org-rules).
+  [Evidence bullet](../AGENTS.md#org-rules).
 - **Real CLIs, not mocks of them.** The [hermetic tier](CONTRIBUTING.md#build--test)
-  runs each profiled agent CLI for real against a scripted model, and every
-  night it runs their latest releases and files an issue when one drifts.
-- **A lesson becomes a mechanism**, as [arc step 9](CONTRIBUTING.md#the-arc-loop) says.
+  runs each profiled agent CLI for real against a scripted model, nightly at
+  their latest releases.
+- **A lesson becomes a mechanism**, as the arc's [Wrap](CONTRIBUTING.md#the-arc-loop) step says.
