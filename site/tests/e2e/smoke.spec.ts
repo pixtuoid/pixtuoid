@@ -2254,7 +2254,6 @@ test('landing fixed chrome: floating nav, statusline readouts, floor popover', a
 test('on a short landscape phone every row of the floor popover can be reached', async ({
   browser,
 }) => {
-  // Shorter than the rows are tall together, so the popover has to scroll.
   const context = await browser.newContext({
     viewport: { width: 800, height: 340 },
     isMobile: true,
@@ -2266,6 +2265,10 @@ test('on a short landscape phone every row of the floor popover can be reached',
   await page.locator('[data-floor-toggle]').tap();
   const rows = page.locator('#sl-floors [data-floor-btn]');
   await expect(rows).toHaveCount(FLOORS.length);
+  expect(
+    await page.locator('#sl-floors').evaluate((el) => el.scrollHeight > el.clientHeight),
+    'the popover must overflow at this height for the test to bite'
+  ).toBe(true);
   const bar = (await page.locator('#statusline').boundingBox())!;
   for (const { fl } of FLOORS) {
     const row = page.locator(`#sl-floors [data-floor-btn="${fl}"]`);
