@@ -2462,12 +2462,7 @@ atOfficeMoments(
       ],
       './404.html': ['.terminal__title'],
       './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
-      './how-we-build/': [
-        '.fig__title',
-        '.fig-card__role',
-        '.fig-card__acts',
-        '.fig-card__acts code',
-      ],
+      './how-we-build/': ['.fig__title', '.fig-card__role', '.fig-card__acts'],
     };
 
     let swept = 0;
@@ -3512,97 +3507,4 @@ test("the home page's title carries Cargo.toml's tagline", async ({ page }) => {
   );
   await page.goto('./');
   await expect(page).toHaveTitle(`pixtuoid — ${tagline.replace(/\.$/, '')}`);
-});
-
-test('a flow figure lights its edges in source order, holds a pause at AA, and leaves the page where the reader put it', async ({
-  page,
-}) => {
-  await page.goto('./how-we-build/');
-  const fig = page.locator('figure.fig--flow');
-  const play = fig.locator('.fig__play');
-  await expect(play).toHaveText('Replay');
-  const pairs = (sel: string) =>
-    fig
-      .locator(sel)
-      .evaluateAll((es) =>
-        es.map((e) => `${(e as HTMLElement).dataset.from}>${(e as HTMLElement).dataset.to}`)
-      );
-  const edges = await pairs('svg .edge');
-  expect(edges.length).toBeGreaterThan(1);
-
-  // Every edge that becomes the current step, in the order it does, and when.
-  type Probe = { __lit: string[]; __at: number[] };
-  await fig.evaluate((el) => {
-    const probe = window as unknown as Probe;
-    const lit: string[] = (probe.__lit = []);
-    const at: number[] = (probe.__at = []);
-    new MutationObserver((records) => {
-      for (const { target } of records) {
-        const e = target as HTMLElement;
-        const edge = `${e.dataset.from}>${e.dataset.to}`;
-        // One class change per toggle, so an edge still current reports again.
-        if (e.matches('.edge.is-now') && lit.at(-1) !== edge) {
-          lit.push(edge);
-          at.push(performance.now());
-        }
-      }
-    }).observe(el, { subtree: true, attributes: true, attributeFilter: ['class'] });
-  });
-  await play.click();
-  await expect(play).toHaveText('Pause');
-  // The click scrolled the figure into view; a reader who scrolls on stays put.
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await expect(play).toHaveText('Replay', { timeout: 20_000 });
-  const { __lit: lit, __at: at } = await page.evaluate(() => {
-    const { __lit, __at } = window as unknown as Probe;
-    return { __lit, __at };
-  });
-  expect(lit).toEqual(edges);
-  // The script's own step, measured: this test holds no copy of its interval.
-  const step = (at[at.length - 1] - at[0]) / (at.length - 1);
-  expect(await page.evaluate(() => window.scrollY)).toBe(0);
-  await expect(fig.locator('svg .is-off, svg .is-now')).toHaveCount(0);
-
-  await play.click();
-  await expect(fig.locator('svg .edge.is-now')).toHaveCount(1);
-  await play.click();
-  await expect(play).toHaveText('Play');
-  const held = await pairs('svg .edge:not(.is-off)');
-  expect(held.length).toBeLessThan(edges.length);
-  // Two steps on, a paused flow has not moved.
-  await page.waitForTimeout(step * 2);
-  expect(await pairs('svg .edge:not(.is-off)')).toEqual(held);
-  // A group's opacity composites its text and its plate onto the screen together.
-  const dimmed = await fig.locator('svg .node.is-off').evaluateAll((nodes) =>
-    nodes.map((node) => {
-      const rgb = (c: string) => (c.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
-      const alpha = Number(getComputedStyle(node).opacity);
-      const screen = rgb(getComputedStyle(node.closest('.fig--flow')!).backgroundColor);
-      const over = (c: number[]) => c.map((v, i) => alpha * v + (1 - alpha) * screen[i]);
-      const box = getComputedStyle(node.querySelector(':scope > :not(text)')!);
-      return {
-        text: over(rgb(getComputedStyle(node.querySelector('text')!).fill)),
-        plate: over(rgb(box.fill)),
-        outline: over(rgb(box.stroke)),
-      };
-    })
-  );
-  expect(dimmed.length).toBeGreaterThan(0);
-  type Rgb = [number, number, number];
-  for (const { text, plate, outline } of dimmed) {
-    expect(contrastRatio(text as Rgb, plate as Rgb)).toBeGreaterThanOrEqual(4.5);
-    // WCAG 1.4.11, the floor the diagram test holds a box to at rest.
-    expect(contrastRatio(outline as Rgb, plate as Rgb)).toBeGreaterThanOrEqual(3);
-  }
-});
-
-test('without JS a flow figure is whole and offers no play control', async ({ browser }) => {
-  const context = await browser.newContext({ javaScriptEnabled: false });
-  const page = await context.newPage();
-  await page.goto('./how-we-build/');
-  const fig = page.locator('figure.fig--flow');
-  await expect(fig.locator('svg .node').first()).toBeVisible();
-  await expect(fig.locator('svg .is-off')).toHaveCount(0);
-  await expect(fig.locator('.fig__play')).toBeHidden();
-  await context.close();
 });

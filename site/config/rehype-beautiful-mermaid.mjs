@@ -2,8 +2,8 @@
 // lays the graph out in-process, so the site build needs no browser to render
 // /architecture. The SVG's colors ride the page's tokens — --bg/--fg by
 // inheritance, the library's --surface/--border/--muted hooks by name
-// (global.css's `.prose svg` owns that pairing) — so one render follows every
-// theme.
+// (global.css's `.prose svg` owns that pairing, and Figures.astro's
+// `.prose .fig--flow svg` a flow figure's) — so one render follows every theme.
 import { renderMermaidSVG } from 'beautiful-mermaid';
 import { fromHtml } from 'hast-util-from-html';
 import { SKIP, visit } from 'unist-util-visit';

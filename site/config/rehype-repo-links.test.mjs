@@ -28,4 +28,5 @@ test('any other repo-relative link goes to the file on GitHub, resolved from doc
 test('an in-page anchor and an absolute URL are left alone', () => {
   assert.equal(rewritten('#the-arc-loop'), '#the-arc-loop');
   assert.equal(rewritten('https://pixtuoid.dev/'), 'https://pixtuoid.dev/');
+  assert.equal(rewritten('//pixtuoid.dev/x'), '//pixtuoid.dev/x');
 });

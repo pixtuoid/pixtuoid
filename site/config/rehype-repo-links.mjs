@@ -7,7 +7,8 @@ import { withBase } from './base-path.mjs';
 import { REPO_BLOB } from './github.mjs';
 
 const DOC_DIR = 'docs'; // the rendered docs live in docs/, so links resolve from there
-const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
+// An absolute URL: one with a scheme, or protocol-relative.
+const ABSOLUTE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
 /**
  * @param {{ docs: readonly { file: string, route: string }[], base: string }} options
@@ -19,7 +20,7 @@ export default function rehypeRepoLinks({ docs, base }) {
   const rewrite = (node) => {
     if (node.tagName !== 'a' || typeof node.properties?.href !== 'string') return;
     const href = node.properties.href;
-    if (href.startsWith('#') || SCHEME.test(href)) return;
+    if (href.startsWith('#') || ABSOLUTE.test(href)) return;
     const [path, hash = ''] = href.split(/(?=#)/);
     // resolve from docs/, clamp any climb above the repo root
     const joined = path.startsWith('/') ? path : posix.join(DOC_DIR, path);

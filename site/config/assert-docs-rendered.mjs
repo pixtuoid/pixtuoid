@@ -2,10 +2,10 @@
 // inline diagram <svg>. Born for the silent empty-render class — a render step
 // collapsed a doc's <Content /> to an EMPTY <article> WITHOUT failing `astro
 // build` (#680) — and GENERIC on purpose: it globs every page carrying the Docs
-// layout's `<article class="prose">`, so no per-page string can drift. It stays
-// after the in-process renderer: `astro build` exits 0 on a render that throws
-// (the glob loader catches it, logs, and stores the entry unrendered —
-// astro/dist/content/loaders/glob.js), so any render step can repeat it unseen.
+// layout's `<article class="prose">`, so no per-page string can drift. A render
+// step that throws fails `astro build` by itself (the glob loader logs and
+// rethrows, astro/dist/content/loaders/glob.js); this is for the one that
+// returns nothing without throwing.
 //
 // Usage: node config/assert-docs-rendered.mjs [distDir=dist]
 import { readFileSync, readdirSync, existsSync } from 'node:fs';

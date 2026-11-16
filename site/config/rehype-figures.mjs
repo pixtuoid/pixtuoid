@@ -2,8 +2,7 @@
 // figure: GitHub hides the comment
 // (docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#hiding-content-with-comments)
 // and shows the table or diagram, and this build turns the same block into the
-// figure, so a doc holds one copy of its data. The output is complete static markup (a reader without JS sees the
-// final state); Figures.astro's script only adds the step-through.
+// figure, so a doc holds one copy of its data. Figures.astro styles the markup.
 import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
 
@@ -76,12 +75,8 @@ const KINDS = {
     // rehype-beautiful-mermaid runs first, so the block is already an <svg>.
     needs: 'svg',
     build: (svg) => [
-      // A terminal bar like the callouts'. The play control ships hidden and the
-      // script reveals it: a dead button would greet a reader without JS.
-      el('div', 'fig__bar', [
-        el('span', 'fig__title', [text('~ flow')], { ariaHidden: 'true' }),
-        el('button', 'fig__play', [text('Replay')], { type: 'button', hidden: true }),
-      ]),
+      // A terminal bar like the callouts'.
+      el('div', 'fig__bar', [el('span', 'fig__title', [text('~ flow')])], { ariaHidden: 'true' }),
       el('div', 'fig__body', [atDrawnSize(markEnds(svg))]),
     ],
   },

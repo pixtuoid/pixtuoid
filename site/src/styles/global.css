@@ -1041,8 +1041,9 @@ code {
   overflow-wrap: normal;
   white-space: nowrap;
 }
-/* architecture diagram (build-time inline SVG; its colors ride the page's
-   --bg/--fg, see config/rehype-beautiful-mermaid.mjs): frame it on the page
+/* A Mermaid diagram outside a figure (build-time inline SVG; its colors ride
+   the page's --bg/--fg, see config/rehype-beautiful-mermaid.mjs; a flow figure
+   re-pairs them in Figures.astro): frame it on the page
    ground and keep it responsive (the SVG keeps its viewBox aspect). The
    library's override hooks read the cascade, so node fill is the page's own
    --surface (the site's card idiom) while node stroke and secondary text take

@@ -68,17 +68,6 @@ test('a flow marks the nodes its path starts and ends at', () => {
   assert.deepEqual(ends, ['A', 'C']);
 });
 
-test('a flow ships its play control hidden, for the script to reveal', () => {
-  const play = byClass(run([marker('flow'), nl, html('<svg></svg>')]), 'fig__play');
-  assert.equal(play.tagName, 'button');
-  assert.equal(play.properties.hidden, true);
-});
-
-test('cards have nothing to play', () => {
-  const tree = run([marker('cards'), nl, table(CARDS, ['a', 'b'])]);
-  assert.equal(byClass(tree, 'fig__play'), undefined);
-});
-
 test('an unknown kind fails the build', () => {
   assert.throws(() => run([marker('chart'), nl, table(CARDS)]), /unknown figure kind "chart"/);
 });
