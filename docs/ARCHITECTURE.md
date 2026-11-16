@@ -45,8 +45,6 @@ degrades, and walks out when it goes down.
 
 ## Data flow
 
-<!-- figure: flow -->
-
 ```mermaid
 flowchart TB
   accTitle: pixtuoid data flow

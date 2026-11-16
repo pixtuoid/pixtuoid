@@ -20,8 +20,6 @@ two disagree.
 Each role sees only what it needs, so a reviewer judges the change and not
 the conversation that produced it.
 
-<!-- figure: cards -->
-
 | Role | Reads | Never sees | Acts by |
 | --- | --- | --- | --- |
 | The owner | The Roadmap, every PR, the agents' reports | Nothing is hidden from the owner | Deciding direction and taste, merging what no queue merges, cutting releases |
@@ -33,8 +31,6 @@ the conversation that produced it.
 | Mergify | The PR's checks and threads | The code | Merging once the queue's conditions hold |
 
 ## A change, end to end
-
-<!-- figure: flow -->
 
 ```mermaid
 flowchart LR
@@ -57,7 +53,7 @@ flowchart LR
    open questions one at a time, the idiom checked against fetched docs.
 3. **Build** test-first ([arc step 6](CONTRIBUTING.md#the-arc-loop)).
 4. **Review locally** when [CONTRIBUTING's step 7](CONTRIBUTING.md#the-arc-loop)
-   calls for it, before the first push.
+   calls for it.
 5. **Open a PR** whose body states its claims, each checked against the diff,
    and the results of the [must-run](../REVIEW.md#must-run) checks.
 6. **CI checks it.** The light tier runs on every push; the
@@ -76,10 +72,9 @@ flowchart LR
   [org rules](https://github.com/pixtuoid/.github/blob/main/.github/actions/org-rules/org-rules.md)
   are copied into every agent guide (`AGENTS.md`), and CI fails when a copy
   drifts. Each of those repositories adds a `REVIEW.md` for what a review checks.
-- **Evidence, not recall.** A claim about another tool, a platform or a best
-  practice cites a source fetched in that session, or is labelled opinion.
+- **Evidence, not recall.** Every external claim follows the org rules'
+  [Evidence rule](../AGENTS.md#org-rules).
 - **Real CLIs, not mocks of them.** The [hermetic tier](CONTRIBUTING.md#build--test)
   runs each profiled agent CLI for real against a scripted model, and every
   night it runs their latest releases and files an issue when one drifts.
-- **A lesson becomes a mechanism.** A mistake that recurs ends as a test, a
-  check or a rule line, never as an agent's private memory.
+- **A lesson becomes a mechanism**, as [arc step 9](CONTRIBUTING.md#the-arc-loop) says.
