@@ -9,6 +9,7 @@
     const STEP_MS = 650;
     for (const fig of document.querySelectorAll('figure.fig--flow')) {
       const btn = fig.querySelector('.fig__play');
+      const body = fig.querySelector('.fig__body');
       // A step is an edge in the order the Mermaid source declares it, with its
       // label and both end nodes; a node an earlier step lit stays lit.
       const steps = [...fig.querySelectorAll('svg .edge')].map((edge) => {
@@ -21,9 +22,10 @@
           ),
         ];
       });
-      if (!btn || !steps.length) continue;
+      if (!btn || !body || !steps.length) continue;
       const firstStep = new Map();
       steps.forEach((els, k) => els.forEach((e) => firstStep.has(e) || firstStep.set(e, k)));
+      const DONE = btn.textContent;
       let shown = steps.length;
       let timer = 0;
       const paint = () => {
@@ -31,8 +33,14 @@
         steps.forEach((els, k) =>
           els.forEach((e) => e.classList.toggle('is-now', Boolean(timer) && k === shown - 1))
         );
-        // A diagram wider than its body scrolls, so the step being lit comes into view.
-        if (timer) steps[shown - 1]?.at(-1)?.scrollIntoView({ block: 'nearest', inline: 'center' });
+        // A diagram wider than its body scrolls the body alone to the step being
+        // lit: scrollIntoView would pull the page back to a reader who scrolled on.
+        const now = timer && steps[shown - 1]?.at(-1);
+        if (now) {
+          const at = now.getBoundingClientRect();
+          const box = body.getBoundingClientRect();
+          body.scrollBy({ left: at.left + at.width / 2 - (box.left + box.width / 2) });
+        }
       };
       const stop = (label) => {
         clearInterval(timer);
@@ -45,9 +53,10 @@
         if (shown >= steps.length) shown = 0;
         btn.textContent = 'Pause';
         timer = setInterval(() => {
+          // One tick past the last step, so that step is shown as the current one too.
+          if (shown >= steps.length) return stop(DONE);
           shown++;
-          if (shown >= steps.length) stop('Replay');
-          else paint();
+          paint();
         }, STEP_MS);
         paint();
       });
@@ -57,26 +66,7 @@
 </script>
 
 <style is:global>
-  .fig {
-    margin: 1.8rem 0;
-  }
-
-  /* ── flow: the Mermaid render inside the callouts' terminal chrome */
-  .fig--flow {
-    background: var(--screen);
-    border: 1px solid var(--chip-line);
-    color: var(--chip-ink);
-  }
-  .fig__bar {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.75rem;
-    border-bottom: 1px solid var(--chip-line);
-    font-family: var(--font-mono);
-    font-size: 0.76rem;
-    color: var(--chip-dim);
-  }
+  /* ── flow: the Mermaid render in the terminal chrome Docs.astro gives a callout */
   .fig__play {
     margin-left: auto;
     padding: 0.15rem 0.65rem;
@@ -89,8 +79,10 @@
   .fig__play:hover {
     background: var(--hw-hover);
   }
+  /* The padding is the body's, so the svg's min-width bounds exactly what Mermaid drew. */
   .fig__body {
     overflow-x: auto;
+    padding: 1.1rem;
   }
   /* global.css's `.prose svg` pairs the library's --surface/--muted/--border
      hooks with the page and frames the diagram as a card; inside the terminal
@@ -103,8 +95,7 @@
     --border: var(--chip-dim);
     max-width: none;
     margin: 0;
-    padding: 1.1rem;
-    background: none;
+    padding: 0;
     border: 0;
     border-radius: 0;
     box-shadow: none;
@@ -118,8 +109,10 @@
     stroke: var(--coral);
     stroke-width: 2;
   }
+  /* A paused flow keeps its unlit steps dimmed, so the dim holds text at AA:
+     the e2e test grades it. */
   .fig--flow svg .is-off {
-    opacity: 0.16;
+    opacity: 0.6;
   }
   .fig--flow svg :is(.node, .edge, .edge-label) {
     transition: opacity 0.25s ease;
@@ -133,9 +126,9 @@
   /* ── cards: one per role */
   .prose .fig-cards {
     display: grid;
+    margin: 1.8rem 0;
     grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
     gap: 0.9rem;
-    margin: 0;
     padding: 0;
     list-style: none;
   }
@@ -154,7 +147,9 @@
     line-height: 1.1;
     color: var(--fg);
   }
-  .prose .fig-card__role a {
+  /* Past global.css's theme-prefixed `.prose a` (0,3,1), which tints night's and
+     dracula's links: a role's name reads as the card's title in every theme. */
+  .prose .fig-cards .fig-card .fig-card__role a {
     color: inherit;
     font-weight: inherit;
   }

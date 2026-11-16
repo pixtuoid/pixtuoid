@@ -1,13 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { fromHtml } from 'hast-util-from-html';
 import { toText } from 'hast-util-to-text';
 import { createMarkdownProcessor } from '@astrojs/markdown-remark';
-import rehypeFigures, { FIGURE_KINDS } from './rehype-figures.mjs';
-import docs from '../src/docs.json' with { type: 'json' };
+import rehypeFigures from './rehype-figures.mjs';
 
-// Astro hands a doc's HTML comment to rehype as a `raw` node, not a `comment`.
 const marker = (kind) => ({ type: 'raw', value: `<!-- figure: ${kind} -->` });
 const nl = { type: 'text', value: '\n' };
 const html = (s) => fromHtml(s, { fragment: true }).children[0];
@@ -52,10 +49,10 @@ test('a flow marker wraps the diagram the Mermaid plugin already drew', () => {
   assert.ok(byClass(tree, 'fig__body').children.includes(svg));
 });
 
-test('a flow keeps its diagram at its drawn size inside a body a keyboard can scroll', () => {
+test('a flow keeps its diagram at its drawn size inside a body that scrolls', () => {
   const svg = html('<svg width="790.9" height="188" style="--x:1"></svg>');
   const body = byClass(run([marker('flow'), nl, svg]), 'fig__body');
-  assert.equal(body.properties.tabIndex, 0);
+  assert.ok(body.children.includes(svg));
   assert.equal(svg.properties.style, '--x:1;min-width:790.9px');
 });
 
@@ -117,13 +114,3 @@ test("through Astro's own markdown processor, a marked table becomes a figure", 
   assert.match(code, /<figure class="fig fig--cards">/);
   assert.doesNotMatch(code, /figure: cards/);
 });
-
-// The build throws on an unknown kind too; this names the doc before a build runs.
-for (const { file } of docs) {
-  test(`docs/${file} marks only figure kinds the site draws`, () => {
-    const source = readFileSync(new URL(`../../docs/${file}`, import.meta.url), 'utf8');
-    for (const [, kind] of source.matchAll(/^<!--\s*figure:\s*([\w-]+)\s*-->$/gm)) {
-      assert.ok(FIGURE_KINDS.includes(kind), `unknown figure kind "${kind}"`);
-    }
-  });
-}

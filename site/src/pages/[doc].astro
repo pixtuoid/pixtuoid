@@ -23,13 +23,6 @@ const { page, entry } = Astro.props as Props;
 const { Content, headings } = await render(entry);
 ---
 
-<Docs
-  title={page.title}
-  description={page.description}
-  headings={headings}
-  current={page.id}
-  entry={entry}
-  sourceNote={page.sourceNote}
->
+<Docs page={page} headings={headings}>
   <Content />
 </Docs>

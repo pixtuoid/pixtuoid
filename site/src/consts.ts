@@ -4,6 +4,7 @@ import showcaseData from './showcase.json';
 import featuresData from './features.json';
 import docsData from './docs.json';
 import { featureText } from '../config/feature-text.mjs';
+import { withBase } from '../config/base-path.mjs';
 
 export const CRATES = 'https://crates.io/crates/pixtuoid';
 export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
@@ -11,7 +12,7 @@ export const SPONSOR = 'https://buymeacoffee.com/IvanWng97';
 // Base is '/' today, but every internal URL still goes through asset()/BASE_URL
 // so a base change can never silently break links.
 const BASE = import.meta.env.BASE_URL;
-export const asset = (p: string): string => `${BASE.replace(/\/$/, '')}/${p.replace(/^\//, '')}`;
+export const asset = (p: string): string => withBase(BASE, p);
 
 // Seeded parse-first into window.__pixTheme (Base.astro head) via define:vars.
 // THEME_BG is the mobile browser-chrome tint; its hexes MIRROR global.css's
@@ -63,8 +64,7 @@ export const BOTTOM_CLAMP_EPSILON_PX = 2;
 export const DIM_RESTING = 0.55;
 
 // The rendered docs, in reading order: the prev/next sequence AND the Nav
-// dropdown order. The content collection, the doc route, the in-site doc links
-// and site.yml's scope pin all read the one roster.
+// dropdown order.
 export interface DocPage {
   id: string;
   route: string; // base-path-relative, slashed as its page's canonical URL (asset(route))
@@ -75,7 +75,6 @@ export interface DocPage {
   sourceNote?: string;
 }
 export const DOCS: readonly DocPage[] = docsData;
-export type DocId = DocPage['id'];
 
 export interface ThemeShot {
   id: string;

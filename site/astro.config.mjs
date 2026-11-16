@@ -165,10 +165,10 @@ function demoAssets() {
   };
 }
 
-// The custom domain lives in the repo's Settings → Pages, not in the artifact —
-// Actions deploys need no CNAME file.
 const BASE = '/';
 
+// The custom domain lives in the repo's Settings → Pages, not in the artifact —
+// Actions deploys need no CNAME file.
 export default defineConfig({
   site: workspacePackageField(cargoToml, 'homepage'),
   base: BASE,

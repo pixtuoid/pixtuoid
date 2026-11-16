@@ -1,7 +1,8 @@
 // `<!-- figure: <kind> -->` above a GFM table or a ```mermaid block marks a
-// figure: GitHub hides the comment and shows the table or diagram, and this
-// build turns the same block into the figure, so a doc holds one copy of its
-// data. The output is complete static markup (a reader without JS sees the
+// figure: GitHub hides the comment
+// (docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#hiding-content-with-comments)
+// and shows the table or diagram, and this build turns the same block into the
+// figure, so a doc holds one copy of its data. The output is complete static markup (a reader without JS sees the
 // final state); Figures.astro's script only adds the step-through.
 import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
@@ -19,13 +20,13 @@ const text = (value) => ({ type: 'text', value });
 
 const isElement = (node, tagName) => node?.type === 'element' && node.tagName === tagName;
 
-const sections = (tableNode, tagName) =>
+const sectionRows = (tableNode, tagName) =>
   tableNode.children
     .find((c) => isElement(c, tagName))
     ?.children.filter((c) => isElement(c, 'tr')) ?? [];
 
 function rows(kind, tableNode, columns) {
-  const [head] = sections(tableNode, 'thead');
+  const [head] = sectionRows(tableNode, 'thead');
   const names = (head?.children ?? [])
     .filter((c) => isElement(c, 'th'))
     .map((c) => toText(c).trim().toLowerCase());
@@ -34,7 +35,7 @@ function rows(kind, tableNode, columns) {
       `figure "${kind}" needs the columns ${columns.join(' | ')}, found ${names.join(' | ') || 'none'}`
     );
   }
-  return sections(tableNode, 'tbody').map((tr) =>
+  return sectionRows(tableNode, 'tbody').map((tr) =>
     tr.children.filter((c) => isElement(c, 'td')).map((td) => td.children)
   );
 }
@@ -49,14 +50,14 @@ function atDrawnSize(svg) {
   return svg;
 }
 
-// The nodes no edge leads into or out of: where the path starts and ends.
+// The nodes edges only leave (where the path starts) or only enter (where it ends).
 function markEnds(svg) {
   const edges = svg.children.filter((c) => hasClass(c, 'edge'));
   const from = new Set(edges.map((e) => e.properties.dataFrom));
   const to = new Set(edges.map((e) => e.properties.dataTo));
   for (const node of svg.children.filter((c) => hasClass(c, 'node'))) {
     const id = node.properties.dataId;
-    if (from.has(id) !== to.has(id)) node.properties.className = ['node', 'fig-flow__end'];
+    if (from.has(id) !== to.has(id)) node.properties.className.push('fig-flow__end');
   }
   return svg;
 }
@@ -81,13 +82,12 @@ const KINDS = {
         el('span', 'fig__title', [text('~ flow')], { ariaHidden: 'true' }),
         el('button', 'fig__play', [text('Replay')], { type: 'button', hidden: true }),
       ]),
-      // A tab stop for the reason rehype-scroll-focus.mjs gives its scrollers.
-      el('div', 'fig__body', [atDrawnSize(markEnds(svg))], { tabIndex: 0 }),
+      el('div', 'fig__body', [atDrawnSize(markEnds(svg))]),
     ],
   },
 };
 
-export const FIGURE_KINDS = Object.keys(KINDS);
+const FIGURE_KINDS = Object.keys(KINDS);
 
 const NEEDS = { table: 'a table', svg: 'a Mermaid diagram' };
 

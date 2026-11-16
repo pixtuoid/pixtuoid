@@ -4,13 +4,7 @@
       "startServerCommand": "npm run preview",
       "startServerReadyTimeout": 20000,
       "numberOfRuns": 5,
-      "url": [
-        "http://localhost:4321/?theme=day",
-        "http://localhost:4321/architecture/?theme=day",
-        "http://localhost:4321/config/?theme=day",
-        "http://localhost:4321/contributing/?theme=day",
-        "http://localhost:4321/how-we-build/?theme=day"
-      ]
+      "url": ["http://localhost:4321/?theme=day"]
     },
     "assert": {
       "assertions": {

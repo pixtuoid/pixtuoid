@@ -25,9 +25,9 @@ build:
 - the `docs/*.md` files `src/docs.json` names → rendered routes. **Adding,
   renaming, or REMOVING a rendered doc is a multi-point edit**: its
   `docs.json` entry (the collection, the route, `Nav.astro`, `Docs.astro`'s
-  sidebar/pager and the in-site doc links derive from it; `assert-docs-rendered`
-  globs every rendered `article.prose` and needs no edit), `lighthouserc.json`,
-  `site.yml`'s `scope` paths, and the smoke viewport table.
+  sidebar/pager, the in-site doc links and Lighthouse's URLs derive from it;
+  `assert-docs-rendered` globs every rendered `article.prose` and needs no
+  edit), `site.yml`'s `scope` paths, and the smoke viewport table.
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:

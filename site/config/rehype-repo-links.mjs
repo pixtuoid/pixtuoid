@@ -3,6 +3,7 @@
 // file on GitHub, since the site serves none of the repository.
 import { posix } from 'node:path';
 import { visit } from 'unist-util-visit';
+import { withBase } from './base-path.mjs';
 import { REPO_BLOB } from './github.mjs';
 
 const DOC_DIR = 'docs'; // the rendered docs live in docs/, so links resolve from there
@@ -13,7 +14,7 @@ const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
  *   the rendered-doc roster and the site's base path
  */
 export default function rehypeRepoLinks({ docs, base }) {
-  const routes = new Map(docs.map((d) => [posix.join(DOC_DIR, d.file), `${base}${d.route}`]));
+  const routes = new Map(docs.map((d) => [posix.join(DOC_DIR, d.file), withBase(base, d.route)]));
   /** @param {any} node */
   const rewrite = (node) => {
     if (node.tagName !== 'a' || typeof node.properties?.href !== 'string') return;

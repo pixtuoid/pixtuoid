@@ -9,6 +9,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 
 import {
   aggregate,
+  auditUrls,
   evaluateAssertions,
   median,
   previewServer,
@@ -224,4 +225,14 @@ test('a squatted audit port fails the start instead of auditing the squatter', a
     squatter.close();
     start.then(stop, () => {});
   }
+});
+
+test("every rendered doc is audited at the home URL's origin and theme", () => {
+  const cfg = { collect: { url: ['http://localhost:4321/?theme=day'] } };
+  const docs = [{ route: 'config/' }, { route: 'how-we-build/' }];
+  assert.deepEqual(auditUrls(cfg, docs), [
+    'http://localhost:4321/?theme=day',
+    'http://localhost:4321/config/?theme=day',
+    'http://localhost:4321/how-we-build/?theme=day',
+  ]);
 });
