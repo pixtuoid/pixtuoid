@@ -232,13 +232,14 @@ async function paintedContrast(
   const { ink, chain } = await page.evaluate(
     ([sel, i, inkOf]) => {
       const el = document.querySelectorAll(sel)[i as number];
-      const chain: { bg: string; opacity: number; isPageRoot: boolean }[] = [];
+      const chain: { bg: string; image: string; opacity: number; isPageRoot: boolean }[] = [];
       // An outline is drawn outside its element's box, so that element's own background is not under it.
       const start = inkOf === 'outlineColor' ? el.parentElement : el;
       for (let n: Element | null = start; n; n = n.parentElement) {
         const cs = getComputedStyle(n);
         chain.push({
           bg: cs.backgroundColor,
+          image: cs.backgroundImage,
           opacity: parseFloat(cs.opacity),
           isPageRoot: n === document.body || n === document.documentElement,
         });
@@ -247,6 +248,10 @@ async function paintedContrast(
     },
     [selector, nth, inkOf] as const
   );
+  expect(
+    chain.filter((c) => c.image !== 'none').map((c) => c.image),
+    `${selector}[${nth}]: a background-image lies under the ink, and only background-color is composited`
+  ).toEqual([]);
   const inkRgb = parseRgb(ink).slice(0, 3) as [number, number, number];
   // `opacity` fades a node's OWN background and everything inside it, never an
   // ancestor's — so a layer's group factor is the product from the ROOT down.
@@ -2598,14 +2603,6 @@ atOfficeMoments(
       // Graded at once and settled: a fill that fades in is see-through on its first frames.
       for (const frame of ['at once', 'settled']) {
         if (frame === 'settled') await settleAnimations(page);
-        // `paintedContrast` grades background-color alone, so a gradient over it would go ungraded.
-        const image = await page
-          .locator(selector)
-          .first()
-          .evaluate((el) => getComputedStyle(el).backgroundImage);
-        expect(image, `${theme} ${moment} ${selector} hovered, ${frame}: a gradient fill`).toBe(
-          'none'
-        );
         const hovered = await paintedContrast(page, selector);
         expect(
           hovered,
