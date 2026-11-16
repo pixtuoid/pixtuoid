@@ -90,8 +90,8 @@ watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 
 - **Lighthouse** (`npm run lighthouse`: `lhci autorun` over `lighthouserc.mjs`,
   which serves `dist/` itself and audits the home page and every route
-  `src/docs.json` renders; each budget's reason is on its entry there, and
-  `config/lighthouse-budget.test.mjs` holds the assertion policy).
+  `src/docs.json` renders; `config/lighthouse-budget.test.mjs` holds the
+  assertion policy).
   **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
   doubled collect list. The office's wasm is fetched by its worker, which
   Lighthouse's simulation drops, so `just gen-wasm-check` alone gates it (#1124).

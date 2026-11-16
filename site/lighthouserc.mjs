@@ -3,7 +3,7 @@ import docs from './src/docs.json' with { type: 'json' };
 // `?theme=day`: without it local time picks the palette, and half of CI's runs would audit each.
 const QUERY = '?theme=day';
 const MEDIAN = { aggregationMethod: 'median' };
-// What must never regress is held to its worst run: a median passes a check that failed one run in five.
+// What must never regress is held to its worst run: a median passes a check that failed one run.
 const EVERY_RUN = { aggregationMethod: 'pessimistic' };
 
 export default {
@@ -16,7 +16,8 @@ export default {
     assert: {
       assertions: {
         'categories:accessibility': ['error', { minScore: 0.9, ...MEDIAN }],
-        // Its own assertion: it weighs little in the category, whose budget a total contrast failure still clears.
+        // Its own assertion: it weighs little in the category (lighthouse's core/config/default-config.js), whose
+        // budget a total contrast failure still clears.
         'color-contrast': ['error', { minScore: 1, ...EVERY_RUN }],
         'categories:seo': ['error', { minScore: 0.9, ...MEDIAN }],
         'categories:best-practices': ['error', { minScore: 0.9, ...MEDIAN }],
