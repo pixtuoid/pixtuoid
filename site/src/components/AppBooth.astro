@@ -39,20 +39,22 @@ const AUTO_SIZES = 'auto, 100vw';
         {/* Each image's width follows the viewport, which rules out `x` descriptors
             (html.spec.whatwg.org/multipage/images.html#device-pixel-ratio), and a written
             `sizes` list would copy this layout's widths: `auto` reads the laid-out width,
-            and `100vw` serves a browser without it. */}
+            which it may only on a lazy image, and `100vw` serves a browser without it. */}
         <Image
           class="app__ipad"
           src={ipadOffice}
           alt="The pixtuoid App on an iPad and an iPhone, each showing the pixel office with agents at their desks."
-          widths={[700, ipadOffice.width]}
+          widths={[ipadOffice.width / 2, ipadOffice.width]}
           sizes={AUTO_SIZES}
+          loading="lazy"
         />
         <Image
           class="app__iphone"
           src={iphoneOffice}
           alt=""
-          widths={[300, iphoneOffice.width]}
+          widths={[iphoneOffice.width / 2, iphoneOffice.width]}
           sizes={AUTO_SIZES}
+          loading="lazy"
         />
       </div>
       <p class="app__note text-scrim">
