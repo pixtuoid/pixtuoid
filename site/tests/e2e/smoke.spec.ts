@@ -8,6 +8,10 @@ import { DISCORD } from '../../config/discord.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
+// WCAG 2.2's AA floors: text (SC 1.4.3), and a control's boundary or focus ring (SC 1.4.11).
+const AA_TEXT = 4.5;
+const AA_NON_TEXT = 3;
+
 type SourceRow = { badge: string; badge_color: string; name: string; status: string };
 const supportedSources = (sourcesData as SourceRow[]).filter((s) => s.status === 'supported');
 
@@ -2542,8 +2546,8 @@ atOfficeMoments(
       const ratio = await paintedContrast(page, selector);
       expect(
         ratio,
-        `${theme} ${moment} ${selector}: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} ${moment} ${selector}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
     for (const selector of NAV_OVER_OFFICE) {
       const ink = () => page.locator(selector).evaluate((el) => getComputedStyle(el).color);
@@ -2556,10 +2560,10 @@ atOfficeMoments(
       const ratio = await paintedContrast(page, selector);
       expect(
         ratio,
-        `${theme} ${moment} ${selector} hovered: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(4.5);
+        `${theme} ${moment} ${selector} hovered: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
     }
-    for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install', '#theme-toggle']) {
+    const ringClears = async (selector: string, where: string) => {
       const ringShown = await page
         .locator(selector)
         .first()
@@ -2567,13 +2571,38 @@ atOfficeMoments(
           (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
           return getComputedStyle(el).outlineStyle !== 'none';
         });
-      expect(ringShown, `${theme} ${moment} ${selector}: no focus ring`).toBe(true);
+      expect(ringShown, `${theme} ${moment} ${selector} ${where}: no focus ring`).toBe(true);
       const ring = await paintedContrast(page, selector, 0, 'outlineColor');
       expect(
         ring,
-        `${theme} ${moment} ${selector} focus ring: WCAG 1.4.11 floor is 3:1; measured ${ring.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(3);
-    }
+        `${theme} ${moment} ${selector} ${where} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+    };
+    for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install', '#theme-toggle'])
+      await ringClears(selector, 'over the office');
+
+    const fill = () =>
+      page.locator('.nav__install').evaluate((el) => getComputedStyle(el).backgroundColor);
+    const restFill = await fill();
+    await page.hover('.nav__install');
+    await expect.poll(fill, `${theme} ${moment} Install: hover changes nothing`).not.toBe(restFill);
+    await settleAnimations(page);
+    const hovered = await paintedContrast(page, '.nav__install');
+    expect(
+      hovered,
+      `${theme} ${moment} Install hovered: WCAG AA floor is ${AA_TEXT}:1; measured ${hovered.toFixed(2)}:1`
+    ).toBeGreaterThanOrEqual(AA_TEXT);
+
+    // The bar's ring ink also rings the links on its two plates: the Docs menu, and below 760px the burger's panel.
+    await page.click('#docs-btn');
+    await ringClears('#docs-menu a', 'in the Docs menu');
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({ width: 480, height: 800 });
+    await page.click('#nav-burger');
+    await ringClears('#nav-links > a', "in the burger's panel");
+    await page.keyboard.press('Escape');
+    for (const selector of ['#nav-burger', '#theme-toggle'])
+      await ringClears(selector, 'over the office at 480px');
   }
 );
 
@@ -2621,8 +2650,8 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
         const ratio = await paintedContrast(page, selector, i);
         expect(
           ratio,
-          `${theme} ${moment} ${route} ${selector}[${i}]: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
-        ).toBeGreaterThanOrEqual(4.5);
+          `${theme} ${moment} ${route} ${selector}[${i}]: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+        ).toBeGreaterThanOrEqual(AA_TEXT);
         swept++;
       }
     }
@@ -3208,35 +3237,14 @@ test('footer separators never strand alone at a wrap boundary', async ({ page })
   }
 });
 
-test('no footer line begins or ends with a separator dot, at any width', async ({ page }) => {
-  // Each dot introduces its FOLLOWING item, so a group that itself wraps still leads the new line with its own dot.
+test("the footer's row fits on one line at the first width that shows its dots", async ({
+  page,
+}) => {
+  // A dot opens its group, so a wrapped row starts a line with one.
   await gotoLive(page);
   // The row at its longest: the night clock's words show.
   await page.evaluate(() => document.documentElement.setAttribute('data-clock-night', '1'));
   await expect(page.locator('.footer__clock')).toBeVisible();
-  const strayDots = async (width: number) => {
-    await page.setViewportSize({ width, height: 900 });
-    return page.evaluate(() => {
-      const line = document.querySelector('.footer__line')!;
-      const items = Array.from(line.children).filter(
-        (el) => (el as HTMLElement).offsetParent !== null
-      );
-      const findings: string[] = [];
-      items.forEach((el, i) => {
-        const wrapped =
-          i > 0 && el.getBoundingClientRect().left < items[i - 1].getBoundingClientRect().left;
-        const sep = el.querySelector('.footer__sep');
-        if ((i === 0 || wrapped) && sep && getComputedStyle(sep).display !== 'none')
-          findings.push(`leading: "${(el.textContent || '').trim()}"`);
-        const text = (el.textContent || '').trim();
-        const endsRow =
-          i === items.length - 1 ||
-          items[i + 1].getBoundingClientRect().left < el.getBoundingClientRect().left;
-        if (endsRow && text.endsWith('·')) findings.push(`trailing: "${text}"`);
-      });
-      return findings;
-    });
-  };
   const dotsShow = async (width: number) => {
     await page.setViewportSize({ width, height: 900 });
     return page
@@ -3244,20 +3252,25 @@ test('no footer line begins or ends with a separator dot, at any width', async (
       .first()
       .evaluate((el) => getComputedStyle(el).display !== 'none');
   };
-  const [narrowest, widest] = [320, 1440];
-  for (let width = narrowest; width <= widest; width += 10) {
-    expect(await strayDots(width), `${width}px`).toEqual([]);
-  }
-  // A wider row only fits better, so the narrowest width that shows the dots decides.
-  expect(await dotsShow(narrowest)).toBe(false);
-  expect(await dotsShow(widest)).toBe(true);
-  let [hidden, shown] = [narrowest, widest];
+  let [hidden, shown] = [320, 1440];
+  expect(await dotsShow(hidden)).toBe(false);
+  expect(await dotsShow(shown)).toBe(true);
+  // A wider viewport only gives the row more room, so the narrowest width that shows the dots decides.
   while (shown - hidden > 1) {
     const mid = Math.floor((hidden + shown) / 2);
     if (await dotsShow(mid)) shown = mid;
     else hidden = mid;
   }
-  expect(await strayDots(shown), `${shown}px, the first width with dots`).toEqual([]);
+  await page.setViewportSize({ width: shown, height: 900 });
+  // The row centres items of unequal height, so one line is every item starting above the highest bottom.
+  const wrapped = await page.evaluate(() => {
+    const boxes = Array.from(document.querySelector('.footer__line')!.children)
+      .filter((el) => (el as HTMLElement).offsetParent !== null)
+      .map((el) => el.getBoundingClientRect());
+    const highestBottom = Math.min(...boxes.map((box) => box.bottom));
+    return boxes.filter((box) => box.top >= highestBottom).length;
+  });
+  expect(wrapped, `${shown}px: items on a second line`).toBe(0);
 });
 
 test('the pause control never overlaps a footer link across the mobile wrap range', async ({

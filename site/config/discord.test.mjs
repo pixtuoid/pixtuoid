@@ -12,20 +12,21 @@ test(
   'every tracked Discord invite is the one the footer links',
   { skip: !existsSync(`${root}.git`) },
   () => {
-    // File names only, NUL-separated: no personal git config changes that output.
+    // The names of the files to read: -z and --no-color print them verbatim
+    // (https://git-scm.com/docs/git-grep).
     const files = execFileSync(
       'git',
-      ['grep', '-lzF', 'https://discord.gg/', '--', ':!site/config/discord.mjs'],
+      ['grep', '-lzF', '--no-color', 'https://discord.gg/', '--', ':!site/config/discord.mjs'],
       { cwd: root, encoding: 'utf8' }
     )
       .split('\0')
       .filter(Boolean);
-    assert.ok(files.length > 0, 'no tracked file links a Discord invite');
-    for (const file of files) {
-      for (const [invite] of readFileSync(`${root}${file}`, 'utf8').matchAll(
-        /https:\/\/discord\.gg\/\w+/g
-      ))
-        assert.equal(invite, DISCORD, file);
-    }
+    const invites = files.flatMap((file) =>
+      [...readFileSync(`${root}${file}`, 'utf8').matchAll(/https:\/\/discord\.gg\/\w+/g)].map(
+        ([invite]) => ({ file, invite })
+      )
+    );
+    assert.ok(invites.length > 0, 'no tracked file links a Discord invite');
+    for (const { file, invite } of invites) assert.equal(invite, DISCORD, file);
   }
 );

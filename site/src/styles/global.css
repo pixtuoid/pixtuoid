@@ -19,8 +19,7 @@
   --coral: #d97757; /* Claude coral */
   --coral-deep: #a8431f; /* darkened for WCAG AA: ~5:1 on the cream --paper */
   --coral-cta: #b5592f; /* AA-capped coral — white label clears 4.5:1. Theme-independent, never retinted. */
-  /* Darken, never brighten: a brighter coral drops its white label under AA. */
-  --cta-hover: brightness(0.94);
+  --coral-cta-deep: #ad5230; /* darker than --coral-cta, so a white label gains contrast on it */
   --amber: #e6a356; /* warm amber — gradient end */
   --blue: #6a9bcc;
   --green: #788c5d;
@@ -452,14 +451,14 @@ section {
      gallery retint instead of drifting to the theme hue. */
   /* The light gradient stop is capped at #b5592f so the white label clears WCAG
      AA (4.5:1) across the WHOLE fill — the old #c96a45 end was ~3.7:1. */
-  background: linear-gradient(100deg, #ad5230, var(--coral-cta));
+  background: linear-gradient(100deg, var(--coral-cta-deep), var(--coral-cta));
   color: #fff;
   text-shadow: 0 1px 2px rgba(35, 14, 5, 0.4);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--coral-cta) 42%, transparent);
 }
 .btn-primary:hover {
-  /* The -2px lift from .btn:hover is the shared interactive cue, so the darkened CTA still reads as hovered. */
-  filter: var(--cta-hover);
+  /* The -2px lift from .btn:hover is the shared interactive cue; the fill only deepens. */
+  background: var(--coral-cta-deep);
 }
 .btn-ghost {
   background: transparent;

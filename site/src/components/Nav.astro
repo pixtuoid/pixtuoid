@@ -364,8 +364,8 @@ const { floating = false } = Astro.props;
       height: 44px;
     }
   }
-  /* With script the home page's bar lies bare over the office, so its bare text and
-     the focus rings in it take the ink global.css tunes for that ground. */
+  /* With script the home page's bar lies bare over the office, so its focus rings, and
+     from 760px its text links and Docs button, take the inks global.css tunes for that ground. */
   @media (scripting: enabled) {
     .nav--floating {
       --focus-ring: var(--office-ink);
@@ -386,7 +386,7 @@ const { floating = false } = Astro.props;
     }
     .nav__links a.nav__install:hover {
       color: #fff;
-      filter: var(--cta-hover);
+      background: var(--coral-cta-deep);
     }
   }
   /* Scripting off: nothing opens the burger or the Docs menu or flips the theme,
