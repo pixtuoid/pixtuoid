@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-test("site.yml's scope paths cover every doc content.config.ts renders", () => {
+// Both directions: path-changed fails every later PR on a listed path that no
+// longer exists, so a renamed doc's old path must not outlive its loader.
+test("site.yml's scope paths name exactly the docs content.config.ts renders", () => {
   const docs = [
     ...read('../src/content.config.ts').matchAll(/pattern: '([^']+)', base: '\.\.\/docs'/g),
   ].map((m) => `docs/${m[1]}`);
@@ -16,6 +18,6 @@ test("site.yml's scope paths cover every doc content.config.ts renders", () => {
     read('../../.github/workflows/site.yml')
   );
   assert.ok(scope, "site.yml's `scope` step lists no paths");
-  const paths = scope[1].split(' ');
-  for (const doc of docs) assert.ok(paths.includes(doc), `${doc} is not in site.yml's scope paths`);
+  const listed = scope[1].split(' ').filter((p) => p.startsWith('docs/'));
+  assert.deepEqual(listed.sort(), docs.sort());
 });

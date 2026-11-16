@@ -25,9 +25,9 @@ build:
   → rendered routes via glob loaders in `src/content.config.ts`. **Adding,
   renaming, or REMOVING a rendered doc is a multi-point edit**: glob
   pattern, `src/pages/*.astro`, the `DOCS` entry in `consts.ts` (`Nav.astro`
-  and `Docs.astro`'s sidebar/pager derive from it; `assert-docs-rendered` is
-  generic by design — it globs every rendered `article.prose` — and needs no
-  edit), `lighthouserc.json`, and the smoke viewport table.
+  and `Docs.astro`'s sidebar/pager derive from it; `assert-docs-rendered`
+  globs every rendered `article.prose` and needs no edit), `lighthouserc.json`,
+  `site.yml`'s `scope` paths, and the smoke viewport table.
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:
