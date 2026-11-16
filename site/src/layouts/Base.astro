@@ -334,7 +334,7 @@ const version = __PIXTUOID_VERSION__; // the latest release TAG, not Cargo.toml 
         });
       })();
     </script>
-    <!-- Digits 1–6 ride to [data-floor] sections from ANY scroll depth, so unlike
+    <!-- A floor's digit rides to its [data-floor] section from ANY scroll depth, so unlike
          the appearance key they are deliberately NOT focus-gated: WCAG 2.1.4 is
          satisfied by the __pixKeys.enabled() off-switch instead. -->
     <script is:inline>
@@ -344,7 +344,7 @@ const version = __PIXTUOID_VERSION__; // the latest release TAG, not Cargo.toml 
           if (document.documentElement.dataset.booting === '1') return;
           if (window.__pixKeys.typing(e)) return;
           if (!window.__pixKeys.enabled()) return;
-          if (!/^[1-6]$/.test(e.key)) return;
+          if (!/^[1-9]$/.test(e.key)) return;
           const a = document.activeElement;
           if (a && a.closest('[data-keys-scope]')) return;
           const sec = document.querySelector('[data-floor="' + e.key + 'F"]');

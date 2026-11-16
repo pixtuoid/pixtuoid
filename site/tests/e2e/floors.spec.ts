@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { FLOORS } from '../../config/floors.mjs';
 import featuresData from '../../src/features.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
+
+const TOP = FLOORS[0].fl;
+const floorOf = (id: string) => FLOORS.find((f) => f.id === id)!.fl;
 
 // Read the manifests directly rather than hand-copying expected strings, which
 // would silently go stale.
@@ -98,7 +102,7 @@ test('CRT channel keys: a digit tunes the channel and does NOT ride the floor el
   await expect(page.locator('[data-lift-digit]')).not.toHaveText('2F');
 });
 
-test('the six floors declare the elevator anchor contract, top floor down', async ({ page }) => {
+test('the floors declare the elevator anchor contract, top floor down', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   const floors = await page.$$eval('[data-floor]', (els) =>
@@ -108,20 +112,13 @@ test('the six floors declare the elevator anchor contract, top floor down', asyn
       id: e.id,
     }))
   );
-  expect(floors).toEqual([
-    { fl: '6F', label: 'penthouse — welcome', id: 'lobby' },
-    { fl: '5F', label: 'studio — demos', id: 'showcase' },
-    { fl: '4F', label: 'amenities — see it real', id: 'amenities' },
-    { fl: '3F', label: 'machine room — quickstart', id: 'how' },
-    { fl: '2F', label: 'tenants — compatibility', id: 'tools' },
-    { fl: '1F', label: 'front desk — install', id: 'install' },
-  ]);
+  expect(floors).toEqual(FLOORS.map(({ fl, label, id }) => ({ fl, label, id })));
   await expect(page.locator('[data-lift-digit]')).toHaveText(/^\dF$/);
   // inbound /#features deep links must still land on the floor holding the roster
   const shimFloor = await page.$eval('#features', (el) =>
     el.closest('[data-floor]')?.getAttribute('data-floor')
   );
-  expect(shimFloor).toBe('5F');
+  expect(shimFloor).toBe(floorOf('showcase'));
 });
 
 test('the floating-window still gap is retired (wb-4 owns the slot)', async ({ page }) => {
@@ -138,14 +135,14 @@ test('elevator shaft: click-to-ride lands the floor, LED + lift readout agree', 
 }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
-  await expect(page.locator('[data-shaft-stop]')).toHaveCount(6);
-  await expect(page.locator('[data-shaft-stop="6F"]')).toHaveAttribute('aria-current', 'true');
+  await expect(page.locator('[data-shaft-stop]')).toHaveCount(FLOORS.length);
+  await expect(page.locator(`[data-shaft-stop="${TOP}"]`)).toHaveAttribute('aria-current', 'true');
   const carY = () =>
     page.evaluate(
       () =>
         new DOMMatrix(getComputedStyle(document.querySelector('[data-shaft-car]')!).transform).m42
     );
-  // 6F's resting Y is already > 0, so a bare "> 0" after the ride would pass even
+  // The top floor's resting Y is already > 0, so a bare "> 0" after the ride would pass even
   // if the car never moved — record a baseline and assert the DELTA instead.
   const preY = await carY();
   await page.locator('[data-shaft-stop="1F"]').click();
@@ -163,7 +160,7 @@ test('elevator shaft: click-to-ride lands the floor, LED + lift readout agree', 
   await expect(page.locator('[data-lift-digit]')).toHaveText('1F');
   // Threshold is half an inter-stop gap — derived from the rail's own geometry
   // rather than a literal, and well above layout jitter but far below the
-  // several gaps a real 6F→1F ride covers.
+  // several gaps a real top-to-bottom ride covers.
   const gap = await page.evaluate(() => {
     const stops = Array.from(document.querySelectorAll<HTMLElement>('[data-shaft-stop]'));
     return (stops[stops.length - 1].offsetTop - stops[0].offsetTop) / (stops.length - 1);
@@ -191,15 +188,15 @@ test('elevator shaft: the current-floor LED dot is actually lit, not just text-c
     page
       .locator(`[data-shaft-stop="${fl}"] .led-dot`)
       .evaluate((el) => getComputedStyle(el).backgroundColor);
-  await expect(page.locator('[data-shaft-stop="6F"]')).toHaveAttribute('aria-current', 'true');
-  expect(await dotColor('6F')).toBe(litColor);
-  expect(await dotColor('5F')).not.toBe(litColor);
+  await expect(page.locator(`[data-shaft-stop="${TOP}"]`)).toHaveAttribute('aria-current', 'true');
+  expect(await dotColor(TOP)).toBe(litColor);
+  expect(await dotColor(FLOORS[1].fl)).not.toBe(litColor);
   await page.locator('[data-shaft-stop="3F"]').click();
   await expect(page.locator('[data-shaft-stop="3F"]')).toHaveAttribute('aria-current', 'true', {
     timeout: 10_000,
   });
   expect(await dotColor('3F')).toBe(litColor);
-  expect(await dotColor('6F')).not.toBe(litColor);
+  expect(await dotColor(TOP)).not.toBe(litColor);
 });
 
 test('elevator shaft: every floor is reachable and reads current on BOTH the shaft LED and the statusline digit', async ({
@@ -209,7 +206,7 @@ test('elevator shaft: every floor is reachable and reads current on BOTH the sha
   await page.goto('./');
   // A floor whose section is too short to ever own the floor-spy center band
   // settles on a DIFFERENT floor here instead of its own.
-  for (const fl of ['6F', '5F', '4F', '3F', '2F', '1F']) {
+  for (const { fl } of FLOORS) {
     await page.locator(`[data-shaft-stop="${fl}"]`).click();
     await expect(page.locator(`[data-shaft-stop="${fl}"]`)).toHaveAttribute(
       'aria-current',
@@ -285,7 +282,7 @@ test('scroll budget: the page fits its roster-aware viewport-height budget at 14
   // while the strip's codes fit ONE line at 1440 (~20 sources); past that it
   // wraps a step PER_SOURCE doesn't model, so re-measure BASE there.
   // Headroom over the measured fit: an exact fit to CI's renderer reds another font stack.
-  const SCROLL_BUDGET_BASE_VH = 8.25;
+  const SCROLL_BUDGET_BASE_VH = 9.15;
   const SCROLL_BUDGET_PER_SOURCE_VH = 0.075;
   const supported = sourcesData.filter((s) => s.status === 'supported').length;
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });

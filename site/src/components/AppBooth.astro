@@ -1,0 +1,138 @@
+---
+import { Image } from 'astro:assets';
+import ipadOffice from '../assets/app/ipad-office.png';
+import iphoneOffice from '../assets/app/iphone-office.png';
+import { floorById, floorName } from '../consts';
+
+const floor = floorById('app');
+// Each line states what pixtuoid/apple's main does today: the App is unreleased,
+// so none names a price, a date or another platform.
+const features = [
+  'A demo office, a companion cat or dog, and lofi that follows the agents: no computer needed.',
+  'A widget for the Home Screen, StandBy and the Lock Screen.',
+  'Tap anyone to see what they’re working on, and open the list to see who’s waiting for you.',
+  'Pair once: scan or paste the link <code>pixtuoid pair</code> prints, and your agents move in live from <code>pixtuoid serve</code>, straight from your computer over your own network, with no server in between.',
+  'Connecting a computer is paid; the demo office, lofi and your companion stay free.',
+];
+---
+
+<section id={floor.id} class="app" data-lit data-floor={floor.fl} data-floor-label={floor.label}>
+  <div class="container app__grid">
+    <div class="app__copy text-scrim reveal">
+      <p class="eyebrow">{floor.fl} · {floorName(floor)} — coming soon · iPhone and iPad</p>
+      <h2 class="statement statement--md">The office,<br />as an App.</h2>
+      <p class="app__lead">
+        No agents? The demo office, a cat or dog and lofi still keep you company.
+      </p>
+      <ul class="app__features">
+        {features.map((f) => (
+          <li set:html={f} />
+        ))}
+      </ul>
+    </div>
+    <figure class="app__devices reveal">
+      <div class="app__stack" aria-hidden="true">
+        <Image
+          class="app__ipad"
+          src={ipadOffice}
+          alt=""
+          widths={[700, 1400]}
+          sizes="(min-width: 900px) 46vw, 86vw"
+        />
+        <Image
+          class="app__iphone"
+          src={iphoneOffice}
+          alt=""
+          widths={[300, 600]}
+          sizes="(min-width: 900px) 13vw, 24vw"
+        />
+      </div>
+      <figcaption class="app__note text-scrim">
+        The App is still in development. Features and screenshots may change before release.
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<style>
+  .app__grid {
+    display: grid;
+    gap: clamp(2rem, 5vw, 4rem);
+    align-items: center;
+  }
+  @media (min-width: 900px) {
+    .app__grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+  }
+  /* The whole column is one plate, so its edge is the column's: no text-scrim
+     margin pulling it past the grid track. */
+  .app__copy {
+    --scrim-pad-x: clamp(1.1rem, 2.5vw, 1.8rem);
+    margin-inline: 0;
+    padding-block: clamp(1.2rem, 2.5vw, 1.8rem);
+  }
+  .app__lead {
+    margin: 1.1rem 0 0;
+    font-size: 1.15rem;
+    line-height: 1.5;
+  }
+  .app__features {
+    margin: 1.4rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.7rem;
+  }
+  .app__features li {
+    position: relative;
+    padding-left: 1.4rem;
+    line-height: 1.5;
+    color: var(--fg-muted);
+  }
+  .app__features li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: var(--coral-deep);
+  }
+  .app__features :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    color: var(--fg);
+  }
+  .app__devices {
+    margin: 0;
+  }
+  /* The iPad sits back; the iPhone steps in front of its lower left. */
+  .app__stack {
+    position: relative;
+    padding: 0 0 12% 14%;
+  }
+  .app__ipad,
+  .app__iphone {
+    display: block;
+    height: auto;
+    background: var(--screen);
+    border: 6px solid var(--screen);
+    box-shadow: var(--shadow-lg);
+  }
+  .app__ipad {
+    width: 100%;
+    border-radius: 22px;
+  }
+  .app__iphone {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 27%;
+    border-width: 5px;
+    border-radius: 26px;
+  }
+  .app__note {
+    margin: 1rem 0 0;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--fg-muted);
+  }
+</style>

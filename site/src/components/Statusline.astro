@@ -1,6 +1,6 @@
 ---
 // The page's one piece of fixed chrome: a build-time merged-PR feed plus the
-// elevator's organs (floor readout, scrollspy, keys 1–6, jump list). Sits on
+// elevator's organs (floor readout, scrollspy, digit keys, jump list). Sits on
 // --screen (the office's own hardware black) and is NEVER subject to the dimmer.
 import sources from '../sources.json';
 import {
@@ -131,7 +131,7 @@ const FEED_ROTATE_MS = 6000;
             {f.fl} <span class="sl__floorname">{floorName(f)}</span>
           </button>)}
           <div class="sl__keysrow">
-            <span class="sl__keyslabel">keys 1–6</span>
+            <span class="sl__keyslabel">keys 1–{FLOORS.length}</span>
             <button
               class="sl__keystoggle"
               type="button"
@@ -190,7 +190,7 @@ const FEED_ROTATE_MS = 6000;
   {
     /* deliberately AFTER #sl-install: bundling this into the index fragment
       above silently swaps the two rightmost items */
-    !doc && <span class="sl__keys" aria-hidden="true"> keys 1–6 </span>
+    !doc && <span class="sl__keys" aria-hidden="true"> keys 1–{FLOORS.length} </span>
   }
 </div>
 
@@ -459,6 +459,12 @@ const FEED_ROTATE_MS = 6000;
     }
     .sl__copy.is-flash .sl__copy-icon-flash {
       display: inline;
+    }
+  }
+  /* In a window this narrow the bar has no room for the hint: it clipped mid-word. */
+  @media (max-width: 520px) {
+    .sl__keys {
+      display: none;
     }
   }
   @media (pointer: coarse) {

@@ -5,6 +5,7 @@ import featuresData from './features.json';
 import docsData from './docs.json';
 import { featureText } from '../config/feature-text.mjs';
 import { withBase } from '../config/base-path.mjs';
+import { FLOORS as floors } from '../config/floors.mjs';
 import type { VALID_THEMES } from '../config/page-themes.mjs';
 
 export const CRATES = 'https://crates.io/crates/pixtuoid';
@@ -30,20 +31,13 @@ export const THEME_BG: Record<ThemeId, string> = {
 
 // The Statusline lift, the Base.astro key handler, the ElevatorShaft, and every
 // narrative section stamp their id / data-floor / data-floor-label / eyebrow
-// from this ONE array, so a renumber / rename / add can't silently desync them.
+// from config/floors.mjs's ONE array, so a renumber / rename / add can't silently desync them.
 export interface Floor {
   id: string; // section id + the digit-key / elevator jump target (getElementById)
-  fl: string; // '6F'..'1F' — the data-floor stamp, lift readout, digit-key vocabulary
+  fl: string; // the data-floor stamp, lift readout and digit-key vocabulary; '1F' is the bottom
   label: string;
 }
-export const FLOORS: Floor[] = [
-  { id: 'lobby', fl: '6F', label: 'penthouse — welcome' },
-  { id: 'showcase', fl: '5F', label: 'studio — demos' },
-  { id: 'amenities', fl: '4F', label: 'amenities — see it real' },
-  { id: 'how', fl: '3F', label: 'machine room — quickstart' },
-  { id: 'tools', fl: '2F', label: 'tenants — compatibility' },
-  { id: 'install', fl: '1F', label: 'front desk — install' },
-];
+export const FLOORS: Floor[] = floors;
 export const floorById = (id: string): Floor => {
   const f = FLOORS.find((x) => x.id === id);
   if (!f) throw new Error(`consts: no FLOORS entry for floor id "${id}"`);

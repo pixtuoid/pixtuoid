@@ -1,0 +1,9 @@
+[
+  { "id": "lobby", "label": "penthouse — welcome" },
+  { "id": "showcase", "label": "studio — demos" },
+  { "id": "amenities", "label": "amenities — see it real" },
+  { "id": "how", "label": "machine room — quickstart" },
+  { "id": "tools", "label": "tenants — compatibility" },
+  { "id": "app", "label": "phone booth — the App" },
+  { "id": "install", "label": "front desk — install" }
+]

@@ -9,6 +9,7 @@ import ProofSplit from '../components/ProofSplit.astro';
 import PantryFaq from '../components/PantryFaq.astro';
 import SupportedTools from '../components/SupportedTools.astro';
 import Install from '../components/Install.astro';
+import AppBooth from '../components/AppBooth.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
 import ElevatorShaft from '../components/ElevatorShaft.astro';
@@ -30,8 +31,8 @@ const amenities = floorById('amenities');
       </p>
     </div>
     <Showcase />
-    {/* 4F — amenities: this section is only a ROOT (the elevator needs six
-        stops); its content is mounted by the siblings rendered inside it. */}
+    {/* amenities: this section is only a ROOT (the elevator needs a stop per
+        floor); its content is mounted by the siblings rendered inside it. */}
     <section
       id={amenities.id}
       class="amenities"
@@ -49,6 +50,7 @@ const amenities = floorById('amenities');
     </section>
     <HowItWorks />
     <SupportedTools />
+    <AppBooth />
     <Install />
     {/* observation gap 3 — purely decorative: the install one-liner already
         lives one section up, in Install itself. No second copy control. */}
