@@ -165,20 +165,18 @@ fix with its pinning test) runs as an **arc**: design → build → gate → wra
 5. **Mock gate** (taste/visual work only) — ratify the AFTER visual before code
    (`beautify-decoration` skill).
 6. **Build** — TDD: failing test → minimal impl → commit.
-7. **Local review** — before the push, when the change touches 5+ counted
-   files or the owner asks: the org's local-review skill
-   ([AGENTS.md](../AGENTS.md#org-rules)) runs
-   [`REVIEW.md`](../REVIEW.md) with the reviewers CI runs; the cleanup rides
-   the same PR.
+7. **Local review** — as [the org rules](../AGENTS.md#org-rules)' Local review
+   says: the org's local-review skill runs [`REVIEW.md`](../REVIEW.md) with
+   the reviewers CI runs; the cleanup rides the same PR.
 8. **Merge gate** — [the gate](#the-merge-gate).
 9. **Wrap** — retro; a durable lesson becomes a mechanism (a test, a gate) or
    a line on the narrowest rule it amends — never an agent's private memory,
    which nobody reviews and nothing executes.
 
 Checks hold only the merge gate (the org's [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml)
-`queue_conditions`), step 6's tests (the review's test teeth) and step 7's result
-in the body ([REVIEW.md](../REVIEW.md#must-run)); every other step is the session's
-to keep.
+`queue_conditions`), step 6's tests (the review's test teeth) and the head step 7
+ended on, in the body ([the org rules](../AGENTS.md#org-rules)); every other step is
+the session's to keep.
 
 ### Parallel sessions
 
@@ -199,9 +197,8 @@ to keep.
 Every [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml) `queue_conditions` check green at the
 final head, and what no check can confirm: every review of that head posted and
 read, every finding's thread resolved by its disposition, zero open confirmed
-blocking finding, the must-run results in the body. A finding with no thread gets
-one: a local review's, and a bot's
-posted only in its review body. A refuted blocking finding needs no push:
+blocking finding, the must-run results in the body. A bot's finding posted only
+in its review body gets a thread. A refuted blocking finding needs no push:
 resolve its thread with the disposition and re-run the review
 (`gh run rerun <id> --failed`), whose verifier judges the refutation once.
 
