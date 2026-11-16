@@ -22,11 +22,10 @@ build:
   unit-tested — main runs ahead of it mid-cycle). Both workflows checkout with
   `fetch-depth: 0`. `pages.yml` deploys on push to `main`, not on tag push, so
   a fresh tag shows after the next `main` commit or a `workflow_dispatch`.
-- `docs/{CONFIGURATION, ARCHITECTURE, CONTRIBUTING}.md`
-  → rendered routes via glob loaders in `src/content.config.ts`. **Adding,
-  renaming, or REMOVING a rendered doc is a multi-point edit**: glob
-  pattern, `src/pages/*.astro`, the `DOCS` entry in `consts.ts` (`Nav.astro`
-  and `Docs.astro`'s sidebar/pager derive from it; `assert-docs-rendered`
+- the `docs/*.md` files `src/docs.json` names → rendered routes. **Adding,
+  renaming, or REMOVING a rendered doc is a multi-point edit**: its
+  `docs.json` entry (the collection, the route, `Nav.astro`, `Docs.astro`'s
+  sidebar/pager and the in-site doc links derive from it; `assert-docs-rendered`
   globs every rendered `article.prose` and needs no edit), `lighthouserc.json`,
   `site.yml`'s `scope` paths, and the smoke viewport table.
 
@@ -42,9 +41,10 @@ installed only for `site.yml`'s e2e step. The empty-render class is
 gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
 the mechanism; `pages.yml`'s pins carry their own.
 
-**Docs shell**: the doc routes (the `DOCS` manifest in `consts.ts` is the
-roster) mount the Statusline doc variant (no PR feed fetch); `Docs.astro`'s
-sidebar reads the one `FLOORS` manifest.
+**Docs shell**: the doc routes (`src/docs.json` is the roster) mount the
+Statusline doc variant (no PR feed fetch); `Docs.astro`'s sidebar reads the
+one `FLOORS` manifest. `<!-- figure: <kind> -->` above a doc's table or Mermaid
+block draws it as a figure (`config/rehype-figures.mjs`, whose header owns it).
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
 unit-tested, registered AFTER `rehypeRepoLinks`). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its

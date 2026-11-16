@@ -4,6 +4,7 @@ import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
+import Figures from '../components/Figures.astro';
 import { posix } from 'node:path';
 import { asset, DOCS, FLOORS, type DocId } from '../consts';
 import { REPO_BLOB } from '../../config/github.mjs';
@@ -120,6 +121,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   </main>
   <Footer />
   <Statusline doc={current} />
+  <Figures />
 </Base>
 
 <script is:inline>

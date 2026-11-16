@@ -2,15 +2,17 @@
 import { defineConfig } from 'astro/config';
 import { readFileSync, existsSync, writeFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { posix, join } from 'node:path';
+import { join } from 'node:path';
 import sitemap from '@astrojs/sitemap';
 import { unified } from '@astrojs/markdown-remark';
-import { visit } from 'unist-util-visit';
 import { rewriteCspMeta } from './config/csp-hashes.mjs';
 import rehypeCallouts from './config/rehype-callouts.mjs';
 import rehypeBeautifulMermaid from './config/rehype-beautiful-mermaid.mjs';
+import rehypeFigures from './config/rehype-figures.mjs';
+import rehypeRepoLinks from './config/rehype-repo-links.mjs';
+import docs from './src/docs.json' with { type: 'json' };
 import rehypeScrollFocus from './config/rehype-scroll-focus.mjs';
-import { REPO_BLOB, fetchStarCount } from './config/github.mjs';
+import { fetchStarCount } from './config/github.mjs';
 import { latestReleaseTag, resolveDisplayedVersion } from './config/released-version.mjs';
 import { COMPRESS_HTML } from './config/compress-html.mjs';
 import { workspacePackageField } from './config/workspace-package.mjs';
@@ -110,34 +112,6 @@ for (const [chId, name] of featureChannelOwner) {
     );
 }
 
-// Rewrite repo-relative markdown links to GitHub so they resolve once deployed.
-function rehypeRepoLinks() {
-  const DOC_DIR = 'docs'; // the rendered docs live in docs/ — links resolve from there
-  const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
-  const DANGEROUS = /^\s*(?:javascript|data|vbscript):/i;
-  /** @param {any} node */
-  const rewrite = (node) => {
-    if (node.tagName === 'a' && node.properties && typeof node.properties.href === 'string') {
-      const href = node.properties.href;
-      if (DANGEROUS.test(href)) {
-        // defense-in-depth — the rendered doc is trusted today
-        node.properties.href = '#';
-      } else if (!href.startsWith('#') && !SCHEME.test(href)) {
-        // resolve from docs/, clamp any climb above the repo root
-        const joined = href.startsWith('/') ? href : posix.join(DOC_DIR, href);
-        const rel = posix
-          .normalize(joined)
-          .replace(/^(?:\.\.\/)+/, '')
-          .replace(/^\/+/, '');
-        node.properties.href = `${REPO_BLOB}/${rel}`;
-      }
-    }
-  };
-  /** @param {any} tree */
-  const transform = (tree) => visit(tree, 'element', rewrite);
-  return transform;
-}
-
 // Astro's built-in CSP (`security.csp` below) does NOT hash template-level
 // `is:inline` scripts (verified vs Astro 7.0.5) — the only kind this site has —
 // nor style attributes, and it emits its <meta> BELOW scripts the layout
@@ -193,9 +167,11 @@ function demoAssets() {
 
 // The custom domain lives in the repo's Settings → Pages, not in the artifact —
 // Actions deploys need no CNAME file.
+const BASE = '/';
+
 export default defineConfig({
   site: workspacePackageField(cargoToml, 'homepage'),
-  base: '/',
+  base: BASE,
   trailingSlash: 'always',
   compressHTML: COMPRESS_HTML,
   markdown: {
@@ -212,8 +188,9 @@ export default defineConfig({
       rehypePlugins: [
         // inline <svg> at build time, in-process: zero client JS, no browser.
         rehypeBeautifulMermaid,
+        rehypeFigures, // after the diagram: a flow figure wraps its <svg>
         rehypeScrollFocus, // after the diagram, whose `pre` leaves as an <svg>
-        rehypeRepoLinks, // after the diagram so it walks the final tree
+        [rehypeRepoLinks, { docs, base: BASE }], // after the diagram so it walks the final tree
         rehypeCallouts, // last: promotes doc blockquotes to terminal-window chrome
       ],
     }),

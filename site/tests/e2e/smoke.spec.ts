@@ -2242,6 +2242,7 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./architecture/', 320], // #503's wide ASCII pre
     ['./architecture/', 768],
     ['./contributing/', 320], // #503's long link: `crates/pixtuoid-core/tests/AGENTS.md`
+    ['./how-we-build/', 320], // the flow figure, wider than the page at its drawn size
   ] as const) {
     const context = await browser.newContext({
       viewport: { width, height: 820 },
@@ -2461,6 +2462,12 @@ atOfficeMoments(
       ],
       './404.html': ['.terminal__title'],
       './architecture/': ['.prose :not(pre) > code', '.prose a > code', '.docs__pager-dir'],
+      './how-we-build/': [
+        '.fig__title',
+        '.fig-card__role',
+        '.fig-card__acts',
+        '.fig-card__acts code',
+      ],
     };
 
     let swept = 0;

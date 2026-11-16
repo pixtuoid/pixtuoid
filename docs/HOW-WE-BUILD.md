@@ -16,6 +16,8 @@ each part links the file that holds it, which wins wherever the two disagree.
 
 ## Who does what
 
+<!-- figure: cards -->
+
 | Role | Acts by |
 | --- | --- |
 | The owner ([AGENTS.md](../AGENTS.md)) | Setting the bar and the Roadmap, reviewing every doc change, merging the release PR by hand |
@@ -31,6 +33,8 @@ Non-trivial work runs as the [arc loop](CONTRIBUTING.md#the-arc-loop), from pick
 [Roadmap](https://github.com/orgs/pixtuoid/projects/1) item to the wrap; any PR, an
 arc's or not, lands through [the merge gate](CONTRIBUTING.md#the-merge-gate), each
 finding at a terminal state [dispositions](CONTRIBUTING.md#dispositions) defines.
+
+<!-- figure: flow -->
 
 ```mermaid
 flowchart TB

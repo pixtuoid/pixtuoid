@@ -1,0 +1,166 @@
+---
+// The figures config/rehype-figures.mjs draws in rendered markdown: their
+// styles, and the play control that walks a flow's edges. Without JS a figure
+// shows its final state and no control.
+---
+
+<script is:inline>
+  (() => {
+    const STEP_MS = 650;
+    for (const fig of document.querySelectorAll('figure.fig--flow')) {
+      const btn = fig.querySelector('.fig__play');
+      // A step is an edge in the order the Mermaid source declares it, with its
+      // label and both end nodes; a node an earlier step lit stays lit.
+      const steps = [...fig.querySelectorAll('svg .edge')].map((edge) => {
+        const from = CSS.escape(edge.dataset.from ?? '');
+        const to = CSS.escape(edge.dataset.to ?? '');
+        return [
+          edge,
+          ...fig.querySelectorAll(
+            `svg .edge-label[data-from="${from}"][data-to="${to}"], svg .node[data-id="${from}"], svg .node[data-id="${to}"]`
+          ),
+        ];
+      });
+      if (!btn || !steps.length) continue;
+      const firstStep = new Map();
+      steps.forEach((els, k) => els.forEach((e) => firstStep.has(e) || firstStep.set(e, k)));
+      let shown = steps.length;
+      let timer = 0;
+      const paint = () => {
+        firstStep.forEach((k, e) => e.classList.toggle('is-off', k >= shown));
+        steps.forEach((els, k) =>
+          els.forEach((e) => e.classList.toggle('is-now', Boolean(timer) && k === shown - 1))
+        );
+        // A diagram wider than its body scrolls, so the step being lit comes into view.
+        if (timer) steps[shown - 1]?.at(-1)?.scrollIntoView({ block: 'nearest', inline: 'center' });
+      };
+      const stop = (label) => {
+        clearInterval(timer);
+        timer = 0;
+        btn.textContent = label;
+        paint();
+      };
+      btn.addEventListener('click', () => {
+        if (timer) return stop('Play');
+        if (shown >= steps.length) shown = 0;
+        btn.textContent = 'Pause';
+        timer = setInterval(() => {
+          shown++;
+          if (shown >= steps.length) stop('Replay');
+          else paint();
+        }, STEP_MS);
+        paint();
+      });
+      btn.hidden = false;
+    }
+  })();
+</script>
+
+<style is:global>
+  .fig {
+    margin: 1.8rem 0;
+  }
+
+  /* ── flow: the Mermaid render inside the callouts' terminal chrome */
+  .fig--flow {
+    background: var(--screen);
+    border: 1px solid var(--chip-line);
+    color: var(--chip-ink);
+  }
+  .fig__bar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border-bottom: 1px solid var(--chip-line);
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+    color: var(--chip-dim);
+  }
+  .fig__play {
+    margin-left: auto;
+    padding: 0.15rem 0.65rem;
+    font: inherit;
+    color: var(--chip-bright);
+    background: transparent;
+    border: 1px solid var(--chip-line);
+    cursor: pointer;
+  }
+  .fig__play:hover {
+    background: var(--hw-hover);
+  }
+  .fig__body {
+    overflow-x: auto;
+  }
+  /* global.css's `.prose svg` pairs the library's --surface/--muted/--border
+     hooks with the page and frames the diagram as a card; inside the terminal
+     they pair with the screen, and the figure is the frame. */
+  .prose .fig--flow svg {
+    --bg: var(--screen);
+    --fg: var(--chip-bright);
+    --surface: var(--hw-hover);
+    --muted: var(--chip-ink);
+    --border: var(--chip-dim);
+    max-width: none;
+    margin: 0;
+    padding: 1.1rem;
+    background: none;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .fig--flow svg .fig-flow__end > :is(rect, polygon, path, circle, ellipse) {
+    stroke: var(--amber);
+    stroke-width: 1.5;
+  }
+  .fig--flow svg .is-now:is(.edge),
+  .fig--flow svg .is-now > :is(rect, polygon, path, circle, ellipse) {
+    stroke: var(--coral);
+    stroke-width: 2;
+  }
+  .fig--flow svg .is-off {
+    opacity: 0.16;
+  }
+  .fig--flow svg :is(.node, .edge, .edge-label) {
+    transition: opacity 0.25s ease;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fig--flow svg :is(.node, .edge, .edge-label) {
+      transition: none;
+    }
+  }
+
+  /* ── cards: one per role */
+  .prose .fig-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+    gap: 0.9rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .prose .fig-card {
+    margin: 0;
+    padding: 1rem 1.1rem 1.1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow);
+  }
+  .prose .fig-card__role {
+    margin: 0 0 0.6rem;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    line-height: 1.1;
+    color: var(--fg);
+  }
+  .prose .fig-card__role a {
+    color: inherit;
+    font-weight: inherit;
+  }
+  .prose .fig-card__acts {
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.45;
+  }
+</style>

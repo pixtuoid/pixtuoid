@@ -45,6 +45,8 @@ degrades, and walks out when it goes down.
 
 ## Data flow
 
+<!-- figure: flow -->
+
 ```mermaid
 flowchart TB
   accTitle: How a coding session becomes a sprite

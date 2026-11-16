@@ -2,6 +2,7 @@ import themesData from './themes.json';
 import weatherData from './weather.json';
 import showcaseData from './showcase.json';
 import featuresData from './features.json';
+import docsData from './docs.json';
 import { featureText } from '../config/feature-text.mjs';
 
 export const CRATES = 'https://crates.io/crates/pixtuoid';
@@ -61,19 +62,20 @@ export const BOTTOM_CLAMP_EPSILON_PX = 2;
 // 'lights N%' readout from it (100·(1 − DIM_RESTING)).
 export const DIM_RESTING = 0.55;
 
-// Reading order = the prev/next sequence AND the Nav dropdown order. Adding a
-// rendered doc still needs its content collection + page file (site/AGENTS.md).
+// The rendered docs, in reading order: the prev/next sequence AND the Nav
+// dropdown order. The content collection, the doc route, the in-site doc links
+// and site.yml's scope pin all read the one roster.
 export interface DocPage {
   id: string;
   route: string; // base-path-relative, slashed as its page's canonical URL (asset(route))
   label: string;
+  file: string; // under the repo's docs/, the page's single source
+  title: string;
+  description: string;
+  sourceNote?: string;
 }
-export const DOCS = [
-  { id: 'config', route: 'config/', label: 'Configuration' },
-  { id: 'architecture', route: 'architecture/', label: 'Architecture' },
-  { id: 'contributing', route: 'contributing/', label: 'Contributing' },
-] as const satisfies readonly DocPage[];
-export type DocId = (typeof DOCS)[number]['id'];
+export const DOCS: readonly DocPage[] = docsData;
+export type DocId = DocPage['id'];
 
 export interface ThemeShot {
   id: string;
