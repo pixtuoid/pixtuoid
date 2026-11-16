@@ -364,24 +364,17 @@ const { floating = false } = Astro.props;
       height: 44px;
     }
   }
-  /* With script the home page's bar lies bare over the office, so its text and its
-     focus rings take the inks global.css tunes for that ground. */
+  /* With script the home page's bar lies bare over the office, so its bare text and
+     the focus rings in it take the ink global.css tunes for that ground. */
   @media (scripting: enabled) {
-    .nav--floating .nav__logo:focus-visible {
-      outline-color: var(--office-ink);
+    .nav--floating {
+      --focus-ring: var(--office-ink);
     }
   }
   @media (min-width: 760px) and (scripting: enabled) {
-    .nav--floating {
+    .nav--floating :is(.nav__links > a, .nav__docs-btn) {
       --nav-ink: var(--office-ink);
       --nav-ink-accent: var(--office-ink-accent);
-    }
-    /* The Docs menu has a ground of its own. */
-    .nav--floating .nav__menu {
-      --nav-ink: initial;
-    }
-    .nav--floating :is(.nav__links > a, .nav__docs-btn):focus-visible {
-      outline-color: var(--office-ink);
     }
     /* The bar's one call to action; --coral-cta is the coral a white label clears. */
     .nav__links a.nav__install {

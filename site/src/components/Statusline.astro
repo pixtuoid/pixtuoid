@@ -712,8 +712,8 @@ const FEED_ROTATE_MS = 6000;
       }, CHIP_FLASH_MS);
     }
     installLink.addEventListener('click', function (e) {
-      const sec = document.getElementById('install');
-      // Doc/404 pages have no #install — DON'T preventDefault; let the
+      const sec = document.getElementById(installLink.hash.slice(1));
+      // Doc/404 pages have no such section — DON'T preventDefault; let the
       // cross-page href carry the visitor instead of eating the click.
       if (!sec) return;
       e.preventDefault();

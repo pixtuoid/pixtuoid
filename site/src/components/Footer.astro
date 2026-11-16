@@ -102,8 +102,9 @@ import { REPO } from '../../config/github.mjs';
      its own dot (#wb-3: "· built in Rust" opening line 2) — each "·"
      introduces its FOLLOWING item, so it can only ever land at a line's
      leading edge, never trailing. Below the width where the row wraps at its
-     longest, the night clock's words included (measured: it fits from 1070px),
-     drop the dots and let the row's gap carry the separation instead. */
+     longest, the night clock's words included, drop the dots and let the row's
+     gap carry the separation instead: smoke's footer-dot test fails when the
+     row outgrows this width. */
   @media (max-width: 1100px) {
     .footer__sep {
       display: none;

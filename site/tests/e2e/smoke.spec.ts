@@ -215,7 +215,7 @@ async function officeGrounds(
 }
 
 /**
- * The worst contrast ratio the element's text ACTUALLY renders at: every ancestor background composited down and every ancestor
+ * The worst contrast ratio the element's text, or with `inkOf: 'outlineColor'` its outline, ACTUALLY renders at: every ancestor background composited down and every ancestor
  * `opacity` folded into the ink, over the office composite where a live office is the ground and the page's own plate where it is not.
  * Folding `opacity` is the difference between graded and rendered — a group at `opacity: .7` shows 30% of its ground through the glyph.
  */
@@ -226,11 +226,11 @@ async function paintedContrast(
   inkOf: 'color' | 'outlineColor' = 'color'
 ): Promise<number> {
   const { ink, chain } = await page.evaluate(
-    ([sel, i, prop]) => {
+    ([sel, i, inkOf]) => {
       const el = document.querySelectorAll(sel)[i as number];
       const chain: { bg: string; opacity: number; isPageRoot: boolean }[] = [];
       // An outline is drawn outside its element's box, so that element's own background is not under it.
-      const start = prop === 'outlineColor' ? el.parentElement : el;
+      const start = inkOf === 'outlineColor' ? el.parentElement : el;
       for (let n: Element | null = start; n; n = n.parentElement) {
         const cs = getComputedStyle(n);
         chain.push({
@@ -239,7 +239,7 @@ async function paintedContrast(
           isPageRoot: n === document.body || n === document.documentElement,
         });
       }
-      return { ink: getComputedStyle(el)[prop], chain };
+      return { ink: getComputedStyle(el)[inkOf], chain };
     },
     [selector, nth, inkOf] as const
   );
@@ -2559,7 +2559,7 @@ atOfficeMoments(
         `${theme} ${moment} ${selector} hovered: WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(4.5);
     }
-    for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install']) {
+    for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install', '#theme-toggle']) {
       const ringShown = await page
         .locator(selector)
         .first()
@@ -3214,9 +3214,9 @@ test('no footer line begins or ends with a separator dot, at any width', async (
   // The row at its longest: the night clock's words show.
   await page.evaluate(() => document.documentElement.setAttribute('data-clock-night', '1'));
   await expect(page.locator('.footer__clock')).toBeVisible();
-  for (let width = 320; width <= 1440; width += 10) {
+  const strayDots = async (width: number) => {
     await page.setViewportSize({ width, height: 900 });
-    const bad = await page.evaluate(() => {
+    return page.evaluate(() => {
       const line = document.querySelector('.footer__line')!;
       const items = Array.from(line.children).filter(
         (el) => (el as HTMLElement).offsetParent !== null
@@ -3236,8 +3236,28 @@ test('no footer line begins or ends with a separator dot, at any width', async (
       });
       return findings;
     });
-    expect(bad, `${width}px`).toEqual([]);
+  };
+  const dotsShow = async (width: number) => {
+    await page.setViewportSize({ width, height: 900 });
+    return page
+      .locator('.footer__sep')
+      .first()
+      .evaluate((el) => getComputedStyle(el).display !== 'none');
+  };
+  const [narrowest, widest] = [320, 1440];
+  for (let width = narrowest; width <= widest; width += 10) {
+    expect(await strayDots(width), `${width}px`).toEqual([]);
   }
+  // A wider row only fits better, so the narrowest width that shows the dots decides.
+  expect(await dotsShow(narrowest)).toBe(false);
+  expect(await dotsShow(widest)).toBe(true);
+  let [hidden, shown] = [narrowest, widest];
+  while (shown - hidden > 1) {
+    const mid = Math.floor((hidden + shown) / 2);
+    if (await dotsShow(mid)) shown = mid;
+    else hidden = mid;
+  }
+  expect(await strayDots(shown), `${shown}px, the first width with dots`).toEqual([]);
 });
 
 test('the pause control never overlaps a footer link across the mobile wrap range', async ({
