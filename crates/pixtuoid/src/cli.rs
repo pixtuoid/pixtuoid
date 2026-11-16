@@ -372,6 +372,14 @@ fn parse_nonempty_path(s: &str) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
+    // crates.io, npm and the site show the crate description: a literal here would drift from it.
+    #[test]
+    fn the_root_about_is_the_crate_description() {
+        let command = <Cli as clap::CommandFactory>::command();
+        let about = command.get_about().map(ToString::to_string);
+        assert_eq!(about.as_deref(), Some(env!("CARGO_PKG_DESCRIPTION")));
+    }
+
     // It binds a free hook endpoint and leaves its lock, so "read-only" would lie.
     #[test]
     fn doctors_help_promises_only_what_it_keeps() {
