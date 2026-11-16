@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build --force",
     "preview": "astro preview",
     "check": "astro check",
     "lint": "eslint .",

@@ -37,19 +37,17 @@ which `astro.config.mjs`'s `demoAssets()` fails on a missing demo, and before
 `test:demos`), and CI renders it per build.
 
 **Every Mermaid diagram in a rendered doc renders at build**, as a framed
-figure, in process (`config/rehype-beautiful-mermaid.mjs` — no browser; a
-local build keeps a doc's cached render across a rehype plugin edit: astro's
-`content/content-layer.js`, at `package.json`'s version, clears the store only
-when the Astro config, the content config or the Astro version changes, so run
-`astro build --force` after one); Playwright's Chromium is
+figure, in process (`config/rehype-beautiful-mermaid.mjs` — no browser).
+`npm run build` passes `--force` because astro's content store outlives a
+rehype plugin edit (its `content/content-layer.js`, at `package.json`'s version,
+clears it only on a config or version change). Playwright's Chromium is
 installed only for `site.yml`'s e2e step. The empty-render class is
 gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
 the mechanism; `pages.yml`'s pins carry their own.
 
 **Docs shell**: the doc routes (`src/docs.json` is the roster) mount the
 Statusline doc variant (no PR feed fetch); `Docs.astro`'s sidebar reads the
-one `FLOORS` manifest. `<!-- figure: <kind> -->` above a doc's table draws it
-as a figure (`config/rehype-figures.mjs`, whose header owns it).
+one `FLOORS` manifest.
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
 unit-tested). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its
