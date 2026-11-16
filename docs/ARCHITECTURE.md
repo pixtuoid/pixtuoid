@@ -45,6 +45,8 @@ degrades, and walks out when it goes down.
 
 ## Data flow
 
+<!-- figure: flow -->
+
 ```mermaid
 flowchart TB
   accTitle: pixtuoid data flow
@@ -124,6 +126,21 @@ listener on a network: paired devices on the LAN read the scene over pinned TLS
 as `pixtuoid_core::remote` lines, and may list the agent CLIs here and connect or
 disconnect them. A line carries no desk: a device seats everyone itself and
 renders with the same engine.
+
+## Beyond this workspace
+
+- **[pixtuoid/lofi](https://github.com/pixtuoid/lofi)**: the procedural music,
+  the `pixtuoid-lofi` crate that `pixtuoid-scene` plays.
+- **The pixtuoid App** (iPhone and iPad, coming soon): a painter outside this
+  workspace. It pairs with a `pixtuoid serve` from the link `pixtuoid pair`
+  prints, connects over TLS pinned to that link's key on the local network,
+  finds the computer again by DNS-SD when its address changes, and draws
+  `pixtuoid_core::remote` lines with `pixtuoid-scene`, both built in from one
+  pinned revision of this repository.
+- **[pixtuoid/.github](https://github.com/pixtuoid/.github)**: what every
+  repository shares: the CI review, the merge queue, the org rules and the
+  agents' skills. [How we build](HOW-WE-BUILD.md) is how the work runs across
+  them.
 
 ## Seams & invariants
 
