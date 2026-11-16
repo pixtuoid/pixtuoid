@@ -4,11 +4,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use pixtuoid_scene::look::LookKind;
 
 #[derive(Debug, Parser)]
-#[command(
-    name = "pixtuoid",
-    version,
-    about = "Terminal pixel-art office for AI coding agents"
-)]
+#[command(name = "pixtuoid", version, about)]
 pub(crate) struct Cli {
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
