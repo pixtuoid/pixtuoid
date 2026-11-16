@@ -8,7 +8,7 @@ use tracing::debug;
 
 use crate::AgentId;
 use crate::source::exit_watch::ExitWatch;
-use crate::source::first_sight::{Life, Sight};
+use crate::source::first_sight::Life;
 use crate::source::{AgentEvent, TaggedSender, Transport, fd_probe};
 
 use super::walk::{TAIL_BYTES, park_if_truncated_below_cursor, tail_life, walk_jsonl};
@@ -353,10 +353,9 @@ impl ProbeLadder {
 pub(super) async fn emit_session_exit(id: &str, decoders: SourceDecoders, ctx: &WatchCtx<'_>) {
     let claimed: Vec<PathBuf> = {
         let seen = ctx.seen.lock().await;
-        // A refusal is no claim: un-claiming it would only re-read its head.
-        seen.iter()
-            .filter(|(p, sight)| **sight != Sight::Refused && decoders.id_derive.id_for(p) == id)
-            .map(|(p, _)| p.clone())
+        seen.keys()
+            .filter(|p| decoders.id_derive.id_for(p) == id)
+            .cloned()
             .collect()
     };
     for path in &claimed {

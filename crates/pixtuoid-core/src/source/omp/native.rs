@@ -325,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn paths_outside_root_and_non_jsonl_files_are_excluded() {
+    fn paths_the_row_would_not_read_never_vouch() {
         let root = Path::new("/home/u/.omp/agent/sessions");
         let outside = PathBuf::from(format!("/tmp/elsewhere/{STEM}.jsonl"));
         let wrong_ext = root.join(format!("-dev-proj/{STEM}/notes.txt"));

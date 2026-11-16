@@ -872,29 +872,6 @@ async fn a_header_past_the_first_read_is_still_found() {
 }
 
 #[tokio::test]
-async fn a_probe_exit_keeps_a_head_refusal() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("journal.jsonl");
-    std::fs::write(&path, "{\"type\":\"call\"}\n").unwrap();
-    let source: Arc<str> = Arc::from("test");
-    let cursors = Arc::new(Mutex::new(HashMap::new()));
-    let seen = Arc::new(Mutex::new(HashMap::from([(path.clone(), Sight::Refused)])));
-    let live = Arc::new(Mutex::new(HashSet::new()));
-    let (tx, _rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(32);
-    let ctx = WatchCtx {
-        source: &source,
-        cursors: &cursors,
-        seen: &seen,
-        tx: &tx,
-        window: Duration::from_secs(60),
-        live: &live,
-        follower: None,
-    };
-    emit_session_exit(&default_id_from_path(&path), t_decoders(), &ctx).await;
-    assert_eq!(seen.lock().await.get(&path), Some(&Sight::Refused));
-}
-
-#[tokio::test]
 async fn an_oversized_append_revives_an_ended_transcript_only_on_life() {
     // The last row's final line is longer than the activity tail's window.
     let long_tool = format!(
