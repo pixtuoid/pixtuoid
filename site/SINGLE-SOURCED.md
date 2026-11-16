@@ -65,9 +65,7 @@ Notes no gate carries:
   down and FOLDS ancestor `opacity` into the ink. Corollary: de-emphasis
   comes from SIZE, never sub-AA ink or an opacity multiplier. Office-ground
   hues need theme-aware tokens (`--office-ink*`, `--led-ink`) measured
-  against the real composite. `--led-glow` stays theme-independent lime on
-  purpose: a shadow the glyph paints is decoration, not the ground WCAG
-  grades against — don't theme it.
+  against the real composite.
 - **♩ audio**: muted-by-default, gesture-gated (`AudioContext` only on first
   click); the office host synthesizes the foley (when: OfficeBackdrop's
   `prewarm`), music streams from `public/music-worker.js`

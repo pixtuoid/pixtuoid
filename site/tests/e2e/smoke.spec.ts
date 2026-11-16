@@ -2598,6 +2598,14 @@ atOfficeMoments(
       // Graded at once and settled: a fill that fades in is see-through on its first frames.
       for (const frame of ['at once', 'settled']) {
         if (frame === 'settled') await settleAnimations(page);
+        // `paintedContrast` grades background-color alone, so a gradient over it would go ungraded.
+        const image = await page
+          .locator(selector)
+          .first()
+          .evaluate((el) => getComputedStyle(el).backgroundImage);
+        expect(image, `${theme} ${moment} ${selector} hovered, ${frame}: a gradient fill`).toBe(
+          'none'
+        );
         const hovered = await paintedContrast(page, selector);
         expect(
           hovered,
@@ -2606,7 +2614,7 @@ atOfficeMoments(
       }
     }
 
-    // The bar's ring ink also rings the links on its two plates: the Docs menu, and below 760px the burger's panel.
+    // The bar's ring ink also rings the links on its two plates: the Docs menu and the burger's panel.
     await page.click('#docs-btn');
     await ringClears('#docs-menu a', 'in the Docs menu');
     await page.keyboard.press('Escape');
