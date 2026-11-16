@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <samp>Your AI coding agents, at work in a pixel office.</samp>
+  <samp>A cozy pixel office where your AI coding agents come to life.</samp>
 </p>
 
 <p align="center">
