@@ -88,10 +88,11 @@ PRODUCTION build — the runtime-contract tier (`__pixLights`/`pix:onair`/
 `data-lit` seams, scrollspy keys, docs-nav variant, reduced-motion, console
 watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 
-- **Lighthouse** (`npm run lighthouse`, in-repo runner
-  `config/lighthouse-runner.mjs`, lighthouse's programmatic API, median of
-  `lighthouserc.json`'s `numberOfRuns` serial runs; runner-semantics pinned by
-  its test — a renamed audit FAILS instead of passing vacuously).
+- **Lighthouse** (`npm run lighthouse`: `lhci autorun` over `lighthouserc.mjs`,
+  which serves `dist/` itself and audits the home page and every route
+  `src/docs.json` renders; `config/lighthouse-budget.test.mjs` holds each
+  assertion to `error` and a named aggregation, since LHCI lets a `warn` pass
+  and by default takes the most favourable run).
   **A category score is a budget, not a
   contract**: `color-contrast` is a small weight in the a11y category, so a total
   contrast failure still clears the category budget — anything that must never regress gets
