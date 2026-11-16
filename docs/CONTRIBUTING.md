@@ -176,8 +176,9 @@ fix with its pinning test) runs as an **arc**: design → build → gate → wra
    which nobody reviews and nothing executes.
 
 Checks hold only the merge gate (the org's [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml)
-`queue_conditions`) and step 6's tests (the review's test teeth); every other
-step is the session's to keep.
+`queue_conditions`), step 6's tests (the review's test teeth) and step 7's result
+in the body ([REVIEW.md](../REVIEW.md#must-run)); every other step is the session's
+to keep.
 
 ### Parallel sessions
 
@@ -219,11 +220,14 @@ diff, fixtures included.
 
 The review skips a fork's or a bot's PR, and its skipped check passes. A
 maintainer reviews a fork's or Dependabot's PR by hand, holding it to its claims and
-must-run results, before queueing it; a fork's author can resolve their own threads,
-so read each thread's `resolvedBy` and its reply. To run the review on a fork's
-commits once its diff is read and touches no workflow, open them as a same-repo PR and
-close it unmerged: merging it would take the author's credit. Its checks share the
-fork PR's commit, so force-cancelling its other runs shows them cancelled there too.
+must-run results (a fork's PR owes no local review: the review run on its commits
+below or, when its diff touches a workflow, this hand review stands in for it),
+before queueing it; a fork's author can resolve their own threads, so read each
+thread's `resolvedBy` and its reply. To run the review on a fork's commits once its
+diff is read as code CI runs with this repo's permissions (`ci.yml`'s `id-token:
+write`) and touches no workflow, open them as a same-repo PR and close it unmerged:
+merging it would take the author's credit. Its checks share the fork PR's commit, so
+force-cancelling its other runs shows them cancelled there too.
 
 ### Dispositions
 

@@ -21,8 +21,10 @@ check until it passes.
 - [ ] **[The must-run](../../../REVIEW.md#must-run)**: `just hermetic <source>`, or a
       live run for a `NOT_HERMETIC` source. Either way the real CLI, never a capture
       rig's flags.
-- [ ] **The org's local-review skill** ([AGENTS.md](../../../AGENTS.md#org-rules)), always: a fork's PR gets no CI
-      review, so this is its only one. Fold what it finds into one commit.
+- [ ] **The org's local-review skill** ([AGENTS.md](../../../AGENTS.md#org-rules)), when
+      [arc step 7](../../../docs/CONTRIBUTING.md#the-arc-loop) calls for one; a fork's PR
+      owes none ([the merge gate](../../../docs/CONTRIBUTING.md#the-merge-gate)). Fold what
+      it finds into one commit.
 - [ ] **The PR body** holds step 1's answers and what
       [the merge gate](../../../docs/CONTRIBUTING.md#the-merge-gate) asks of it. CI runs
       the tests.
