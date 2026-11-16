@@ -33,7 +33,7 @@ arc's or not, lands through [the merge gate](CONTRIBUTING.md#the-merge-gate), ea
 finding at a terminal state [dispositions](CONTRIBUTING.md#dispositions) defines.
 
 ```mermaid
-flowchart LR
+flowchart TB
   accTitle: A change's path to main
   accDescr: A Roadmap item goes, through the arc when the work is non-trivial, to a pull request; its checks must pass and every review finding must reach a terminal state before the merge queue lands it on main.
   P[Roadmap item] --> A[The arc, for non-trivial work] --> PR[Pull request]
