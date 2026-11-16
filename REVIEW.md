@@ -201,6 +201,9 @@ local-review skill ([AGENTS.md](AGENTS.md#org-rules)) runs them.
 - **Fetch** another CLI's upstream that is not on GitHub, for its config's
   resolution axes.
 - **`cargo tree -e normal`** for a new dependency.
-- **Local review** before the first push of a change touching 5+ counted files
-  ([CONTRIBUTING.md](docs/CONTRIBUTING.md#the-arc-loop) step 7): its findings
-  and their dispositions; later pushes answer the CI review instead.
+
+A local review that [CONTRIBUTING.md](docs/CONTRIBUTING.md#the-arc-loop)'s step 7
+calls for is held the same way, from the first push that makes it due: the body
+names the head it ran at and the findings it kept, each dispositioned in its
+thread, and later pushes answer the CI review. A fork's is the one [the merge
+gate](docs/CONTRIBUTING.md#the-merge-gate) names.
