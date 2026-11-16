@@ -449,16 +449,14 @@ section {
      the white label stays legible in both day and night. The glow uses a FIXED
      coral (not var(--coral)) so it matches the baked fill in every theme and
      gallery retint instead of drifting to the theme hue. */
-  /* The light gradient stop is capped at #b5592f so the white label clears WCAG
-     AA (4.5:1) across the WHOLE fill — the old #c96a45 end was ~3.7:1. */
-  background: linear-gradient(100deg, var(--coral-cta-deep), var(--coral-cta));
+  background: linear-gradient(100deg, var(--coral-cta-deep), var(--coral-cta)) var(--coral-cta-deep);
   color: #fff;
   text-shadow: 0 1px 2px rgba(35, 14, 5, 0.4);
   box-shadow: 0 8px 20px color-mix(in srgb, var(--coral-cta) 42%, transparent);
 }
 .btn-primary:hover {
   /* The -2px lift from .btn:hover is the shared interactive cue; the fill only deepens. */
-  background: var(--coral-cta-deep);
+  background-image: none;
 }
 .btn-ghost {
   background: transparent;

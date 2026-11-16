@@ -2581,17 +2581,27 @@ atOfficeMoments(
     for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install', '#theme-toggle'])
       await ringClears(selector, 'over the office');
 
-    const fill = () =>
-      page.locator('.nav__install').evaluate((el) => getComputedStyle(el).backgroundColor);
-    const restFill = await fill();
-    await page.hover('.nav__install');
-    await expect.poll(fill, `${theme} ${moment} Install: hover changes nothing`).not.toBe(restFill);
-    await settleAnimations(page);
-    const hovered = await paintedContrast(page, '.nav__install');
-    expect(
-      hovered,
-      `${theme} ${moment} Install hovered: WCAG AA floor is ${AA_TEXT}:1; measured ${hovered.toFixed(2)}:1`
-    ).toBeGreaterThanOrEqual(AA_TEXT);
+    for (const selector of ['.nav__install', '.btn-primary']) {
+      const fill = () =>
+        page
+          .locator(selector)
+          .first()
+          .evaluate((el) => {
+            const style = getComputedStyle(el);
+            return `${style.backgroundImage} ${style.backgroundColor}`;
+          });
+      const restFill = await fill();
+      await page.locator(selector).first().hover();
+      // Graded at once, not settled: a fill that fades in is see-through on its first frames.
+      expect(await fill(), `${theme} ${moment} ${selector}: hover changes nothing`).not.toBe(
+        restFill
+      );
+      const hovered = await paintedContrast(page, selector);
+      expect(
+        hovered,
+        `${theme} ${moment} ${selector} hovered: WCAG AA floor is ${AA_TEXT}:1; measured ${hovered.toFixed(2)}:1`
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    }
 
     // The bar's ring ink also rings the links on its two plates: the Docs menu, and below 760px the burger's panel.
     await page.click('#docs-btn');

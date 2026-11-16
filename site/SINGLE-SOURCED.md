@@ -58,7 +58,7 @@ Notes no gate carries:
   design (raw hues are deliberately not WCAG-gated against office pixels).
   Pinned by `smoke.spec.ts` "crisp AA captions overlay the live office".
 - **Contrast has FOUR populations**, each swept: bare-over-office
-  ("bare hero text clears WCAG AA…" — `officeGrounds` scrolls the element in
+  ("bare text over the office clears WCAG AA…" — `officeGrounds` scrolls the element in
   AND asserts the read hit painted canvas, else `getImageData` grades "dimmer
   over black"); opaque plates + translucent `--screen` chips ("plate and chip
   text clears WCAG AA…"); the docs callout window (its own sweep). `paintedContrast` composites ancestor backgrounds
