@@ -3497,7 +3497,7 @@ test('audit C5: ♩ hides and never persists a silent "playing" when the AudioCo
   expect(errors()).toEqual([]);
 });
 
-// The tagline is baked into the page at build; nothing else reads the built head.
+// The tagline is baked into the page at build; no other test reads the built title or descriptions.
 test("the home page's title and descriptions carry Cargo.toml's tagline", async ({ page }) => {
   const tagline = workspacePackageField(
     readFileSync(new URL('../../../Cargo.toml', import.meta.url), 'utf8'),
