@@ -16,30 +16,27 @@ each part links the file that holds it, which wins wherever the two disagree.
 
 ## Who does what
 
-Each role sees only what it needs, so a reviewer judges the change and not
-the conversation that produced it.
-
-| Role | Reads | Never sees | Acts by |
-| --- | --- | --- | --- |
-| The owner | The Roadmap, every PR, the agents' reports | Nothing is hidden from the owner | Deciding direction and taste, merging what no queue merges, cutting releases |
-| A repository's session | Its repository, the org rules, the Roadmap | — | Designing, building test-first and opening each PR from [its branch's own worktree](CONTRIBUTING.md#parallel-sessions) |
-| A subagent | The brief its session writes | The session's conversation | One scoped task, then a report |
-| The CI review | The PR's title, body, diff and review threads, with the repository at the head as context and `AGENTS.md` and `REVIEW.md` as its rules | The author's conversation; it runs no code | A `Blocking: <n>` verdict and one thread per finding |
-| CodeRabbit | The PR, with the repository's files as context and `REVIEW.md` as its guidelines | The author's conversation | Review threads |
-| Mergify | The PR's checks and threads | The code | Merging once the queue's conditions hold |
+| Role | Acts by |
+| --- | --- |
+| The owner ([AGENTS.md](../AGENTS.md)) | Setting the bar and the Roadmap, reviewing every doc change, merging the release PR by hand |
+| A session ([Parallel sessions](CONTRIBUTING.md#parallel-sessions)) | Working one branch in its own worktree, through the arc when the work is non-trivial and always through the merge gate |
+| A subagent ([local review](https://github.com/pixtuoid/.github/blob/main/plugins/pixtuoid-dev/skills/local-review/SKILL.md)) | Reviewing or verifying one scope for its session, then reporting |
+| [The CI review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml) | Posting a verdict and its findings on the PR |
+| [CodeRabbit](https://github.com/pixtuoid/coderabbit/blob/main/.coderabbit.yaml) | Review threads, with `REVIEW.md` as its guidelines |
+| [Mergify](https://github.com/pixtuoid/.github/blob/main/.mergify.yml) | Merging once the queue's conditions hold |
 
 ## A change, end to end
 
-The [arc loop](CONTRIBUTING.md#the-arc-loop) is the process, from picking a
-[Roadmap](https://github.com/orgs/pixtuoid/projects/1) item to the wrap, and
-[the merge gate](CONTRIBUTING.md#the-merge-gate) is how its PR lands, each
+Non-trivial work runs as the [arc loop](CONTRIBUTING.md#the-arc-loop), from picking a
+[Roadmap](https://github.com/orgs/pixtuoid/projects/1) item to the wrap; any PR, an
+arc's or not, lands through [the merge gate](CONTRIBUTING.md#the-merge-gate), each
 finding at a terminal state [dispositions](CONTRIBUTING.md#dispositions) defines.
 
 ```mermaid
 flowchart LR
   accTitle: A change's path to main
-  accDescr: A Roadmap item goes through the arc to a pull request; its checks must pass and every review finding must reach a terminal state before the merge queue lands it on main.
-  P[Roadmap item] --> A[The arc] --> PR[Pull request]
+  accDescr: A Roadmap item goes, through the arc when the work is non-trivial, to a pull request; its checks must pass and every review finding must reach a terminal state before the merge queue lands it on main.
+  P[Roadmap item] --> A[The arc, for non-trivial work] --> PR[Pull request]
   PR --> C[CI checks] --> G[All green]
   PR --> R[CI review] --> T[Every finding at a terminal state]
   PR --> CR[CodeRabbit] --> T
@@ -51,8 +48,8 @@ flowchart LR
 
 - **One set of rules.** The
   [org rules](https://github.com/pixtuoid/.github/blob/main/.github/actions/org-rules/org-rules.md)
-  are copied into every agent guide (`AGENTS.md`), and CI fails when a copy
-  drifts. Each of those repositories adds a `REVIEW.md` for what a review checks.
+  are copied into each repository's root agent guide (`AGENTS.md`), and CI fails
+  when that copy drifts. Each of those repositories adds a `REVIEW.md` for what a review checks.
 - **Evidence, not recall.** Every external claim follows the org rules'
   [Evidence bullet](../AGENTS.md#org-rules).
 - **Real CLIs, not mocks of them**, as the [hermetic tier](CONTRIBUTING.md#build--test) runs them.
