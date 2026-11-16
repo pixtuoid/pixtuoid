@@ -48,6 +48,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             line_decoder: decode_copilot_line,
             id_from_path: copilot_id_from_path,
             path_filter: accept_all_paths,
+            head_filter: None,
             cwd_extractor: extract_copilot_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]

@@ -34,6 +34,7 @@ use walk::{RootRead, scan_root, walk_jsonl};
 use crate::source::decoder::LineDecoder;
 use crate::source::first_sight::{HeadLabel, Sight};
 
+use crate::source::decoder::HeadFilter;
 pub use crate::source::decoder::PathFilter;
 pub use crate::source::decoder::{IdDeriver, TailActivity};
 
@@ -74,6 +75,7 @@ struct SourceDecoders {
     activity_recency: ActivityRecency,
     id_derive: folded::FoldedDeriver,
     path_filter: PathFilter,
+    head_filter: Option<HeadFilter>,
     cwd_derive: CwdDeriver,
     head_label: Option<HeadLabel>,
 }
@@ -107,7 +109,7 @@ mod folded {
 struct WatchCtx<'a> {
     source: &'a Arc<str>,
     cursors: &'a Arc<Mutex<HashMap<PathBuf, u64>>>,
-    /// First-sight claims, by path.
+    /// First-sight state, by path: a claim, an end, or a head refusal.
     seen: &'a Arc<Mutex<HashMap<PathBuf, Sight>>>,
     tx: &'a TaggedSender,
     /// Recency window for the first-sight gate (an older file is seeded at EOF
@@ -199,6 +201,7 @@ impl JsonlWatcher {
                 activity_recency: native.activity_recency.unwrap_or(no_activity_recency),
                 id_derive: folded::FoldedDeriver::new(row.id_from_path),
                 path_filter: row.path_filter,
+                head_filter: row.head_filter,
                 cwd_derive: native.cwd_derive.unwrap_or(no_cwd_from_path),
                 head_label: native.head_label,
             },

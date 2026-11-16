@@ -46,6 +46,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // The rollout filename's trailing UUID (the stem also has a timestamp).
             id_from_path: codex_id_from_path,
             path_filter: accept_all_paths,
+            head_filter: None,
             cwd_extractor: extract_codex_cwd,
             parent_extractor: Some(extract_codex_parent),
             #[cfg(feature = "native")]

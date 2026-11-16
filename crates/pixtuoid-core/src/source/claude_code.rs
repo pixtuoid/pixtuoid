@@ -40,6 +40,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // The workflow orchestrator's foreign-schema `journal.jsonl` lives
             // in the SAME projects tree.
             path_filter: admits_transcript,
+            head_filter: None,
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]

@@ -33,6 +33,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             line_decoder: decode_ag_line,
             id_from_path: ag_id_from_path,
             path_filter: admits_transcript,
+            head_filter: None,
             // AG step lines carry no cwd field at all; the cwd rides the
             // `SessionStart` hook.
             cwd_extractor: extract_top_level_cwd,

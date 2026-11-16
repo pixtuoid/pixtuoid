@@ -9,6 +9,7 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 use crate::AgentId;
+use crate::source::decoder::{HeadFilter, HeadVerdict};
 use crate::source::first_sight::{
     HEAD_BYTES, HeadFields, Life, Registration, Sight, each_life, extract_head_fields,
     first_sight_start, holds_life, last_life, transcript_session,
@@ -306,6 +307,24 @@ pub(super) async fn walk_jsonl(
     }
     if entry != Entry::Take {
         return;
+    }
+    // Judged until it decides, and only before the path is known: an admitted
+    // file takes a cursor, a refused one stays refused however it grows, and an
+    // undecided one is asked again on its next walk.
+    if let Some(filter) = decoders.head_filter {
+        if seen.lock().await.get(path) == Some(&Sight::Refused) {
+            return;
+        }
+        if !cursors.lock().await.contains_key(path) {
+            match judge_head(path, filter).await {
+                HeadVerdict::Admits => {}
+                HeadVerdict::Undecided => return,
+                HeadVerdict::Refuses => {
+                    seen.lock().await.insert(path.to_path_buf(), Sight::Refused);
+                    return;
+                }
+            }
+        }
     }
 
     let file_len = meta.len();
@@ -646,13 +665,38 @@ async fn emit_registration(
 /// TWO fields out of the same bytes (`cwd`, and the head label for a source
 /// that names its session there) — one read, not one per field.
 async fn read_head(path: &Path) -> Option<Vec<u8>> {
+    read_prefix(path, HEAD_BYTES).await
+}
+
+async fn read_prefix(path: &Path, cap: usize) -> Option<Vec<u8>> {
     let file_len = tokio::fs::metadata(path).await.ok()?.len();
     let mut file = tokio::fs::File::open(path).await.ok()?;
-    let len = usize::try_from(file_len).map_or(HEAD_BYTES, |len| len.min(HEAD_BYTES));
+    let len = usize::try_from(file_len).map_or(cap, |len| len.min(cap));
     let mut head = vec![0u8; len];
     let n = file.read(&mut head).await.ok()?;
     head.truncate(n);
     Some(head)
+}
+
+/// How much of a new file a head filter reads first: enough for a header, so the
+/// boot scan of every old transcript stays cheap. omp's own header read starts
+/// at the same size (`SESSION_HEADER_FIRST_READ`, `session/session-loader.ts:185`
+/// at v18.20.2).
+pub(super) const HEAD_FIRST_READ: usize = 16 * 1024;
+
+/// `path`'s opening bytes judged by `filter`: the first [`HEAD_FIRST_READ`], then
+/// up to [`HEAD_BYTES`] only when those hold no deciding record. A read that
+/// fails leaves it [`HeadVerdict::Undecided`], asked again on the path's next walk.
+async fn judge_head(path: &Path, filter: HeadFilter) -> HeadVerdict {
+    let Some(first) = read_prefix(path, HEAD_FIRST_READ).await else {
+        return HeadVerdict::Undecided;
+    };
+    match filter(&first) {
+        HeadVerdict::Undecided if first.len() == HEAD_FIRST_READ => read_head(path)
+            .await
+            .map_or(HeadVerdict::Undecided, |head| filter(&head)),
+        verdict => verdict,
+    }
 }
 
 /// At most the last `bytes` of a file from a line start (clamped to file size),

@@ -23,8 +23,8 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, extract_top_level_cwd,
-    first_non_blank_str, generic_tool_display, non_empty,
+    HeadVerdict, MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
+    generic_tool_display, non_empty,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -44,7 +44,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Oh My Pi",
     label_prefix: "om",
-    verified_version: "18.20.0",
+    verified_version: "18.20.2",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),
@@ -54,7 +54,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // The nested stem CHAIN, so a subagent task id can't collide across
             // sessions.
             id_from_path: omp_id_from_path,
-            path_filter: accept_all_paths,
+            path_filter: admits_transcript,
+            head_filter: Some(omp_head),
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]
@@ -96,6 +97,48 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     #[cfg(feature = "native")]
     native: native::NATIVE,
 };
+
+/// An advisor's transcript shares a session's artifacts directory with its
+/// subagents', and omp's own sub-session scan leaves it out by name: an advisor
+/// reviews the session, it is no subagent of it (`isAdvisorTranscriptName` in
+/// `advisor/transcript-recorder.ts:29-35`, read at `session/sub-sessions.ts:101-106`,
+/// v18.20.2).
+pub(crate) fn admits_transcript(path: &Path) -> bool {
+    !path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .is_some_and(|name| name.starts_with("__advisor."))
+}
+
+/// omp's loader takes a file as a session only when its first record, past the
+/// optional title slot on line 1 and any malformed line, is a `session` header
+/// with a string `id` (`parseSessionContent` and `isValidSessionHeader`,
+/// `session/session-loader.ts:147-181` at v18.20.2); its sub-session scan drops
+/// any other (`session/sub-sessions.ts:111-131`). The change journal beside each
+/// session's subagents opens with a tool call (`commit/selective/journal.ts`), so
+/// it is refused (#2087), as is a later sidecar with no session header; one omp
+/// writes as a session and leaves out by name, as the advisor's, needs a name
+/// rule. A prefix with no parseable record decides nothing: the record that does
+/// may lie past it.
+pub(crate) fn omp_head(head: &[u8]) -> HeadVerdict {
+    use crate::source::admit::{lines, whole};
+    let parse = |line: std::result::Result<&str, std::str::Utf8Error>| {
+        line.ok()
+            .and_then(|l| serde_json::from_str::<Value>(l).ok())
+    };
+    let mut records = lines(whole(head)).map(parse).peekable();
+    if records
+        .peek()
+        .is_some_and(|first| first.as_ref().is_some_and(|v| v["type"] == TITLE))
+    {
+        records.next();
+    }
+    match records.flatten().next() {
+        Some(v) if v["type"] == SESSION && v["id"].is_string() => HeadVerdict::Admits,
+        Some(_) => HeadVerdict::Refuses,
+        None => HeadVerdict::Undecided,
+    }
+}
 
 /// omp's SESSIONS root, mirroring `dirs.ts` — deliberately NOT
 /// `omp_agent_dir().join("sessions")`, because the XDG redirect FLATTENS the
@@ -1288,6 +1331,31 @@ mod tests {
             omp_parent_key_from_path(Path::new(GRANDCHILD)),
             Some(format!("{ROOT_KEY}/Alpha"))
         );
+    }
+
+    #[test]
+    fn only_a_session_header_after_the_title_slot_opens_a_transcript() {
+        let slot = r#"{"type":"title","v":1,"title":"","updatedAt":"2026-11-15T15:03:28.516Z","pad":"  "}"#;
+        let header = r#"{"type":"session","version":3,"id":"01a1dfbc-1804-7305-8a93-79095dc0a8e3","cwd":"/p"}"#;
+        let journal = r#"{"type":"call","agent":"Main","tool":"bash","start":1,"label":"cat NOTE.txt","end":2}"#;
+        let rows: &[(String, HeadVerdict)] = &[
+            (format!("{slot}\n{header}\n"), HeadVerdict::Admits),
+            (format!("{header}\n"), HeadVerdict::Admits),
+            (format!("not json\n{header}\n"), HeadVerdict::Admits),
+            (format!("{journal}\n"), HeadVerdict::Refuses),
+            (format!("{slot}\n{journal}\n"), HeadVerdict::Refuses),
+            (
+                r#"{"type":"session","id":7}"#.to_owned() + "\n",
+                HeadVerdict::Refuses,
+            ),
+            ("not json\n".to_owned(), HeadVerdict::Undecided),
+            (format!("{slot}\n"), HeadVerdict::Undecided),
+            (format!("{slot}\n{header}"), HeadVerdict::Undecided),
+            (String::new(), HeadVerdict::Undecided),
+        ];
+        for (head, want) in rows {
+            assert_eq!(omp_head(head.as_bytes()), *want, "{head:?}");
+        }
     }
 
     #[test]

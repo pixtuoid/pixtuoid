@@ -14,8 +14,8 @@ use crate::source::jsonl::{ActivityRecency, CwdDeriver, LabelDeriver};
 use serde_json::{Map, Value};
 
 use crate::source::decoder::{
-    CwdExtractor, IdDeriver, LineDecoder, ParentExtractor, PathFilter, default_id_from_path,
-    extract_top_level_cwd,
+    CwdExtractor, HeadFilter, IdDeriver, LineDecoder, ParentExtractor, PathFilter,
+    default_id_from_path, extract_top_level_cwd,
 };
 use crate::source::{
     AgentEvent, antigravity, claude_code, codewhale, codex, copilot, cursor, dsh, grok, hermes,
@@ -205,7 +205,7 @@ pub(crate) struct Transcript {
     /// `harness::Drive` — ONE derivation, so a driven transcript keys exactly as
     /// production does. `default_id_from_path` is the path-keyed default.
     pub(crate) id_from_path: IdDeriver,
-    /// WHICH `.jsonl` files under this source's root are its transcripts. Read
+    /// WHICH `.jsonl` files under this source's root are its transcripts by path. Read
     /// by the JSONL watcher AND by any offline driver that WALKS a tree — a
     /// census over the unfiltered set counts files production never reads.
     /// `accept_all_paths` is the admit-everything default.
@@ -214,6 +214,14 @@ pub(crate) struct Transcript {
         expect(dead_code, reason = "only a tree walk reads it")
     )]
     pub(crate) path_filter: PathFilter,
+    /// Which of the files `path_filter` admits are transcripts by what they hold,
+    /// for a source whose own loader decides that by content; `None` takes every
+    /// one. Read by the same walkers, for the same reason.
+    #[cfg_attr(
+        not(any(feature = "native", feature = "harness")),
+        expect(dead_code, reason = "only a tree walk reads it")
+    )]
+    pub(crate) head_filter: Option<HeadFilter>,
     /// First-sight cwd extractor for the walker's transcript head scan. The
     /// walker dispatches by the SCANNED source, so one source's shape is never
     /// tried against another's transcript.
@@ -390,11 +398,17 @@ impl SourceDescriptor {
         self.transcript().map(|t| t.id_from_path)
     }
 
-    /// Which `.jsonl` files are this source's transcripts (`None` without a
-    /// transcript tree to walk).
+    /// Which `.jsonl` files are this source's transcripts by path (`None` without
+    /// a transcript tree to walk).
     #[cfg(feature = "harness")]
     pub(crate) fn path_filter(&self) -> Option<PathFilter> {
         self.transcript().map(|t| t.path_filter)
+    }
+
+    /// Which of those are transcripts by what they hold (`None` takes every one).
+    #[cfg(feature = "harness")]
+    pub(crate) fn head_filter(&self) -> Option<HeadFilter> {
+        self.transcript().and_then(|t| t.head_filter)
     }
 
     /// The focus-jump pid channel (`Unsupported` for a daemon).
@@ -575,7 +589,7 @@ pub fn id_deriver_for(source: &str) -> IdDeriver {
         .unwrap_or(default_id_from_path)
 }
 
-/// Which `.jsonl` files under this source's root ARE its transcripts: an offline
+/// Which `.jsonl` files under this source's root ARE its transcripts by path: an offline
 /// driver that walks a tree must select the SAME files the watcher's row does, or
 /// its census counts what production never reads.
 /// Admits everything for an unregistered source name.
@@ -584,6 +598,12 @@ pub(crate) fn path_filter_for(source: &str) -> PathFilter {
     descriptor_for(source)
         .and_then(|d| d.path_filter())
         .unwrap_or(crate::source::decoder::accept_all_paths)
+}
+
+/// The content half of the same choice, for the same reason.
+#[cfg(feature = "harness")]
+pub(crate) fn head_filter_for(source: &str) -> Option<HeadFilter> {
+    descriptor_for(source).and_then(|d| d.head_filter())
 }
 
 /// A daemon source's wire decoder: its envelope → the sending INSTANCE's
@@ -795,6 +815,14 @@ mod tests {
                 "/h/.grok/sessions/%2Fr/s1/chat_history.jsonl",
             ),
             (grok::SOURCE_NAME, "/h/.grok/sessions/%2Fr/s1/events.jsonl"),
+            (
+                omp::SOURCE_NAME,
+                "/h/.omp/agent/sessions/e/2026_0199/__advisor.jsonl",
+            ),
+            (
+                omp::SOURCE_NAME,
+                "/h/.omp/agent/sessions/e/2026_0199/Reader/__advisor.reviewer.jsonl",
+            ),
         ];
         for (source, path) in reject {
             assert!(
@@ -818,6 +846,10 @@ mod tests {
                 "/h/.codex/sessions/2026/05/29/rollout-x.jsonl",
             ),
             (omp::SOURCE_NAME, "/h/.omp/agent/sessions/e/2026_0199.jsonl"),
+            (
+                omp::SOURCE_NAME,
+                "/h/.omp/agent/sessions/e/2026_0199/Reader.jsonl",
+            ),
             (
                 copilot::SOURCE_NAME,
                 "/h/.copilot/session-state/019e/events.jsonl",
