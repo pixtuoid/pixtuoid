@@ -227,7 +227,7 @@ force-cancelling its other runs shows them cancelled there too.
 
 ### Dispositions
 
-Every finding reaches exactly one terminal state in its review thread: FIXED ·
+Every finding reaches exactly one terminal state: FIXED ·
 REFUTED (cite the mechanism, per AGENTS.md; add one where none exists. Before
 adding code for a finding, establish its case is reachable: when a test or
 sweep shows it isn't, that test is the mechanism and no defensive code lands) ·
@@ -239,7 +239,7 @@ the base, and not FIXED in place
 pulling in no new must-run item, and a breach of a written rule there is fixed
 in place whatever it pulls in (AGENTS.md's org rules: Refactor) — so it is
 fixed in #N; a defect in another session's tree cites that session's PR). A
-disposition is the reply that resolves the thread, STARTING with its state:
+thread's disposition is the reply that resolves it, STARTING with its state:
 `FIXED: …` · `REFUTED: … — <mechanism>` · `RE-SCOPED → #N: …` ·
 `FOLLOW-UP → #N: …`, where #N is a PR other than this one: open, merged, or
 closed under [the open-PR cap](../AGENTS.md#workflow) with the fix on its branch. A
