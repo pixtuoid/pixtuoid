@@ -251,6 +251,7 @@ export default defineConfig({
   vite: {
     define: {
       __PIXTUOID_VERSION__: JSON.stringify(version),
+      __PIXTUOID_TAGLINE__: JSON.stringify(workspacePackageField(cargoToml, 'description')),
       __GH_STARS__: JSON.stringify(ghStars),
     },
     // Never inline assets as data: URLs. Vite's default inlining turned the small

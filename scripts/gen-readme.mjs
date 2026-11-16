@@ -19,7 +19,8 @@ import { workspacePackageField } from '../site/config/workspace-package.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readmePath = join(root, 'README.md');
 
-const SITE = workspacePackageField(readFileSync(join(root, 'Cargo.toml'), 'utf8'), 'homepage');
+const cargoToml = readFileSync(join(root, 'Cargo.toml'), 'utf8');
+const SITE = workspacePackageField(cargoToml, 'homepage');
 // Absolute: each published crate's crates.io page is this README, and crates.io
 // resolves a relative link against the crate's own directory
 // (crates/pixtuoid-core/tests/published_package.rs).
@@ -154,6 +155,12 @@ regenSection(
     `**→ [Every tool × OS on the site](${SITE}/#tools)**`,
     ...experimentalNotes.map((n) => `\n${n}`),
   ].join('\n')
+);
+regenSection(
+  'tagline',
+  "<!-- tagline:start · generated from Cargo.toml's `description` by `just gen-readme` — edit Cargo.toml, not this line -->",
+  '<!-- tagline:end -->',
+  `<p align="center">\n  <samp>${workspacePackageField(cargoToml, 'description')}</samp>\n</p>`
 );
 // A static badge, so the count is this tree's and --check sees it: a shields
 // query on the JSON counted the planned rows and named a URL no gate parses.

@@ -372,7 +372,7 @@ fn parse_nonempty_path(s: &str) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
-    // crates.io, npm and the site show the crate description: a literal here would drift from it.
+    // The description is the positioning line's one copy: a literal here would be a second.
     #[test]
     fn the_root_about_is_the_crate_description() {
         let command = <Cli as clap::CommandFactory>::command();

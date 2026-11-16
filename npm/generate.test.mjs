@@ -250,3 +250,11 @@ test(
     }
   },
 );
+
+test("the launcher's description is the workspace's, the copy JSON can't import", async () => {
+  const { workspacePackageField } = await import("../site/config/workspace-package.mjs");
+  const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+  const launcher = JSON.parse(readFileSync(join(root, "npm/pixtuoid/package.json"), "utf8"));
+  const cargoToml = readFileSync(join(root, "Cargo.toml"), "utf8");
+  assert.equal(launcher.description, workspacePackageField(cargoToml, "description"));
+});

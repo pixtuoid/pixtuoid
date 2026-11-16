@@ -16,7 +16,8 @@ docs, demo media all flow in from outside `site/`. Parent guide: the workspace
 `Cargo.toml` + the `docs/` pages below); a rename/move of any FAILS the
 build:
 
-- workspace `Cargo.toml` → the origin (`homepage`) and the displayed-version
+- workspace `Cargo.toml` → the origin (`homepage`), the default title and
+  description (`description`) and the displayed-version
   FALLBACK; the primary version is the latest release tag (`released-version.mjs`,
   unit-tested — main runs ahead of it mid-cycle). Both workflows checkout with
   `fetch-depth: 0`. `pages.yml` deploys on push to `main`, not on tag push, so

@@ -23,9 +23,11 @@ interface Props {
   preloadImage?: string;
 }
 
+const TAGLINE = __PIXTUOID_TAGLINE__;
 const {
-  title = 'pixtuoid — a cozy pixel office where your AI coding agents come to life',
-  description = 'A cozy pixel office where your AI coding agents come to life.',
+  title = `pixtuoid — ${TAGLINE[0].toLowerCase()}${TAGLINE.slice(1).replace(/\.$/, '')}`,
+  // A search snippet shows this under the title, so it says more than the title does.
+  description = `${TAGLINE} Every Claude Code, Codex or other agent session is an animated coworker, in your terminal, a desktop window or the browser.`,
   preloadImage,
 } = Astro.props;
 

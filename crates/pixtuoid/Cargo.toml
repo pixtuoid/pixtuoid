@@ -1,6 +1,6 @@
 [package]
 name                   = "pixtuoid"
-description            = "A cozy pixel office where your AI coding agents come to life."
+description.workspace  = true
 version.workspace      = true
 edition.workspace      = true
 # Links pixtuoid-scene's Fusion Pixel face (OFL-1.1).

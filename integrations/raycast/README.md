@@ -1,7 +1,6 @@
 # Pixtuoid for Raycast
 
-Manage [Pixtuoid](https://github.com/pixtuoid/pixtuoid), a cozy pixel office
-where your AI coding agents come to life, without leaving Raycast.
+Manage [Pixtuoid](https://github.com/pixtuoid/pixtuoid) without leaving Raycast.
 
 This extension is a thin shell over the `pixtuoid` CLI's `--json` contract; it
 does **not** bundle the binary.
