@@ -285,7 +285,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   .docs :global(.fig__cards) {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(15.5rem, 1fr));
+    /* min(): at an enlarged font size a card is no wider than the column it sits in. */
+    grid-template-columns: repeat(auto-fill, minmax(min(15.5rem, 100%), 1fr));
     gap: 0.9rem;
     margin: 1.8rem 0;
     padding: 0;

@@ -189,7 +189,7 @@ export default defineConfig({
         // inline <svg> at build time, in-process: zero client JS, no browser.
         rehypeBeautifulMermaid,
         rehypeFigures, // before the scrollers: a figure replaces the table it marks
-        rehypeScrollFocus, // after the diagram, whose `pre` leaves as an <svg>
+        rehypeScrollFocus, // after the diagram: its `pre` leaves, and its figure's body, a scroller, arrives
         [rehypeRepoLinks, { docs, base: BASE }], // after the diagram so it walks the final tree
         rehypeCallouts, // last: promotes doc blockquotes to terminal-window chrome
       ],

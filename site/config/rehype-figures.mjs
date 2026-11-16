@@ -4,16 +4,10 @@
 // doc holds one copy of its data. Docs.astro styles the markup.
 import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
+import { el } from './hast.mjs';
 
 // Astro keeps a doc's HTML comment as a `raw` node: it never parses raw HTML.
 const MARKER = /^<!--\s*figure:\s*([\w-]+)\s*-->$/;
-
-const el = (tagName, className, children = [], properties = {}) => ({
-  type: 'element',
-  tagName,
-  properties: { ...(className && { className: [className] }), ...properties },
-  children,
-});
 
 const isElement = (node, tagName) => node?.type === 'element' && node.tagName === tagName;
 
@@ -66,7 +60,7 @@ export default function rehypeFigures() {
       if (!isElement(target, 'table')) {
         throw new Error(`figure "${kind}" needs a table right below its marker`);
       }
-      const figure = el('figure', null, draw(target), { className: ['fig', `fig--${kind}`] });
+      const figure = el('figure', ['fig', `fig--${kind}`], draw(target));
       parent.children.splice(i, j - i + 1, figure);
       return i;
     });

@@ -7,6 +7,7 @@
 import { renderMermaidSVG } from 'beautiful-mermaid';
 import { fromHtml } from 'hast-util-from-html';
 import { SKIP, visit } from 'unist-util-visit';
+import { el } from './hast.mjs';
 
 // Mermaid's accessibility directives are not part of beautiful-mermaid's grammar
 // (it draws them as nodes), so they are lifted out here and put back as the
@@ -75,13 +76,6 @@ function labelled(svg, index, title, descr) {
   svg.properties.ariaLabelledBy = labels.map((l) => l.properties.id).join(' ');
   return svg;
 }
-
-const el = (tagName, className, children, properties = {}) => ({
-  type: 'element',
-  tagName,
-  properties: { className: [className].flat(), ...properties },
-  children,
-});
 
 const hasClass = (node, name) => node.properties?.className?.includes(name);
 

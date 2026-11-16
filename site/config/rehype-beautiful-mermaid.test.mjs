@@ -4,6 +4,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 
 import rehypeBeautifulMermaid from './rehype-beautiful-mermaid.mjs';
+import docs from '../src/docs.json' with { type: 'json' };
 
 const SOURCE = `flowchart TB
   accTitle: pixtuoid data flow
@@ -52,13 +53,13 @@ function find(node, test) {
 const svgOf = (tree) => find(tree, (n) => n.tagName === 'svg');
 const classed = (name) => (n) => n.properties?.className?.includes(name);
 
-test('a ```mermaid block becomes one inline <svg> with no client-side script', () => {
+test('a ```mermaid block becomes one figure holding an inline <svg>, with no client-side script', () => {
   const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });
   assert.equal(tree.children.length, 1);
   const svg = svgOf(tree);
   assert.equal(svg.tagName, 'svg');
   assert.ok(textOf(svg).includes('Reducer::apply'), 'node labels render as text');
-  assert.equal(hasElement(svg, 'script'), false);
+  assert.equal(hasElement(tree, 'script'), false);
 });
 
 test('accTitle / accDescr become the <title>/<desc> the SVG is labelled by, not nodes', () => {
@@ -106,21 +107,27 @@ function count(node, pred) {
 
 // The renderer degrades silently on malformed source (a dropped `end`, a
 // mistyped arrow) — fewer shapes, no throw — and the doc-render guard only
-// checks that an <svg> exists. The committed diagram is the population.
-test('the committed architecture diagram renders every subgraph, node and edge it declares', () => {
-  const doc = readFileSync(new URL('../../docs/ARCHITECTURE.md', import.meta.url), 'utf8');
-  const source = /```mermaid\n([\s\S]*?)```/.exec(doc)[1];
-  const tree = run({ type: 'root', children: [codeBlock('mermaid', source)] });
-  const svg = svgOf(tree);
-  const withClass = (name) => (n) =>
-    n.type === 'element' && (n.properties?.className ?? []).includes(name);
-  assert.equal(count(svg, withClass('subgraph')), (source.match(/^\s*subgraph\s/gm) ?? []).length);
-  assert.equal(count(svg, withClass('node')), new Set(source.match(/\b\w+(?=\[)/g)).size);
-  assert.equal(
-    count(svg, (n) => n.type === 'element' && n.tagName === 'polyline'),
-    source.match(/->/g).length
-  );
-});
+// checks that an <svg> exists. Every committed diagram is the population.
+for (const { file } of docs) {
+  const doc = readFileSync(new URL(`../../docs/${file}`, import.meta.url), 'utf8');
+  for (const [, source] of doc.matchAll(/```mermaid\n([\s\S]*?)```/g)) {
+    test(`docs/${file}'s diagram renders every subgraph, node and edge it declares`, () => {
+      const tree = run({ type: 'root', children: [codeBlock('mermaid', source)] });
+      const svg = svgOf(tree);
+      const withClass = (name) => (n) =>
+        n.type === 'element' && (n.properties?.className ?? []).includes(name);
+      assert.equal(
+        count(svg, withClass('subgraph')),
+        (source.match(/^\s*subgraph\s/gm) ?? []).length
+      );
+      assert.equal(count(svg, withClass('node')), new Set(source.match(/\b\w+(?=\[)/g)).size);
+      assert.equal(
+        count(svg, (n) => n.type === 'element' && n.tagName === 'polyline'),
+        source.match(/->/g).length
+      );
+    });
+  }
+}
 
 test('the diagram sits in a figure: a bar, then a body holding it at its drawn size', () => {
   const tree = run({ type: 'root', children: [codeBlock('mermaid', SOURCE)] });

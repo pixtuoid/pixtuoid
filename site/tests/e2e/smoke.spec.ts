@@ -2242,7 +2242,7 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./architecture/', 320], // #503's wide ASCII pre
     ['./architecture/', 768],
     ['./contributing/', 320], // #503's long link: `crates/pixtuoid-core/tests/AGENTS.md`
-    ['./how-we-build/', 320], // the flow figure, wider than the page at its drawn size
+    ['./how-we-build/', 320], // its diagram, wider than the page at its drawn size
   ] as const) {
     const context = await browser.newContext({
       viewport: { width, height: 820 },
@@ -2558,6 +2558,31 @@ test('a doc diagram: every SVG text clears WCAG AA and every box has a 3:1 bound
           ratio,
           `${theme} ${route} diagram "${label}": WCAG AA floor is 4.5:1; measured ${ratio.toFixed(2)}:1`
         ).toBeGreaterThanOrEqual(4.5);
+      }
+      // The diagram's body is a tab stop on every diagram (rehype-scroll-focus.mjs),
+      // so its focus ring is a state of the page: 3:1 against the screen inside it
+      // and the page outside it (WCAG 1.4.11).
+      const focus = await page.evaluate(() => {
+        const body = document.querySelector<HTMLElement>('.fig__body')!;
+        body.focus({ focusVisible: true } as FocusOptions);
+        const ring = getComputedStyle(body);
+        return {
+          style: ring.outlineStyle,
+          ring: ring.outlineColor,
+          screen: getComputedStyle(body.closest('.fig--flow')!).backgroundColor,
+          page: getComputedStyle(document.body).backgroundColor,
+        };
+      });
+      expect(focus.style, `${theme} ${route}: the diagram body shows no focus ring`).not.toBe(
+        'none'
+      );
+      for (const ground of [focus.screen, focus.page]) {
+        const under = parseRgb(ground).slice(0, 3) as [number, number, number];
+        const [r, g, b, a] = parseRgb(focus.ring);
+        expect(
+          contrastRatio(compositeOver([r, g, b, a], under), under),
+          `${theme} ${route}: focus ring against ${ground}`
+        ).toBeGreaterThanOrEqual(3);
       }
     }
   }

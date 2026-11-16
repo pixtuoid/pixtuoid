@@ -1,4 +1,4 @@
-// Every doc code block, table and flow figure's body is a tab stop, so a keyboard reaches the one
+// Every doc code block, table and diagram body is a tab stop, so a keyboard reaches the one
 // that scrolls sideways on a narrow screen in a browser that never makes a
 // scroller a tab stop itself (https://bugs.webkit.org/show_bug.cgi?id=277290).
 // Its own role is enough: a tab stop needs no assigned role or name

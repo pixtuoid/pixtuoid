@@ -35,8 +35,8 @@ silently stays on its poster. `public/demos/` is gitignored too:
 which `astro.config.mjs`'s `demoAssets()` fails on a missing demo, and before
 `test:demos`), and CI renders it per build.
 
-**The architecture diagram renders at build**, in process
-(`config/rehype-beautiful-mermaid.mjs` — no browser); Playwright's Chromium is
+**Every Mermaid diagram in a rendered doc renders at build**, as a framed
+figure, in process (`config/rehype-beautiful-mermaid.mjs` — no browser); Playwright's Chromium is
 installed only for `site.yml`'s e2e step. The empty-render class is
 gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
 the mechanism; `pages.yml`'s pins carry their own.
