@@ -109,10 +109,10 @@
     stroke: var(--coral);
     stroke-width: 2;
   }
-  /* A paused flow keeps its unlit steps dimmed, so the dim holds text at AA:
-     the e2e test grades it. */
+  /* A paused flow keeps its unlit steps dimmed, so the dim holds text at AA and
+     a box's outline at 3:1: the e2e test grades both. */
   .fig--flow svg .is-off {
-    opacity: 0.6;
+    opacity: 0.75;
   }
   .fig--flow svg :is(.node, .edge, .edge-label) {
     transition: opacity 0.25s ease;

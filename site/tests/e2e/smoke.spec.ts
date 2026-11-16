@@ -3579,17 +3579,20 @@ test('a flow figure lights its edges in source order, holds a pause at AA, and l
       const alpha = Number(getComputedStyle(node).opacity);
       const screen = rgb(getComputedStyle(node.closest('.fig--flow')!).backgroundColor);
       const over = (c: number[]) => c.map((v, i) => alpha * v + (1 - alpha) * screen[i]);
+      const box = getComputedStyle(node.querySelector(':scope > :not(text)')!);
       return {
         text: over(rgb(getComputedStyle(node.querySelector('text')!).fill)),
-        plate: over(rgb(getComputedStyle(node.querySelector(':scope > :not(text)')!).fill)),
+        plate: over(rgb(box.fill)),
+        outline: over(rgb(box.stroke)),
       };
     })
   );
   expect(dimmed.length).toBeGreaterThan(0);
-  for (const { text, plate } of dimmed) {
-    expect(
-      contrastRatio(text as [number, number, number], plate as [number, number, number])
-    ).toBeGreaterThanOrEqual(4.5);
+  type Rgb = [number, number, number];
+  for (const { text, plate, outline } of dimmed) {
+    expect(contrastRatio(text as Rgb, plate as Rgb)).toBeGreaterThanOrEqual(4.5);
+    // WCAG 1.4.11, the floor the diagram test holds a box to at rest.
+    expect(contrastRatio(outline as Rgb, plate as Rgb)).toBeGreaterThanOrEqual(3);
   }
 });
 
