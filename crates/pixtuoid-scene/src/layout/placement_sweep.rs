@@ -184,6 +184,9 @@ fn every_swept_office_holds_its_placement_invariants() {
         found,
         every_kind_is_placed_somewhere_in_the_sweep(&found.kinds)
     );
+    // Fewer sprites probed than this, and the opacity check passes on offices
+    // the sweep stopped reaching.
+    const MIN_PROBED_SPRITES: u32 = 1000;
     let probed = found.sprites_probed;
     if probed < MIN_PROBED_SPRITES {
         check!(
@@ -202,12 +205,8 @@ fn every_swept_office_holds_its_placement_invariants() {
     found.assert_none();
 }
 
-/// Fewer sprites probed than this, and the opacity check passes on offices the
-/// sweep stopped reaching.
-const MIN_PROBED_SPRITES: u32 = 1000;
-
-/// Each invariant's violations by its name, and the counts the checks over the
-/// whole sweep read.
+/// Each invariant's violations by its name, and what the sweep-wide checks
+/// read: the kinds placed, the sprites probed and the floors compared.
 #[derive(Default)]
 struct Found {
     violations: BTreeMap<&'static str, Vec<String>>,
