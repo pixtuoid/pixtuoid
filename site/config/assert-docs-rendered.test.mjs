@@ -115,3 +115,8 @@ test('a page the rosters list that rendered no article fails', () => {
   });
   assert.deepEqual(failures, ['/blog/a-post: in the rosters, but no rendered article']);
 });
+
+test("a page named after one of Object's own keys is listed only if a roster lists it", () => {
+  const { failures } = checkPages([{ name: 'constructor', html: doc(body(MIN_BODY_CHARS)) }], {});
+  assert.ok(failures.some((f) => f.includes('/constructor') && f.includes('do not list')));
+});

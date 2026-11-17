@@ -32,7 +32,7 @@ export default function rehypeRepoLinks({ pages, base }) {
     const joined = path.startsWith('/') ? path : posix.join(dir, path);
     const rel = posix
       .normalize(joined)
-      .replace(/^(?:\.\.\/)+/, '')
+      .replace(/^(?:\.\.(?:\/|$))+/, '')
       .replace(/^\/+/, '');
     node.properties.href = `${routes.get(rel) ?? `${REPO_BLOB}/${rel}`}${hash}`;
   };

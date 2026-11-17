@@ -42,7 +42,8 @@ test("every doc page's source link names its own file in this repo", async ({ pa
 
 test('404 mounts the statusline too', async ({ page }) => {
   await page.goto('./no-such-desk/');
-  await expect(page.locator('#statusline')).toContainText('~ pixtuoid docs · /404');
+  // The 404 page is in no wing.
+  await expect(page.locator('#statusline .sl__path')).toHaveText('~ pixtuoid · /404');
 });
 
 // GitHub Pages redirects a page's unslashed URL to its slashed one

@@ -54,7 +54,7 @@ export function checkPages(entries, diagrams) {
         `/${name}: body only ${body.length} chars (< ${MIN_BODY_CHARS}) — render collapsed`
       );
     }
-    if (!(name in diagrams)) {
+    if (!Object.hasOwn(diagrams, name)) {
       failures.push(
         `/${name}: a rendered article the rosters (src/docs.json, the blog) do not list`
       );

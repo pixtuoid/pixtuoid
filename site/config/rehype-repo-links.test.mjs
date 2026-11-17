@@ -44,6 +44,7 @@ test("any other repo-relative link goes to the file on GitHub, resolved from the
 test('a root-relative link resolves from the repo root, and a climb above it is clamped', () => {
   assert.equal(rewritten('/AGENTS.md'), `${REPO_BLOB}/AGENTS.md`);
   assert.equal(rewritten('../../x.md'), `${REPO_BLOB}/x.md`);
+  assert.equal(rewritten('../..'), `${REPO_BLOB}/`);
 });
 
 test('an in-page anchor and an absolute URL are left alone', () => {

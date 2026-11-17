@@ -8,12 +8,14 @@ import { FLOORS, floorById, floorName } from '../../config/floors.mjs';
 import { GH_API_REPO, GH_FETCH_TIMEOUT_MS, REPO } from '../../config/github.mjs';
 
 interface Props {
-  /** Wing variant: render the wing's path, and the page's when it is not the wing's lobby, instead of
-   * the index-only organs. The #sl-install chip renders in BOTH variants. */
+  /** Reading variant, on either prop: render the wing's path, where the page is in one, and the
+   * page's, where it is not its wing's lobby, instead of the index-only organs. The #sl-install
+   * chip renders in BOTH variants. */
   wingPath?: string;
   pageSlug?: string;
 }
 const { wingPath, pageSlug } = Astro.props;
+const reading = Boolean(wingPath ?? pageSlug);
 
 // null when the API was unreachable at build: the chip stays, the ★ segment is
 // omitted, and offline builds never fail.
@@ -38,7 +40,7 @@ interface TickerItem {
 let items: TickerItem[] = FALLBACK;
 // Skipped on the wing variant so the wing's pages don't each re-hit the GitHub API
 // at build (only the index renders .sl__feed).
-if (!wingPath) {
+if (!reading) {
   try {
     const headers: Record<string, string> = { accept: 'application/vnd.github+json' };
     if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
@@ -95,8 +97,10 @@ const FEED_ROTATE_MS = 6000;
 ---
 
 <div class="statusline" id="statusline">
-  {wingPath ? (
-    <span class="sl__path">{`~ pixtuoid ${wingPath}${pageSlug ? ` · /${pageSlug}` : ''}`}</span>
+  {reading ? (
+    <span class="sl__path"
+      >{['~ pixtuoid', wingPath, pageSlug && `· /${pageSlug}`].filter(Boolean).join(' ')}</span
+    >
   ) : (
     <>
       <nav class="sl__nav" aria-label="Floors">
@@ -172,7 +176,7 @@ const FEED_ROTATE_MS = 6000;
     </a>}
     <a
       class="sl__copy"
-      href={wingPath ? floorHref('install') : `#${floorById('install').id}`}
+      href={reading ? floorHref('install') : `#${floorById('install').id}`}
       data-sl-install-link
       aria-label="Jump to the install section"
     >
@@ -185,7 +189,7 @@ const FEED_ROTATE_MS = 6000;
   {
     /* deliberately AFTER #sl-install: bundling this into the index fragment
       above silently swaps the two rightmost items */
-    !wingPath && <span class="sl__keys" aria-hidden="true"> keys 1–{FLOORS.length} </span>
+    !reading && <span class="sl__keys" aria-hidden="true"> keys 1–{FLOORS.length} </span>
   }
 </div>
 
