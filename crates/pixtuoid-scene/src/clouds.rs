@@ -1875,12 +1875,15 @@ mod tests {
         let lead = AHEAD_FRAMES;
         let pack = crate::pack::test_office();
         let d = test_density(4);
-        let wall = crate::outside::Wall {
+        // No bays: a frame's masses are planned over the glass, which reads
+        // only the span and the band (`Wall::glass`); a bay adds only a
+        // view's paint and a strike's panes, which draw no mass.
+        let wall = || crate::outside::Wall {
             span: 0..crate::layout::WINDOW_W * 3,
             band_h: 32,
-            bays: crate::layout::window_slots(0..crate::layout::WINDOW_W * 3).collect(),
+            bays: Vec::new(),
         };
-        let (run, glass_h) = wall.glass();
+        let (run, glass_h) = wall().glass();
         for motion in [Motion::Full, Motion::Calm] {
             for (start, policy, length) in windows {
                 let timing = |n: u32| motion.timing(start - AHEAD + PAINT_FRAME * n);
@@ -1918,11 +1921,7 @@ mod tests {
                             &moment,
                             &pack,
                             theme,
-                            crate::outside::Wall {
-                                span: wall.span.clone(),
-                                band_h: wall.band_h,
-                                bays: wall.bays.clone(),
-                            },
+                            wall(),
                             d,
                             crate::glass_weather::GlassWeather::of(&moment),
                         );
