@@ -57,8 +57,101 @@ const bar = (tag, cell, value, longest) =>
     h('span.fig-bar__num', cell),
   ]);
 
+// A moving figure's terminal window: its title, and the switch that stops it (WCAG 2.2's SC 2.2.2
+// asks for one on motion that starts by itself and lasts: www.w3.org/TR/WCAG22/#pause-stop-hide).
+const playing = (title, body) => [
+  h('div.fig__bar', [
+    h('span.fig__title', title),
+    h('label.fig__pause', [h('input', { type: 'checkbox' }), ' pause']),
+  ]),
+  h('div.fig__body', body),
+];
+
+// A lap shorter than this reads as a flicker, not as a bar filling.
+const MIN_LAP_MS = 900;
+
+/** The slow motion that brings the fastest lap up to a watchable one: 1, 2 or 5 times a power of ten. */
+function slowMotion(fastestMs) {
+  const least = MIN_LAP_MS / fastestMs;
+  const decade = 10 ** Math.floor(Math.log10(least));
+  return decade * [1, 2, 5, 10].find((step) => step * decade >= least);
+}
+
+function lapMs(cell) {
+  const text = toText({ type: 'root', children: cell }).trim();
+  const ms = /^([\d.]+)\s*ms$/.exec(text)?.[1];
+  if (!ms) throw new Error(`figure "laps": "${text}" is not a time in ms`);
+  return Number(ms);
+}
+
+// The frame a repaint figure draws, and what it holds: the furniture is there to be a picture
+// worth repainting, and the boxes are where the second pass's changes are. Neither is to scale.
+const FRAME = { width: 96, height: 54 };
+const FURNITURE = [
+  [8, 34, 14, 8],
+  [28, 34, 14, 8],
+  [48, 34, 14, 8],
+  [68, 34, 14, 8],
+  [8, 8, 30, 12],
+  [58, 8, 30, 12],
+];
+const CHANGES = [
+  [14, 12, 6, 4],
+  [52, 37, 5, 3],
+  [80, 15, 4, 5],
+];
+const box = (className, [x, y, width, height]) => s('rect', { className, x, y, width, height });
+
+const pane = (pass, pixels, washes) =>
+  h('li.fig-pane', [
+    s('svg', { viewBox: `0 0 ${FRAME.width} ${FRAME.height}`, ariaHidden: 'true' }, [
+      box('fig-pane__frame', [0, 0, FRAME.width, FRAME.height]),
+      ...FURNITURE.map((at) => box('fig-pane__desk', at)),
+      ...washes.map((at) => box('fig-pane__wash', at)),
+    ]),
+    h('p.fig-pane__pass', pass),
+    h('p.fig-pane__pixels', pixels),
+  ]);
+
 // Each kind draws its figure's content from the table it marks.
 const KINDS = {
+  laps: (table) => {
+    const runners = rows('laps', table, ['runner', 'lap']).map(([who, lap]) => ({
+      who,
+      lap,
+      ms: lapMs(lap),
+    }));
+    const slowed = slowMotion(Math.min(...runners.map((runner) => runner.ms)));
+    const longest = Math.max(...runners.map((runner) => runner.ms));
+    return playing(`${slowed}× slow motion: a bar fills once a lap`, [
+      h(
+        'ul.fig__laps',
+        runners.map(({ who, lap, ms }) =>
+          h('li.fig-lap', { style: `--lap:${Number(((ms * slowed) / 1000).toFixed(2))}s` }, [
+            h('p.fig-lap__who', who),
+            s(
+              'svg.fig-lap__track',
+              { viewBox: `0 0 ${TRACK} 1`, preserveAspectRatio: 'none', ariaHidden: 'true' },
+              s('rect', { width: Math.round((ms / longest) * TRACK * 10) / 10, height: 1 })
+            ),
+            h('p.fig-lap__time', lap),
+          ])
+        )
+      ),
+    ]);
+  },
+  repaint: (table) => {
+    const passes = rows('repaint', table, ['pass', 'pixels']);
+    if (passes.length !== 2)
+      throw new Error(`figure "repaint" compares two passes, found ${passes.length}`);
+    const [[whole, wholePixels], [changed, changedPixels]] = passes;
+    return playing('one frame, repainted (not to scale)', [
+      h('ul.fig__panes', [
+        pane(whole, wholePixels, [[0, 0, FRAME.width, FRAME.height]]),
+        pane(changed, changedPixels, CHANGES),
+      ]),
+    ]);
+  },
   bars: (table) =>
     h(
       'ul.fig__bars',

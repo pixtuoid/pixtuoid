@@ -247,9 +247,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: inherit;
   }
   /* rendered markdown carries no astro scope hash, hence :global throughout */
-  /* One terminal chrome for a callout and a diagram's figure
-     (config/rehype-beautiful-mermaid.mjs). */
-  .wing :global(:is(.callout, .fig--diagram)) {
+  /* One terminal chrome for a callout, a diagram's figure
+     (config/rehype-beautiful-mermaid.mjs) and a moving one (config/rehype-figures.mjs). */
+  .wing :global(:is(.callout, .fig--diagram, .fig--laps, .fig--repaint)) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
@@ -321,6 +321,107 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     margin: 0;
     font-size: 0.92rem;
     line-height: 1.45;
+  }
+  .wing :global(.fig__pause) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: auto;
+    color: var(--chip-ink);
+    cursor: pointer;
+  }
+  .wing :global(:is(.fig__laps, .fig__panes)) {
+    display: grid;
+    gap: 0.9rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .wing :global(.fig-lap) {
+    display: grid;
+    grid-template-columns: minmax(5rem, 11rem) minmax(0, 1fr) 4.6rem;
+    align-items: center;
+    gap: 0.8rem;
+    margin: 0;
+  }
+  .wing :global(:is(.fig-lap, .fig-pane) p) {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.35;
+    color: var(--chip-bright);
+  }
+  .wing :global(.fig-lap__time) {
+    text-align: right;
+  }
+  .wing :global(.fig-lap__track) {
+    width: 100%;
+    height: 0.8rem;
+    background: var(--chip-line);
+  }
+  .wing :global(.fig-lap__track rect) {
+    fill: var(--chip-accent);
+    transform-box: fill-box;
+    transform-origin: left;
+    animation: fig-lap var(--lap) linear infinite;
+  }
+  @keyframes fig-lap {
+    from {
+      transform: scaleX(0);
+    }
+  }
+  .wing :global(.fig__panes) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wing :global(.fig-pane svg) {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-bottom: 0.6rem;
+  }
+  .wing :global(.fig-pane__frame) {
+    fill: var(--hw-hover);
+    stroke: var(--chip-dim);
+    stroke-width: 0.5;
+  }
+  .wing :global(.fig-pane__desk) {
+    fill: var(--chip-line);
+  }
+  .wing :global(.fig-pane__wash) {
+    fill: var(--chip-accent);
+    opacity: 0.7;
+    transform-box: fill-box;
+    transform-origin: top;
+    animation: fig-wash 1.8s ease-in-out infinite;
+  }
+  @keyframes fig-wash {
+    from {
+      transform: scaleY(0);
+    }
+    55% {
+      transform: none;
+      opacity: 0.7;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  .wing :global(p.fig-pane__pixels) {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+  }
+  .wing :global(:has(.fig__pause input:checked) :is(.fig-lap__track rect, .fig-pane__wash)) {
+    animation-play-state: paused;
+  }
+  /* global.css shortens every animation to an instant, which an endless one would repeat without
+     end: these stand still, as the bars and the boxes they already are. */
+  @media (prefers-reduced-motion: reduce) {
+    .wing :global(:is(.fig-lap__track rect, .fig-pane__wash)) {
+      animation: none;
+    }
+    .wing :global(.fig__pause) {
+      display: none;
+    }
   }
   .wing :global(.fig__bars) {
     display: grid;

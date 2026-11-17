@@ -1,171 +1,203 @@
 ---
 title: Ten days of making the cutaway fast
-description: The cutaway draws the office as real pixels inside a terminal. Its first measured night frame took 43 ms of a 33 ms budget. This is what brought it under, what did not, and the gate that holds it there.
+description: 'pixtuoid paints an office of your AI coding agents as an image, inside your terminal, thirty times a second. A night frame used to take 43 ms to paint. It now takes 10.'
 pubDate: 2026-11-17
 ---
 
-pixtuoid has two looks. The classic one paints the office with half-block
-characters, two pixels to a terminal cell. The cutaway paints it as an image:
-a detailed pixel view of the office, lit by its own lamps at night, with
-weather outside its windows, sent to the terminal through the kitty, SIXEL or
-iTerm2 image protocols.
+A frame of the cutaway gets 33 ms. On September 30, painting a night frame
+alone took 43.4 ms. Ten days later it took 9.9 ms, and the whole pipeline
+around it had been rebuilt. On October 21 the cutaway became pixtuoid's
+default look ([#1835](https://github.com/pixtuoid/pixtuoid/pull/1835)).
 
-An image costs far more than text. The office redraws about thirty times a
-second, so a frame has 33 ms to be painted, encoded, written and shown. The
-work of fitting inside those 33 ms ran from September 30 to October 9. On
-October 21 the cutaway became the default look ([#1835](https://github.com/pixtuoid/pixtuoid/pull/1835)).
+This is what we changed, in the order we changed it, with what it cost and
+what we threw away.
 
-Every number below is quoted from the pull request it links to. They were
-measured on different days, machines and terminals, so each pair compares only
-with itself: do not add them up.
+The cutaway is the office drawn as real pixels, sent to your terminal through
+the kitty, SIXEL or iTerm2 image protocol. The older classic look uses
+half-block characters, two pixels to a cell. Pixels are prettier. They are
+also a great deal more work.
 
-## Measure before changing anything
+Every number here is quoted from the pull request it links to. They come from
+different days, machines and terminals. **Compare each pair with itself, and
+never add them up.**
 
-The first pull request of the ten days changed no behaviour. It added a bench
-that paints a busy office at noon and at night
-([#1100](https://github.com/pixtuoid/pixtuoid/pull/1100)). Night was the slow
-one: every lamp and screen lights the pixels around it.
+## Painting a night frame: 43.4 ms → 9.9 ms
 
-A profile of the night frame then showed three places the time went: a
-per-pixel colour cache behind a slow hash, copies made around every piece of
-furniture to see what it had lit, and rebuilding the list of things to draw.
-[#1134](https://github.com/pixtuoid/pixtuoid/pull/1134) rewrote all three.
+**That's 4.4x faster**, from one pull request
+([#1134](https://github.com/pixtuoid/pixtuoid/pull/1134)).
 
-<!-- figure: bars -->
+<!-- figure: laps -->
 
-| Measure                                                                          | Before  | After  |
-| -------------------------------------------------------------------------------- | ------- | ------ |
-| Painting a night frame ([#1134](https://github.com/pixtuoid/pixtuoid/pull/1134)) | 43.4 ms | 9.9 ms |
-| Painting a noon frame ([#1134](https://github.com/pixtuoid/pixtuoid/pull/1134))  | 13.0 ms | 8.1 ms |
+| Runner              | Lap     |
+| ------------------- | ------- |
+| Night frame, before | 43.4 ms |
+| Night frame, after  | 9.9 ms  |
 
-## Encode on every core
+It started with a pull request that changed nothing
+([#1100](https://github.com/pixtuoid/pixtuoid/pull/1100)). It only added a
+bench: paint a busy office at noon, paint it at night, time both.
 
-Painting was one cost. Turning the painted frame into bytes a terminal accepts
-was another, and it ran on one core.
+Night was the slow one. At night every lamp and screen lights the pixels
+around it.
+
+A profile of that frame showed three places the time went:
+
+- a per-pixel colour cache sitting behind a slow hash;
+- a copy made around every piece of furniture, to see what it had lit;
+- the list of things to draw, rebuilt every frame.
+
+#1134 rewrote all three. Noon came along for free: 13.0 ms → 8.1 ms.
+
+_`render_cutaway` bench, 240×144 at scale 4, both runs back to back on one
+machine._
+
+## Encoding a frame: 34 ms → 9.5 ms
+
+Painting is half the job. The painted frame still has to become bytes a
+terminal accepts, and that ran on one core.
+
+<!-- figure: laps -->
+
+| Runner              | Lap    |
+| ------------------- | ------ |
+| Encode on one core  | 34 ms  |
+| Encode on ten cores | 9.5 ms |
+
 [#1282](https://github.com/pixtuoid/pixtuoid/pull/1282) cut the frame into
-tiles and encoded them across the machine's cores. The same pull request added
-the pacing bench that found the problem: it runs the office through a storm
-and reports how long frames really took.
+tiles and handed them to every core the machine has. **3.6x faster**, same
+bytes on the wire.
+
+The same pull request added the tool that found the problem: a pacing bench
+that walks the office through a storm and records how long every frame really
+took. We used it for everything after this.
+
+_One whole frame of 1,275 tiles, kitty protocol, zlib._
+
+## Repainting 7,936 pixels instead of 6.8 million
+
+Most frames barely differ from the last one. A cursor blinks. A fish swims.
+
+The painter already knew which rectangles had changed. It used them to decide
+what to **send**. Then it repainted the entire frame anyway.
+
+<!-- figure: repaint -->
+
+| Pass                     | Pixels      |
+| ------------------------ | ----------- |
+| Before: the whole frame  | 6.8 million |
+| After: only what changed | 7,936       |
+
+That is about 850 times less to paint on a typical frame
+([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389)). Three pull requests
+got there:
 
 <!-- figure: bars -->
 
-| Measure                                                                                | Before | After  |
-| -------------------------------------------------------------------------------------- | ------ | ------ |
-| Encoding one frame for kitty ([#1282](https://github.com/pixtuoid/pixtuoid/pull/1282)) | 34 ms  | 9.5 ms |
+| Measure                                                                                             | Before  | After   |
+| --------------------------------------------------------------------------------------------------- | ------- | ------- |
+| Repaint one box around the changes ([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389))        | 8.26 ms | 3.80 ms |
+| Repaint up to eight boxes ([#1402](https://github.com/pixtuoid/pixtuoid/pull/1402))                 | 4.78 ms | 1.70 ms |
+| Reuse the last frame's windows and lights ([#1395](https://github.com/pixtuoid/pixtuoid/pull/1395)) | 1.77 ms | 0.48 ms |
 
-## Paint only what changed
+_Median frame: #1389 at noon on kitty, #1402 at night on SIXEL, #1395 the
+compose step at noon. Three benches, three baselines._
 
-Most frames barely differ from the one before: a cursor blinks, a fish swims.
-The painter already knew which rectangles had changed, but it used them only
-to decide what to send. It still repainted everything, about 6.8 million
-pixels for a median of 7,936 that could change
-([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389)).
+Reuse is not free. Keeping the last frame around raised the peak memory of a
+360×240 render from 562.6 KB to 639.5 KB. That's 12% more, and we took the
+trade.
 
-Three changes fixed that. A frame first repainted only the box around its
-changes, then up to eight boxes
-([#1402](https://github.com/pixtuoid/pixtuoid/pull/1402)), and it began to
-reuse the last frame's windows and lights when it would draw the same ones
-([#1395](https://github.com/pixtuoid/pixtuoid/pull/1395)).
+## Fewer bytes did not help. Fewer images did.
 
-<!-- figure: bars -->
+First the easy win. An idle office was streaming about 1.3 MB a second,
+because every tile went out uncompressed. Compressing them made a typical
+tile about 10x smaller
+([#1197](https://github.com/pixtuoid/pixtuoid/pull/1197)).
 
-| Measure                                                                                            | Before  | After   |
-| -------------------------------------------------------------------------------------------------- | ------- | ------- |
-| A typical noon frame, one box ([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389))            | 8.26 ms | 3.80 ms |
-| A typical night frame, eight boxes ([#1402](https://github.com/pixtuoid/pixtuoid/pull/1402))       | 4.78 ms | 1.70 ms |
-| Composing a noon frame, reusing the last ([#1395](https://github.com/pixtuoid/pixtuoid/pull/1395)) | 1.77 ms | 0.48 ms |
+SIXEL and iTerm2 got faster encoders of their own
+([#1400](https://github.com/pixtuoid/pixtuoid/pull/1400)): a whole frame went
+from 35.8 ms to 17.9 ms on SIXEL, and from 24.3 ms to 11.1 ms on iTerm2.
 
-Reuse is not free. Keeping the last frame's windows and lights raised the
-peak memory of a 360x240 render from 562.6 KB to 639.5 KB, and the pull
-request says so.
+Then came the change that taught us the most.
 
-## Send fewer bytes, and fewer images
+For a terminal on the same machine,
+[#1423](https://github.com/pixtuoid/pixtuoid/pull/1423) passed tiles through
+shared memory. Bytes per frame fell from about 275 KB to about 15 KB.
+**18x fewer.**
 
-An idle office was still streaming about 1.3 MB a second to the terminal,
-because every tile went out uncompressed. Compressing them made a typical tile
-about ten times smaller
-([#1197](https://github.com/pixtuoid/pixtuoid/pull/1197)). SIXEL and iTerm2
-got faster encoders of their own
-([#1400](https://github.com/pixtuoid/pixtuoid/pull/1400)).
+The 99th-percentile frame went from 157 ms to 140 ms.
 
-<!-- figure: bars -->
+Almost nothing. In a maximized Ghostty window the terminal was not slow
+because of the bytes. It was slow because of **how many images** were on
+screen.
 
-| Measure                                                                                  | Before  | After   |
-| ---------------------------------------------------------------------------------------- | ------- | ------- |
-| Encoding a whole frame, SIXEL ([#1400](https://github.com/pixtuoid/pixtuoid/pull/1400))  | 35.8 ms | 17.9 ms |
-| Encoding a whole frame, iTerm2 ([#1400](https://github.com/pixtuoid/pixtuoid/pull/1400)) | 24.3 ms | 11.1 ms |
-
-Then came the change that taught us the most. For a terminal on the same
-machine, [#1423](https://github.com/pixtuoid/pixtuoid/pull/1423) passed tiles
-through shared memory, and the bytes written per frame fell from about 275 KB
-to about 15 KB. The frame time barely moved: the 99th-percentile frame went
-from 157 ms to 140 ms.
-In a maximized Ghostty window the cost was not the bytes. It was the number of
-images on screen.
-
-So [#1445](https://github.com/pixtuoid/pixtuoid/pull/1445) made tiles grow
-until a whole frame fits a fixed budget of images. A small window keeps small
-tiles and sends only what changed; a big one uses bigger tiles.
+So [#1445](https://github.com/pixtuoid/pixtuoid/pull/1445) stopped sending so
+many small tiles. A tile now grows until the whole frame fits a budget of 400
+images. A small window keeps small tiles and sends only what changed. A big
+window gets big tiles.
 
 <!-- figure: bars -->
 
-| Measure                                                                                                       | Before   | After   |
-| ------------------------------------------------------------------------------------------------------------- | -------- | ------- |
-| 99th-percentile frame in a storm, maximized Ghostty ([#1445](https://github.com/pixtuoid/pixtuoid/pull/1445)) | 148.9 ms | 35.5 ms |
-| 99th-percentile frame at dusk, maximized Ghostty ([#1445](https://github.com/pixtuoid/pixtuoid/pull/1445))    | 74.8 ms  | 6.1 ms  |
+| Measure                      | Before   | After   |
+| ---------------------------- | -------- | ------- |
+| 99th-percentile frame, storm | 148.9 ms | 35.5 ms |
+| 99th-percentile frame, dusk  | 74.8 ms  | 6.1 ms  |
 
-## The window, too
+_Maximized Ghostty, 239×123 cells at 16x, 60 seconds a run._
+
+We kept the shared memory. It saves CPU on every frame. It just was not the
+fix it looked like.
+
+## The window: 235.9 ms/s late → 1.0 ms/s
 
 `pixtuoid floating` shows the same office in a window of its own. On a 4K
 display it copied the whole window to the screen for every frame.
-[#1524](https://github.com/pixtuoid/pixtuoid/pull/1524) moved it onto the GPU.
-Its numbers are in milliseconds of lateness for every second the office runs,
-the measure the last section explains.
 
-<!-- figure: bars -->
+[#1524](https://github.com/pixtuoid/pixtuoid/pull/1524) moved it onto the
+GPU. In a storm, frames had been arriving 235.9 ms late for every second the
+office ran. Now it is 1.0 ms. At dusk: 167.4 → 0.1.
 
-| Measure                                                                                           | Before     | After    |
-| ------------------------------------------------------------------------------------------------- | ---------- | -------- |
-| Frames shown late in a storm, 4K window ([#1524](https://github.com/pixtuoid/pixtuoid/pull/1524)) | 235.9 ms/s | 1.0 ms/s |
-| Frames shown late at dusk, 4K window ([#1524](https://github.com/pixtuoid/pixtuoid/pull/1524))    | 167.4 ms/s | 0.1 ms/s |
+The price: the release binary grew from 7,948,640 to 11,266,240 bytes, and a
+clean build went from 80 seconds to 105.
 
-That one cost something as well: the release binary grew from 7,948,640 to
-11,266,240 bytes, and a clean build went from about 80 seconds to 105.
+_M1 Max, external 4K display, 200 seconds a run._
 
-## What did not work
+## What we threw away
 
-Several ideas were tried, measured and dropped, and the pull requests record
-them beside what stayed.
+Every one of these was built or designed, measured, and dropped. The pull
+requests keep the record.
 
-- **A thread pool.** The obvious way to encode across cores is a library pool
-  that keeps its threads alive. Measured against starting fresh threads for
-  each frame over two runs, the pool's 99th-percentile encode took 34.7 ms
-  and 48.7 ms where the fresh threads took 21.9 ms and 27.7 ms: work sat
-  waiting on workers that had gone to sleep. It was reverted
-  ([#1497](https://github.com/pixtuoid/pixtuoid/pull/1497)).
-- **Sending part of a frame.** A budget that sends some SIXEL tiles now and
-  the rest later was rejected before it was built: half a lightning strike
-  sent is a partial flash
-  ([#1400](https://github.com/pixtuoid/pixtuoid/pull/1400)).
-- **Shared memory as the fix.** It removed the bytes and did not make frames
-  on time, as above. It stayed, for the CPU it saves, but it was not the
-  answer it looked like.
+**A thread pool.** The obvious way to use every core is a library pool that
+keeps its threads alive. We measured it against starting fresh threads for
+each frame. The pool's 99th-percentile encode took 34.7 ms and 48.7 ms over
+two runs. Fresh threads took 21.9 ms and 27.7 ms. Work sat waiting on workers
+that had gone to sleep. Reverted
+([#1497](https://github.com/pixtuoid/pixtuoid/pull/1497)).
 
-## The gate that holds it
+**Sending part of a frame.** A budget that sends some SIXEL tiles now and the
+rest next frame was rejected before anyone built it. Half a lightning strike
+sent is a partial flash
+([#1400](https://github.com/pixtuoid/pixtuoid/pull/1400)).
 
-A bench says how fast one frame can be. It does not say whether the office
-looks smooth, because a frame that is ready early still waits for its turn,
-and a frame that is late shows late.
+**Tracking each colour's columns.** For SIXEL, tracking the columns each
+colour spans made the pass slower, not faster: 67 µs → 106 µs
+([#1417](https://github.com/pixtuoid/pixtuoid/pull/1417)).
 
-The first gate asked for a 99th-percentile frame of 20 ms or less and no
-frame past its interval
-([#1385](https://github.com/pixtuoid/pixtuoid/pull/1385)). The 20 ms was one
-machine's number. [#1497](https://github.com/pixtuoid/pixtuoid/pull/1497)
-replaced it with the hitch rate, the measure
+## How we keep it fast
+
+A bench tells you how fast one frame can be. It does not tell you whether the
+office looks smooth. A frame that is ready early still waits its turn. A frame
+that is late shows late.
+
+Our first gate asked for a 99th-percentile frame under 20 ms
+([#1385](https://github.com/pixtuoid/pixtuoid/pull/1385)). That 20 ms was one
+machine's number.
+
+[#1497](https://github.com/pixtuoid/pixtuoid/pull/1497) replaced it with the
+**hitch rate**, the measure
 [Apple uses](https://developer.apple.com/documentation/xcode/understanding-hitches-in-your-app)
 for the same question: how many milliseconds late frames were shown, for
 every second the office ran. Ten or fewer passes.
 
-`just pace-check` runs the release binary through a storm and across dusk and
-fails above that bar. It runs on a developer's machine before a release and
-never in CI: a shared runner's clock is too noisy to judge a 33 ms budget.
+`just pace-check` runs the release binary into a storm and across dusk, and
+fails above that bar. It runs on a developer's machine before a release, and
+never in CI. A shared runner's clock is too noisy to judge a 33 ms budget.

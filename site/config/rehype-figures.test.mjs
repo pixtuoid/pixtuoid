@@ -73,6 +73,71 @@ test('a bars cell that does not start with a number fails the build, naming it',
   );
 });
 
+const all = (node, test, out = []) => {
+  if (test(node)) out.push(node);
+  for (const child of node.children ?? []) all(child, test, out);
+  return out;
+};
+const withClass = (name) => (n) => n.properties?.className?.includes(name);
+
+test('laps play each row as a bar refilled once a lap, slowed until the fastest is watchable', () => {
+  const tree = run([
+    marker('laps'),
+    nl,
+    table(['Runner', 'Lap'], ['Before', '43.4 ms'], ['After', '9.9 ms']),
+  ]);
+  const fig = figure(tree);
+  assert.deepEqual(fig.properties.className, ['fig--laps']);
+  assert.match(toText(fig), /100× slow motion/);
+  const laps = all(fig, withClass('fig-lap'));
+  assert.deepEqual(
+    laps.map((lap) => lap.properties.style),
+    ['--lap:4.34s', '--lap:0.99s']
+  );
+  // A still reader sees the same comparison: each bar is as long as its lap.
+  assert.deepEqual(
+    all(fig, (n) => n.tagName === 'rect').map((rect) => rect.properties.width),
+    [100, 22.8]
+  );
+  assert.equal(
+    all(fig, (n) => n.tagName === 'input' && n.properties.type === 'checkbox').length,
+    1
+  );
+});
+
+test('a laps cell that is not a time in ms fails the build', () => {
+  assert.throws(
+    () => run([marker('laps'), nl, table(['Runner', 'Lap'], ['Before', '1.24 MB'])]),
+    /figure "laps": "1\.24 MB" is not a time in ms/
+  );
+});
+
+test('repaint shows its two passes side by side, each with what it repaints', () => {
+  const tree = run([
+    marker('repaint'),
+    nl,
+    table(['Pass', 'Pixels'], ['The whole frame', '6.8 million'], ['Only what changed', '7,936']),
+  ]);
+  const fig = figure(tree);
+  assert.deepEqual(fig.properties.className, ['fig--repaint']);
+  const panes = all(fig, withClass('fig-pane'));
+  assert.deepEqual(
+    panes.map((pane) => toText(pane).replace(/\s+/g, ' ').trim()),
+    ['The whole frame 6.8 million', 'Only what changed 7,936']
+  );
+  // The first pass washes the frame; the second washes a few boxes inside it.
+  const washes = panes.map((pane) => all(pane, withClass('fig-pane__wash')).length);
+  assert.equal(washes[0], 1);
+  assert.ok(washes[1] > 1);
+});
+
+test('repaint needs exactly its two passes', () => {
+  assert.throws(
+    () => run([marker('repaint'), nl, table(['Pass', 'Pixels'], ['Only one', '1'])]),
+    /figure "repaint" compares two passes, found 1/
+  );
+});
+
 test('an unknown kind fails the build', () => {
   assert.throws(() => run([marker('chart'), nl, table(CARDS)]), /unknown figure kind "chart"/);
 });
