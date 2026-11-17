@@ -601,9 +601,9 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
   }
   .studio {
     display: grid;
-    /* the single mobile column must shrink below its content's min-width (the dial's
-       tracks), or a child drags the grid past the viewport and the section's
-       overflow-x:clip cuts off the overflow with no scroll */
+    /* the single mobile column must shrink below its content's min-width, or a child
+       drags the grid past the viewport and the section's overflow-x:clip cuts off the
+       overflow with no scroll */
     grid-template-columns: minmax(0, 1fr);
     gap: 1.4rem;
   }
