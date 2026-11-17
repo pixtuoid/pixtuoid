@@ -2842,10 +2842,15 @@ fn a_window_is_drawn_before_whatever_hangs_over_it() {
 
 /// The glass `push_windows` queues for `layout` at `moment` under
 /// `weather`, at the densest scale.
-fn glass_views(layout: &SceneLayout, moment: &Moment, weather: &GlassWeather) -> Vec<WindowView> {
+fn glass_views(
+    layout: &SceneLayout,
+    moment: &Moment,
+    weather: &GlassWeather,
+    outside: &mut crate::outside::OutsideCache,
+) -> Vec<WindowView> {
     let densest = test_office().max_density_variant().get();
     let scale = RenderScale::new(densest).expect("nonzero");
-    glass_views_at(scale, layout, moment, weather)
+    glass_views_at(scale, layout, moment, weather, outside)
 }
 
 /// [`glass_views`] at `scale`.
@@ -2854,6 +2859,7 @@ fn glass_views_at(
     layout: &SceneLayout,
     moment: &Moment,
     weather: &GlassWeather,
+    outside: &mut crate::outside::OutsideCache,
 ) -> Vec<WindowView> {
     let pack = test_office();
     let mut order = Vec::new();
@@ -2867,7 +2873,7 @@ fn glass_views_at(
         moment,
         weather,
         &mut order,
-        &mut crate::outside::OutsideCache::default(),
+        outside,
     );
     order
         .into_iter()
@@ -2892,6 +2898,9 @@ fn moment_at(w: crate::sky::Weather, now: std::time::SystemTime) -> Moment {
 #[test]
 fn the_weather_shows_on_the_glass_and_only_there() {
     use crate::sky::Weather;
+    // A warm cache draws what a fresh one does
+    // (`the_outside_cache_draws_what_a_fresh_frame_draws`).
+    let mut outside = crate::outside::OutsideCache::default();
     for (w, h) in [(160, 96), (240, 135)] {
         let layout =
             SceneLayout::compute(crate::layout::Viewport::full(w, h), None, 0).expect("lays out");
@@ -2900,8 +2909,8 @@ fn the_weather_shows_on_the_glass_and_only_there() {
             let clear = GlassWeather::of(&moment_at(Weather::Clear, now));
             for weather in Weather::ALL {
                 let moment = moment_at(weather, now);
-                let shown = glass_views(&layout, &moment, &GlassWeather::of(&moment));
-                let crisp = glass_views(&layout, &moment, &clear);
+                let shown = glass_views(&layout, &moment, &GlassWeather::of(&moment), &mut outside);
+                let crisp = glass_views(&layout, &moment, &clear, &mut outside);
                 let mut changed = 0;
                 for (a, b) in shown.iter().zip(&crisp) {
                     assert!(a.joinery().eq(b.joinery()), "{weather:?} on a frame");
@@ -2931,15 +2940,21 @@ fn a_window_s_fingerprint_moves_with_the_weather_tick_where_it_falls() {
     for w in Weather::ALL {
         let moment = at(w, 5_000);
         let prints = |ms| -> Vec<u64> {
-            glass_views(&layout, &moment, &GlassWeather::of(&at(w, ms)))
-                .into_iter()
-                .map(|view| {
-                    fingerprint(&PieceKind::Window {
-                        view: std::sync::Arc::new(view),
-                        frame: crate::theme::NORMAL.surface.window_frame,
-                    })
+            glass_views(
+                &layout,
+                &moment,
+                &GlassWeather::of(&at(w, ms)),
+                // fresh, so one key drawn twice is two draws
+                &mut crate::outside::OutsideCache::default(),
+            )
+            .into_iter()
+            .map(|view| {
+                fingerprint(&PieceKind::Window {
+                    view: std::sync::Arc::new(view),
+                    frame: crate::theme::NORMAL.surface.window_frame,
                 })
-                .collect()
+            })
+            .collect()
         };
         assert_eq!(prints(5_000), prints(5_000), "{w:?}: one key");
         assert_eq!(prints(5_000) != prints(5_600), w.falls(), "{w:?}");
@@ -3702,7 +3717,13 @@ fn a_change_dithers_the_ground_and_the_veil_on_the_art_grid() {
         m.look.glass_veil = veil;
         // One art pixel to the unit, so a glass's corner sits off the
         // dither's period and a key from it would show.
-        glass_views_at(RenderScale::ONE, &layout, &m, &GlassWeather::of(&m))
+        glass_views_at(
+            RenderScale::ONE,
+            &layout,
+            &m,
+            &GlassWeather::of(&m),
+            &mut crate::outside::OutsideCache::default(),
+        )
     };
     let [going, coming, mid] = [Dithered::solid(clear), Dithered::solid(fog), veil].map(look);
     let rows = crate::layout::window_rows(layout.wall_band_h());
