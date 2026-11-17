@@ -149,7 +149,7 @@ ci-observability:
 # An App or CLI reads what a released build wrote, so a change never edits a
 # sample its base holds. CI's base is HEAD^1: a PR merge commit's first parent
 # (path-changed's rule), or the commit a push follows.
-[doc("Fail when a change edits or deletes a v1 wire sample its base holds, or adds a sample of a hello kind its base's samples lack")]
+[doc("Fail when a change edits or deletes a v1 wire sample its base holds, or adds a sample of a hello or reply kind its base's samples lack")]
 [group('rust')]
 wire-frozen:
     #!/usr/bin/env bash
@@ -157,18 +157,19 @@ wire-frozen:
     if [[ -n "${GITHUB_ACTIONS:-}" ]]; then base=HEAD^1; else base="$(git merge-base HEAD origin/main)"; fi
     git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.v1.golden.json fuzz/seeds/remote ||
         { echo "a v1 break: bump remote::VERSION and start a v2 golden" >&2; exit 1; }
-    # A v1 server answers a hello kind it doesn't name with silence, so a sample
-    # of a new one would hide the break `remote`'s v1 sample test reports.
+    # A v1 server answers a hello kind it doesn't name with silence, and a v1
+    # device can't stream behind a reply kind it doesn't name, so a sample of a
+    # new one would hide the break `remote`'s v1 sample test reports.
     export LC_ALL=C
-    kind() { jq -rRs 'fromjson? | objects | .hello // empty'; }
+    kind() { jq -rRs 'fromjson? | objects | if .hello then "hello \(.hello)" elif .reply then "reply \(.reply)" else empty end'; }
     held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
         while IFS= read -r f; do git show "$base:$f" | kind; done | sort -u)"
     added="$(git diff --name-only --diff-filter=A "$base" -- fuzz/seeds/remote |
         while IFS= read -r f; do kind <"$f"; done | sort -u)"
     new="$(comm -23 <(printf '%s\n' "$added") <(printf '%s\n' "$held"))"
-    [[ -z "$new" ]] || { echo "a new hello kind bumps remote::VERSION: $new" >&2; exit 1; }
+    [[ -z "$new" ]] || { echo "a new hello or reply kind bumps remote::VERSION: $new" >&2; exit 1; }
 
-[doc('Prove wire-frozen reds on an added sample of a hello kind its base lacks, pretty-printed too, and passes one of a kind it holds')]
+[doc('Prove wire-frozen reds on an added sample of a hello or reply kind its base lacks, pretty-printed too, and passes one of a kind it holds')]
 [group('meta')]
 wire-frozen-selftest:
     #!/usr/bin/env bash
@@ -180,6 +181,7 @@ wire-frozen-selftest:
     mkdir -p "$d/$seeds" "$d/crates/pixtuoid-core/src"
     printf '{}' >"$d/crates/pixtuoid-core/src/remote.v1.golden.json"
     printf '{"v":1,"hello":"pair","code":"C"}' >"$d/$seeds/hello"
+    printf '{"v":1,"reply":"resumed"}' >"$d/$seeds/reply-resumed"
     g() { git -C "$d" -c user.name=selftest -c user.email=selftest@example.invalid "$@"; }
     g init -q
     g add -- crates "$seeds"
@@ -203,8 +205,11 @@ wire-frozen-selftest:
     expect "$seeds/ping" '{"v":1,"hello":"ping"}' 1
     expect "$seeds/ping" $'{\n  "v": 1,\n  "hello": "ping"\n}\n' 1
     expect "$seeds/hello-named" '{"v":1,"hello":"pair","code":"C","name":"studio"}' 0
+    expect "$seeds/reply-busy" '{"v":1,"reply":"busy"}' 1
+    expect "$seeds/reply-pair" '{"v":1,"reply":"pair"}' 1
+    expect "$seeds/reply-resumed-again" $'{\n  "v": 1,\n  "reply": "resumed"\n}\n' 0
     [[ "$fail" -eq 0 ]] || exit 1
-    echo "wire-frozen-selftest: OK (a new hello kind reds, pretty-printed too; a held kind passes)"
+    echo "wire-frozen-selftest: OK (a new hello or reply kind reds, pretty-printed too, and so does a reply named like a held hello; a held kind passes)"
 
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link
