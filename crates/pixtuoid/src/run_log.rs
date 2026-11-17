@@ -369,13 +369,9 @@ mod tests {
     #[test]
     fn a_run_log_stays_the_week_the_docs_say() {
         const WEEK: Duration = Duration::from_hours(7 * 24);
-        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
-        // crates.io-packaged test runs don't ship the repo's site/ or docs/.
-        if !Path::new(&format!("{root}/site")).is_dir() {
+        let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
             return;
-        }
-        let doc = std::fs::read_to_string(format!("{root}/docs/CONFIGURATION.md"))
-            .expect("docs/CONFIGURATION.md moved or was renamed");
+        };
         assert_eq!(RUN_LOG_RETAIN, WEEK);
         assert!(doc.contains("removed a week after its last write"));
     }

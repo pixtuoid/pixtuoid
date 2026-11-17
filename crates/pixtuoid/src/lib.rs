@@ -323,6 +323,25 @@ pub(crate) mod test_io {
             Ok(())
         }
     }
+
+    /// A repo file whose text a test pins to the code, `None` in a
+    /// crates.io-packaged test run, which ships neither site/ nor docs/.
+    pub(crate) fn repo_file(path: &str) -> Option<String> {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        if !std::path::Path::new(&format!("{root}/site")).is_dir() {
+            return None;
+        }
+        Some(
+            std::fs::read_to_string(format!("{root}/{path}"))
+                .unwrap_or_else(|e| panic!("{path} moved or was renamed: {e}")),
+        )
+    }
+
+    /// [`repo_file`]'s text with each run of whitespace one space, so a pinned
+    /// phrase holds wherever the prose wraps.
+    pub(crate) fn repo_prose(path: &str) -> Option<String> {
+        repo_file(path).map(|text| text.split_whitespace().collect::<Vec<_>>().join(" "))
+    }
 }
 
 /// What every painter's photosensitive tests drive and measure: a strike,

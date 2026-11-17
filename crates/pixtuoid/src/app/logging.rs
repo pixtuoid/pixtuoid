@@ -12,6 +12,9 @@ use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
+/// The least a `file_log` run's file records unless something raises it.
+pub(crate) const FILE_FLOOR: &str = "warn";
+
 /// Install the global tracing subscriber, and return what its drift layer
 /// sees and the guard that flushes its sink. A `file_log` run (the TUI, and `floating`, a long-running GUI whose
 /// launching terminal would just collect noise) logs to a file — the alternate
@@ -40,12 +43,12 @@ pub(crate) fn init(file_log: bool, log_level: &'static str) -> (DriftSeen, Optio
         } else if rust_log_set {
             // Honor RUST_LOG, but floor the parse-failure fallback at warn (not
             // log_level) so the always-on file stays quiet by default.
-            EnvFilter::try_new(filter_directives(rust_log.as_deref(), "warn"))
-                .unwrap_or_else(|_| EnvFilter::new("warn"))
+            EnvFilter::try_new(filter_directives(rust_log.as_deref(), FILE_FLOOR))
+                .unwrap_or_else(|_| EnvFilter::new(FILE_FLOOR))
         } else {
             EnvFilter::new(match log_level {
-                lvl @ ("warn" | "error") => lvl,
-                _ => "warn",
+                lvl @ (FILE_FLOOR | "error") => lvl,
+                _ => FILE_FLOOR,
             })
         };
         match log_at.open_sink(SystemTime::now()) {
@@ -247,6 +250,19 @@ fn log_open_failure(path: &Path, e: &std::io::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// docs/CONFIGURATION.md states the file's floor as text no build reaches.
+    #[test]
+    fn the_docs_state_the_log_files_floor() {
+        let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
+            return;
+        };
+        let says = format!("| Level | `{FILE_FLOOR}` and above by default");
+        assert!(
+            doc.contains(&says),
+            "CONFIGURATION.md no longer says {says:?}"
+        );
+    }
 
     #[test]
     fn the_log_open_failure_notice_strips_the_path() {

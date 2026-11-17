@@ -161,7 +161,7 @@ the terminal:
 |-----|-----|
 | Where | `~/.local/state/pixtuoid/logs/`, or `$XDG_STATE_HOME/pixtuoid/logs/` when that is an absolute path: one file per run, named for its start |
 | Your own file | `$PIXTUOID_LOG=/path/to/file` logs every run to that one file. On Unix a run opens it only if it isn't a symlink and is yours with one link, a character device such as `/dev/null` aside |
-| Level | `warn` and above; `--log-level debug` or `trace`, or `$RUST_LOG`, raises it |
+| Level | `warn` and above by default, or `--log-level`'s level in a `$PIXTUOID_LOG` file; `--log-level debug` or `trace`, or `$RUST_LOG`, raises it |
 | How long | a run's file is removed a week after its last write, unless the run is still open. A `$PIXTUOID_LOG` file instead rotates to `<name>.old` when a run starts and finds it past its size cap |
 
 A crash writes `crash.log` beside that `logs/` directory, whatever
@@ -197,9 +197,9 @@ once the office takes over. `$COLORTERM=truecolor` counts as a yes and skips
 the query. `pixtuoid doctor` shows the verdict.
 
 A terminal that is truecolor but doesn't answer the query can still get the
-warning. tmux sets `$COLORTERM` in its panes only from 3.6
-([environ.c](https://github.com/tmux/tmux/blob/3.6/environ.c#L265)), so an
-older tmux can get it too. Silence it with `$PIXTUOID_NO_TRUECOLOR_WARN=1` (any
+warning. tmux doesn't answer it, and sets `$COLORTERM` in its panes only from
+3.6 ([environ.c](https://github.com/tmux/tmux/blob/3.6/environ.c#L265)), so a
+pane in an older tmux can get the warning too. Silence it with `$PIXTUOID_NO_TRUECOLOR_WARN=1` (any
 of `1`, `true`, `yes` or `on`).
 
 ### When color is disabled (`$NO_COLOR`, `$TERM=dumb`)
@@ -218,5 +218,5 @@ you can't read, `pixtuoid run` refuses to start the office and says why:
 
 Use a graphical terminal, or `pixtuoid run --headless` for a plain-text
 summary, which works without color. `pixtuoid doctor` shows the color status.
-Only the `run` TUI checks this: `--headless`, `doctor`, `sources` and the
+Only the `run` TUI checks this: `run --headless`, `doctor`, `sources` and the
 `floating` window are unaffected.

@@ -28,18 +28,17 @@ fn colorterm_is_truecolor(colorterm: Option<&str>) -> bool {
     matches!(colorterm, Some(v) if v.contains("truecolor") || v.contains("24bit"))
 }
 
-/// True iff `$PIXTUOID_NO_TRUECOLOR_WARN` is set to a truthy token (`1` / `true`
-/// / `yes` / `on`, case-insensitive, trimmed). Everything else — including an
-/// empty value — is NOT suppressed, so a leftover `PIXTUOID_NO_TRUECOLOR_WARN=`
-/// doesn't silently kill the warning.
+/// The values of `$PIXTUOID_NO_TRUECOLOR_WARN` that suppress the warning,
+/// case-insensitive and trimmed.
+const SUPPRESS_TOKENS: [&str; 4] = ["1", "true", "yes", "on"];
+
+/// True iff `$PIXTUOID_NO_TRUECOLOR_WARN` is set to one of [`SUPPRESS_TOKENS`].
+/// Everything else — including an empty value — is NOT suppressed, so a
+/// leftover `PIXTUOID_NO_TRUECOLOR_WARN=` doesn't silently kill the warning.
 fn truecolor_warn_suppressed(suppress_env: Option<&str>) -> bool {
-    matches!(
-        suppress_env.map(str::trim),
-        Some(v) if v.eq_ignore_ascii_case("1")
-            || v.eq_ignore_ascii_case("true")
-            || v.eq_ignore_ascii_case("yes")
-            || v.eq_ignore_ascii_case("on")
-    )
+    suppress_env
+        .map(str::trim)
+        .is_some_and(|v| SUPPRESS_TOKENS.iter().any(|t| v.eq_ignore_ascii_case(t)))
 }
 
 /// Whether we're in the zone where the warning *might* fire and so the terminal
@@ -514,6 +513,20 @@ pub(crate) fn query_truecolor() -> Truecolor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// docs/CONFIGURATION.md lists the tokens as text no build reaches.
+    #[test]
+    fn the_docs_list_the_suppress_tokens() {
+        let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
+            return;
+        };
+        let [init @ .., last] = SUPPRESS_TOKENS.map(|t| format!("`{t}`"));
+        let says = format!("(any of {} or {last})", init.join(", "));
+        assert!(
+            doc.contains(&says),
+            "CONFIGURATION.md no longer says {says:?}"
+        );
+    }
 
     /// Through [`ColorEnv::of`], the pure rule `read` applies, so each arm is
     /// testable.

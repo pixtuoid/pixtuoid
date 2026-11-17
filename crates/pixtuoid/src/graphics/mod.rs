@@ -972,13 +972,9 @@ mod tests {
     /// reaches the site, so this test is the only bridge to the code's.
     #[test]
     fn the_site_names_every_image_protocol() {
-        // crates.io-packaged test runs don't ship the repo's site/ tree.
-        let site = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site");
-        if !std::path::Path::new(site).is_dir() {
+        let Some(json) = crate::test_io::repo_file("site/src/features.json") else {
             return;
-        }
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/src/features.json");
-        let json = std::fs::read_to_string(path).expect("features.json moved or was renamed");
+        };
         let features: Vec<serde_json::Value> =
             serde_json::from_str(&json).expect("features.json parses");
         let rows: Vec<_> = features
