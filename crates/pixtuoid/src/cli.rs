@@ -147,6 +147,11 @@ pub(crate) enum Cmd {
     },
     /// Print a one-time QR code that pairs a device with `serve`, running or not.
     #[cfg(feature = "serve")]
+    #[command(group(
+        clap::ArgGroup::new("instead")
+            .args(["list", "forget", "reset"])
+            .conflicts_with_all(["host", "port"])
+    ))]
     Pair {
         /// The hostname or IPv4 address a device reaches this machine at.
         ///
@@ -161,9 +166,16 @@ pub(crate) enum Cmd {
             value_parser = clap::value_parser!(u16).range(1..),
         )]
         port: u16,
+        /// List every paired device instead: its id, when it paired and its name.
+        #[arg(long)]
+        list: bool,
+        /// Forget the paired device with this id from `--list` instead, ending
+        /// its stream; it must pair again.
+        #[arg(long, value_name = "ID")]
+        forget: Option<String>,
         /// Forget every paired device instead, ending their streams; each must
         /// pair again.
-        #[arg(long, conflicts_with_all = ["host", "port"])]
+        #[arg(long)]
         reset: bool,
     },
     /// Diagnose source health: connection, hooks, and decode drift.
@@ -624,25 +636,25 @@ mod tests {
         }
     }
 
+    /// `--list`, `--forget` and `--reset` each stand in for the link, so no two
+    /// of them, nor one beside a link flag, parse.
     #[cfg(feature = "serve")]
     #[test]
-    fn pair_refuses_port_zero_and_a_reset_with_a_link_flag() {
-        for (args, kind) in [
-            (
-                &["pixtuoid", "pair", "--port", "0"][..],
-                clap::error::ErrorKind::ValueValidation,
-            ),
-            (
-                &["pixtuoid", "pair", "--reset", "--host", "h"],
-                clap::error::ErrorKind::ArgumentConflict,
-            ),
-            (
-                &["pixtuoid", "pair", "--reset", "--port", "1"],
-                clap::error::ErrorKind::ArgumentConflict,
-            ),
-        ] {
-            let err = Cli::try_parse_from(args).unwrap_err();
-            assert_eq!(err.kind(), kind, "{args:?}");
+    fn pair_refuses_port_zero_and_two_of_its_modes_at_once() {
+        let err = Cli::try_parse_from(["pixtuoid", "pair", "--port", "0"]).unwrap_err();
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+        let instead: [&[&str]; 3] = [&["--list"], &["--forget", "1A2B3C4D"], &["--reset"]];
+        let link: [&[&str]; 2] = [&["--host", "h"], &["--port", "1"]];
+        for (at, mode) in instead.iter().enumerate() {
+            for other in instead[at + 1..].iter().chain(&link) {
+                let args = [&["pixtuoid", "pair"][..], mode, other].concat();
+                let err = Cli::try_parse_from(&args).unwrap_err();
+                assert_eq!(
+                    err.kind(),
+                    clap::error::ErrorKind::ArgumentConflict,
+                    "{args:?}"
+                );
+            }
         }
     }
 

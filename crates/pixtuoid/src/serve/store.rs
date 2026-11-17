@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use pixtuoid_core::remote::SECRET_BYTES;
 use rcgen::{KeyPair, PublicKeyData};
 use ring::digest::{SHA256, digest};
@@ -26,7 +26,17 @@ struct Stored {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     code: Option<Pending>,
     #[serde(default)]
-    devices: Vec<Hashed>,
+    devices: Vec<Paired>,
+}
+
+/// A device a code paired.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct Paired {
+    /// Its token's, which [`Hashed::short`] names it by.
+    pub(super) hash: Hashed,
+    /// What its pair hello called it.
+    pub(super) name: String,
+    pub(super) paired_at: SystemTime,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -46,15 +56,25 @@ impl Stored {
         (self.code.as_ref()).is_some_and(|pending| pending.hash == *code && now < pending.expires)
     }
 
-    /// Pair the device holding `token` if `code` is still outstanding, spending
-    /// it: under the lock, since two hellos with one code can both pass
-    /// [`Store::redeem`]'s unlocked read.
-    fn spend(&mut self, code: &Hashed, now: SystemTime, token: String) -> Option<String> {
+    /// Pair the device holding `token`, called `name`, if `code` is still
+    /// outstanding, spending it: under the lock, since two hellos with one code
+    /// can both pass [`Store::redeem`]'s unlocked read.
+    fn spend(
+        &mut self,
+        code: &Hashed,
+        now: SystemTime,
+        token: String,
+        name: String,
+    ) -> Option<String> {
         if !self.outstanding(code, now) {
             return None;
         }
         self.code = None;
-        self.devices.push(Hashed::of(&token));
+        self.devices.push(Paired {
+            hash: Hashed::of(&token),
+            name,
+            paired_at: now,
+        });
         Some(token)
     }
 }
@@ -71,7 +91,8 @@ impl Hashed {
         Self(hex(digest(&SHA256, token.as_bytes()).as_ref()))
     }
 
-    /// Enough of it to tell a log's devices apart, and no more.
+    /// Enough of it to tell a log's devices apart, and no more: the id
+    /// `pair --list` shows and `pair --forget` takes.
     pub(super) fn short(&self) -> &str {
         self.0.get(..SHORT_HEX).unwrap_or(&self.0)
     }
@@ -157,20 +178,45 @@ impl Store {
         Ok(Issued { code, expires })
     }
 
-    /// Spend `code` on a new device, returning its token. A wrong code leaves the
-    /// outstanding one alone, or a stranger could spend the owner's by guessing,
-    /// and takes no lock, or a stranger's guesses could fail the owner's `pair`.
-    pub(super) fn redeem(&self, code: &str, now: SystemTime) -> Result<Option<String>> {
+    /// Spend `code` on a new device called `name`, returning its token. A wrong
+    /// code leaves the outstanding one alone, or a stranger could spend the
+    /// owner's by guessing, and takes no lock, or a stranger's guesses could fail
+    /// the owner's `pair`.
+    pub(super) fn redeem(&self, code: &str, name: &str, now: SystemTime) -> Result<Option<String>> {
         let presented = Hashed::of(code);
         if !self.read()?.outstanding(&presented, now) {
             return Ok(None);
         }
         let token = secret()?;
-        self.update(|stored| Ok(stored.spend(&presented, now, token)))
+        self.update(|stored| Ok(stored.spend(&presented, now, token, name.to_owned())))
     }
 
     pub(super) fn knows(&self, device: &Hashed) -> Result<bool> {
-        Ok(self.read()?.devices.contains(device))
+        Ok(self.devices()?.iter().any(|paired| paired.hash == *device))
+    }
+
+    /// Every paired device, in the order paired.
+    pub(super) fn devices(&self) -> Result<Vec<Paired>> {
+        Ok(self.read()?.devices)
+    }
+
+    /// Forget the one device whose [`Hashed::short`] is `id`, returning it.
+    pub(super) fn forget(&self, id: &str) -> Result<Paired> {
+        self.update(|stored| {
+            let matching: Vec<usize> = (stored.devices.iter().enumerate())
+                .filter(|(_, paired)| paired.hash.short().eq_ignore_ascii_case(id))
+                .map(|(at, _)| at)
+                .collect();
+            match matching[..] {
+                [at] => Ok(stored.devices.remove(at)),
+                [] => bail!("no paired device has the id {id}; `pixtuoid pair --list` shows each"),
+                // No short id names one of the devices that share it.
+                _ => bail!(
+                    "{} paired devices have the id {id}; `pixtuoid pair --reset` forgets them all",
+                    matching.len()
+                ),
+            }
+        })
     }
 
     /// Forget every device and any outstanding code.
@@ -248,6 +294,18 @@ mod tests {
         assert_eq!(mode.mode() & 0o777, 0o600);
     }
 
+    /// What the fixture's first device calls itself.
+    const PHONE: &str = "iPhone";
+
+    /// A device `store` pairs by name at `now()`, and its token.
+    fn pair(store: &Store, name: &str) -> String {
+        let code = store.issue_code(now()).expect("a code").code;
+        store
+            .redeem(&code, name, now())
+            .expect("it redeems")
+            .expect("a good code")
+    }
+
     #[test]
     fn a_code_pairs_one_device_and_neither_secret_reaches_the_disk() {
         let (_dir, store) = fixture();
@@ -255,14 +313,96 @@ mod tests {
         assert!(!disk(&store).contains(&code), "the code stays hashed");
 
         let token = store
-            .redeem(&code, now())
+            .redeem(&code, PHONE, now())
             .expect("it redeems")
             .expect("a good code");
         assert!(!disk(&store).contains(&token), "the token stays hashed");
         assert!(store.knows(&Hashed::of(&token)).expect("it reads"));
 
-        let again = store.redeem(&code, now()).expect("it redeems");
+        let again = store.redeem(&code, PHONE, now()).expect("it redeems");
         assert_eq!(again, None, "a code is spent once");
+    }
+
+    /// A device is listed by what it called itself and when it paired, in the
+    /// order paired.
+    #[test]
+    fn every_device_is_listed_with_its_name_and_when_it_paired() {
+        let (_dir, store) = fixture();
+        let phone = pair(&store, PHONE);
+        let tablet = pair(&store, "iPad");
+        let listed = store.devices().expect("it reads");
+        let paired = |token: &str, name: &str| Paired {
+            hash: Hashed::of(token),
+            name: name.to_owned(),
+            paired_at: now(),
+        };
+        assert_eq!(listed, [paired(&phone, PHONE), paired(&tablet, "iPad")]);
+    }
+
+    /// The id as `--list` prints it, or typed in lowercase: hex is either case.
+    #[test]
+    fn forgetting_a_device_by_its_short_id_leaves_the_others() {
+        let (_dir, store) = fixture();
+        let phone = Hashed::of(&pair(&store, PHONE));
+        let tablet = Hashed::of(&pair(&store, "iPad"));
+        // Letters in its id, which a random hash's may lack.
+        let watch = Hashed("ABCDEF0123".to_owned());
+        let paired = Paired {
+            hash: watch.clone(),
+            name: "Watch".to_owned(),
+            paired_at: now(),
+        };
+        store
+            .update(|stored| {
+                stored.devices.push(paired);
+                Ok(())
+            })
+            .expect("it writes");
+
+        let forgotten = store.forget(phone.short()).expect("one device has it");
+        let typed = store.forget("abcdef01").expect("one device has it");
+
+        assert_eq!(
+            (forgotten.hash, forgotten.name.as_str()),
+            (phone.clone(), PHONE)
+        );
+        assert_eq!(typed.hash, watch);
+        assert!(!store.knows(&phone).expect("it reads"));
+        assert!(store.knows(&tablet).expect("it reads"));
+    }
+
+    /// Each refusal says which it is, and forgets nobody.
+    #[test]
+    fn an_unknown_or_shared_short_id_forgets_nobody() {
+        let (_dir, store) = fixture();
+        let phone = Hashed::of(&pair(&store, PHONE));
+        let shared = "ABCDEF01";
+        let twin = |rest: &str| Paired {
+            hash: Hashed(format!("{shared}{rest}")),
+            name: "twin".to_owned(),
+            paired_at: now(),
+        };
+        store
+            .update(|stored| {
+                stored.devices.extend([twin("0"), twin("1")]);
+                Ok(())
+            })
+            .expect("it writes");
+        let before = store.devices().expect("it reads");
+
+        let unknown = said(store.forget("00000000"));
+        assert!(
+            unknown.contains("no paired device has the id 00000000"),
+            "{unknown}"
+        );
+        let ambiguous = said(store.forget(shared));
+        assert!(
+            ambiguous.contains("2 paired devices have the id ABCDEF01"),
+            "{ambiguous}"
+        );
+
+        assert_eq!(store.devices().expect("it reads"), before);
+        assert!(store.knows(&phone).expect("it reads"));
     }
 
     /// The expiry a link carries is the one a redemption keeps.
@@ -271,9 +411,17 @@ mod tests {
         let (_dir, store) = fixture();
         let Issued { code, expires } = store.issue_code(now()).expect("a code");
         assert_eq!(expires, now() + CODE_LIFETIME);
-        assert_eq!(store.redeem(&code, expires).expect("it redeems"), None);
+        assert_eq!(
+            store.redeem(&code, PHONE, expires).expect("it redeems"),
+            None
+        );
         let in_time = expires - Duration::from_millis(1);
-        assert!(store.redeem(&code, in_time).expect("it redeems").is_some());
+        assert!(
+            store
+                .redeem(&code, PHONE, in_time)
+                .expect("it redeems")
+                .is_some()
+        );
     }
 
     /// The second of two hellos that both passed the unlocked read pairs no
@@ -284,19 +432,33 @@ mod tests {
         let code = Hashed::of(&store.issue_code(now()).expect("a code").code);
         let mut stored = store.read().expect("it reads");
         assert_eq!(
-            stored.spend(&code, now(), "first".into()).as_deref(),
+            stored
+                .spend(&code, now(), "first".into(), PHONE.into())
+                .as_deref(),
             Some("first")
         );
-        assert_eq!(stored.spend(&code, now(), "second".into()), None);
-        assert_eq!(stored.devices, [Hashed::of("first")]);
+        assert_eq!(
+            stored.spend(&code, now(), "second".into(), PHONE.into()),
+            None
+        );
+        let hashes: Vec<_> = stored.devices.iter().map(|device| &device.hash).collect();
+        assert_eq!(hashes, [&Hashed::of("first")]);
     }
 
     #[test]
     fn a_wrong_guess_leaves_the_owners_code_good() {
         let (_dir, store) = fixture();
         let code = store.issue_code(now()).expect("a code").code;
-        assert_eq!(store.redeem("guess", now()).expect("it redeems"), None);
-        assert!(store.redeem(&code, now()).expect("it redeems").is_some());
+        assert_eq!(
+            store.redeem("guess", PHONE, now()).expect("it redeems"),
+            None
+        );
+        assert!(
+            store
+                .redeem(&code, PHONE, now())
+                .expect("it redeems")
+                .is_some()
+        );
     }
 
     #[test]
@@ -304,7 +466,7 @@ mod tests {
         let (_dir, store) = fixture();
         let old = store.issue_code(now()).expect("a code").code;
         store.issue_code(now()).expect("a code");
-        assert_eq!(store.redeem(&old, now()).expect("it redeems"), None);
+        assert_eq!(store.redeem(&old, PHONE, now()).expect("it redeems"), None);
     }
 
     #[test]
@@ -312,7 +474,7 @@ mod tests {
         let (_dir, store) = fixture();
         let code = store.issue_code(now()).expect("a code").code;
         let token = store
-            .redeem(&code, now())
+            .redeem(&code, PHONE, now())
             .expect("it redeems")
             .expect("a good code");
         let pending = store.issue_code(now()).expect("a code").code;
@@ -320,20 +482,29 @@ mod tests {
         store.reset().expect("it resets");
 
         assert!(!store.knows(&Hashed::of(&token)).expect("it reads"));
-        assert_eq!(store.redeem(&pending, now()).expect("it redeems"), None);
+        assert_eq!(
+            store.redeem(&pending, PHONE, now()).expect("it redeems"),
+            None
+        );
     }
 
     /// A silent fresh start would mint a new key and break every device's pin
-    /// with no word why; the error names the file, and `pair --reset` reads it
-    /// too, so it fails the same way.
+    /// with no word why; the error names the file, and every other read of it
+    /// fails the same way. A device stored before its name is such a file: no
+    /// paired device outlives development.
     #[test]
     fn an_unreadable_file_is_an_error_not_a_new_identity() {
         let (_dir, store) = fixture();
         store.key().expect("a new key");
         let file = store.0.display().to_string();
-        for unreadable in ["{not json", ""] {
+        for unreadable in ["{not json", "", r#"{"devices":["AB"]}"#] {
             std::fs::write(&store.0, unreadable).expect("it writes");
-            for said in [said(store.key()), said(store.reset())] {
+            let reads = [
+                store.reset(),
+                store.devices().map(drop),
+                store.forget("AB").map(drop),
+            ];
+            for said in reads.into_iter().map(said).chain([said(store.key())]) {
                 assert!(said.contains(&file), "{said}");
             }
             assert!(store.knows(&Hashed::of("t")).is_err(), "{unreadable:?}");
@@ -363,7 +534,10 @@ mod tests {
         let (_dir, store) = fixture();
         store.issue_code(now()).expect("a code");
         let _held = lock_config(&store.0).expect("the lock");
-        assert_eq!(store.redeem("guess", now()).expect("it redeems"), None);
+        assert_eq!(
+            store.redeem("guess", PHONE, now()).expect("it redeems"),
+            None
+        );
     }
 
     #[test]

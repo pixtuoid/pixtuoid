@@ -36,13 +36,18 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 /// reshape, since a reader takes it before the rest. Within a version a line
 /// only gains fields and tags, each held to a sample `just wire-frozen` never
 /// lets a change edit; a reader ignores what it doesn't know and maps an
-/// unknown tag to its nearest state. A server drops a hello kind it can't name
-/// and a device a reply kind, so a new one of either, like any break in a line,
-/// a pairing link or the stream's timing ([`HEARTBEAT`], [`SILENCE_LIMIT`]),
-/// bumps it, and every pairing or reconnect across it ends in a precise
-/// "update" on the side that can act ([`PairLinkError::Incompatible`],
-/// [`WireError::Incompatible`]).
-pub const VERSION: u32 = 1;
+/// unknown tag to its nearest state. A server drops a hello or ask kind it
+/// can't name and a device a reply or answer kind, so a new one of any, like
+/// any break in a line, a pairing link or the stream's timing ([`HEARTBEAT`],
+/// [`SILENCE_LIMIT`]), bumps it, and every pairing or reconnect across it ends
+/// in a precise "update" on the side that can act
+/// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]).
+pub const VERSION: u32 = 2;
+
+/// The longest line a device may write, its newline included, past which a
+/// server ends the connection: a hello is a secret, a name [`Hello::pair`] cuts
+/// to fit and a little JSON, an ask less.
+pub const MAX_LINE_BYTES: usize = 256;
 
 /// How often a server writes its line however quiet the office.
 pub const HEARTBEAT: Duration = Duration::from_secs(15);
@@ -582,10 +587,15 @@ impl FromStr for PairLink {
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 #[serde(tag = "hello", rename_all = "snake_case")]
 pub enum Hello {
-    /// First contact, redeeming a [`PairLink`]'s code.
+    /// First contact, redeeming a [`PairLink`]'s code. Built past this crate
+    /// only by [`Hello::pair`], which keeps its line inside [`MAX_LINE_BYTES`].
+    #[non_exhaustive]
     Pair {
         /// [`PairLink::code`].
         code: String,
+        /// What the device calls itself, display-safe.
+        #[serde(deserialize_with = "display_safe_text")]
+        name: String,
     },
     /// Every later contact.
     Resume {
@@ -595,6 +605,22 @@ pub enum Hello {
 }
 
 impl Hello {
+    /// A [`Hello::Pair`] redeeming `code` for the device called `name`, made
+    /// display-safe and cut on a char boundary until its line fits
+    /// [`MAX_LINE_BYTES`], which it always can beside a [`PairLink::code`].
+    pub fn pair(code: &str, name: &str) -> Self {
+        let pair = |name: String| Self::Pair {
+            code: code.to_owned(),
+            name,
+        };
+        let fits = |name: &str| {
+            (pair(name.to_owned()).line()).is_ok_and(|line| line.len() <= MAX_LINE_BYTES)
+        };
+        let mut name = display_safe(name);
+        while !fits(&name) && name.pop().is_some() {}
+        pair(name)
+    }
+
     /// This hello as the line a device writes.
     ///
     /// # Errors
@@ -681,9 +707,6 @@ pub enum Ask {
         /// Whether it should be connected.
         on: bool,
     },
-    /// An ask from a newer device, which keeps its stream.
-    #[serde(other, skip_serializing)]
-    Unknown,
 }
 
 /// What a server writes for an [`Ask`], so a device that never asks never reads one.
@@ -698,11 +721,8 @@ pub enum Answer {
     },
     /// What an [`Ask::Change`] did.
     Changed(Changed),
-    /// This server doesn't know the ask, or the source it names.
+    /// This server doesn't know the source an [`Ask::Change`] names.
     Unsupported,
-    /// An answer from a newer server.
-    #[serde(other, skip_serializing)]
-    Unknown,
 }
 
 impl Answer {
@@ -1054,7 +1074,14 @@ mod tests {
     use crate::source::decoder::MAX_DECODED_FIELD_CHARS;
     use serde_json::Value;
 
-    const GOLDEN: &str = include_str!("remote.v1.golden.json");
+    /// The golden line's file, which `just wire-frozen` freezes.
+    macro_rules! golden_path {
+        () => {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/src/remote.golden.json")
+        };
+    }
+
+    const GOLDEN: &str = include_str!(golden_path!());
     const AT: u64 = 1_800_000_000_000;
 
     fn day() -> NaiveDate {
@@ -1104,7 +1131,7 @@ mod tests {
         }
     }
 
-    /// Every wire field and tag, as `remote.v1.golden.json` froze them.
+    /// Every wire field and tag, as `remote.golden.json` froze them.
     fn full_scene() -> SceneState {
         let mut scene = SceneState::uniform(4);
         let running = ActivityState::Running {
@@ -1188,6 +1215,9 @@ mod tests {
         Machine::new("studio", Os::Macos)
     }
 
+    /// What a device calls itself in its pair hello.
+    const DEVICE: &str = "iPhone";
+
     fn sent(scene: &SceneState) -> String {
         encode(scene, &machine(), at(AT)).expect("a scene encodes")
     }
@@ -1215,9 +1245,9 @@ mod tests {
     }
 
     #[test]
-    fn a_v1_line_still_applies() {
+    fn a_golden_line_applies() {
         let mut office = RemoteOffice::new(caps(4));
-        office.apply(GOLDEN.as_bytes(), at(AT)).expect("v1 applies");
+        office.apply(GOLDEN.as_bytes(), at(AT)).expect("it applies");
         assert_eq!(office.machine(), Some(&machine()));
         let scene = office.scene();
         let exiting_unseen = 1;
@@ -1445,7 +1475,7 @@ mod tests {
         }
     }
 
-    /// A place this build or a v1 sample puts a value: a property at `path` of
+    /// A place this build or a sample puts a value: a property at `path` of
     /// its owner (a `$defs` name, or the root's title) under the tag that picks
     /// its `variant`, `[]` standing for every index, or with `tag` a value it
     /// fixes.
@@ -1585,7 +1615,7 @@ mod tests {
 
     impl Sample {
         /// Asserts `new`, this build's write in the sample `name`'s place, keeps
-        /// everything a v1 reader reads of `sample`; returns the keys `sample`
+        /// everything a reader reads of `sample`; returns the keys `sample`
         /// holds and every key a `W` can write.
         fn kept<W: schemars::JsonSchema>(name: &'static str, sample: &str, new: &str) -> Self {
             let old: Value = serde_json::from_str(sample).expect(name);
@@ -1607,12 +1637,12 @@ mod tests {
         }
     }
 
-    /// What a v1 peer wrote beside `GOLDEN`, one sample per file; frozen as
+    /// What a peer wrote beside `GOLDEN`, one sample per file; frozen as
     /// `GOLDEN` is.
-    const V1_SAMPLES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
+    const SAMPLES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../fuzz/seeds/remote");
 
-    fn v1_sample(name: &str) -> String {
-        std::fs::read_to_string(Path::new(V1_SAMPLES).join(name)).expect(name)
+    fn sample(name: &str) -> String {
+        std::fs::read_to_string(Path::new(SAMPLES).join(name)).expect(name)
     }
 
     /// `text`, the line sample `name`, still applies, and is kept by `scene`,
@@ -1631,7 +1661,7 @@ mod tests {
         read: impl Fn(&[u8]) -> Option<T>,
         write: impl Fn(&T) -> serde_json::Result<String>,
     ) -> Sample {
-        let sample = v1_sample(name);
+        let sample = sample(name);
         let read = read(sample.as_bytes());
         assert_eq!(read.as_ref(), Some(&value), "{name} reads as another value");
         Sample::kept::<W>(name, &sample, &write(&value).expect("it encodes"))
@@ -1641,7 +1671,7 @@ mod tests {
     /// reads what a build after the first added, which a later one could
     /// otherwise rename unseen.
     #[test]
-    fn this_version_reads_and_writes_back_every_v1_sample() {
+    fn this_version_reads_and_writes_back_every_sample() {
         let secret = || "A".repeat(SECRET_BYTES * 2);
         let link = PairLink {
             host: "office.local".into(),
@@ -1650,9 +1680,9 @@ mod tests {
             code: secret(),
             expires: UNIX_EPOCH + Duration::from_secs(AT / 1000),
         };
-        assert_eq!(v1_sample("link").parse(), Ok(link.clone()));
-        assert_eq!(link.to_string(), v1_sample("link"));
-        let version = format!("{}\n", v1_sample("version"));
+        assert_eq!(sample("link").parse(), Ok(link.clone()));
+        assert_eq!(link.to_string(), sample("link"));
+        let version = format!("{}\n", sample("version"));
         assert_eq!(version_reply().expect("it encodes"), version);
 
         let hello = |name, value| {
@@ -1700,7 +1730,7 @@ mod tests {
         let changed = |name, changed| answer(name, Answer::Changed(changed));
         let golden = assert_line("GOLDEN", GOLDEN, &full_scene());
         let samples = [
-            hello("hello", Hello::Pair { code: secret() }),
+            hello("hello", Hello::pair(&secret(), DEVICE)),
             hello("hello-resume", Hello::Resume { token: secret() }),
             reply("reply", Reply::Paired { token: secret() }),
             reply("reply-resumed", Reply::Resumed),
@@ -1775,7 +1805,7 @@ mod tests {
             machine("machine-windows", Os::Windows),
             machine("machine-other", Os::Other),
         ];
-        let on_disk: BTreeSet<_> = std::fs::read_dir(V1_SAMPLES)
+        let on_disk: BTreeSet<_> = std::fs::read_dir(SAMPLES)
             .expect("the samples")
             .map(|entry| {
                 entry
@@ -1795,25 +1825,79 @@ mod tests {
             holds.extend(sample.holds);
             writes.extend(sample.writes);
         }
-        let handshake = [
-            &written::<Versioned<'static, Hello>>()["title"],
-            &written::<Versioned<'static, Reply>>()["title"],
-        ];
+        let closed = closed();
         let (kinds, rest): (Vec<_>, Vec<_>) = (writes.difference(&holds)).partition(|key| {
-            handshake.iter().any(|title| **title == key.owner) && key.tag.is_some()
+            closed.iter().any(|root| root["title"] == key.owner) && key.tag.is_some()
         });
-        // A v1 server answers a hello it can't read with silence (`serve::device`'s
-        // `greet`), and a v1 device can't stream behind a reply it can't read; only
-        // `version_reply` tells either side to update.
         assert!(
             kinds.is_empty(),
-            "{kinds:?}: a new hello or reply kind bumps remote::VERSION"
+            "{kinds:?}: a new hello, reply, ask or answer kind bumps remote::VERSION"
         );
         assert!(
             rest.is_empty(),
-            "{rest:?}: this build writes them and no v1 sample holds them; append \
+            "{rest:?}: this build writes them and no sample holds them; append \
              one it writes to fuzz/seeds/remote and check it above"
         );
+    }
+
+    /// The roots whose kinds are closed within a version: a server ends the
+    /// connection on a hello or ask it can't read (`serve::device`), and a
+    /// device can't stream behind a reply it can't read nor match an answer it
+    /// can't read to its ask; only `version_reply` tells either side to update.
+    fn closed() -> [Value; 4] {
+        [
+            written::<Versioned<'static, Hello>>(),
+            written::<Versioned<'static, Reply>>(),
+            written::<Ask>(),
+            written::<Answer>(),
+        ]
+    }
+
+    /// The key `root`'s kinds ride on: the one property its variants fix.
+    fn kind_key(root: &Value) -> String {
+        let fixed: BTreeSet<&String> = (root["oneOf"].as_array().into_iter().flatten())
+            .flat_map(|variant| variant["properties"].as_object().into_iter().flatten())
+            .filter_map(|(name, field)| field.get("const").map(|_| name))
+            .collect();
+        let [key] = Vec::from_iter(fixed).try_into().expect("one kind key");
+        key.clone()
+    }
+
+    /// The body of `recipe` in the workspace's justfile.
+    fn recipe(recipe: &str) -> String {
+        let justfile = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../justfile");
+        let justfile = std::fs::read_to_string(justfile).expect("the justfile");
+        let header = format!("\n{recipe}:\n");
+        let at = justfile.find(&header).expect("the recipe") + header.len();
+        let body = justfile[at..].lines();
+        let body = body.take_while(|line| line.is_empty() || line.starts_with(' '));
+        body.collect::<Vec<_>>().join("\n")
+    }
+
+    /// `just wire-frozen`'s freeze names `GOLDEN` and `SAMPLES`, which the
+    /// sample test reads, and its `kind()` reads every [`closed`] root's kind;
+    /// otherwise a break would pass it unseen.
+    #[test]
+    fn wire_frozen_freezes_these_samples_and_reads_every_closed_kind() {
+        let gate = recipe("wire-frozen");
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let freeze = (gate.lines().map(str::trim_start))
+            .find(|line| line.starts_with("git diff --exit-code"))
+            .expect("wire-frozen's freeze");
+        let names = |path: &str| {
+            let path = Path::new(path).canonicalize().expect(path);
+            let named = |word: &str| root.join(word).canonicalize().is_ok_and(|p| p == path);
+            freeze.split_whitespace().any(named)
+        };
+        assert!(names(golden_path!()), "wire-frozen doesn't freeze GOLDEN");
+        assert!(names(SAMPLES), "wire-frozen doesn't freeze SAMPLES");
+        let kind = (gate.lines().map(str::trim_start))
+            .find(|line| line.starts_with("kind()"))
+            .expect("wire-frozen's kind()");
+        for schema in closed() {
+            let key = kind_key(&schema);
+            assert!(kind.contains(&format!("\"{key}\"")), "kind() misses {key}");
+        }
     }
 
     #[test]
@@ -2282,7 +2366,7 @@ mod tests {
     fn a_broken_line_is_an_error_and_leaves_the_office_alone() {
         let mut office = RemoteOffice::new(caps(4));
         received(&mut office, &crowd(&["a"]), AT);
-        for line in ["", "not json", "{\"v\":1}"] {
+        for line in ["", "not json", &format!("{{\"v\":{VERSION}}}")] {
             let err = office.apply(line.as_bytes(), at(AT)).unwrap_err();
             assert!(matches!(err, WireError::Malformed(_)), "{line:?}");
         }
@@ -2292,7 +2376,7 @@ mod tests {
     #[test]
     fn a_hello_and_a_reply_survive_their_line() {
         for hello in [
-            Hello::Pair { code: "c".into() },
+            Hello::pair("c", DEVICE),
             Hello::Resume { token: "t".into() },
         ] {
             let line = hello.line().expect("it encodes");
@@ -2354,25 +2438,85 @@ mod tests {
         }
     }
 
-    /// A device of another release times its stream by the values it was built
-    /// with, so v1 holds them as it holds its lines.
+    /// A pair hello names its device, which a server keeps beside its token.
     #[test]
-    fn the_stream_keeps_v1s_timing() {
+    fn a_pair_hello_without_its_name_is_malformed() {
+        let line = format!(r#"{{"v":{VERSION},"hello":"pair","code":"c"}}"#);
+        let read = Hello::from_line(line.as_bytes());
+        assert!(matches!(read, Err(WireError::Malformed(_))), "{read:?}");
+    }
+
+    /// A device's name is a stranger's, read as a machine's is.
+    #[test]
+    fn a_devices_name_reads_display_safe() {
+        let dirty = format!(
+            "x\u{1b}[2J\u{202e}{}",
+            "y".repeat(MAX_DECODED_FIELD_CHARS * 2)
+        );
+        let line = serde_json::json!({"v": VERSION, "hello": "pair", "code": "c", "name": dirty});
+        let read = Hello::from_line(line.to_string().as_bytes());
+        let Ok(Hello::Pair { name, .. }) = read else {
+            panic!("a pair hello: {read:?}");
+        };
+        assert!(!name.contains(['\u{1b}', '\u{202e}']), "{name}");
+        assert!(
+            name.chars().count() <= MAX_DECODED_FIELD_CHARS + 1,
+            "{name}"
+        );
+    }
+
+    /// What a device sends of a name is safe to display, as a machine's is.
+    #[test]
+    fn a_pair_hellos_name_is_made_display_safe() {
+        let Hello::Pair { name, .. } = Hello::pair("c", "x\u{1b}\u{202e}y") else {
+            panic!("a pair hello");
+        };
+        assert_eq!(name, "xy");
+    }
+
+    /// The longest pair line a device writes, a [`PairLink`]'s code beside a
+    /// name past the cap in the widest characters or the widest escapes, fits
+    /// [`MAX_LINE_BYTES`] and keeps as much of the name as fits.
+    #[test]
+    fn a_pair_hellos_name_is_cut_on_a_char_boundary_to_fit_its_line() {
+        let code = "F".repeat(SECRET_BYTES * 2);
+        for unit in ["\u{1F600}", "\""] {
+            let name = unit.repeat(MAX_LINE_BYTES);
+            let hello = Hello::pair(&code, &name);
+            let line = hello.line().expect("it encodes");
+            assert!(line.len() <= MAX_LINE_BYTES, "{line}");
+            let Hello::Pair { name: kept, .. } = hello else {
+                panic!("a pair hello");
+            };
+            assert!(!kept.is_empty() && name.starts_with(&kept), "{kept}");
+            let longer = Hello::Pair {
+                code: code.clone(),
+                name: kept + unit,
+            };
+            let longer = longer.line().expect("it encodes");
+            assert!(longer.len() > MAX_LINE_BYTES, "cut short: {line}");
+        }
+    }
+
+    /// A device of another release times its stream by the values it was built
+    /// with, so a version holds them as it holds its lines.
+    #[test]
+    fn the_stream_keeps_its_versions_timing() {
         assert_eq!(
             (VERSION, HEARTBEAT, SILENCE_LIMIT),
-            (1, Duration::from_secs(15), Duration::from_secs(20)),
+            (2, Duration::from_secs(15), Duration::from_secs(20)),
             "a change to HEARTBEAT or SILENCE_LIMIT bumps remote::VERSION"
         );
     }
 
-    /// A v1 server writes no reply kind a v1 device can't name, since a new one
-    /// bumps VERSION: one is a broken line, which a device retries, never a
-    /// refusal that sends it back to a QR.
+    /// A server writes no reply kind a device of its version can't name, since
+    /// a new one bumps VERSION: one is a broken line, which a device retries,
+    /// never a refusal that sends it back to a QR.
     #[test]
     fn a_reply_kind_this_build_does_not_name_is_a_broken_line() {
-        let line = br#"{"v":1,"reply":"from_the_future","extra":1}"#;
+        let line = format!(r#"{{"v":{VERSION},"reply":"from_the_future","extra":1}}"#);
         assert!(matches!(
-            Reply::from_line(line),
+            Reply::from_line(line.as_bytes()),
             Err(WireError::Malformed(_))
         ));
     }
@@ -2386,15 +2530,21 @@ mod tests {
         assert!(row.attention());
     }
 
-    /// A newer peer's tag keeps the stream, whichever end is the newer.
+    /// A new ask or answer kind bumps VERSION, so one this build can't name is
+    /// no ask, which ends a server's connection, and no answer.
     #[test]
-    fn what_a_newer_peer_adds_is_read_as_unknown() {
-        let ask: Ask = serde_json::from_str(r#"{"ask":"from_the_future","x":1}"#).expect("an ask");
-        assert_eq!(ask, Ask::Unknown);
+    fn an_ask_or_answer_kind_this_build_does_not_name_is_unreadable() {
+        let ask = serde_json::from_str::<Ask>(r#"{"ask":"from_the_future","x":1}"#);
+        assert!(ask.is_err(), "{ask:?}");
         assert_eq!(
             Answer::from_line(br#"{"answer":"from_the_future","x":1}"#),
-            Some(Answer::Unknown)
+            None
         );
+    }
+
+    /// A row's state is open within a version: a newer server's keeps its answer.
+    #[test]
+    fn a_newer_servers_source_state_is_read_as_unknown() {
         let line = br#"{"answer":"sources","rows":[{"id":"a","display_name":"A","state":{"kind":"from_the_future","x":1},"attention":false}]}"#;
         let Some(Answer::Sources { rows }) = Answer::from_line(line) else {
             panic!("an answer");

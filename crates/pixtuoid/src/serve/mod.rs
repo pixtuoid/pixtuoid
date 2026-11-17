@@ -276,19 +276,61 @@ fn tls_acceptor(key: &KeyPair) -> Result<TlsAcceptor> {
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
 
-/// Print the QR that pairs a device, or with `reset` forget every device.
+/// What `pixtuoid pair` does.
+pub(crate) enum Pairing {
+    /// Print the QR that pairs a device reaching this machine at `host:port`.
+    Link { host: Option<String>, port: u16 },
+    /// List every paired device.
+    List,
+    /// Forget the paired device with this [`store::Hashed::short`] id.
+    Forget(String),
+    /// Forget every paired device.
+    Reset,
+}
+
+/// Do what `pairing` says.
 ///
 /// # Errors
 ///
-/// If `host` can't go in a link, or the pairing state is unreadable.
-pub(crate) fn pair(host: Option<String>, port: u16, reset: bool) -> Result<()> {
+/// If a host can't go in a link, no one device has the id to forget, or the
+/// pairing state is unreadable.
+pub(crate) fn pair(pairing: Pairing) -> Result<()> {
     let store = Store::in_state_dir()?;
     let mut out = crate::cli_stdout();
-    if reset {
-        store.reset()?;
-        writeln!(out, "every device is forgotten")?;
-        return Ok(());
+    match pairing {
+        Pairing::Link { host, port } => print_link(&store, &mut out, host, port)?,
+        Pairing::List => {
+            let devices = store.devices()?;
+            if devices.is_empty() {
+                writeln!(out, "no device is paired")?;
+            }
+            for device in devices {
+                #[expect(
+                    clippy::disallowed_types,
+                    reason = "the owner reads when a device paired in their own zone, which no test asserts on"
+                )]
+                let paired_at = chrono::DateTime::<chrono::Local>::from(device.paired_at);
+                let at = paired_at.format("%Y-%m-%d %H:%M");
+                // The id first, as `--forget` takes it, and the name, the one
+                // column of no fixed width, last.
+                writeln!(out, "{}  {at}  {}", device.hash.short(), device.name)?;
+            }
+        }
+        Pairing::Forget(id) => {
+            let forgotten = store.forget(&id)?;
+            writeln!(out, "{} ({id}) is forgotten", forgotten.name)?;
+        }
+        Pairing::Reset => {
+            store.reset()?;
+            writeln!(out, "every device is forgotten")?;
+        }
     }
+    Ok(())
+}
+
+/// Print the QR and link that pair a device reaching this machine at
+/// `host:port`, minting a code.
+fn print_link(store: &Store, out: &mut impl Write, host: Option<String>, port: u16) -> Result<()> {
     let host = match host {
         Some(host) => host,
         None => local_host()
@@ -323,7 +365,8 @@ const ADDRESS_CAN_MOVE: &str = "This address can change with your network: pass 
 
 /// What pairing lets a device do, said where the owner pairs it.
 const CONSENT: &str = "A paired device sees your agents and can connect or disconnect \
-                       agent CLIs here; `pixtuoid pair --reset` forgets every device.";
+                       agent CLIs here; `pixtuoid pair --list` shows each device and \
+                       `--forget <id>` forgets one.";
 
 /// `link` as a QR in dark-on-light whatever the terminal's theme, the polarity
 /// scanners expect. Level L: it is read off a screen, with nothing to damage it,
