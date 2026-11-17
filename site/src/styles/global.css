@@ -400,7 +400,7 @@ h3 {
   width: 100%;
   max-width: var(--maxw);
   margin-inline: auto;
-  /* named so a fixed-chrome clearance (OfficeBackdrop's ≤760px office-ctl
+  /* named so a fixed-chrome clearance (OfficeBackdrop's office-ctl
      gutter) can widen just the end side without retyping this clamp(). */
   --container-pad-x: clamp(1.1rem, 4vw, 2.5rem);
   padding-inline: var(--container-pad-x);
@@ -662,7 +662,7 @@ section[data-lit] .section-head .eyebrow {
 .office-gap .gap-caption {
   position: absolute;
   bottom: 3.2rem;
-  /* named so OfficeBackdrop's ≤760px office-ctl clearance can size a
+  /* named so OfficeBackdrop's office-ctl clearance can size a
      matching max-width without retyping this clamp() (the caption sits
      outside .container, as a direct <main> child, so that clearance can't
      reach it via .container's own padding). */

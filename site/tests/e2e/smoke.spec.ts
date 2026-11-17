@@ -3382,7 +3382,7 @@ test('the pause control never occludes in-page copy, at every width its gutter c
     await assertClearOfPause('.office-gap:not(.office-gap--closer) .gap-caption');
     await assertClearOfPause('.how__step:first-child .how__detail p');
     await assertClearOfPause('[data-vibing-time-label]');
-    // Every roster row: above a phone's width the grid's last column ends at the column's edge.
+    // Every roster row: above a phone's width the grid's last column ends at `.container`'s edge.
     for (let i = 0; i < (await page.locator('.roster__row').count()); i++) {
       await assertClearOfPause('.roster__row', i);
     }
