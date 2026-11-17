@@ -3341,7 +3341,7 @@ test('the pause control never overlaps a footer link across the mobile wrap rang
   }
 });
 
-test('the pause control never occludes in-page copy, at every width its gutter covers', async ({
+test('the pause control never occludes in-page copy at 390, 768 and 960px', async ({
   page,
 }) => {
   // .office-ctl is position:fixed, so its band is CONSTANT across the whole scroll — every section's copy passes it.
