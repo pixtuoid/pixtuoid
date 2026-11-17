@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
@@ -3749,29 +3749,27 @@ test("at phone width the floating nav's buttons end as far from the right edge a
   expect(footer[1]).toBe(footer[0]);
 });
 
-// Viewports from Playwright's device registry (playwright-core, at package-lock's version,
-// lib/coreBundle.js): the Galaxy Z Flip 6 Cover and the Pixel 5 held in landscape.
-for (const viewport of [
-  { width: 360, height: 298 },
-  { width: 802, height: 293 },
-]) {
-  test(`in a ${viewport.width}×${viewport.height} viewport the nav bar's controls clear the office controls`, async ({
+for (const device of ['Galaxy Z Flip 6 Cover', 'Pixel 5 landscape']) {
+  test(`on a ${device}'s viewport the nav bar ends left of the office controls`, async ({
     page,
   }) => {
-    await page.setViewportSize(viewport);
+    await page.setViewportSize(devices[device].viewport);
     await gotoLive(page);
-    const overlaps = await page.evaluate(() => {
+    // Their columns, not their boxes: how high the controls sit follows the footer's wrap, which
+    // follows the clock.
+    const { nav, controls } = await page.evaluate(() => {
       const boxes = (sel: string) =>
         [...document.querySelectorAll<HTMLElement>(sel)]
           .filter((el) => !el.hidden && el.getClientRects().length > 0)
           .map((el) => el.getBoundingClientRect());
-      const controls = boxes('.office-ctl');
-      return boxes('.nav__inner > *, .nav__links > *').filter((n) =>
-        controls.some(
-          (c) => !(n.right <= c.left || n.left >= c.right || n.bottom <= c.top || n.top >= c.bottom)
-        )
-      ).length;
+      return {
+        nav: boxes('#theme-toggle, #nav-burger, .nav__links > *').map((box) => box.right),
+        controls: boxes('.office-ctl').map((box) => box.left),
+      };
     });
-    expect(overlaps).toBe(0);
+    // teeth: with neither set on the page there would be nothing to compare.
+    expect(nav.length).toBeGreaterThan(0);
+    expect(controls.length).toBeGreaterThan(0);
+    expect(Math.max(...nav)).toBeLessThanOrEqual(Math.min(...controls));
   });
 }

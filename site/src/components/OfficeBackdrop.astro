@@ -210,6 +210,8 @@ const officeDriverUrl = asset('office-driver.js');
     --office-ctl-edge: 10px;
     --office-ctl-w: 36px;
     --office-ctl-gap: 8px;
+    /* What a box beside the controls keeps free at its end. */
+    --office-ctl-gutter: calc(var(--office-ctl-edge) + var(--office-ctl-w) + var(--office-ctl-gap));
   }
   .office-ctl[hidden] {
     display: none;
@@ -243,27 +245,17 @@ const officeDriverUrl = asset('office-driver.js');
     /* Copy that scrolls past the controls: the nav bar above <main> and the footer below it are
        left out. */
     main .container {
-      padding-inline-end: calc(
-        var(--container-pad-x) + var(--office-ctl-edge) + var(--office-ctl-w) +
-          var(--office-ctl-gap)
-      );
+      padding-inline-end: calc(var(--container-pad-x) + var(--office-ctl-gutter));
     }
     .gap-caption {
-      max-width: calc(
-        100% - var(--gap-caption-inset) - var(--office-ctl-edge) - var(--office-ctl-w) -
-          var(--office-ctl-gap)
-      );
+      max-width: calc(100% - var(--gap-caption-inset) - var(--office-ctl-gutter));
     }
-  }
-  /* In a viewport this short the controls reach up to the nav bar at the page's top, so its row
-     takes the gutter too: they meet under 332px where the footer wraps to three lines (measured,
-     a 44px touch toggle), and smoke.spec.ts holds two such viewports clear. */
-  @media (max-width: 960px) and (max-height: 340px) {
-    .nav__inner {
-      padding-inline-end: calc(
-        var(--container-pad-x) + var(--office-ctl-edge) + var(--office-ctl-w) +
-          var(--office-ctl-gap)
-      );
+    /* In a viewport this short the lifted controls reach up to the nav bar's row at the page's
+       top, so the row takes the gutter too. */
+    @media (max-height: 340px) {
+      .nav__inner {
+        padding-inline-end: calc(var(--container-pad-x) + var(--office-ctl-gutter));
+      }
     }
   }
   .office-ctl:hover,
@@ -944,7 +936,7 @@ const officeDriverUrl = asset('office-driver.js');
       window.addEventListener('keydown', restore, true);
     }
 
-    // Publishes --footer-h for .office-ctl's clearance. DEFERRED: this is:inline script renders
+    // Publishes --footer-h for .office-ctl's --ctl-bottom. DEFERRED: this is:inline script renders
     // BEFORE <footer>, so a parse-time querySelector sees no footer yet.
     function wireFooterHeight() {
       const footerEl = document.querySelector('.footer');
