@@ -518,9 +518,10 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
     font-family: var(--font-mono);
     font-size: 0.92rem;
   }
-  @media (max-width: 480px) {
-    /* 3× max-content overflows a phone viewport, and the studio's overflow-x:clip
-       would hide the right dial column outright — untappable. */
+  /* 3× max-content takes about 26rem. In a narrower panel, a phone's or the studio's right track
+     at desktop widths, the third column would run past it, under the office controls or out of the
+     studio's overflow-x:clip, untappable. */
+  @container (width < 26rem) {
     .dial {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 0.4rem 1rem;
@@ -623,6 +624,7 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
   }
   .studio__panel {
     min-width: 0;
+    container-type: inline-size;
   }
   .roster {
     list-style: none;
