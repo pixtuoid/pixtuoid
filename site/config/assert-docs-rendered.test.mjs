@@ -32,6 +32,17 @@ test('a page with fewer <svg> than its doc declares mermaid blocks fails', () =>
   assert.ok(failures.some((f) => f.includes('/how-we-build: 1 inline <svg> for the 2')));
 });
 
+test('a decorative svg is no diagram', () => {
+  const bar = '<svg class="fig-bar__track" aria-hidden="true"></svg>';
+  const { failures } = checkDocPages(
+    [{ name: 'post', html: doc(`${bar}${body(MIN_BODY_CHARS)}`) }],
+    {
+      post: 0,
+    }
+  );
+  assert.deepEqual(failures, []);
+});
+
 test('a page with more <svg> than its doc declares mermaid blocks fails', () => {
   const { failures } = checkDocPages(
     [{ name: 'config', html: doc(`${SVG}${SVG}${body(MIN_BODY_CHARS)}`) }],
@@ -40,9 +51,9 @@ test('a page with more <svg> than its doc declares mermaid blocks fails', () => 
   assert.ok(failures.some((f) => f.includes('/config: 2 inline <svg> for the 1')));
 });
 
-test('a Docs-layout page the roster does not list fails', () => {
+test('a rendered article no roster lists fails', () => {
   const { failures } = checkDocPages([{ name: 'stray', html: doc(body(MIN_BODY_CHARS)) }], {});
-  assert.ok(failures.some((f) => f.includes('/stray') && f.includes('does not list')));
+  assert.ok(failures.some((f) => f.includes('/stray') && f.includes('do not list')));
 });
 
 test('mermaidFences returns the source of every mermaid block, whatever its fence', () => {

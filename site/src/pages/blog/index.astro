@@ -1,0 +1,42 @@
+---
+import Wing from '../../layouts/Wing.astro';
+import { blogWing, postDay, posts } from '../../blog';
+import { asset } from '../../consts';
+import { BLOG_DESCRIPTION, postRoute } from '../../../config/blog.mjs';
+---
+
+<Wing wing={await blogWing()} title="Blog" description={BLOG_DESCRIPTION}>
+  <h1>Blog</h1>
+  <ol class="posts">
+    {(await posts()).map((post) => <li>
+      <time datetime={postDay(post)}>{postDay(post)}</time>
+      <a href={asset(postRoute(post.id))}>{post.data.title}</a>
+      <p>{post.data.description}</p>
+    </li>)}
+  </ol>
+</Wing>
+
+<style>
+  .posts {
+    list-style: none;
+    margin: 2rem 0 0;
+    padding: 0;
+  }
+  .posts li {
+    padding: 1.2rem 0;
+    border-top: 1px solid var(--border);
+  }
+  .posts time {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--fg-muted);
+  }
+  .posts a {
+    font-family: var(--font-display);
+    font-size: 1.7rem;
+  }
+  .posts p {
+    margin: 0.3rem 0 0;
+  }
+</style>

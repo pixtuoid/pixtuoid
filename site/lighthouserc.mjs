@@ -1,4 +1,5 @@
 import docs from './src/docs.json' with { type: 'json' };
+import { BLOG_ROUTE, postIds, postRoute } from './config/blog.mjs';
 
 // `?theme=day`: without it local time picks the palette, and half of CI's runs would audit each.
 const QUERY = '?theme=day';
@@ -11,7 +12,9 @@ export default {
     collect: {
       staticDistDir: './dist',
       numberOfRuns: 5,
-      url: ['', ...docs.map((d) => d.route)].map((route) => `http://localhost/${route}${QUERY}`),
+      url: ['', ...docs.map((d) => d.route), BLOG_ROUTE, ...postIds().map(postRoute)].map(
+        (route) => `http://localhost/${route}${QUERY}`
+      ),
     },
     assert: {
       assertions: {

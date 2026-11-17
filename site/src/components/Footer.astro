@@ -1,5 +1,6 @@
 ---
 import { CRATES, SPONSOR, asset } from '../consts';
+import { BLOG_ROUTE } from '../../config/blog.mjs';
 import { DISCORD } from '../../config/discord.mjs';
 import { REPO } from '../../config/github.mjs';
 ---
@@ -21,6 +22,10 @@ import { REPO } from '../../config/github.mjs';
     <span class="footer__grp"><span class="footer__sep">·</span> built in Rust 🦀</span>
     <span class="footer__grp">
       <span class="footer__sep">·</span>
+      <a href={asset(BLOG_ROUTE)}>Blog</a>
+    </span>
+    <span class="footer__grp">
+      <span class="footer__sep">·</span>
       <a href={REPO} target="_blank" rel="noreferrer">GitHub</a>
     </span>
     <span class="footer__grp">
@@ -30,10 +35,6 @@ import { REPO } from '../../config/github.mjs';
     <span class="footer__grp">
       <span class="footer__sep">·</span>
       <a href={CRATES} target="_blank" rel="noreferrer">crates.io</a>
-    </span>
-    <span class="footer__grp">
-      <span class="footer__sep">·</span>
-      <a href={`${REPO}/releases`} target="_blank" rel="noreferrer">Releases</a>
     </span>
     <span class="footer__grp">
       <span class="footer__sep">·</span>

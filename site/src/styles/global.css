@@ -939,6 +939,9 @@ code {
 .prose li {
   color: var(--fg);
 }
+.prose p + p {
+  margin-top: 1rem;
+}
 .prose a {
   color: var(--coral-deep);
   font-weight: 600;

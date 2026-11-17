@@ -21,6 +21,9 @@ interface Props {
 
 const { wing, page, title, description, headings = [], source } = Astro.props;
 
+// The lobby lists the wing's pages; it is no article of its own.
+const Body = page ? 'article' : 'div';
+
 const idx = page ? wing.pages.indexOf(page) : -1;
 const prev = idx > 0 ? wing.pages[idx - 1] : undefined;
 const next = idx >= 0 && idx < wing.pages.length - 1 ? wing.pages[idx + 1] : undefined;
@@ -62,9 +65,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     </nav>
 
     <div class="wing__body">
-      <article class="prose">
+      <Body class="prose">
         <slot />
-      </article>
+      </Body>
 
       <nav class="wing__pager" aria-label={`${wing.name} pagination`}>
         {prev ? (
@@ -318,6 +321,51 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     margin: 0;
     font-size: 0.92rem;
     line-height: 1.45;
+  }
+  .wing :global(.fig__bars) {
+    display: grid;
+    gap: 0.9rem;
+    margin: 1.8rem 0;
+    padding: 0;
+    list-style: none;
+  }
+  .wing :global(.fig-bar) {
+    margin: 0;
+    padding: 0.9rem 1.1rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+  }
+  .wing :global(.fig-bar__what) {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+    line-height: 1.4;
+  }
+  .wing :global(.fig-bar__row) {
+    display: grid;
+    grid-template-columns: 3.4rem minmax(0, 1fr) minmax(5.5rem, auto);
+    align-items: center;
+    gap: 0.7rem;
+    margin: 0.25rem 0 0;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.3;
+  }
+  .wing :global(.fig-bar__track) {
+    width: 100%;
+    height: 0.7rem;
+    background: var(--border);
+    border-radius: 3px;
+  }
+  .wing :global(.fig-bar__track rect) {
+    fill: var(--fg-muted);
+  }
+  /* The second row is the "after": the one a reader came for. */
+  .wing :global(.fig-bar__row ~ .fig-bar__row rect) {
+    fill: var(--coral-deep);
+  }
+  .wing :global(.fig-bar__num) {
+    text-align: right;
   }
   .wing :global(.callout__body) {
     margin: 0;

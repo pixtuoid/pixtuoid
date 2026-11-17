@@ -40,6 +40,39 @@ test('cards turn each row into a role card that keeps its links, and the marker 
   assert.equal(toText(acts), 'Posting a verdict');
 });
 
+const BARS = ['Measure', 'Before', 'After'];
+const fills = (bar) =>
+  bar.children
+    .filter((c) => c.properties.className.includes('fig-bar__row'))
+    .map((row) => row.children.find((c) => c.tagName === 'svg').children[0].properties.width);
+
+test('bars draw each row as a before and an after bar, the longer one full width', () => {
+  const tree = run([
+    marker('bars'),
+    nl,
+    table(
+      BARS,
+      ['<a href="x">Night frame</a>', '43.4 ms', '9.9 ms'],
+      ['Memory', '562.6 KB', '639.5 KB']
+    ),
+  ]);
+  assert.deepEqual(figure(tree).properties.className, ['fig--bars']);
+  const [faster, larger] = figure(tree).children[0].children;
+  assert.equal(faster.children[0].children[0].tagName, 'a');
+  assert.deepEqual(fills(faster), [100, 22.8]);
+  assert.deepEqual(fills(larger), [88, 100]);
+  // The numbers stay on the page as text: the bars are decoration beside them.
+  assert.match(toText(faster), /before\s*43\.4 ms/);
+  assert.match(toText(faster), /after\s*9\.9 ms/);
+});
+
+test('a bars cell that does not start with a number fails the build, naming it', () => {
+  assert.throws(
+    () => run([marker('bars'), nl, table(BARS, ['Frames', 'about 5', '1'])]),
+    /figure "bars": "about 5" does not start with a number/
+  );
+});
+
 test('an unknown kind fails the build', () => {
   assert.throws(() => run([marker('chart'), nl, table(CARDS)]), /unknown figure kind "chart"/);
 });

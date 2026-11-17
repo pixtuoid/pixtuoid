@@ -13,6 +13,7 @@ import '../styles/fonts.css';
 import 'prismjs/themes/prism-tomorrow.css';
 import '../styles/global.css';
 import { asset, THEMES, THEME_BG, THEME_STORAGE_KEY } from '../consts';
+import { BLOG_TITLE, FEED_ROUTE } from '../../config/blog.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import sources from '../sources.json';
 
@@ -56,6 +57,12 @@ const version = __PIXTUOID_VERSION__; // the latest release TAG, not Cargo.toml 
     <link rel="icon" type="image/png" sizes="180x180" href={asset('apple-touch-icon.png')} />
     <link rel="apple-touch-icon" href={asset('apple-touch-icon.png')} />
     <link rel="canonical" href={canonical} />
+    <link
+      rel="alternate"
+      type="application/rss+xml"
+      title={BLOG_TITLE}
+      href={new URL(asset(FEED_ROUTE), SITE).href}
+    />
     <meta name="theme-color" content={THEME_BG.day} />
     {/* `crossorigin` is required even same-origin — font requests are
         CORS-mode, and a mismatch double-downloads. */}

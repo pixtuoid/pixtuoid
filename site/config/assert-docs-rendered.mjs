@@ -1,20 +1,21 @@
 // Assert every rendered doc page has a body and drew every diagram its doc
 // declares. Born for the silent empty-render class — a render step
 // collapsed a doc's <Content /> to an EMPTY <article> WITHOUT failing `astro
-// build` (#680) — and GENERIC on purpose: it globs every page carrying the Docs
-// layout's `<article class="prose">`, so no per-page string can drift. A render
+// build` (#680) — and GENERIC on purpose: it globs every page carrying the wing
+// shell's `<article class="prose">`, so no per-page string can drift. A render
 // step that throws fails `astro build` by itself (the glob loader logs and
 // rethrows: astro's content/loaders/glob.js:148-150, at package.json's version);
 // this is for the one that
 // returns nothing without throwing.
 //
 // Usage: node config/assert-docs-rendered.mjs [distDir=dist]
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { visit } from 'unist-util-visit';
+import { BLOG_DIR, postIds, postRoute } from './blog.mjs';
 import { DOC_DIR, docSlug } from './docs.mjs';
 
 // A generous floor: flags a collapsed render without coupling to any page's size.
@@ -35,14 +36,14 @@ export function mermaidFences(markdown) {
 /**
  * Given doc-page entries `[{ name, html }]` and `diagrams`, the count of
  * Mermaid blocks each page's doc declares by page name, return the failures +
- * how many Docs-layout pages were seen.
+ * how many article pages were seen.
  */
 export function checkDocPages(entries, diagrams) {
   const failures = [];
   let docPages = 0;
   for (const { name, html } of entries) {
     const m = html.match(DOC_ARTICLE);
-    if (!m) continue; // not a Docs-layout page
+    if (!m) continue; // not a wing's article
     docPages += 1;
     const body = m[1]
       .replace(/<[^>]+>/g, ' ')
@@ -54,10 +55,13 @@ export function checkDocPages(entries, diagrams) {
       );
     }
     if (!(name in diagrams)) {
-      failures.push(`/${name}: a Docs-layout page src/docs.json does not list`);
+      failures.push(
+        `/${name}: a rendered article the rosters (src/docs.json, the blog) do not list`
+      );
       continue;
     }
-    const drawn = (m[1].match(/<svg[\s>]/g) ?? []).length;
+    // A diagram is the svg a reader is told about (`role="img"`); a figure's bars are `aria-hidden`.
+    const drawn = (m[1].match(/<svg\s[^>]*\brole="img"/g) ?? []).length;
     const declared = diagrams[name];
     if (drawn !== declared) {
       failures.push(
@@ -72,19 +76,22 @@ export function checkDocPages(entries, diagrams) {
 }
 
 function main(dist) {
-  const entries = readdirSync(dist, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => ({ name: e.name, file: join(dist, e.name, 'index.html') }))
-    .filter((e) => existsSync(e.file))
-    .map((e) => ({ name: e.name, html: readFileSync(e.file, 'utf8') }));
+  const entries = readdirSync(dist, { recursive: true })
+    .filter((file) => file.endsWith(`${sep}index.html`))
+    .map((file) => ({
+      name: dirname(file).split(sep).join('/'),
+      html: readFileSync(join(dist, file), 'utf8'),
+    }));
   const site = fileURLToPath(new URL('../', import.meta.url));
   const docs = JSON.parse(readFileSync(join(site, 'src/docs.json'), 'utf8'));
-  const diagrams = Object.fromEntries(
-    docs.map((d) => [
-      docSlug(d),
-      mermaidFences(readFileSync(join(site, '..', DOC_DIR, d.file), 'utf8')).length,
-    ])
-  );
+  const declared = (file) => mermaidFences(readFileSync(file, 'utf8')).length;
+  const diagrams = Object.fromEntries([
+    ...docs.map((d) => [docSlug(d), declared(join(site, '..', DOC_DIR, d.file))]),
+    ...postIds().map((id) => [
+      postRoute(id).replace(/\/$/, ''),
+      declared(join(site, BLOG_DIR, `${id}.md`)),
+    ]),
+  ]);
   const { failures, docPages } = checkDocPages(entries, diagrams);
   if (failures.length > 0) {
     console.error(`✗ doc-render check FAILED (${dist}):\n  ${failures.join('\n  ')}`);

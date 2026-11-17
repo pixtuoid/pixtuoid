@@ -4,7 +4,7 @@
 // doc holds one copy of its data. Wing.astro styles the markup.
 import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
-import { h } from 'hastscript';
+import { h, s } from 'hastscript';
 
 // The marker is still a `raw` node here: remark-rehype keeps HTML raw
 // (`allowDangerousHtml`), and Astro runs rehype-raw only after the site's
@@ -34,8 +34,44 @@ function rows(kind, tableNode, columns) {
   );
 }
 
+// The track a bar fills, in the units of its `viewBox`: a width is then a percentage, and
+// an attribute where a `style` would need its own CSP hash.
+const TRACK = 100;
+
+function amount(kind, cell) {
+  const text = toText({ type: 'root', children: cell }).trim();
+  const value = Number.parseFloat(text);
+  if (Number.isNaN(value))
+    throw new Error(`figure "${kind}": "${text}" does not start with a number`);
+  return value;
+}
+
+const bar = (tag, cell, value, longest) =>
+  h('p.fig-bar__row', [
+    h('span.fig-bar__tag', tag),
+    s(
+      'svg.fig-bar__track',
+      { viewBox: `0 0 ${TRACK} 1`, preserveAspectRatio: 'none', ariaHidden: 'true' },
+      s('rect', { width: Math.round((value / longest) * TRACK * 10) / 10, height: 1 })
+    ),
+    h('span.fig-bar__num', cell),
+  ]);
+
 // Each kind draws its figure's content from the table it marks.
 const KINDS = {
+  bars: (table) =>
+    h(
+      'ul.fig__bars',
+      rows('bars', table, ['measure', 'before', 'after']).map(([measure, before, after]) => {
+        const [was, is] = [amount('bars', before), amount('bars', after)];
+        const longest = Math.max(was, is);
+        return h('li.fig-bar', [
+          h('p.fig-bar__what', measure),
+          bar('before', before, was, longest),
+          bar('after', after, is, longest),
+        ]);
+      })
+    ),
   cards: (table) =>
     h(
       'ul.fig__cards',
