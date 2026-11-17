@@ -1,5 +1,6 @@
 ---
 import { asset, DOCS, floorHref } from '../consts';
+import { BLOG_ROUTE } from '../../config/blog.mjs';
 import { REPO } from '../../config/github.mjs';
 const home = asset('');
 // `floating` = the index treatment: corner chrome over the live office that
@@ -36,6 +37,7 @@ const { floating = false } = Astro.props;
           {DOCS.map((d) => <a href={asset(d.route)}>{d.label}</a>)}
         </div>
       </div>
+      <a href={asset(BLOG_ROUTE)}>Blog</a>
       <a href={floorHref('app')}>App <span class="nav__soon">soon</span></a>
       <a href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a>
       <a class="nav__install" href={floorHref('install')}>Install</a>
@@ -272,7 +274,10 @@ const { floating = false } = Astro.props;
   .nav__docs-btn {
     display: none;
   }
-  @media (min-width: 760px) {
+  /* The wide bar waits for the wider of a px and an em width: its mark, toggle and the office
+     controls' gutter are px, and its text and gaps rem, which follow the user's default font size as
+     a media query's em does (www.w3.org/TR/mediaqueries-4/#units). */
+  @media (min-width: 800px) and (min-width: 50em) {
     .nav__links {
       display: flex;
       position: static;
@@ -338,6 +343,26 @@ const { floating = false } = Astro.props;
     .nav__menu a:hover {
       background: color-mix(in srgb, var(--fg) 6%, transparent);
     }
+    /* With script the home page's bar lies bare over the office, so its text links and Docs
+       button take the inks global.css tunes for that ground. */
+    @media (scripting: enabled) {
+      .nav--floating :is(.nav__links > a, .nav__docs-btn) {
+        --nav-ink: var(--office-ink);
+        --nav-ink-accent: var(--office-ink-accent);
+      }
+      /* The bar's one call to action; --coral-cta is the coral a white label clears. */
+      .nav__links a.nav__install {
+        padding: 0.4rem 0.95rem;
+        color: #fff;
+        background: var(--coral-cta);
+        border-radius: 999px;
+        text-shadow: none;
+      }
+      .nav__links a.nav__install:hover {
+        color: #fff;
+        background: var(--coral-cta-deep);
+      }
+    }
   }
   .nav__toggle {
     width: 40px;
@@ -364,29 +389,11 @@ const { floating = false } = Astro.props;
       height: 44px;
     }
   }
-  /* With script the home page's bar lies bare over the office, so its focus rings, and
-     on the wide bar its text links and Docs button, take the inks global.css tunes for that ground. */
+  /* With script the home page's nav lies bare over the office, so its focus rings take the ink
+     global.css tunes for that ground. */
   @media (scripting: enabled) {
     .nav--floating {
       --focus-ring: var(--office-ink);
-    }
-  }
-  @media (min-width: 760px) and (scripting: enabled) {
-    .nav--floating :is(.nav__links > a, .nav__docs-btn) {
-      --nav-ink: var(--office-ink);
-      --nav-ink-accent: var(--office-ink-accent);
-    }
-    /* The bar's one call to action; --coral-cta is the coral a white label clears. */
-    .nav__links a.nav__install {
-      padding: 0.4rem 0.95rem;
-      color: #fff;
-      background: var(--coral-cta);
-      border-radius: 999px;
-      text-shadow: none;
-    }
-    .nav__links a.nav__install:hover {
-      color: #fff;
-      background: var(--coral-cta-deep);
     }
   }
   /* Scripting off: nothing opens the burger or the Docs menu or flips the theme,
