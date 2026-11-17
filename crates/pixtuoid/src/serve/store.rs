@@ -7,7 +7,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use pixtuoid_core::remote::SECRET_BYTES;
 use rcgen::{KeyPair, PublicKeyData};
 use ring::digest::{SHA256, digest};
@@ -199,6 +199,25 @@ impl Store {
         Ok(self.read()?.devices)
     }
 
+    /// Forget the one device whose [`Hashed::short`] is `id`, returning it.
+    pub(super) fn forget(&self, id: &str) -> Result<Paired> {
+        self.update(|stored| {
+            let matching: Vec<usize> = (stored.devices.iter().enumerate())
+                .filter(|(_, paired)| paired.hash.short() == id)
+                .map(|(at, _)| at)
+                .collect();
+            match matching[..] {
+                [at] => Ok(stored.devices.remove(at)),
+                [] => bail!("no paired device has the id {id}; `pixtuoid pair --list` shows each"),
+                // Two hashes sharing a short id, which no longer id tells apart.
+                _ => bail!(
+                    "{} paired devices have the id {id}; `pixtuoid pair --reset` forgets them all",
+                    matching.len()
+                ),
+            }
+        })
+    }
+
     /// Forget every device and any outstanding code.
     pub(super) fn reset(&self) -> Result<()> {
         self.update(|stored| {
@@ -319,6 +338,56 @@ mod tests {
         assert_eq!(listed, [paired(&phone, PHONE), paired(&tablet, "iPad")]);
     }
 
+    #[test]
+    fn forgetting_a_device_by_its_short_id_leaves_the_others() {
+        let (_dir, store) = fixture();
+        let phone = Hashed::of(&pair(&store, PHONE));
+        let tablet = Hashed::of(&pair(&store, "iPad"));
+
+        let forgotten = store.forget(phone.short()).expect("one device has it");
+
+        assert_eq!(
+            (forgotten.hash, forgotten.name.as_str()),
+            (phone.clone(), PHONE)
+        );
+        assert!(!store.knows(&phone).expect("it reads"));
+        assert!(store.knows(&tablet).expect("it reads"));
+    }
+
+    /// Each refusal says which it is, and forgets nobody.
+    #[test]
+    fn an_unknown_or_shared_short_id_forgets_nobody() {
+        let (_dir, store) = fixture();
+        let phone = Hashed::of(&pair(&store, PHONE));
+        let shared = "ABCDEF01";
+        let twin = |rest: &str| Paired {
+            hash: Hashed(format!("{shared}{rest}")),
+            name: "twin".to_owned(),
+            paired_at: now(),
+        };
+        store
+            .update(|stored| {
+                stored.devices.extend([twin("0"), twin("1")]);
+                Ok(())
+            })
+            .expect("it writes");
+        let before = store.devices().expect("it reads");
+
+        let unknown = said(store.forget("00000000"));
+        assert!(
+            unknown.contains("no paired device has the id 00000000"),
+            "{unknown}"
+        );
+        let ambiguous = said(store.forget(shared));
+        assert!(
+            ambiguous.contains("2 paired devices have the id ABCDEF01"),
+            "{ambiguous}"
+        );
+
+        assert_eq!(store.devices().expect("it reads"), before);
+        assert!(store.knows(&phone).expect("it reads"));
+    }
+
     /// The expiry a link carries is the one a redemption keeps.
     #[test]
     fn a_code_is_good_until_its_lifetime_ends() {
@@ -413,7 +482,11 @@ mod tests {
         let file = store.0.display().to_string();
         for unreadable in ["{not json", "", r#"{"devices":["AB"]}"#] {
             std::fs::write(&store.0, unreadable).expect("it writes");
-            let reads = [store.reset(), store.devices().map(drop)];
+            let reads = [
+                store.reset(),
+                store.devices().map(drop),
+                store.forget("AB").map(drop),
+            ];
             for said in reads.into_iter().map(said).chain([said(store.key())]) {
                 assert!(said.contains(&file), "{said}");
             }

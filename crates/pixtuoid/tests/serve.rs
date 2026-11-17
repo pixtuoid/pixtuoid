@@ -435,6 +435,53 @@ async fn a_device_pairs_and_reads_an_office_that_names_only_the_repo() {
     );
 }
 
+/// The owner lists the paired devices by name and forgets one by the id the
+/// list gives it, beside a running server; a second forget of that id says so.
+#[tokio::test(flavor = "multi_thread")]
+async fn pair_lists_the_paired_devices_and_forgets_one_by_its_listed_id() {
+    let world = World::new();
+    let (_server, port) = world.serve();
+    let paired = async |name: &str| {
+        let link = world.pair(port);
+        let hello = Hello::pair(&link.code, name);
+        let Reply::Paired { token } = Device::connect(&link).await.hello(&hello).await else {
+            panic!("a fresh code pairs {name}");
+        };
+        (link, Hello::Resume { token })
+    };
+    let said = |out: Output| {
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8(out.stdout).expect("UTF-8")
+    };
+    let none = said(world.run(&["pair", "--list"]));
+    assert_eq!(none.trim_end(), "no device is paired");
+    let (link, phone) = paired("iPhone").await;
+    let (_, tablet) = paired("iPad").await;
+
+    let listed = said(world.run(&["pair", "--list"]));
+    let rows: Vec<_> = listed.lines().collect();
+    let [phone_row, tablet_row] = rows[..] else {
+        panic!("one row a device: {listed}");
+    };
+    let named = phone_row.ends_with("iPhone") && tablet_row.ends_with("iPad");
+    assert!(named, "{listed}");
+    let id = (phone_row.split_whitespace().next()).expect("a row leads with its id");
+
+    let forgot = said(world.run(&["pair", "--forget", id]));
+    assert!(forgot.contains("iPhone") && forgot.contains(id), "{forgot}");
+    let forgotten = Device::connect(&link).await.hello(&phone).await;
+    assert_eq!(forgotten, Reply::Refused);
+    let kept = Device::connect(&link).await.hello(&tablet).await;
+    assert_eq!(kept, Reply::Resumed);
+    let listed = said(world.run(&["pair", "--list"]));
+    assert_eq!(listed.lines().count(), 1, "{listed}");
+
+    let again = world.run(&["pair", "--forget", id]);
+    let refused = String::from_utf8_lossy(&again.stderr);
+    assert!(!again.status.success(), "{again:?}");
+    assert!(refused.contains("no paired device has the id"), "{refused}");
+}
+
 /// The device connects a flag-only CLI, which the live gate and the config both
 /// then hold.
 #[tokio::test(flavor = "multi_thread")]

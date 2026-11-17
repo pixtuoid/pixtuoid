@@ -92,9 +92,9 @@ The components that handle untrusted or privileged input, and how they're bounde
    itself: a phone without the app opens a `/pair/` page there that runs no
    script. The key, the hashes of the code and tokens and each device's name
    sit in one owner-only file in the state directory, never
-   in a dotfiles-prone `~/.config`. `pair --reset` forgets every device, ending
-   its stream. Past its hello a device can only ask, and a line past
-   `MAX_LINE_BYTES` or not an ask ends the connection. Its one write connects or
+   in a dotfiles-prone `~/.config`. `pair --forget` forgets one device by the id
+   `pair --list` shows and `pair --reset` every device, ending its stream. Past
+   its hello a device can only ask, and a line past `MAX_LINE_BYTES` or not an ask ends the connection. Its one write connects or
    disconnects an agent CLI, as the Sources panel would and through the same
    install path; writes run one at a time server-wide, each waiting out
    `MIN_WRITE_GAP` since the last, re-checked against the pairing before it

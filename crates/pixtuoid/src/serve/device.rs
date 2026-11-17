@@ -843,6 +843,37 @@ mod tests {
             .expect("revoked is a clean end");
     }
 
+    /// `pair --forget`'s reach: the beat's check and the hello's, with no code
+    /// of its own.
+    #[tokio::test(start_paused = true)]
+    async fn a_device_forgotten_by_id_loses_its_stream_and_resume_and_no_other_does() {
+        let fixture = fixture();
+        let token = paired(&fixture);
+        let resume = Hello::Resume {
+            token: token.clone(),
+        };
+        let mut forgotten = Peer::connect(&fixture.devices);
+        forgotten.hello(&resume).await;
+        assert_eq!(forgotten.reply().await, Reply::Resumed);
+        let mut kept = streaming(&fixture).await;
+
+        let id = Hashed::of(&token);
+        fixture.store.forget(id.short()).expect("one device has it");
+
+        timeout(HEARTBEAT * 2, forgotten.ended())
+            .await
+            .expect("the stream ends")
+            .expect("forgotten is a clean end");
+        let mut again = Peer::connect(&fixture.devices);
+        again.hello(&resume).await;
+        assert_eq!(again.reply().await, Reply::Refused);
+        assert!(
+            !kept.served.is_finished(),
+            "the other device lost its stream"
+        );
+        kept.sees_a_change(&fixture).await;
+    }
+
     #[tokio::test]
     async fn a_devices_new_connection_ends_its_old_one() {
         let fixture = fixture();

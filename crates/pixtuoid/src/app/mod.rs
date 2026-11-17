@@ -151,8 +151,21 @@ fn dispatch(cmd: Cmd, drift: doctor::DriftSeen) -> Result<Option<runtime::QuitSi
             Some(crate::serve::run(rc, port)?)
         }
         #[cfg(feature = "serve")]
-        Cmd::Pair { host, port, reset } => {
-            crate::serve::pair(host, port, reset)?;
+        Cmd::Pair {
+            host,
+            port,
+            list,
+            forget,
+            reset,
+        } => {
+            use crate::serve::Pairing;
+            // Clap's `instead` group lets one at most through.
+            crate::serve::pair(match (list, forget, reset) {
+                (true, _, _) => Pairing::List,
+                (_, Some(id), _) => Pairing::Forget(id),
+                (_, _, true) => Pairing::Reset,
+                _ => Pairing::Link { host, port },
+            })?;
             None
         }
         // homebrew-core contract: it exits 0 whatever it reports, and the
