@@ -1,8 +1,6 @@
 ---
 import { asset, DIM_RESTING } from '../consts';
 
-const wasmJsUrl = asset('wasm/pixtuoid_web.js');
-const officeHostUrl = asset('office-host.js');
 const musicWorkerUrl = asset('music-worker.js');
 const musicWasmJsUrl = asset('wasm/pixtuoid_web_music.js');
 const musicWorkletUrl = asset('music-worklet.js');
@@ -299,8 +297,6 @@ const officeDriverUrl = asset('office-driver.js');
 
 <script
   is:inline
-  data-wasm-js-url={wasmJsUrl}
-  data-office-host-url={officeHostUrl}
   data-music-worker-url={musicWorkerUrl}
   data-music-wasm-js-url={musicWasmJsUrl}
   data-music-worklet-url={musicWorkletUrl}
@@ -308,14 +304,7 @@ const officeDriverUrl = asset('office-driver.js');
 >
   (function () {
     const script = document.currentScript;
-    const {
-      wasmJsUrl,
-      officeHostUrl,
-      musicWorkerUrl,
-      musicWasmJsUrl,
-      musicWorkletUrl,
-      officeDriverUrl,
-    } = script.dataset;
+    const { musicWorkerUrl, musicWasmJsUrl, musicWorkletUrl, officeDriverUrl } = script.dataset;
 
     const wrap = document.querySelector('.backdrop');
     const canvas = document.getElementById('office-live');
@@ -977,7 +966,7 @@ const officeDriverUrl = asset('office-driver.js');
       import(officeDriverUrl)
         .then(function (drv) {
           officeDriver = drv;
-          return drv.officeHost(officeHostUrl, wasmJsUrl);
+          return drv.officeHost();
         })
         .then(function (host) {
           hostOffThread = host.offThread;

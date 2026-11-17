@@ -5,6 +5,10 @@
 // static-import `loadWasm` into module workers, which have no `window`: module scope touches no page global.
 'use strict';
 
+// The office host and the office wasm's glue, beside this module wherever the site is served from.
+const HOST_URL = new URL('office-host.js', import.meta.url).href;
+const WASM_JS_URL = new URL('wasm/pixtuoid_web.js', import.meta.url).href;
+
 const WASM_INIT_RETRIES = 2; // extra attempts after the first
 const WASM_INIT_BACKOFF_MS = 400;
 
@@ -14,9 +18,9 @@ const WASM_INIT_BACKOFF_MS = 400;
 // loaded clears the memo, so a later consumer starts a fresh one (#671). Resolves to
 // `{ offThread, open(seed, canvas, journey) }`; `open` resolves to the office's handle, whose `frame`, `call` and
 // `warmAudio` are office-host.js's ops of those names, and whose `journeyLines` a journey office carries.
-export function officeHost(hostUrl, wasmJsUrl) {
+export function officeHost() {
   if (!window.__pixOfficeHost) {
-    const host = startHost(hostUrl, wasmJsUrl);
+    const host = startHost(HOST_URL, WASM_JS_URL);
     window.__pixOfficeHost = host;
     host.catch(function () {
       if (window.__pixOfficeHost === host) window.__pixOfficeHost = null;

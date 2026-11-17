@@ -235,7 +235,7 @@ impl Office {
     /// Land one hook line, as the shim forwarded it, through the real decoder
     /// and reducer at `now_ms` (UNIX-epoch milliseconds, as `step` takes), and
     /// return what each stop made of it as JSON:
-    /// `{"stamps":[key…],"events":[AgentEvent…],"agents":[AgentSlot…]}`,
+    /// `{"stamps":[key…],"events":[AgentEvent…],"agents":[SlotView…]}`,
     /// `stamps` being the line's keys the shim stamps.
     ///
     /// # Errors
@@ -258,7 +258,7 @@ impl Office {
         self.last_now = Some(now);
         let (units_w, units_h) = self.units(w, h);
         let px = self.frame_size(w, h);
-        // Capacity BEFORE the script advances: the SessionStarts due this
+        // Capacity BEFORE the cast advances: the SessionStarts due this
         // frame must allocate desks against the canvas this frame renders.
         self.sync_capacity(units_w, units_h, now);
         self.advance_cast(now);
@@ -1567,15 +1567,31 @@ mod tests {
             landed[3]["agents"][0]["exiting_at"].is_object(),
             "an ended session walks out"
         );
-        o.step(t + 60_000.0, 160, 96);
+        t += 60_000.0;
+        o.step(t, 160, 96);
         assert!(o.scene.agents.is_empty(), "and its slot is swept");
-    }
 
-    #[test]
-    fn the_heros_words_are_left_to_the_page() {
-        let mut o = office();
-        o.step(T0_MS, 160, 96);
-        assert!(o.session.picture().is_some_and(|p| p.text.is_some()));
+        // The page's buttons wrap back to the first hook, so the recording plays again.
+        let mut again = Vec::new();
+        for line in &lines {
+            t += 1_000.0;
+            o.step(t, 160, 96);
+            let json = o
+                .land_hook(line, pixtuoid_scene::anim::from_epoch_ms(t))
+                .expect("a recorded line lands again");
+            again.push(serde_json::from_str::<serde_json::Value>(&json).expect("JSON"));
+        }
+        assert_eq!(
+            state(&again[0]),
+            serde_json::json!("Idle"),
+            "it walks in again"
+        );
+        assert_eq!(
+            state(&again[1])["Running"]["item"]["kind"],
+            serde_json::json!("Read"),
+            "and reads again"
+        );
+        assert!(again[3]["agents"][0]["exiting_at"].is_object());
     }
 
     #[test]

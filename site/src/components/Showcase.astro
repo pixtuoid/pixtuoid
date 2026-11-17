@@ -123,8 +123,6 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
 <script
   is:inline
   define:vars={{
-    wasmJsUrl: asset('wasm/pixtuoid_web.js'),
-    officeHostUrl: asset('office-host.js'),
     officeDriverUrl: asset('office-driver.js'),
   }}
 >
@@ -294,7 +292,7 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
       import(officeDriverUrl)
         .then(function (drv) {
           vDriver = drv;
-          return drv.officeHost(officeHostUrl, wasmJsUrl);
+          return drv.officeHost();
         })
         .then(function (host) {
           return host.open(VIBING_SEED, vibingCanvas);

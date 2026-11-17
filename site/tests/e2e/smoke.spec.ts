@@ -277,6 +277,23 @@ async function paintedContrast(
   }
   return worst;
 }
+/** That `selector`'s first match shows a focus ring that clears WCAG 1.4.11 against what it lies on. */
+async function ringClears(page: Page, selector: string, where: string): Promise<void> {
+  const ringShown = await page
+    .locator(selector)
+    .first()
+    .evaluate((el) => {
+      (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
+      return getComputedStyle(el).outlineStyle !== 'none';
+    });
+  expect(ringShown, `${where} ${selector}: no focus ring`).toBe(true);
+  const ring = await paintedContrast(page, selector, 0, 'outlineColor');
+  expect(
+    ring,
+    `${where} ${selector} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
+  ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+}
+
 /** A canvas's shot once the frame the office host was drawing when it paused has landed. */
 async function settledShot(shot: () => Promise<string>): Promise<string> {
   let last = await shot();
@@ -824,11 +841,11 @@ test('the ♩ bus holds an over-full sum under the native ceiling and passes a q
   const errors = watchErrors(page);
   await gotoLive(page);
   const { ceiling, loudPeak, quietPeak } = await page.evaluate(async () => {
-    const { officeDriverUrl, officeHostUrl, wasmJsUrl } = (
+    const { officeDriverUrl } = (
       document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
     ).dataset;
     const drv = await import(officeDriverUrl!);
-    const host = await drv.officeHost(officeHostUrl!, wasmJsUrl!);
+    const host = await drv.officeHost();
     const { audio } = await host.open(0, document.createElement('canvas'));
     const rate = 48_000;
     // Each tone starts at `startS`; the peak is read from `fromS` on, since the spec starts the compressor's detector
@@ -865,16 +882,11 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
   const errors = watchErrors(page);
   await gotoLive(page);
   const { peaks, sidesDiffer } = await page.evaluate(async () => {
-    const {
-      officeDriverUrl,
-      officeHostUrl,
-      wasmJsUrl,
-      musicWorkerUrl,
-      musicWasmJsUrl,
-      musicWorkletUrl,
-    } = (document.querySelector('script[data-office-driver-url]') as HTMLScriptElement).dataset;
+    const { officeDriverUrl, musicWorkerUrl, musicWasmJsUrl, musicWorkletUrl } = (
+      document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
+    ).dataset;
     const drv = await import(officeDriverUrl!);
-    const host = await drv.officeHost(officeHostUrl!, wasmJsUrl!);
+    const host = await drv.officeHost();
     const office = await host.open(0, document.createElement('canvas'));
     // The controls as a tick hands them over.
     const tick = { now: Date.now(), w: 64, h: 64, draw: null, overlay: false };
@@ -1569,19 +1581,7 @@ test('how it works: every recorded hook fills each stop through the real decoder
           '.fig-journey__why summary',
           '.fig-journey__out',
         ]) {
-          const shown = await page
-            .locator(selector)
-            .first()
-            .evaluate((el) => {
-              (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
-              return getComputedStyle(el).outlineStyle !== 'none';
-            });
-          expect(shown, `${theme} ${selector}: no focus ring`).toBe(true);
-          const ring = await paintedContrast(page, selector, 0, 'outlineColor');
-          expect(
-            ring,
-            `${theme} ${selector} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
-          ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+          await ringClears(page, selector, theme);
         }
       }
     }
@@ -1600,6 +1600,20 @@ test('how it works without script: its stops read as prose, each why folded, and
   await expect(page.locator('.fig-journey__why').first()).not.toHaveAttribute('open');
   await expect(page.locator('.fig-journey__player')).toHaveCount(0);
   await context.close();
+});
+
+test('how it works without its wasm: the player it began is taken down, and the stops stay prose', async ({
+  page,
+}) => {
+  await page.route('**/wasm/pixtuoid_web*', (route) => route.abort());
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./how-it-works/');
+  const player = page.locator('.fig-journey__player');
+  // The player goes up before the office opens, and down once the office driver's retries give up.
+  await expect(player).toHaveCount(1, { timeout: 15_000 });
+  await expect(player).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator('.fig-journey__out')).toHaveCount(0);
+  await expect(page.locator('.fig-journey__what').first()).toBeVisible();
 });
 
 test('how it works under reduced motion: a hook still lands, and the office draws a still of it', async ({
@@ -2681,23 +2695,8 @@ atOfficeMoments(
         `${theme} ${moment} ${selector} hovered: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }
-    const ringClears = async (selector: string, where: string) => {
-      const ringShown = await page
-        .locator(selector)
-        .first()
-        .evaluate((el) => {
-          (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
-          return getComputedStyle(el).outlineStyle !== 'none';
-        });
-      expect(ringShown, `${theme} ${moment} ${selector} ${where}: no focus ring`).toBe(true);
-      const ring = await paintedContrast(page, selector, 0, 'outlineColor');
-      expect(
-        ring,
-        `${theme} ${moment} ${selector} ${where} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
-    };
     for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install', '#theme-toggle'])
-      await ringClears(selector, 'over the office');
+      await ringClears(page, selector, `${theme} ${moment} over the office`);
 
     for (const selector of ['.nav__install', '.btn-primary']) {
       const fill = () =>
@@ -2726,14 +2725,14 @@ atOfficeMoments(
 
     // The bar's ring ink also rings the links on its two plates: the Docs menu and the burger's panel.
     await page.click('#docs-btn');
-    await ringClears('#docs-menu a', 'in the Docs menu');
+    await ringClears(page, '#docs-menu a', `${theme} ${moment} in the Docs menu`);
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 480, height: 800 });
     await page.click('#nav-burger');
-    await ringClears('#nav-links > a', "in the burger's panel");
+    await ringClears(page, '#nav-links > a', `${theme} ${moment} in the burger's panel`);
     await page.keyboard.press('Escape');
     for (const selector of ['#nav-burger', '#theme-toggle'])
-      await ringClears(selector, 'over the office at 480px');
+      await ringClears(page, selector, `${theme} ${moment} over the office at 480px`);
   }
 );
 

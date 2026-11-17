@@ -65,10 +65,7 @@ export async function start(figure) {
   }
 
   async function run() {
-    const host = await officeHost(
-      new URL('office-host.js', import.meta.url).href,
-      new URL('wasm/pixtuoid_web.js', import.meta.url).href
-    );
+    const host = await officeHost();
     const office = await host.open(SEED, canvas, true);
     const lines = office.journeyLines;
     const payloads = lines.map(function (line) {

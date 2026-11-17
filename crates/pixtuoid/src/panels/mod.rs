@@ -1274,7 +1274,7 @@ mod dispatch_tests {
                 format!("Press <kbd>{APPEARANCE}</kbd> to preview every theme live"),
             ),
             (
-                "site/src/components/HowItWorks.astro",
+                "site/src/components/Quickstart.astro",
                 format!("press {SOURCES} → connect"),
             ),
             (
