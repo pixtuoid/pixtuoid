@@ -161,9 +161,11 @@ macro_rules! check {
 /// (`floor::floor_seed(0..MAX_FLOORS)`), which `SWEEP_SEEDS` meets at seed 0
 /// alone, so a check swept on `SWEEP_SEEDS` alone visits only the first floor
 /// a user sees; and each size at `SWEEP_SEEDS` inside each of [`SWEEP_INSETS`].
-/// One test lays each out once for every check: nextest runs each test in its
-/// own process (<https://nexte.st/docs/design/why-process-per-test/>), where a
-/// check of its own would lay every office out again.
+/// One test lays each out once for the checks it runs: nextest runs each test
+/// in its own process (<https://nexte.st/docs/design/why-process-per-test/>),
+/// where a check of its own would lay every office out again. The route checks
+/// inside insets lay theirs out in [`the_route_sweeps_hold_inside_insets`],
+/// which outlasts the instrumented budget.
 #[test]
 fn every_swept_office_holds_its_invariants() {
     let seeds: BTreeSet<u64> = SWEEP_SEEDS
