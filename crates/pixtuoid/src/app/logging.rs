@@ -258,17 +258,16 @@ mod tests {
     fn the_docs_state_the_log_files_levels() {
         let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
         let [verbose, more] = VERBOSE.map(LogLevel::as_str);
-        for says in [format!(
+        let says = format!(
             "| Level | `{}` and above, or `--log-level`'s level when that is stricter, \
              `{verbose}` or `{more}`, or the file is `$PIXTUOID_LOG`'s; `$RUST_LOG`'s \
              directives replace either |",
             FILE_FLOOR.as_str()
-        )] {
-            assert!(
-                doc.contains(&says),
-                "CONFIGURATION.md no longer says {says:?}"
-            );
-        }
+        );
+        assert!(
+            doc.contains(&says),
+            "CONFIGURATION.md no longer says {says:?}"
+        );
     }
 
     #[test]
