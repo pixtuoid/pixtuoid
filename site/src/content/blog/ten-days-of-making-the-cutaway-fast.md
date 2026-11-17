@@ -1,6 +1,6 @@
 ---
 title: Ten days of making the cutaway fast
-description: 'Painting one night frame took 43 ms, and a frame gets 33. Ten days of pull requests later the cutaway was the default look. What we changed, how each change works, what it cost, and what we threw away.'
+description: 'Painting one night frame took 43 ms, and a frame gets 33. Ten days of pull requests later it fit, and on October 21 the cutaway became the default look. What we changed, how each change works, what it cost, and what we threw away.'
 pubDate: 2026-11-17
 ---
 
@@ -45,9 +45,9 @@ and the bytes are sent to the terminal, which shows them.
 
 Every section below takes one of these stages and makes it do less.
 
-## Painting a night frame: 43.4 ms → 9.9 ms
+## Painting a night frame: 43.4 ms → 10.5 ms
 
-**That's 4.4x faster**, from one pull request, merged the same day as the
+**That's 4.1x faster**, from one pull request, merged the same day as the
 measurement ([#1134](https://github.com/pixtuoid/pixtuoid/pull/1134)).
 
 Here is what that does to a loop that owes a frame every 33 ms. Each tick is
@@ -58,7 +58,7 @@ a frame coming due, and each block is one being painted.
 | Frame               | Takes   | Budget |
 | ------------------- | ------- | ------ |
 | Night frame, before | 43.4 ms | 33 ms  |
-| Night frame, after  | 9.9 ms  | 33 ms  |
+| Night frame, after  | 10.5 ms | 33 ms  |
 
 Before, the first frame runs past its tick, and every frame after it starts
 later than the one before. After, a frame is painted with most of its budget
@@ -95,12 +95,11 @@ pub(crate) struct NetMemo {
 type NetKey = (Rgb, Glow, u8, Option<Rgb>, Ambient, Flash);
 ```
 
-Two details carry most of the win. The map survives from frame to frame. And
+Two details carry most of the win. The cache survives from frame to frame. And
 in front of it sits a one-entry shortcut, because the pixel next door almost
 always asks the same question.
 
-The first version packed that key into a `u64` by hand. Review found two
-different inputs that packed to the same number. The key became the tuple.
+The first version packed that key into a `u64` by hand. Review found two different inputs that packed to the same number. The key became the tuple, and the numbers here are the tuple's.
 
 **Stop diffing copies to see what a piece drew.** To know which pixels a
 desk lamp had lit, the painter copied the region before and after and
@@ -130,7 +129,7 @@ Start an epoch before a piece paints, and afterwards "which pixels did it
 write" is one comparison a pixel. It also fixed a bug a diff cannot see: a
 piece that paints a pixel in the colour already there.
 
-Noon came along for free: 13.0 ms → 8.1 ms. The cost was memory. The cutaway
+Noon came along for free: 13.0 ms → 8.2 ms. The cost was memory. The cutaway
 benches went from 3 MB to 4 MB.
 
 _`render_cutaway` bench, 240×144 at scale 4, both runs back to back on one
@@ -183,7 +182,7 @@ The obvious next step was a library pool that keeps its threads alive between
 frames. We measured it, frame by frame, against starting fresh threads
 ([#1497](https://github.com/pixtuoid/pixtuoid/pull/1497)).
 
-The pool's 99th-percentile encode took 34.7 ms and 48.7 ms over two runs.
+The pool's 99th-percentile frame took 34.7 ms and 48.7 ms over two runs.
 Fresh threads took 21.9 ms and 27.7 ms. In the pool's worst frames only 4 to
 6 of its 10 workers were running. The work sat waiting on the ones that had
 gone to sleep. Reverted.
@@ -202,7 +201,7 @@ sleeps was telling us about a program we do not ship.
 It costs something, too. Spreading the encode across cores takes about a
 quarter more CPU in total. On battery that is the price of the shorter wait.
 
-## Repainting 7,936 pixels instead of 6.8 million
+## Repainting what changed, not 6.8 million pixels
 
 Most frames barely differ from the last one. A cursor blinks. A fish swims.
 
@@ -211,13 +210,12 @@ what to **send**. Then it repainted the entire frame anyway.
 
 <!-- figure: repaint -->
 
-| Pass                     | Pixels      |
-| ------------------------ | ----------- |
-| Before: the whole frame  | 6.8 million |
-| After: only what changed | 7,936       |
+| Pass                       | Pixels             |
+| -------------------------- | ------------------ |
+| Before: the whole frame    | 6.8 million        |
+| After: around what changed | 7,936 that changed |
 
-That is about 850 times less to paint on a typical frame
-([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389)).
+On a typical frame, 7,936 pixels could change, and the painter repainted about 850 times that ([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389)).
 
 **Finding what changed.** Each thing in the frame, a desk, a lamp, a
 coworker, carries the area it can touch and a 64-bit fingerprint of what it
@@ -308,8 +306,7 @@ Why eight? We measured it. These are the slowest 5% of repaints:
 | 12    | 1.63 ms  | 5.17 ms                   |
 | 64    | 3.53 ms  | 10.90 ms                  |
 
-Twelve is barely better at night and worse when the weather turns. Sixty-four
-is worse than one. Eight it is, on the machine we measured.
+Twelve is barely better at night and worse when the weather turns. Sixty-four is worse than one when the weather turns. Eight it is, on the machine we measured.
 
 A change to the whole frame gets nothing from any of this. Lightning still
 repaints everything.
@@ -317,8 +314,7 @@ repaints everything.
 ### Not recomputing what cannot have changed
 
 The view through the windows and each lamp's pool of light are expensive, and
-they rarely change between frames. A lamp's inputs repeat on 99% of frames.
-The sky's repeat on 73%
+they rarely change between frames. A lamp's inputs repeat on 99% of frames. The window view's repeat on 73%
 ([#1395](https://github.com/pixtuoid/pixtuoid/pull/1395)).
 
 So each is kept with the inputs it was computed from, and reused when the
@@ -337,13 +333,11 @@ pub(crate) struct OutsideKey {
 }
 ```
 
-The function that draws the windows takes that struct and nothing else. It
-cannot read anything the key leaves out, so the key cannot be missing a
-field.
+The function that draws the windows takes that struct, plus the art and the theme. It cannot read anything else, so the key cannot be missing a field. The cache is emptied whenever the art or the theme changes.
 
 Composing a noon frame went from 1.77 ms to 0.48 ms. It is not free: holding
 the last frame's windows raised the peak memory of a 360×240 render from
-562.6 KB to 639.5 KB. That's 12% more, and we took the trade.
+562.6 KB to 639.5 KB. That's 77 KB more, and we took the trade.
 
 ## Sending fewer bytes
 
@@ -391,8 +385,7 @@ compress ([#1197](https://github.com/pixtuoid/pixtuoid/pull/1197)). Every
 tile keeps a stable image id, so sending it again replaces the old one in
 place.
 
-**SIXEL and iTerm2** got encoders of their own
-([#1400](https://github.com/pixtuoid/pixtuoid/pull/1400)). A whole frame
+**SIXEL's and iTerm2's encoders** got faster ([#1400](https://github.com/pixtuoid/pixtuoid/pull/1400)): one pass over each band of pixels for SIXEL, and the fastest PNG compression for iTerm2. A whole frame
 went from 35.8 ms to 17.9 ms on SIXEL, and from 24.3 ms to 11.1 ms on iTerm2.
 
 The iTerm2 one is a trade made on purpose. iTerm2 takes PNG, and the fastest
@@ -471,7 +464,7 @@ terminal that keeps up.
 In a storm, the 99th-percentile frame went from 148.9 ms to 35.5 ms. At dusk,
 from 74.8 ms to 6.1 ms.
 
-_Maximized Ghostty, 239×123 cells at 16x, 60 seconds a run._
+_Maximized Ghostty, a 239×123 office at 16x, 60 seconds a run._
 
 We kept the shared memory. It saves CPU on every frame. It just was not the
 fix it looked like.
@@ -515,9 +508,7 @@ Our first gate asked for a 99th-percentile frame under 20 ms
 machine's number.
 
 [#1497](https://github.com/pixtuoid/pixtuoid/pull/1497) replaced it with the
-**hitch rate**, which Apple
-[defines](https://developer.apple.com/documentation/xcode/understanding-hitches-in-your-app)
-as "milliseconds of pause per second", and calls good "at or below 10 ms/s".
+**hitch rate**, which Apple [measures](https://developer.apple.com/documentation/xcode/understanding-hitches-in-your-app) in "milliseconds of pause per second", and calls good "at or below 10 ms/s".
 
 Every scheduled frame knows the instant it was due. When it has been shown,
 four lines do the counting:
@@ -549,6 +540,5 @@ builds the same code read 90 to 321.
 
 ## Try it
 
-The cutaway is on by default wherever your terminal can draw it. Everywhere
-else you get the classic look, with nothing to configure.
+The cutaway is on by default wherever your terminal can draw it, except over ssh and inside GNU screen. Everywhere else you get the classic look, with nothing to configure.
 [Install pixtuoid](/) and open a terminal next to your agents.

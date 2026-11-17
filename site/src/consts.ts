@@ -53,7 +53,8 @@ export interface Wing {
   name: string; // its landmarks' accessible name
   bank: string; // the sidebar's elevator bank
   path: string; // the statusline's path
-  pages: readonly WingPage[]; // in reading order: the sidebar's list and the prev/next sequence
+  pages: readonly WingPage[]; // the sidebar's list, and the sequence the pager turns through
+  turns: { back: string; on: string }; // what the pager calls a step up that list, and down it
 }
 // The rendered docs, in reading order: the Nav dropdown's order too.
 export interface DocPage extends WingPage {
@@ -62,7 +63,13 @@ export interface DocPage extends WingPage {
   sourceNote?: string; // what the page's source line adds about how it renders the file
 }
 export const DOCS: readonly DocPage[] = docsData;
-export const DOCS_WING: Wing = { name: 'Docs', bank: 'docs wing', path: 'docs', pages: DOCS };
+export const DOCS_WING: Wing = {
+  name: 'Docs',
+  bank: 'docs wing',
+  path: 'docs',
+  pages: DOCS,
+  turns: { back: 'previous', on: 'next' },
+};
 export const pageTitle = (name: string): string => `${name} — pixtuoid`;
 
 export interface ThemeShot {

@@ -34,13 +34,27 @@ function rows(kind, tableNode, columns) {
   );
 }
 
-// A drawn figure's terminal window. A moving one carries the switch that stops it (WCAG 2.2's
+const WINDOW_BAR = 'fig__bar';
+
+// What moves in a figure carries this class: Wing.astro stops it by the class, under the switch
+// and for a reader who asked for less motion.
+const MOVING = 'fig__moving';
+
+function moves(body) {
+  let found = false;
+  visit({ type: 'root', children: body }, 'element', (node) => {
+    found ||= [node.properties.className].flat().includes(MOVING);
+  });
+  return found;
+}
+
+// A drawn figure's terminal window. One that moves carries the switch that stops it (WCAG 2.2's
 // SC 2.2.2 asks for one on motion that starts by itself and lasts:
 // www.w3.org/TR/WCAG22/#pause-stop-hide).
-const windowed = (title, body, { moving }) => [
-  h('div.fig__bar', [
+const windowed = (title, body) => [
+  h(`div.${WINDOW_BAR}`, [
     h('span.fig__title', title),
-    ...(moving ? [h('label.fig__pause', [h('input', { type: 'checkbox' }), ' pause'])] : []),
+    ...(moves(body) ? [h('label.fig__pause', [h('input', { type: 'checkbox' }), ' pause'])] : []),
   ]),
   h('div.fig__body', body),
 ];
@@ -93,7 +107,12 @@ const timeline = (takes, budget) =>
       ...Array.from({ length: BEATS + 1 }, (_, beat) =>
         s('path.fig-budget__beat', { d: `M${beat * BEAT} ${-TICK}V${LANE + TICK}` })
       ),
-      s('rect.fig-budget__now', { y: -TICK, width: 2, height: LANE + 2 * TICK }),
+      s('rect', {
+        className: ['fig-budget__now', MOVING],
+        y: -TICK,
+        width: 2,
+        height: LANE + 2 * TICK,
+      }),
     ]
   );
 
@@ -167,7 +186,10 @@ const around = (group) => {
   ];
 };
 const TILES = { fine: [16, 9], coarse: [4, 3] };
-const box = (className, [x, y, width, height]) => s('rect', { className, x, y, width, height });
+const box =
+  (...className) =>
+  ([x, y, width, height]) =>
+    s('rect', { className, x, y, width, height });
 
 /** The lines that cut the frame into `across` by `down` tiles. */
 function cuts([across, down]) {
@@ -180,8 +202,8 @@ function cuts([across, down]) {
 const pane = (what, count, over) =>
   h('li.fig-pane', [
     s('svg', { viewBox: `0 0 ${FRAME.width} ${FRAME.height}`, ariaHidden: 'true' }, [
-      box('fig-pane__frame', [0, 0, FRAME.width, FRAME.height]),
-      ...FURNITURE.map((at) => box('fig-pane__desk', at)),
+      box('fig-pane__frame')([0, 0, FRAME.width, FRAME.height]),
+      ...FURNITURE.map(box('fig-pane__desk')),
       ...over,
     ]),
     h('p.fig-pane__what', what),
@@ -198,68 +220,49 @@ function pair(kind, table, columns) {
 // Each kind draws its figure's content from the table it marks.
 const KINDS = {
   budget: (table) =>
-    windowed(
-      'frames against their budget: a tick is when one is due',
-      [
-        h(
-          'ul.fig__budgets',
-          rows('budget', table, ['frame', 'takes', 'budget']).map(([frame, takes, budget]) =>
-            h('li.fig-budget', [
-              h('p.fig-budget__frame', frame),
-              h('p.fig-budget__takes', takes),
-              timeline(milliseconds('budget', takes), milliseconds('budget', budget)),
-            ])
-          )
-        ),
-      ],
-      { moving: true }
-    ),
+    windowed('frames against their budget: a tick is when one is due', [
+      h(
+        'ul.fig__budgets',
+        rows('budget', table, ['frame', 'takes', 'budget']).map(([frame, takes, budget]) =>
+          h('li.fig-budget', [
+            h('p.fig-budget__frame', frame),
+            h('p.fig-budget__takes', takes),
+            timeline(milliseconds('budget', takes), milliseconds('budget', budget)),
+          ])
+        )
+      ),
+    ]),
   repaint: (table) => {
     const [[whole, wholePixels], [changed, changedPixels]] = pair('repaint', table, [
       'pass',
       'pixels',
     ]);
-    const washes = (boxes) => boxes.map((at) => box('fig-pane__wash', at));
-    return windowed(
-      'one frame, repainted (not to scale)',
-      [
-        h('ul.fig__panes', [
-          pane(whole, wholePixels, washes([[0, 0, FRAME.width, FRAME.height]])),
-          pane(changed, changedPixels, washes(CHANGES)),
-        ]),
-      ],
-      { moving: true }
-    );
+    const washes = (boxes) => boxes.map(box('fig-pane__wash', MOVING));
+    return windowed('one frame, repainted (not to scale)', [
+      h('ul.fig__panes', [
+        pane(whole, wholePixels, washes([[0, 0, FRAME.width, FRAME.height]])),
+        pane(changed, changedPixels, washes(CHANGES)),
+      ]),
+    ]);
   },
   boxes: (table) => {
     const [[changes, changeCount], [merged, mergedCount]] = pair('boxes', table, ['step', 'count']);
-    const marks = GROUPS.flat().map((at) => box('fig-pane__change', at));
-    return windowed(
-      'what changed, and the boxes that get repainted (not to scale)',
-      [
-        h('ul.fig__panes', [
-          pane(changes, changeCount, marks),
-          pane(merged, mergedCount, [
-            ...marks,
-            ...GROUPS.map((group) => box('fig-pane__box', around(group))),
-          ]),
-        ]),
-      ],
-      { moving: false }
-    );
+    const marks = GROUPS.flat().map(box('fig-pane__change'));
+    return windowed('what changed, and the boxes that get repainted (not to scale)', [
+      h('ul.fig__panes', [
+        pane(changes, changeCount, marks),
+        pane(merged, mergedCount, [...marks, ...GROUPS.map(around).map(box('fig-pane__box'))]),
+      ]),
+    ]);
   },
   tiles: (table) => {
     const [[small, smallCount], [big, bigCount]] = pair('tiles', table, ['tiles', 'images']);
-    return windowed(
-      'one frame, cut into tiles (not to scale)',
-      [
-        h('ul.fig__panes', [
-          pane(small, smallCount, [cuts(TILES.fine)]),
-          pane(big, bigCount, [cuts(TILES.coarse)]),
-        ]),
-      ],
-      { moving: false }
-    );
+    return windowed('one frame, cut into tiles (not to scale)', [
+      h('ul.fig__panes', [
+        pane(small, smallCount, [cuts(TILES.fine)]),
+        pane(big, bigCount, [cuts(TILES.coarse)]),
+      ]),
+    ]);
   },
   cards: (table) =>
     h(
@@ -272,9 +275,19 @@ const KINDS = {
 
 const FIGURE_KINDS = Object.keys(KINDS);
 
-// The shell every figure shares: its class names its kind (Wing.astro frames
-// `fig--diagram`; cards are styled through `.fig__cards`).
-export const figure = (kind, children) => h('figure', { className: [`fig--${kind}`] }, children);
+// The shell every figure shares: its class names its kind, and one that opens with a window's bar
+// is a window, which Wing.astro frames.
+export const figure = (kind, children) =>
+  h(
+    'figure',
+    {
+      className: [
+        `fig--${kind}`,
+        ...(children[0]?.properties?.className?.includes(WINDOW_BAR) ? ['fig--window'] : []),
+      ],
+    },
+    children
+  );
 
 export default function rehypeFigures() {
   return (tree) => {

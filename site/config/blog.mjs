@@ -15,11 +15,21 @@ export const BLOG_TITLE = 'pixtuoid blog';
 export const BLOG_DESCRIPTION =
   'Notes from building pixtuoid: what we measured, what we changed and what did not work.';
 
-/** A post's route, from the id its file name gives it. @param {string} id */
+// A post's file extension: its id is the file's name without it.
+const POST_EXT = '.md';
+export const POST_PATTERN = `*${POST_EXT}`;
+
+/** A post's id, from its file's name. @param {string} file */
+export const postId = (file) => file.slice(0, -POST_EXT.length);
+
+/** The order the blog lists its posts in. @param {Date} a @param {Date} b */
+export const newestFirst = (a, b) => b.valueOf() - a.valueOf();
+
+/** A post's route, from its id. @param {string} id */
 export const postRoute = (id) => `${BLOG_ROUTE}${id}/`;
 
 /** Every post's id, read from disk for what cannot ask the content collection. */
 export const postIds = () =>
   readdirSync(fileURLToPath(new URL(`../${BLOG_DIR}/`, import.meta.url)))
-    .filter((name) => name.endsWith('.md'))
-    .map((name) => name.slice(0, -'.md'.length));
+    .filter((name) => name.endsWith(POST_EXT))
+    .map(postId);

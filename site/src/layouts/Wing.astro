@@ -69,10 +69,10 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
         <slot />
       </Body>
 
-      <nav class="wing__pager" aria-label={`${wing.name} pagination`}>
+      {(prev || next) && <nav class="wing__pager" aria-label={`${wing.name} pagination`}>
         {prev ? (
           <a class="wing__pager-link" href={asset(prev.route)} rel="prev">
-            <span class="wing__pager-dir" aria-hidden="true"> ← previous </span>
+            <span class="wing__pager-dir" aria-hidden="true"> ← {wing.turns.back} </span>
             {prev.label}
           </a>
         ) : (
@@ -83,10 +83,10 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
           href={asset(next.route)}
           rel="next"
         >
-          <span class="wing__pager-dir" aria-hidden="true"> next → </span>
+          <span class="wing__pager-dir" aria-hidden="true"> {wing.turns.on} → </span>
           {next.label}
         </a>}
-      </nav>
+      </nav>}
 
       {source && <p class="wing__source">
         Source of truth:
@@ -109,7 +109,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     </nav>}
   </main>
   <Footer />
-  <Statusline wing={wing.path} page={page?.route.replace(/\/$/, '').split('/').pop()} />
+  <Statusline wingPath={wing.path} pageSlug={page?.route.replace(/\/$/, '').split('/').pop()} />
 </Base>
 
 <script is:inline>
@@ -247,10 +247,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: inherit;
   }
   /* rendered markdown carries no astro scope hash, hence :global throughout */
-  /* One terminal chrome for a callout, a diagram's figure
-     (config/rehype-beautiful-mermaid.mjs) and a moving one (config/rehype-figures.mjs). */
-  .wing
-    :global(:is(.callout, .fig--diagram, .fig--budget, .fig--repaint, .fig--boxes, .fig--tiles)) {
+  /* One terminal chrome for a callout and a figure in a window (config/rehype-figures.mjs's
+     `figure`). */
+  .wing :global(:is(.callout, .fig--window)) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
@@ -432,13 +431,13 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-family: var(--font-display);
     font-size: 1.5rem;
   }
-  .wing :global(:has(.fig__pause input:checked) :is(.fig-budget__now, .fig-pane__wash)) {
+  .wing :global(figure:has(.fig__pause input:checked) .fig__moving) {
     animation-play-state: paused;
   }
   /* global.css shortens every animation to an instant, which an endless one would repeat without
      end: these stand still, as the timeline and the boxes they already are. */
   @media (prefers-reduced-motion: reduce) {
-    .wing :global(.fig-pane__wash) {
+    .wing :global(.fig__moving) {
       animation: none;
     }
     .wing :global(:is(.fig-budget__now, .fig__pause)) {
@@ -530,7 +529,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-size: 0.84rem;
     color: var(--fg-muted);
   }
-  /* rails hidden — Nav's Docs dropdown covers them */
+  /* No room for the rails: Nav's Docs dropdown lists the docs, and a post's meta line links
+     the blog. */
   @media (max-width: 1000px) {
     .wing {
       display: block;

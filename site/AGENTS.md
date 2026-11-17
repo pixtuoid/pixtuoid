@@ -13,8 +13,8 @@ docs, demo media all flow in from outside `site/`. Parent guide: the workspace
 ## Cross-boundary build inputs (the coupling that bites)
 
 `astro build` reads **these files from OUTSIDE `site/`** (workspace
-`Cargo.toml` + the `docs/` pages below); a rename/move of any FAILS the
-build:
+`Cargo.toml`, the `docs/` pages below and the image a post shows); a
+rename/move of any FAILS the build:
 
 - workspace `Cargo.toml` → the origin (`homepage`), the default title
   (`description`) and the displayed-version
@@ -29,6 +29,8 @@ build:
   `assert-docs-rendered` globs every rendered `article.prose` and needs no
   edit), `site.yml`'s `scope` paths, and the e2e rows that name a route (smoke's
   pan and `PLATE_SURFACES` tables, `docs-lobby.spec.ts`).
+- `docs/images/looks-composite.png`, which the first post shows and
+  `media-regen.yml` rewrites: `site.yml`'s `scope` paths name it.
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:
@@ -92,8 +94,8 @@ PRODUCTION build — the runtime-contract tier (`__pixLights`/`pix:onair`/
 watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 
 - **Lighthouse** (`npm run lighthouse`: `lhci autorun` over `lighthouserc.mjs`,
-  which serves `dist/` itself and audits the home page and every route
-  `src/docs.json` renders; `config/lighthouse-budget.test.mjs` holds the
+  which serves `dist/` itself and audits the home page, every route
+  `src/docs.json` renders, the blog's lobby and every post; `config/lighthouse-budget.test.mjs` holds the
   assertion policy).
   **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
   doubled collect list. The office's wasm is fetched by its worker, which

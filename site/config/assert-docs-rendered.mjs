@@ -1,5 +1,5 @@
-// Assert every rendered doc page has a body and drew every diagram its doc
-// declares. Born for the silent empty-render class — a render step
+// Assert every rendered doc page, a doc's or a post's, has a body and drew every
+// diagram its source declares. Born for the silent empty-render class — a render step
 // collapsed a doc's <Content /> to an EMPTY <article> WITHOUT failing `astro
 // build` (#680) — and GENERIC on purpose: it globs every page carrying the wing
 // shell's `<article class="prose">`, so no per-page string can drift. A render
@@ -36,7 +36,7 @@ export function mermaidFences(markdown) {
 /**
  * Given doc-page entries `[{ name, html }]` and `diagrams`, the count of
  * Mermaid blocks each page's doc declares by page name, return the failures +
- * how many article pages were seen.
+ * how many doc pages were seen.
  */
 export function checkDocPages(entries, diagrams) {
   const failures = [];

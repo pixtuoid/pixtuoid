@@ -4,7 +4,7 @@ import { render } from 'astro:content';
 import Wing from '../../layouts/Wing.astro';
 import { blogWing, postDay, posts } from '../../blog';
 import { asset } from '../../consts';
-import { BLOG_DIR, BLOG_ROUTE, postRoute } from '../../../config/blog.mjs';
+import { BLOG_ROUTE, postRoute } from '../../../config/blog.mjs';
 
 export async function getStaticPaths() {
   return (await posts()).map((post) => ({ params: { id: post.id }, props: { post } }));
@@ -22,7 +22,7 @@ const wing = await blogWing();
   title={post.data.title}
   description={post.data.description}
   headings={headings}
-  source={{ path: `site/${BLOG_DIR}/${post.id}.md` }}
+  source={{ path: `site/${post.filePath}` }}
 >
   <p class="post__meta">
     <a href={asset(BLOG_ROUTE)}>Blog</a> · <time datetime={postDay(post)}>{postDay(post)}</time>

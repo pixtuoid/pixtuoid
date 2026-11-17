@@ -63,20 +63,31 @@ test('the footer links the blog', async ({ page }) => {
 });
 
 // The switch is a checkbox the stylesheet reads, so it has to work with no script at all.
-test("a moving figure's switch stops it from the keyboard, with no script", async ({ browser }) => {
+test('each moving figure has a switch that stops it alone, from the keyboard, with no script', async ({
+  browser,
+}) => {
   const context = await browser.newContext({ javaScriptEnabled: false });
   const page = await context.newPage();
   const [id] = postIds();
   await page.goto(`./${postRoute(id)}`);
-  for (const figure of await page.locator('figure:has(.fig__pause)').all()) {
-    const moving = figure.locator('.fig-budget__now, .fig-pane__wash').first();
-    const state = () => moving.evaluate((el) => getComputedStyle(el).animationPlayState);
-    expect(await state()).toBe('running');
+  const figures = await page.locator('figure:has(.fig__moving)').all();
+  expect(figures.length).toBeGreaterThan(1);
+  const states = () =>
+    Promise.all(
+      figures.map((figure) =>
+        figure
+          .locator('.fig__moving')
+          .first()
+          .evaluate((el) => getComputedStyle(el).animationPlayState)
+      )
+    );
+  for (const [at, figure] of figures.entries()) {
+    const others = figures.map((_, i) => (i === at ? 'paused' : 'running'));
     await figure.locator('.fig__pause input').focus();
     await page.keyboard.press('Space');
-    expect(await state()).toBe('paused');
+    expect(await states()).toEqual(others);
     await page.keyboard.press('Space');
-    expect(await state()).toBe('running');
+    expect(await states()).toEqual(figures.map(() => 'running'));
   }
   await context.close();
 });
@@ -88,11 +99,9 @@ test('a reader who asked for less motion gets still figures and no switch', asyn
   await page.goto(`./${postRoute(id)}`);
   await expect(page.locator('.fig__pause').first()).toBeHidden();
   await expect(page.locator('.fig-budget__now').first()).toBeHidden();
-  expect(
-    await page
-      .locator('.fig-pane__wash')
-      .first()
-      .evaluate((el) => getComputedStyle(el).animationName)
-  ).toBe('none');
+  const names = await page
+    .locator('.fig__moving')
+    .evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));
+  expect(new Set(names)).toEqual(new Set(['none']));
   await context.close();
 });
