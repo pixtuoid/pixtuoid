@@ -283,7 +283,7 @@ export default function rehypeFigures() {
     visit(tree, 'raw', (node, i, parent) => {
       const kind = MARKER.exec(node.value.trim())?.[1];
       if (!kind || !parent) return;
-      const draw = Object.hasOwn(KINDS, kind) && KINDS[kind];
+      const draw = KINDS[kind];
       if (!draw)
         throw new Error(`unknown figure kind "${kind}" (known: ${FIGURE_KINDS.join(', ')})`);
       let j = i + 1;

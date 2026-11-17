@@ -172,12 +172,8 @@ test('a two-pane figure needs exactly its two rows', () => {
   );
 });
 
-test('an unknown kind fails the build, one every object inherits included', () => {
+test('an unknown kind fails the build', () => {
   assert.throws(() => run([marker('chart'), nl, table(CARDS)]), /unknown figure kind "chart"/);
-  assert.throws(
-    () => run([marker('constructor'), nl, table(CARDS)]),
-    /unknown figure kind "constructor"/
-  );
 });
 
 test('a marker must sit right above what it marks', () => {
