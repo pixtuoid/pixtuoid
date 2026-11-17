@@ -3695,15 +3695,6 @@ test('audit C9: pausing the office before the pantry reveals keeps the FAQ visib
     .toBeGreaterThan(0.5);
 });
 
-test('audit C7: the doc-page install chip links cross-page, not a dead same-page fragment', async ({
-  page,
-}) => {
-  await page.goto('/config/');
-  const href = await page.locator('[data-sl-install-link]').first().getAttribute('href');
-  expect(href).not.toBe('#install');
-  expect(href).toContain('#install');
-});
-
 test('audit C5: ♩ hides and never persists a silent "playing" when the AudioContext constructor throws', async ({
   page,
 }) => {

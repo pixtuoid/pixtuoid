@@ -5,12 +5,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { FEED_ROUTE, readingRoutes } from './blog.mjs';
+import { readingRoutes } from './blog.mjs';
 import floors from '../src/floors.json' with { type: 'json' };
 
 const read = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const floorIds = floors.map((f) => f.id);
-const routes = [...readingRoutes(), FEED_ROUTE];
+const routes = readingRoutes();
 
 for (const rel of [
   '../../integrations/raycast/src/manage-sources.tsx',
@@ -27,12 +27,12 @@ for (const rel of [
 
 // A page's link names its route, slash and all: any other spelling redirects.
 for (const rel of ['../../README.md', '../../docs/ARCHITECTURE.md']) {
-  test(`${rel} links a reading page or the feed by the route the site builds`, () => {
-    const pages = [...read(rel).matchAll(/pixtuoid\.dev\/([\w.-]+(?:\/[\w.-]+)*\/?)/g)].map(
+  test(`${rel} links a reading page by the route the site builds`, () => {
+    const pages = [...read(rel).matchAll(/pixtuoid\.dev\/([\w-]+(?:\/[\w-]+)*\/?)/g)].map(
       (m) => m[1]
     );
     assert.ok(pages.length > 0, `${rel} links no pixtuoid.dev page`);
     for (const p of pages)
-      assert.ok(routes.includes(p), `/${p} is no reading page or feed of the site (${routes})`);
+      assert.ok(routes.includes(p), `/${p} is no reading page of the site (${routes})`);
   });
 }

@@ -93,7 +93,7 @@ test('the article selector tolerates EXTRA classes (\\bprose\\b, not sole-class)
   assert.deepEqual(failures, []);
 });
 
-test('word boundary: a mere substring like "prosetype" is NOT treated as a doc page', () => {
+test('word boundary: a mere substring like "prosetype" is NOT treated as a page', () => {
   const { pages } = checkPages(
     [{ name: 'x', html: `<article class="prosetype">${body(600)}</article>` }],
     {}

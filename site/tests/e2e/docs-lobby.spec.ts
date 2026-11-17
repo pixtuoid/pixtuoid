@@ -232,6 +232,7 @@ test('pantry FAQ: bubbles pop in sequence, join pix:paused, reduced-motion is st
 test("off the index, the install chip leaves for the install floor, whatever the page's own ids", async ({
   page,
 }) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./config/');
   // A heading that slugs to the floor's id must not catch the chip.
   await page.evaluate((id) => {
@@ -239,7 +240,7 @@ test("off the index, the install chip leaves for the install floor, whatever the
     heading.id = id;
     document.querySelector('article')!.append(heading);
   }, floorById('install').id);
-  await page.locator('#sl-install').click();
+  await page.locator('#sl-install [data-sl-install-link]').click();
   await expect(page).toHaveURL(new RegExp(`/#${floorById('install').id}$`));
   expect(new URL(page.url()).pathname).toBe('/');
 });

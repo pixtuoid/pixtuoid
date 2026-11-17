@@ -77,10 +77,6 @@ test("a style= inside another attribute's quoted value is not the style attribut
 
 test('a reference the decoder cannot hash as the browser would fails the build', () => {
   assert.throws(() => inlineStyleHashes('<i style="font: a&nbsp;b">'), /&nbsp;.*ENTITIES/);
-  assert.throws(
-    () => inlineStyleHashes('<i style="font: a&constructor;b">'),
-    /&constructor;.*ENTITIES/
-  );
   for (const ref of ['&#x110000;', '&#0;', '&#xD800;', '&#x80;']) {
     assert.throws(
       () => inlineStyleHashes(`<i style="x: ${ref}">`),

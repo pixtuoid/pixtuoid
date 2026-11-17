@@ -1,5 +1,5 @@
 ---
-// The page's one piece of fixed chrome: on the index, a build-time merged-PR feed plus the
+// The page's fixed bottom bar: on the index, a build-time merged-PR feed plus the
 // elevator's organs (floor readout, scrollspy, digit keys, jump list); elsewhere, the page's path. Sits on
 // --screen (the office's own hardware black) and is NEVER subject to the dimmer.
 import sources from '../sources.json';
@@ -720,7 +720,6 @@ const FEED_ROTATE_MS = 6000;
       // visitor, whatever this page's own ids are.
       if (installLink.pathname !== location.pathname) return;
       const sec = document.getElementById(installLink.hash.slice(1));
-      if (!sec) return;
       e.preventDefault();
       sec.scrollIntoView({ behavior: mq.matches ? 'auto' : 'smooth', block: 'start' });
       sec.setAttribute('tabindex', '-1');
