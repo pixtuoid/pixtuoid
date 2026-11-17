@@ -47,7 +47,7 @@ const WASM_INIT_BACKOFF_MS = 400;
 // and frames never block the page's thread (Lighthouse's TBT); else the page's thread does. A host whose wasm never
 // loaded clears the memo, so a later consumer starts a fresh one (#671). Resolves to
 // `{ offThread, open(seed, canvas, journey) }`; `open` resolves to the office's handle, whose `frame`, `call` and
-// `warmAudio` are office-host.js's ops of those names, and whose `journey` (`{ lines, settleMs }`) a journey office
+// `warmAudio` are office-host.js's ops of those names, and whose `journey` (`{ lines, jumpMs }`) a journey office
 // carries.
 export function officeHost() {
   if (!window.__pixOfficeHost) {

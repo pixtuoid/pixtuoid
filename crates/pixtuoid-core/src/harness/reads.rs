@@ -364,7 +364,7 @@ pub(crate) fn child_pointer(at: &str, key: &str) -> String {
 
 /// Whether `key` under `at` is one of a hook envelope's top-level
 /// [`SHIM_STAMPS`](crate::source::decoder::SHIM_STAMPS), which the strip keeps:
-/// [`SHIM_STAMP`](crate::source::decoder::SHIM_STAMP) is read by no decoder,
+/// [`FORWARDED_AT_STAMP`](crate::source::decoder::FORWARDED_AT_STAMP) is read by no decoder,
 /// but the merge orders lines by it.
 pub(crate) fn is_shim_stamp(at: &str, key: &str) -> bool {
     at.is_empty() && crate::source::decoder::SHIM_STAMPS.contains(&key)
@@ -673,7 +673,7 @@ mod tests {
                     .expect("json")
                     .1
                     .iter()
-                    .map(|l| l[crate::source::decoder::SHIM_STAMP].clone())
+                    .map(|l| l[crate::source::decoder::FORWARDED_AT_STAMP].clone())
                     .collect()
             };
             let before = stamps(&hooks);

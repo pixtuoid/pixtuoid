@@ -3,12 +3,13 @@
 //! `#[path]`-include them and pin each to core's: the shim stays free of
 //! pixtuoid-core.
 
-pub(crate) const SHIM_STAMP: &str = "_shim_ts_ms";
+pub(crate) const FORWARDED_AT_STAMP: &str = "_shim_ts_ms";
 pub(crate) const SOURCE_STAMP: &str = "_pixtuoid_source";
 pub(crate) const EVENT_STAMP: &str = "_pixtuoid_event";
 pub(crate) const PID_STAMP: &str = "_pid";
 /// Every key above the shim stamps: `enrich_payload` adds no other, and core's
-/// `SHIM_STAMPS` is pinned to it.
+/// copy is pinned to it.
 #[cfg(test)]
-pub(crate) const STAMPS: [&str; 4] = [SHIM_STAMP, SOURCE_STAMP, EVENT_STAMP, PID_STAMP];
+pub(crate) const SHIM_STAMPS: [&str; 4] =
+    [FORWARDED_AT_STAMP, SOURCE_STAMP, EVENT_STAMP, PID_STAMP];
 pub(crate) const JCODE_SOURCE: &str = "jcode";

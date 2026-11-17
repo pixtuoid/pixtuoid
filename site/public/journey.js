@@ -85,7 +85,7 @@ export async function start(figure) {
     });
 
     // The office's clock: under reduced motion it stands where it stood when motion was last reduced,
-    // else it is the wall clock; each adds every jump a line took (the office's settle, under reduced
+    // else it is the wall clock; each adds every jump a line took (the office's `jumpMs`, under reduced
     // motion), so it never runs backward.
     let ahead = 0;
     let stood = Date.now();
@@ -214,7 +214,7 @@ export async function start(figure) {
         [
           'frame',
           () => {
-            if (reduced.matches) ahead += office.journey.settleMs;
+            if (reduced.matches) ahead += office.journey.jumpMs;
             move();
           },
         ],

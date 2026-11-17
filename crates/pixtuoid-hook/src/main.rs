@@ -233,7 +233,7 @@ fn enrich_payload(
 ) {
     map.remove(keys::SOURCE_STAMP);
     map.remove(keys::EVENT_STAMP);
-    map.insert(keys::SHIM_STAMP.into(), Value::from(ts_ms));
+    map.insert(keys::FORWARDED_AT_STAMP.into(), Value::from(ts_ms));
     if let Some(src) = source
         && !src.is_empty()
     {

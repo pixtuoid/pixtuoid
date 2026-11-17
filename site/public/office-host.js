@@ -32,7 +32,7 @@ export function serve(port) {
       return [
         {
           journey: journey
-            ? { lines: mod.Office.journey_lines(), settleMs: mod.Office.journey_settle_ms() }
+            ? { lines: mod.Office.journey_lines(), jumpMs: mod.Office.journey_jump_ms() }
             : null,
           audio: {
             sampleRate: office.audio_sample_rate(),

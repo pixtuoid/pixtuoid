@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::reads::{Spelling, WRITE_STAMPS};
 use super::{BreadcrumbSink, CASCADE_TICK, Decode, Delivered, Drive, Driven, Fold};
 use crate::source::DEFAULT_POLL_INTERVAL;
-use crate::source::decoder::{SHIM_STAMP, rfc3339_to_epoch};
+use crate::source::decoder::{FORWARDED_AT_STAMP, rfc3339_to_epoch};
 use crate::state::ActivityState;
 use crate::{AgentEvent, Transport};
 
@@ -105,7 +105,7 @@ impl Drive {
                 |_, e| e.into_iter().map(Delivered::Wire).collect(),
                 &mut decoded,
                 |v| {
-                    let ms = v.get(SHIM_STAMP)?.as_u64()?;
+                    let ms = v.get(FORWARDED_AT_STAMP)?.as_u64()?;
                     Some((Duration::from_millis(ms), Duration::ZERO))
                 },
             );
@@ -359,7 +359,7 @@ mod tests {
             "tool_name": "Bash",
             "tool_input": {"command": "ls"},
             "tool_use_id": "call_1",
-            SHIM_STAMP: ms,
+            FORWARDED_AT_STAMP: ms,
         })
         .to_string()
     }
@@ -596,7 +596,10 @@ mod tests {
         let text = std::fs::read_to_string(&hooks).expect("a recorded hook capture");
         for line in text.lines() {
             let v: Value = serde_json::from_str(line).expect("json");
-            assert!(v[SHIM_STAMP].as_u64().is_some_and(|ms| ms > 0), "{line}");
+            assert!(
+                v[FORWARDED_AT_STAMP].as_u64().is_some_and(|ms| ms > 0),
+                "{line}"
+            );
         }
     }
 

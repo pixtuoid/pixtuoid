@@ -1687,6 +1687,30 @@ test('how it works without its wasm: the player it began is taken down, and the 
   await expect(page.locator('.fig-journey__what').first()).toBeVisible();
 });
 
+test('how it works under reduced motion: the last hook walks its session out, so the next seats a fresh one', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./how-it-works/');
+  const hooks = page.locator('.fig-journey__hook');
+  const office = page.locator('[data-stop="office"] .fig-journey__out');
+  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+  const count = await hooks.count();
+  for (let i = 0; i < count; i++) {
+    await hooks.nth(i).click();
+    await expect(hooks.nth((i + 1) % count)).toBeEnabled();
+    // The session's one read, which a slot revived in place would still show.
+    if (i === count - 2) await expect(office).toContainText('"tool_call_count": 1');
+  }
+  // Only the hooks move the clock, so the last one's jump alone takes the ended session past its sweep.
+  await hooks.first().click();
+  await expect(hooks.nth(1)).toBeEnabled();
+  await expect(office).toContainText('"tool_call_count": 0');
+  await context.close();
+});
+
 test('how it works under reduced motion: a hook still lands, and the office draws a still of it', async ({
   browser,
 }) => {

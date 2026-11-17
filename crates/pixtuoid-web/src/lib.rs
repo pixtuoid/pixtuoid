@@ -233,11 +233,10 @@ impl Office {
         JOURNEY.lines().map(str::to_owned).collect()
     }
 
-    /// How long after a line the office takes to settle, which the page's
-    /// clock jumps under reduced motion: a millisecond past
-    /// [`EXIT_GRACE_WINDOW`], the time an ended session has to walk out, which
-    /// its slot's sweep needs strictly elapsed.
-    pub fn journey_settle_ms() -> f64 {
+    /// How far the page's clock jumps per line under reduced motion: a
+    /// millisecond past [`EXIT_GRACE_WINDOW`], which an ended session's sweep
+    /// needs strictly elapsed.
+    pub fn journey_jump_ms() -> f64 {
         (EXIT_GRACE_WINDOW + std::time::Duration::from_millis(1)).as_secs_f64() * 1000.0
     }
 
@@ -249,7 +248,8 @@ impl Office {
     ///
     /// # Errors
     ///
-    /// If the line is not JSON, or no decoder takes it.
+    /// If the line is not JSON or [`decode_hook_payload`] rejects it; a line
+    /// no CLI's stamp names decodes to no events.
     pub fn send_hook(&mut self, line: &str, now_ms: f64) -> Result<String, JsError> {
         self.land_hook(line, pixtuoid_scene::anim::from_epoch_ms(now_ms))
             .map_err(|e| JsError::new(&e.to_string()))
@@ -871,7 +871,7 @@ impl Segment {
 mod tests {
     use super::*;
     use crate::script::{CAST_LEN, HIRE_STAY, LOOP, cast_id, hero_gateway};
-    use pixtuoid_core::source::decoder::{PID_STAMP, SHIM_STAMP, SOURCE_STAMP};
+    use pixtuoid_core::source::decoder::{FORWARDED_AT_STAMP, PID_STAMP, SOURCE_STAMP};
     use pixtuoid_scene::screen::Flashes;
 
     /// [`LOOP`] in the unit `step` takes.
@@ -1563,7 +1563,7 @@ mod tests {
         for l in &landed {
             assert_eq!(
                 l["stamps"],
-                serde_json::json!([SHIM_STAMP, SOURCE_STAMP, PID_STAMP]),
+                serde_json::json!([FORWARDED_AT_STAMP, SOURCE_STAMP, PID_STAMP]),
                 "the keys the shim added to Claude Code's line"
             );
         }
@@ -1577,23 +1577,36 @@ mod tests {
             landed[3]["agents"][0]["exiting_at"].is_object(),
             "an ended session walks out"
         );
-        t += Office::journey_settle_ms();
-        o.step(t, 160, 96);
-        assert!(
-            o.scene.agents.is_empty(),
-            "and its slot is swept within the settle the page's still clock jumps"
-        );
-
-        // The page's buttons wrap back to the first hook, so the recording plays again.
+        // The page's buttons wrap back to the first hook, sent a jump after the last with no
+        // frame between, as when the page is out of view: the ended session is swept first, so it
+        // walks in afresh rather than revived where it stood.
+        t += Office::journey_jump_ms();
         let mut again = Vec::new();
-        for line in &lines {
-            t += 1_000.0;
-            o.step(t, 160, 96);
+        for (i, line) in lines.iter().enumerate() {
+            if i > 0 {
+                t += 1_000.0;
+                o.step(t, 160, 96);
+            }
             let json = o
                 .land_hook(line, pixtuoid_scene::anim::from_epoch_ms(t))
                 .expect("a recorded line lands again");
             again.push(serde_json::from_str::<serde_json::Value>(&json).expect("JSON"));
         }
+        assert_eq!(
+            landed[3]["agents"][0]["tool_call_count"],
+            serde_json::json!(1),
+            "the ended session made its one read"
+        );
+        assert_eq!(
+            again[0]["agents"].as_array().map(Vec::len),
+            Some(1),
+            "the ended session was swept"
+        );
+        assert_eq!(
+            again[0]["agents"][0]["tool_call_count"],
+            serde_json::json!(0),
+            "a fresh slot, not the ended one revived with its read"
+        );
         assert_eq!(
             state(&again[0]),
             serde_json::json!("Idle"),

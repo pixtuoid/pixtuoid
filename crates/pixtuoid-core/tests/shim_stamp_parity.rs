@@ -10,11 +10,11 @@ use pixtuoid_core::source::decoder;
 
 #[test]
 fn each_key_the_shim_stamps_is_the_one_core_reads() {
-    assert_eq!(shim_keys::SHIM_STAMP, decoder::SHIM_STAMP);
+    assert_eq!(shim_keys::FORWARDED_AT_STAMP, decoder::FORWARDED_AT_STAMP);
     assert_eq!(shim_keys::SOURCE_STAMP, decoder::SOURCE_STAMP);
     assert_eq!(shim_keys::EVENT_STAMP, decoder::EVENT_STAMP);
     assert_eq!(shim_keys::PID_STAMP, decoder::PID_STAMP);
-    assert_eq!(shim_keys::STAMPS, decoder::SHIM_STAMPS);
+    assert_eq!(shim_keys::SHIM_STAMPS, decoder::SHIM_STAMPS);
 }
 
 #[test]

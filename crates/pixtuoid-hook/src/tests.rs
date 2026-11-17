@@ -28,7 +28,7 @@ fn the_keys_the_shim_stamps_are_its_stamps() {
     let map = p.as_object_mut().unwrap();
     enrich_payload(map, Some("x".into()), Some("y".into()), 1, || Some(1));
     let mut stamped: Vec<&str> = map.keys().map(String::as_str).collect();
-    let mut stamps = keys::STAMPS.to_vec();
+    let mut stamps = keys::SHIM_STAMPS.to_vec();
     stamped.sort_unstable();
     stamps.sort_unstable();
     assert_eq!(stamped, stamps);
