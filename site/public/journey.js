@@ -3,7 +3,7 @@
 // (rehype-figures.mjs's JOURNEY_STOPS) made of it, the stop `frame`'s output being the player's office.
 'use strict';
 
-import { officeHost } from './office-driver.js';
+import { officeHost, wholeBox } from './office-driver.js';
 
 // Its own office's seed, apart from the home page's.
 const SEED = 7;
@@ -12,6 +12,10 @@ const STEP_MS = 280;
 // Under reduced motion the office's clock stands still but for this jump per line: about the average
 // walk, which pixtuoid-scene's physics.rs sets through V_CRUISE_COMMUTE.
 const SETTLED_MS = 4000;
+// How long the office moves after it boots, resizes or takes a line, then holds still: within WCAG 2.2.2's five
+// seconds, past which motion that starts by itself needs a pause control
+// (w3.org/WAI/WCAG22/Understanding/pause-stop-hide).
+const MOVING_MS = 5000;
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 
@@ -47,10 +51,13 @@ export async function start(figure) {
     stops[li.dataset.stop] = li;
   });
   const player = el('div', 'fig-journey__player');
+  // The canvas is sized to whole CSS pixels, a little past the frame, which crops it.
+  const frame = el('div', 'fig-journey__frame');
   const canvas = el('canvas', 'fig-journey__office');
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', 'The office, drawn by the engine');
-  player.append(canvas);
+  frame.append(canvas);
+  player.append(frame);
   figure.prepend(player);
   const outs = {};
   try {
@@ -91,17 +98,23 @@ export async function start(figure) {
       return (reduced.matches ? stood : Date.now()) + ahead;
     };
     let units = [0, 0];
+    let fitSeq = 0;
     async function fit() {
       const dpr = window.devicePixelRatio || 1;
-      const [w, h] = await office.call(
-        'fit',
-        Math.round(canvas.clientWidth * dpr),
-        Math.round(canvas.clientHeight * dpr)
-      );
-      units = [w, h];
+      const r = frame.getBoundingClientRect();
+      // A reply that lands after a later fit was asked sizes nothing.
+      const seq = ++fitSeq;
+      const reply = await office.call('fit', Math.round(r.width * dpr), Math.round(r.height * dpr));
+      if (seq !== fitSeq) return;
+      const box = wholeBox(reply, dpr);
+      units = box.units;
+      canvas.style.width = box.css[0] + 'px';
+      canvas.style.height = box.css[1] + 'px';
+      canvas.dataset.upscale = String(reply[3]);
     }
+    // Nothing to draw until a fit has landed: the resize observer's first fit supersedes the boot's.
     function draw() {
-      if (office.busy) return Promise.resolve();
+      if (office.busy || !units[0]) return Promise.resolve();
       return office.frame({
         now: clock(),
         w: units[0],
@@ -113,11 +126,12 @@ export async function start(figure) {
     }
     let raf = 0;
     let inView = false;
+    let movingUntil = 0;
     function loop() {
       raf = 0;
       // Under reduced motion the frames repeat one instant, which also lets the engine's flash hold
       // pass the frame it held.
-      if (!inView || document.hidden) return;
+      if (!inView || document.hidden || Date.now() > movingUntil) return;
       draw().catch(function () {
         /* a host that died leaves the last frame up */
       });
@@ -126,14 +140,21 @@ export async function start(figure) {
     function sync() {
       if (!raf) loop();
     }
+    function move() {
+      movingUntil = Date.now() + MOVING_MS;
+      sync();
+    }
     new IntersectionObserver(function (entries) {
       inView = entries[0].isIntersecting;
       sync();
     }).observe(canvas);
     document.addEventListener('visibilitychange', sync);
-    new ResizeObserver(fit).observe(canvas);
+    new ResizeObserver(function () {
+      fit().then(move);
+    }).observe(frame);
     await fit();
     await draw();
+    move();
 
     const send = el('div', 'fig-journey__send');
     send.setAttribute('role', 'group');
@@ -192,7 +213,13 @@ export async function start(figure) {
         ['shim', () => jsonInto(outs.shim, payloads[i], landed.stamps)],
         ['decoder', () => (outs.decoder.textContent = JSON.stringify(landed.events, null, 2))],
         ['office', () => (outs.office.textContent = JSON.stringify(landed.agents, null, 2))],
-        ['frame', () => reduced.matches && (ahead += SETTLED_MS)],
+        [
+          'frame',
+          () => {
+            if (reduced.matches) ahead += SETTLED_MS;
+            move();
+          },
+        ],
       ];
       Object.values(stops).forEach(function (li) {
         li.classList.remove('is-lit');

@@ -585,12 +585,15 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     background: color-mix(in srgb, var(--coral) 30%, transparent);
     color: inherit;
   }
-  .wing :global(.fig-journey__office) {
-    display: block;
+  .wing :global(.fig-journey__frame) {
     width: min(100%, 2 * var(--office-h));
     aspect-ratio: 2 / 1;
+    overflow: hidden;
     border-radius: var(--radius-sm);
     background: var(--screen);
+  }
+  .wing :global(.fig-journey__office) {
+    display: block;
     image-rendering: pixelated;
   }
   .wing :global(.fig-journey__why summary) {

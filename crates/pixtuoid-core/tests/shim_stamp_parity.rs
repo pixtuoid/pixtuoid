@@ -14,6 +14,7 @@ fn each_key_the_shim_stamps_is_the_one_core_reads() {
     assert_eq!(shim_keys::SOURCE_STAMP, decoder::SOURCE_STAMP);
     assert_eq!(shim_keys::EVENT_STAMP, decoder::EVENT_STAMP);
     assert_eq!(shim_keys::PID_STAMP, decoder::PID_STAMP);
+    assert_eq!(shim_keys::STAMPS, decoder::SHIM_STAMPS);
 }
 
 #[test]

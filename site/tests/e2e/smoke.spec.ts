@@ -1557,6 +1557,18 @@ test('how it works: every recorded hook fills each stop through the real decoder
       if (i === count - 1) expect(slots[0].exiting_at, 'the last hook ends it').not.toBeNull();
       if (i === 0) {
         expect(await canvasPainted(page, '.fig-journey__office')).toBe(true);
+        // Every art pixel on whole device pixels: a whole CSS box that is the frame at its whole upscale.
+        const box = await page.locator('.fig-journey__office').evaluate((c: HTMLCanvasElement) => ({
+          css: [parseFloat(c.style.width), parseFloat(c.style.height)],
+          frame: [c.width, c.height],
+          upscale: Number(c.dataset.upscale),
+          dpr: devicePixelRatio,
+        }));
+        expect(box.upscale % 1).toBe(0);
+        for (const axis of [0, 1]) {
+          expect(box.css[axis] % 1, 'a whole CSS px').toBe(0);
+          expect(box.css[axis] * box.dpr).toBe(box.frame[axis] * box.upscale);
+        }
         await page.locator('.fig-journey__why summary').first().click();
         for (const selector of [
           '.fig-journey__hook:not(:disabled)',
@@ -1586,6 +1598,28 @@ test('how it works: every recorded hook fills each stop through the real decoder
     }
   }
   expect(errors()).toEqual([]);
+});
+
+test('how it works: the office moves a few seconds after a hook, then holds still', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./how-it-works/');
+  const hooks = page.locator('.fig-journey__hook');
+  const office = page.locator('.fig-journey__office');
+  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+  await office.scrollIntoViewIfNeeded();
+  const shot = async () => (await office.screenshot()).toString('base64');
+  await hooks.first().click();
+  // The session walks in to its desk.
+  const walking = await shot();
+  await expect.poll(shot, { timeout: 3_000 }).not.toBe(walking);
+  // Past journey.js's MOVING_MS, which WCAG 2.2.2's five seconds bound, nothing moves until the next hook.
+  await page.waitForTimeout(6_000);
+  const held = await shot();
+  await page.waitForTimeout(1_000);
+  expect(await shot()).toBe(held);
 });
 
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({

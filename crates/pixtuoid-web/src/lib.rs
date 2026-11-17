@@ -150,7 +150,7 @@ pub struct Office {
     /// The cutaway at the pack's densest art, which the browser upscales.
     fit: PixelFit,
     reducer: Reducer,
-    cast: Cast,
+    show: Show,
     /// Visitor hires — outside the loop machinery, so one never replays on wrap.
     hires: VisitorHires,
     /// The clock of the most recent `step` — `hire()` has no clock parameter, so
@@ -169,22 +169,23 @@ pub struct Office {
     audio: Option<audio::WebAudioDriver>,
 }
 
-/// What an office plays on its own.
+/// Which page's office this is, and so what plays in it on its own.
 #[derive(Debug)]
-enum Cast {
-    /// The hero's script, its loop anchored at the first `step`.
+enum Show {
+    /// The hero's: its script, the loop anchored at the first `step`.
     Hero(Option<Playhead>),
-    /// Nothing: only the hook lines [`Office::send_hook`] lands.
+    /// The How it works page's: nothing, only the hook lines
+    /// [`Office::send_hook`] lands.
     Journey,
 }
 
-impl Cast {
+impl Show {
     /// Who draws the office's words: the hero's page lays them over the canvas
     /// ([`Office::overlay_json`]), and the journey's frame carries its own.
     const fn world_text(&self) -> WorldText {
         match self {
-            Cast::Hero(_) => WorldText::Host,
-            Cast::Journey => WorldText::Baked,
+            Show::Hero(_) => WorldText::Host,
+            Show::Journey => WorldText::Baked,
         }
     }
 }
@@ -212,7 +213,7 @@ impl Office {
     /// If the bundled sprite pack fails to parse.
     #[wasm_bindgen(constructor)]
     pub fn new(seed: u32) -> Result<Office, JsError> {
-        Self::on_screen(seed, page_clock(), Cast::Hero(None))
+        Self::on_screen(seed, page_clock(), Show::Hero(None))
             .map_err(|e| JsError::new(&format!("{e:#}")))
     }
 
@@ -223,7 +224,7 @@ impl Office {
     ///
     /// If the bundled sprite pack fails to parse.
     pub fn journey(seed: u32) -> Result<Office, JsError> {
-        Self::on_screen(seed, page_clock(), Cast::Journey)
+        Self::on_screen(seed, page_clock(), Show::Journey)
             .map_err(|e| JsError::new(&format!("{e:#}")))
     }
 
@@ -258,10 +259,10 @@ impl Office {
         self.last_now = Some(now);
         let (units_w, units_h) = self.units(w, h);
         let px = self.frame_size(w, h);
-        // Capacity BEFORE the cast advances: the SessionStarts due this
+        // Capacity BEFORE the show advances: the SessionStarts due this
         // frame must allocate desks against the canvas this frame renders.
         self.sync_capacity(units_w, units_h, now);
-        self.advance_cast(now);
+        self.advance_show(now);
         // `render` evicts per-agent render state for the agents the sweep removed
         // — load-bearing: the looped script REUSES agent ids, and a returning cast
         // member with stale walk legs teleports in.
@@ -559,8 +560,8 @@ impl Office {
 const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
 
 impl Office {
-    /// An office playing `cast`, its flash hold on `clock`.
-    fn on_screen(seed: u32, clock: ScreenClock, cast: Cast) -> Result<Office, PackError> {
+    /// An office playing `show`, its flash hold on `clock`.
+    fn on_screen(seed: u32, clock: ScreenClock, show: Show) -> Result<Office, PackError> {
         let pack = std::sync::Arc::new(load_bundled_pack()?);
         let density = pack.max_density_variant();
         // The browser upscales the frame, so it renders at the art's own
@@ -576,7 +577,7 @@ impl Office {
             theme: &NORMAL,
             fit,
             reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
-            cast,
+            show,
             hires: VisitorHires::default(),
             last_now: None,
             caps_units: None,
@@ -603,7 +604,7 @@ impl Office {
         h: u32,
     ) -> Result<Office, PackError> {
         let screen = ManualClock::default();
-        let mut office = Self::on_screen(seed, screen.clock(), Cast::Hero(None))?;
+        let mut office = Self::on_screen(seed, screen.clock(), Show::Hero(None))?;
         office.set_weather(weather);
         office.step(t0_ms, w, h);
         // No one sees the anchor frame, so its flash hold lapses before the
@@ -654,17 +655,18 @@ impl Office {
         self.caps_units = Some((units_w, units_h));
     }
 
-    /// Land the hires' and the cast's cues due by `now`. The cast's sweep at
-    /// `now` comes last, so it covers the hires' too.
-    fn advance_cast(&mut self, now: SystemTime) {
+    /// Land the hires' cues due by `now`, then advance the show: the hero's
+    /// script lands its cues and sweeps, which covers the hires' too, and the
+    /// journey only sweeps.
+    fn advance_show(&mut self, now: SystemTime) {
         self.hires
             .drain_due(now, &mut self.reducer, &mut self.scene);
-        match &mut self.cast {
-            Cast::Hero(cast) => cast
+        match &mut self.show {
+            Show::Hero(playhead) => playhead
                 .get_or_insert_with(|| Playhead::new(script::hero(), now))
                 .advance(now, &mut self.reducer, &mut self.scene),
             // The sweep a playhead's advance ends on, which walks an ended session out.
-            Cast::Journey => self.reducer.tick(&mut self.scene, now),
+            Show::Journey => self.reducer.tick(&mut self.scene, now),
         }
     }
 
@@ -705,7 +707,7 @@ impl Office {
         self.session.render(
             self.fit.look(
                 pixtuoid_scene::look::LookKind::Cutaway,
-                self.cast.world_text(),
+                self.show.world_text(),
             ),
             RenderInputs {
                 world: FloorInputs {

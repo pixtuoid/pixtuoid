@@ -13,6 +13,32 @@ const MUSIC_WORKER_URL = new URL('music-worker.js', import.meta.url).href;
 const MUSIC_WORKLET_URL = new URL('music-worklet.js', import.meta.url).href;
 const MUSIC_WASM_JS_URL = new URL('wasm/pixtuoid_web_music.js', import.meta.url).href;
 
+// Chromium lays a box out in 64ths of a CSS px (`LayoutUnit`, blink's layout_unit.h:473), so a box finer than that
+// rasterizes a device pixel short and shifts every frame pixel past it: the office grows to a whole CSS pixel, within
+// as many units as the ratio's numerator (21 at 2.625).
+const WHOLE_CSS_TRIES = 32;
+// A ratio's float32 noise (110% reads 1.100000023841858) moves a whole size by far less; the box is then set to the
+// whole px itself, so no conversion of a fraction decides it.
+const WHOLE_CSS_EPS = 1 / 128;
+
+// The fewest units from `units` whose box is a whole CSS px, with that size; none within the tries keeps `units` and
+// its fractional size.
+function wholeCss(units, pxPerUnit, dpr) {
+  for (let u = units; u < units + WHOLE_CSS_TRIES; u++) {
+    const css = (u * pxPerUnit) / dpr;
+    if (Math.abs(css - Math.round(css)) < WHOLE_CSS_EPS) return [u, Math.round(css)];
+  }
+  return [units, (units * pxPerUnit) / dpr];
+}
+
+// The office an `Office.fit` reply lays out at ratio `dpr`, as `{ units: [w, h], css: [w, h] }`: the units `step`
+// takes and the canvas box, in CSS px, that shows its frame at the fit's whole upscale.
+export function wholeBox(fit, dpr) {
+  const across = wholeCss(fit[0], fit[2], dpr);
+  const down = wholeCss(fit[1], fit[2], dpr);
+  return { units: [across[0], down[0]], css: [across[1], down[1]] };
+}
+
 const WASM_INIT_RETRIES = 2; // extra attempts after the first
 const WASM_INIT_BACKOFF_MS = 400;
 

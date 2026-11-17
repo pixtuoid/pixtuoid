@@ -7,4 +7,8 @@ pub(crate) const SHIM_STAMP: &str = "_shim_ts_ms";
 pub(crate) const SOURCE_STAMP: &str = "_pixtuoid_source";
 pub(crate) const EVENT_STAMP: &str = "_pixtuoid_event";
 pub(crate) const PID_STAMP: &str = "_pid";
+/// Every key above the shim stamps: `enrich_payload` adds no other, and core's
+/// `SHIM_STAMPS` is pinned to it.
+#[cfg(test)]
+pub(crate) const STAMPS: [&str; 4] = [SHIM_STAMP, SOURCE_STAMP, EVENT_STAMP, PID_STAMP];
 pub(crate) const JCODE_SOURCE: &str = "jcode";

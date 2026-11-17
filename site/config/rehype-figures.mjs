@@ -215,7 +215,8 @@ function pair(kind, table, columns) {
   return found;
 }
 
-// A journey's stops, by the role the How it works page's script fills each with (public/journey.js).
+// A journey's stops, by the role the How it works page's script fills each with (public/journey.js). Each row
+// names its stop "The <role>", which is the join: a row out of this order fails the build.
 export const JOURNEY_STOPS = ['agent', 'shim', 'decoder', 'office', 'frame'];
 
 // `cards`, `budget` and `journey` draw their content from the table they mark; the two-pane kinds
@@ -226,6 +227,14 @@ const KINDS = {
     if (found.length !== JOURNEY_STOPS.length) {
       throw new Error(`figure "journey" has ${JOURNEY_STOPS.length} stops, found ${found.length}`);
     }
+    found.forEach(([name], i) => {
+      const said = toText({ type: 'root', children: name }).trim();
+      if (said.toLowerCase() !== `the ${JOURNEY_STOPS[i]}`) {
+        throw new Error(
+          `figure "journey": stop ${i + 1} is "${said}", where "The ${JOURNEY_STOPS[i]}" goes`
+        );
+      }
+    });
     return h(
       'ol.fig-journey__stops',
       found.map(([name, code, what, why], i) =>
