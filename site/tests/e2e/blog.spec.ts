@@ -104,8 +104,8 @@ test('a moving figure plays once the reader reaches it, and ends by itself', asy
       }
       const playheads = await figure.locator('.fig-budget__now').all();
       for (const playhead of playheads) await expect(playhead).toBeVisible();
-      // Each run ends on the part's still state: an opacity its last keyframe sets is the one it
-      // rests at, so nothing pops when the run ends.
+      // No run's last keyframe sets an opacity but the one its part rests at, so no part's
+      // opacity jumps when its run ends.
       const pops = await figure.locator('.fig__moving').evaluateAll((els) =>
         els.flatMap((el) =>
           el.getAnimations().flatMap((run) => {

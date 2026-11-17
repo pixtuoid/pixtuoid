@@ -2790,7 +2790,7 @@ test('every doc and post diagram: its SVG text clears WCAG AA, its boxes have a 
       }
       swept += diagrams.length;
     }
-    // teeth: a docs tree that stopped framing diagrams would pass vacuously
+    // teeth: pages that stopped framing diagrams would pass vacuously
     expect(swept, `${theme}: no diagram swept across the docs and the posts`).toBeGreaterThan(0);
   }
 });
@@ -3118,7 +3118,7 @@ test('pantry chitchat bubble text clears WCAG AA against its own dark ground (da
   }
 });
 
-test('docs callout body copy clears WCAG AA against the callout screen (day + night + dracula)', async ({
+test('every doc and post callout: its body copy clears WCAG AA against the callout screen (day + night + dracula)', async ({
   page,
 }) => {
   // `.prose p`/`.prose li` match the callout's own <p>/<li> DIRECTLY, and a direct match always beats the --chip-ink
@@ -3157,7 +3157,7 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
       }
       swept += rows.length;
     }
-    // teeth: a docs tree that stopped emitting callouts would pass vacuously
+    // teeth: pages that stopped emitting callouts would pass vacuously
     expect(
       swept,
       `${theme}: no .callout__body text swept across the docs and the posts`
