@@ -3775,8 +3775,10 @@ for (const device of ['Galaxy Z Flip 6 Cover', 'Pixel 5 landscape']) {
 }
 
 // What a browser shows past the viewport's edge (an overscroll, the band under a phone's status
-// bar) is the root's ground: the office is a fixed layer over the viewport alone.
-test("the landing page's root takes the theme's ground", async ({ page }) => {
+// bar) is the canvas, and the office is a fixed layer over the viewport alone. The canvas takes
+// the root's background, or the body's where the root has none (CSS Backgrounds 3, 2.11.1-2,
+// www.w3.org/TR/css-backgrounds-3/#special-backgrounds).
+test("the landing page's canvas takes the theme's ground", async ({ page }) => {
   for (const theme of VALID_THEMES) {
     await page.addInitScript((t) => {
       sessionStorage.setItem('pix-booted', '1');
@@ -3784,14 +3786,20 @@ test("the landing page's root takes the theme's ground", async ({ page }) => {
     }, theme);
     await page.goto('./');
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    const { root, ground } = await page.evaluate(() => {
+    const { canvas, ground } = await page.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.background = 'var(--bg)';
       document.body.appendChild(probe);
       const ground = getComputedStyle(probe).backgroundColor;
       probe.remove();
-      return { root: getComputedStyle(document.documentElement).backgroundColor, ground };
+      const painted = (el: Element) => {
+        const { backgroundColor, backgroundImage } = getComputedStyle(el);
+        return backgroundImage === 'none' && /,\s*0\)$/.test(backgroundColor)
+          ? null
+          : backgroundColor;
+      };
+      return { canvas: painted(document.documentElement) ?? painted(document.body), ground };
     });
-    expect(root, theme).toBe(ground);
+    expect(canvas, theme).toBe(ground);
   }
 });
