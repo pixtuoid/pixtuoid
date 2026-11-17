@@ -2126,12 +2126,20 @@ fn a_frame_holds_for_the_wait_its_office_names() {
                     .clone();
             }
         }
-        let mut scout = OfficeSession::new(Arc::clone(&pack));
+        let mut scout = FloorSession::new(Arc::clone(&pack));
         let mut arrived = None;
         for now in frames(t0).take_while(|&now| now < t0 + cycles) {
-            let look = crate::look::Look::HALF_BLOCKS;
-            render_office_with(&mut scout, look, &alone, calm, now, &[]);
-            let walks = &scout.floor(0).expect("drawn").ctx.walks;
+            // A scout reads only the walks: a step runs the `step_floor` a painted frame does.
+            scout.step(
+                FloorInputs {
+                    scene: &alone,
+                    now,
+                    conditions: calm,
+                    pets: PetInputs::default(),
+                },
+                PAINTED,
+            );
+            let walks = &scout.floor().ctx.walks;
             let standing = (walks.get(&idle))
                 .is_some_and(|w| matches!(w.wander.phase, crate::walk::WanderPhase::AtWaypoint(_)));
             arrived = standing.then(|| arrived.unwrap_or(now));
