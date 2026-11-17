@@ -467,9 +467,10 @@ where
         "the lifted agent hangs under the pointer"
     );
     send(r, &mut ui, MouseEventKind::Up(MouseButton::Left), away);
-    for tenth in 1..=300 {
-        r.render(&scene, now + Duration::from_millis(100 * tenth))
-            .unwrap();
+    // A frame a second: the walk home is timed from the frame after the drop,
+    // so by 30 s it has ended at the desk whatever the frames' cadence.
+    for second in 1..=30 {
+        r.render(&scene, now + Duration::from_secs(second)).unwrap();
     }
     assert!(
         matches!(r.scene_hit_at(on_agent.0, on_agent.1), Some(SceneHit::Figure(HoverTarget::Agent(hit))) if *hit == id),
