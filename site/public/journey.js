@@ -48,13 +48,13 @@ export async function start(figure) {
     stops[li.dataset.stop] = li;
   });
   const player = el('div', 'fig-journey__player');
-  // The canvas is sized to whole CSS pixels, a little past the frame, which crops it.
-  const frame = el('div', 'fig-journey__frame');
+  // The canvas is sized to whole CSS pixels, a little past its crop box, which clips it.
+  const crop = el('div', 'fig-journey__crop');
   const canvas = el('canvas', 'fig-journey__office');
   canvas.setAttribute('role', 'img');
   canvas.setAttribute('aria-label', 'The office, drawn by the engine');
-  frame.append(canvas);
-  player.append(frame);
+  crop.append(canvas);
+  player.append(crop);
   figure.prepend(player);
   const outs = {};
   try {
@@ -99,7 +99,7 @@ export async function start(figure) {
     let fitSeq = 0;
     async function fit() {
       const dpr = window.devicePixelRatio || 1;
-      const r = frame.getBoundingClientRect();
+      const r = crop.getBoundingClientRect();
       // A reply that lands after a later fit was asked sizes nothing.
       const seq = ++fitSeq;
       const reply = await office.call('fit', Math.round(r.width * dpr), Math.round(r.height * dpr));
@@ -149,7 +149,7 @@ export async function start(figure) {
     document.addEventListener('visibilitychange', sync);
     new ResizeObserver(function () {
       fit().then(move);
-    }).observe(frame);
+    }).observe(crop);
     await fit();
     await draw();
     move();
