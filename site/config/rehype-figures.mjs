@@ -85,6 +85,10 @@ function runs(takes, budget) {
   return shown;
 }
 
+// What a timeline's lengths are drawn to: tenths of a unit keep a frame's edge on its beat.
+const PER_UNIT = 10;
+const drawn = (units) => Math.round(units * PER_UNIT) / PER_UNIT;
+
 const timeline = (takes, budget) =>
   s(
     'svg.fig-budget__line',
@@ -93,8 +97,8 @@ const timeline = (takes, budget) =>
       ...runs(takes, budget).map(({ start, late }) =>
         s('rect', {
           className: ['fig-budget__run', ...(late ? ['fig-budget__run--late'] : [])],
-          x: Math.round((start / budget) * BEAT * 10) / 10,
-          width: Math.max(Math.round((takes / budget) * BEAT * 10) / 10 - GAP, 0),
+          x: drawn((start / budget) * BEAT),
+          width: Math.max(drawn((takes / budget) * BEAT) - GAP, 0),
           height: LANE,
         })
       ),
@@ -211,7 +215,8 @@ function pair(kind, table, columns) {
   return found;
 }
 
-// Each kind draws its figure's content from the table it marks.
+// `cards` and `budget` draw their content from the table they mark; the two-pane kinds draw a
+// fixed picture and take only their captions from it.
 const KINDS = {
   budget: (table) =>
     windowed('frames against their budget: a tick is when one is due', [

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { BLOG_ROUTE, markdownPages } from '../../config/blog.mjs';
+import { readingRoutes } from '../../config/blog.mjs';
 import { DOC_DIR } from '../../config/docs.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
 import docs from '../../src/docs.json' with { type: 'json' };
@@ -55,10 +55,7 @@ test("every link to one of the site's pages names that page's canonical URL", as
   const canonicalPath = (html: string) =>
     new URL(/<link rel="canonical" href="([^"]+)"/.exec(html)![1]).pathname;
   const targets = new Set<string>();
-  for (const from of [
-    './',
-    ...[BLOG_ROUTE, ...markdownPages().map(({ route }) => route)].map((r) => `./${r}`),
-  ]) {
+  for (const from of ['./', ...readingRoutes().map((r) => `./${r}`)]) {
     await page.goto(from);
     const canonical = await page.locator('link[rel="canonical"]').getAttribute('href');
     const site = new URL(canonical!).origin;

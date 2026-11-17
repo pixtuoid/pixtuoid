@@ -22,6 +22,8 @@ test("the blog's lobby lists every post, newest first, and each links its page",
     .evaluateAll((times) => times.map((t) => t.getAttribute('datetime')));
   expect(days).toEqual([...days].sort().reverse());
   await expect(page.locator('#statusline')).toContainText('~ pixtuoid blog');
+  // The lobby is no page of its wing, so it has no neighbour to turn to and no pager.
+  await expect(page.locator('.wing__pager')).toHaveCount(0);
 });
 
 test('a post mounts the wing shell: its title, its day, its lit sidebar entry and its source', async ({
@@ -41,6 +43,8 @@ test('a post mounts the wing shell: its title, its day, its lit sidebar entry an
       `${REPO_BLOB}/site/${BLOG_DIR}/${id}.md`
     );
     await expect(page.locator('#statusline'), id).toContainText(`~ pixtuoid blog · /${id}`);
+    // A lone post has no neighbour to turn to, so no pager.
+    await expect(page.locator('.wing__pager'), id).toHaveCount(postIds().length > 1 ? 1 : 0);
   }
 });
 

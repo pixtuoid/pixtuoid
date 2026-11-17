@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
-import { BLOG_ROUTE, markdownPages } from '../../config/blog.mjs';
+import { BLOG_ROUTE, markdownPages, readingRoutes } from '../../config/blog.mjs';
 import { E2E_STAR_COUNT, REPO } from '../../config/github.mjs';
 import { FLOORS, floorById } from '../../config/floors.mjs';
 import { DISCORD } from '../../config/discord.mjs';
@@ -2346,9 +2346,7 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./contributing/', 375],
     ['./architecture/', 768],
     // Every doc and post at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
-    ...[BLOG_ROUTE, ...markdownPages().map(({ route }) => route)].map(
-      (route) => [`./${route}`, 320] as const
-    ),
+    ...readingRoutes().map((route) => [`./${route}`, 320] as const),
   ] as const) {
     const context = await browser.newContext({
       viewport: { width, height: 820 },

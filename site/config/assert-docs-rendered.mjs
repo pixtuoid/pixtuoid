@@ -1,4 +1,4 @@
-// Assert every rendered doc page, a doc's or a post's, has a body and drew every
+// Assert every rendered page of a wing, a doc's or a post's, has a body and drew every
 // diagram its source declares. Born for the silent empty-render class — a render step
 // collapsed a doc's <Content /> to an EMPTY <article> WITHOUT failing `astro
 // build` (#680) — and GENERIC on purpose: it globs every page carrying the wing
@@ -16,7 +16,7 @@ import process from 'node:process';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { visit } from 'unist-util-visit';
 import { markdownPages } from './blog.mjs';
-import { docSlug } from './docs.mjs';
+import { pageName } from './docs.mjs';
 
 // A generous floor: flags a collapsed render without coupling to any page's size.
 export const MIN_BODY_CHARS = 500;
@@ -34,24 +34,24 @@ export function mermaidFences(markdown) {
 }
 
 /**
- * Given doc-page entries `[{ name, html }]` and `diagrams`, the count of
+ * Given page entries `[{ name, html }]` and `diagrams`, the count of
  * Mermaid blocks each page's source declares by page name, return the failures +
- * how many doc pages were seen.
+ * how many pages were seen.
  */
-export function checkDocPages(entries, diagrams) {
+export function checkPages(entries, diagrams) {
   const failures = [];
-  let docPages = 0;
+  const seen = new Set();
   for (const { name, html } of entries) {
     const m = html.match(DOC_ARTICLE);
     if (!m) continue; // not a wing's article
-    docPages += 1;
+    seen.add(name);
     const body = m[1]
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     if (body.length < MIN_BODY_CHARS) {
       failures.push(
-        `/${name}: doc body only ${body.length} chars (< ${MIN_BODY_CHARS}) — render collapsed`
+        `/${name}: body only ${body.length} chars (< ${MIN_BODY_CHARS}) — render collapsed`
       );
     }
     if (!(name in diagrams)) {
@@ -69,10 +69,14 @@ export function checkDocPages(entries, diagrams) {
       );
     }
   }
-  if (docPages === 0) {
-    failures.push("no doc pages found (the 'article.prose' selector drifted?)");
+  if (seen.size === 0) {
+    failures.push("no pages found (the 'article.prose' selector drifted?)");
+    return { failures, pages: 0 };
   }
-  return { failures, docPages };
+  for (const name of Object.keys(diagrams)) {
+    if (!seen.has(name)) failures.push(`/${name}: in the rosters, but no rendered article`);
+  }
+  return { failures, pages: seen.size };
 }
 
 function main(dist) {
@@ -85,19 +89,17 @@ function main(dist) {
   const site = fileURLToPath(new URL('../', import.meta.url));
   const declared = (file) => mermaidFences(readFileSync(file, 'utf8')).length;
   const diagrams = Object.fromEntries(
-    markdownPages().map((page) => [docSlug(page), declared(join(site, '..', page.path))])
+    markdownPages().map((page) => [pageName(page), declared(join(site, '..', page.path))])
   );
-  const { failures, docPages } = checkDocPages(entries, diagrams);
+  const { failures, pages } = checkPages(entries, diagrams);
   if (failures.length > 0) {
-    console.error(`✗ doc-render check FAILED (${dist}):\n  ${failures.join('\n  ')}`);
+    console.error(`✗ render check FAILED (${dist}):\n  ${failures.join('\n  ')}`);
     process.exit(1);
   }
-  console.log(
-    `✓ doc-render check: ${docPages} doc pages have a body and every diagram their source declares`
-  );
+  console.log(`✓ render check: ${pages} pages have a body and every diagram their source declares`);
 }
 
-// Only when invoked directly, so the test can import checkDocPages without
+// Only when invoked directly, so the test can import checkPages without
 // triggering the fs read + process.exit.
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main(process.argv[2] ?? 'dist');

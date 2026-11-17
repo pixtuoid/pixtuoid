@@ -1,4 +1,5 @@
-// The blog's shared facts, in a module the build, the feed, the unit tests and
+// The blog's facts and the site's rosters of rendered pages (`markdownPages`, `readingRoutes`),
+// in a module the build, the feed, the unit tests and
 // the Playwright specs can all import (src/consts.ts reads `import.meta.env`).
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,7 @@ export const BLOG_DIR = 'src/content/blog';
 // The blog's lobby, base-path-relative and slashed as its canonical URL.
 export const BLOG_ROUTE = 'blog/';
 
-// The feed's file, base-path-relative, and what the feed and the lobby call the blog.
+// The feed's file, base-path-relative, and the title the feed and each page's link to it carry.
 export const FEED_ROUTE = 'rss.xml';
 export const BLOG_TITLE = 'pixtuoid blog';
 export const BLOG_DESCRIPTION =
@@ -23,16 +24,16 @@ export const BLOG_DESCRIPTION =
 const POST_EXT = '.md';
 export const POST_PATTERN = `*${POST_EXT}`;
 
-/** A post's id, from its file's name. @param {string} file */
+/** @param {string} file */
 export const postId = (file) => file.slice(0, -POST_EXT.length);
 
-/** A post's file, under site/, from its id. @param {string} id */
+/** Under site/. @param {string} id */
 export const postFile = (id) => `${BLOG_DIR}/${id}${POST_EXT}`;
 
-/** The order the blog lists its posts in. @param {Date} a @param {Date} b */
+/** @param {Date} a @param {Date} b */
 export const newestFirst = (a, b) => b.valueOf() - a.valueOf();
 
-/** A post's route, from its id. @param {string} id */
+/** @param {string} id */
 export const postRoute = (id) => `${BLOG_ROUTE}${id}/`;
 
 /** Every post's id, read from disk for what cannot ask the content collection. */
@@ -46,3 +47,6 @@ export const markdownPages = () => [
   ...docs.map((d) => ({ path: `${DOC_DIR}/${d.file}`, route: d.route })),
   ...postIds().map((id) => ({ path: `${SITE_DIR}/${postFile(id)}`, route: postRoute(id) })),
 ];
+
+/** Every reading page's route: the blog's lobby and each rendered Markdown page. */
+export const readingRoutes = () => [BLOG_ROUTE, ...markdownPages().map(({ route }) => route)];
