@@ -86,7 +86,7 @@ test('the stylesheet fetches nothing: no @import, no URL (CSP style-src/font-src
 
 // The renderer degrades silently on malformed source (a dropped `end`, a
 // mistyped arrow) — fewer shapes, no throw — and `check:docs` only
-// counts each page's <svg>. Every committed diagram is the population.
+// counts each page's `<svg role="img">`. Every committed diagram is the population.
 for (const { path } of markdownPages()) {
   const doc = readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
   for (const source of mermaidFences(doc)) {
