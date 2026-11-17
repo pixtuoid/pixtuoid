@@ -363,9 +363,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     fill: var(--led);
     visibility: hidden;
   }
-  /* A figure's motion starts once the reader reaches it and ends inside five seconds, past which
-     WCAG 2.2's SC 2.2.2 asks for a way to stop it (www.w3.org/TR/WCAG22/#pause-stop-hide);
-     blog.spec.ts's MOTION_LIMIT_S holds it. */
+  /* Plays once the figure is in view, and ends inside blog.spec.ts's MOTION_LIMIT_S. */
   .wing :global(.reveal.in .fig-budget__now) {
     animation: fig-now 4s linear;
   }
@@ -422,6 +420,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     transform-box: fill-box;
     transform-origin: top;
   }
+  /* Ends inside MOTION_LIMIT_S too. */
   .wing :global(.reveal.in .fig-pane__wash) {
     animation: fig-wash 1.8s ease-in-out 2;
   }

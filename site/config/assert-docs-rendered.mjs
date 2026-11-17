@@ -83,10 +83,9 @@ function main(dist) {
       html: readFileSync(join(dist, file), 'utf8'),
     }));
   const site = fileURLToPath(new URL('../', import.meta.url));
-  const docs = JSON.parse(readFileSync(join(site, 'src/docs.json'), 'utf8'));
   const declared = (file) => mermaidFences(readFileSync(file, 'utf8')).length;
   const diagrams = Object.fromEntries(
-    markdownPages(docs).map((page) => [docSlug(page), declared(join(site, '..', page.file))])
+    markdownPages().map((page) => [docSlug(page), declared(join(site, '..', page.path))])
   );
   const { failures, docPages } = checkDocPages(entries, diagrams);
   if (failures.length > 0) {

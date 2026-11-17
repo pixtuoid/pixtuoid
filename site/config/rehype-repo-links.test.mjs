@@ -10,9 +10,9 @@ import { REPO_BLOB } from './github.mjs';
 
 const BLOG_DIR_FROM_ROOT = `${SITE_DIR}/${BLOG_DIR}`;
 const PAGES = [
-  { file: `${DOC_DIR}/ARCHITECTURE.md`, route: 'architecture/' },
-  { file: `${DOC_DIR}/HOW-WE-BUILD.md`, route: 'how-we-build/' },
-  { file: `${BLOG_DIR_FROM_ROOT}/other-post.md`, route: 'blog/other-post/' },
+  { path: `${DOC_DIR}/ARCHITECTURE.md`, route: 'architecture/' },
+  { path: `${DOC_DIR}/HOW-WE-BUILD.md`, route: 'how-we-build/' },
+  { path: `${BLOG_DIR_FROM_ROOT}/other-post.md`, route: 'blog/other-post/' },
 ];
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const rewritten = (href, base = '/', from = `${DOC_DIR}/CONFIGURATION.md`) => {

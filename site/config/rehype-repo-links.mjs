@@ -13,11 +13,11 @@ const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const ABSOLUTE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
 /**
- * @param {{ pages: readonly { file: string, route: string }[], base: string }} options
+ * @param {{ pages: readonly { path: string, route: string }[], base: string }} options
  *   every rendered Markdown file (blog.mjs's `markdownPages`) and the site's base path
  */
 export default function rehypeRepoLinks({ pages, base }) {
-  const routes = new Map(pages.map((p) => [p.file, withBase(base, p.route)]));
+  const routes = new Map(pages.map((p) => [p.path, withBase(base, p.route)]));
   /** @param {string} dir the linking file's directory, from the repo root */
   const rewrite = (dir) => (/** @type {any} */ node) => {
     if (node.tagName !== 'a' || typeof node.properties?.href !== 'string') return;

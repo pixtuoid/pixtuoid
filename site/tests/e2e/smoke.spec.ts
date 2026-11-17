@@ -2345,8 +2345,8 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./architecture/', 375],
     ['./contributing/', 375],
     ['./architecture/', 768],
-    // Every doc at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
-    ...[BLOG_ROUTE, ...markdownPages(docs).map((page) => page.route)].map(
+    // Every doc and post at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
+    ...[BLOG_ROUTE, ...markdownPages().map(({ route }) => route)].map(
       (route) => [`./${route}`, 320] as const
     ),
   ] as const) {
@@ -2704,7 +2704,7 @@ test('every doc and post diagram: its SVG text clears WCAG AA, its boxes have a 
       localStorage.setItem('pix-theme', t);
     }, theme);
     let swept = 0;
-    for (const { route } of markdownPages(docs)) {
+    for (const { route } of markdownPages()) {
       await page.goto(`./${route}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const diagrams = await page.evaluate(() =>
@@ -2791,7 +2791,7 @@ test('every doc and post diagram: its SVG text clears WCAG AA, its boxes have a 
       swept += diagrams.length;
     }
     // teeth: a docs tree that stopped framing diagrams would pass vacuously
-    expect(swept, `${theme}: no diagram swept across ${docs.length} doc routes`).toBeGreaterThan(0);
+    expect(swept, `${theme}: no diagram swept across the docs and the posts`).toBeGreaterThan(0);
   }
 });
 
@@ -3127,7 +3127,7 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
   for (const theme of VALID_THEMES) {
     await page.addInitScript((t) => localStorage.setItem('pix-theme', t), theme);
     let swept = 0;
-    for (const { route } of docs) {
+    for (const { route } of markdownPages()) {
       await page.goto(`./${route}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const rows = await page.evaluate((tags) => {
@@ -3160,7 +3160,7 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
     // teeth: a docs tree that stopped emitting callouts would pass vacuously
     expect(
       swept,
-      `${theme}: no .callout__body text swept across ${docs.length} doc routes`
+      `${theme}: no .callout__body text swept across the docs and the posts`
     ).toBeGreaterThan(0);
   }
 });

@@ -93,6 +93,8 @@ test('a moving figure plays once the reader reaches it, and ends by itself', asy
           })
         );
       expect(new Set((await motion()).map(({ name }) => name))).toEqual(new Set(['none']));
+      // Not yet reached, it already shows: a reader who prints the page gets the figure.
+      await expect(figure).toHaveCSS('opacity', '1');
       await figure.scrollIntoViewIfNeeded();
       await expect(figure).toHaveClass(/\bin\b/);
       for (const { name, seconds } of await motion()) {
@@ -100,6 +102,24 @@ test('a moving figure plays once the reader reaches it, and ends by itself', asy
         expect(seconds).toBeLessThanOrEqual(MOTION_LIMIT_S);
         moving += 1;
       }
+      const playheads = await figure.locator('.fig-budget__now').all();
+      for (const playhead of playheads) await expect(playhead).toBeVisible();
+      // Each run ends on the part's still state: an opacity its last keyframe sets is the one it
+      // rests at, so nothing pops when the run ends.
+      const pops = await figure.locator('.fig__moving').evaluateAll((els) =>
+        els.flatMap((el) =>
+          el.getAnimations().flatMap((run) => {
+            const last = (run.effect as KeyframeEffect)
+              .getKeyframes()
+              .filter((frame) => frame.computedOffset === 1 && frame.opacity !== undefined)
+              .map((frame) => String(frame.opacity));
+            run.finish();
+            return last.filter((opacity) => opacity !== getComputedStyle(el).opacity);
+          })
+        )
+      );
+      expect(pops).toEqual([]);
+      for (const playhead of playheads) await expect(playhead).toBeHidden();
     }
   }
   // No post with a moving figure would pass the loop having checked nothing.

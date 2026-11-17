@@ -8,8 +8,7 @@ import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
 import rehypeBeautifulMermaid from './rehype-beautiful-mermaid.mjs';
 import { mermaidFences } from './assert-docs-rendered.mjs';
-import { DOC_DIR } from './docs.mjs';
-import docs from '../src/docs.json' with { type: 'json' };
+import { markdownPages } from './blog.mjs';
 
 const SOURCE = `flowchart TB
   accTitle: pixtuoid data flow
@@ -88,10 +87,10 @@ test('the stylesheet fetches nothing: no @import, no URL (CSP style-src/font-src
 // The renderer degrades silently on malformed source (a dropped `end`, a
 // mistyped arrow) — fewer shapes, no throw — and the doc-render guard only
 // counts each page's <svg>. Every committed diagram is the population.
-for (const { file } of docs) {
-  const doc = readFileSync(new URL(`../../${DOC_DIR}/${file}`, import.meta.url), 'utf8');
+for (const { path } of markdownPages()) {
+  const doc = readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
   for (const source of mermaidFences(doc)) {
-    test(`${DOC_DIR}/${file}'s diagram renders every subgraph, node and edge it declares`, () => {
+    test(`${path}'s diagram renders every subgraph, node and edge it declares`, () => {
       const svg = svgOf(run({ type: 'root', children: [codeBlock('mermaid', source)] }));
       assert.equal(
         all(svg, withClass('subgraph')).length,

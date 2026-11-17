@@ -3,6 +3,7 @@
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DOC_DIR } from './docs.mjs';
+import docs from '../src/docs.json' with { type: 'json' };
 
 // The site's directory in the repository, and the directory under it that holds one Markdown
 // file per post.
@@ -40,12 +41,8 @@ export const postIds = () =>
     .filter((name) => name.endsWith(POST_EXT))
     .map(postId);
 
-/**
- * Every Markdown file the site renders as a page, the docs then the posts: its path from the
- * repo root and its route.
- * @param {readonly { file: string, route: string }[]} docs src/docs.json's roster
- */
-export const markdownPages = (docs) => [
-  ...docs.map((d) => ({ file: `${DOC_DIR}/${d.file}`, route: d.route })),
-  ...postIds().map((id) => ({ file: `${SITE_DIR}/${postFile(id)}`, route: postRoute(id) })),
+/** Every Markdown file the site renders as a page, the docs then the posts: its path from the repo root and its route. */
+export const markdownPages = () => [
+  ...docs.map((d) => ({ path: `${DOC_DIR}/${d.file}`, route: d.route })),
+  ...postIds().map((id) => ({ path: `${SITE_DIR}/${postFile(id)}`, route: postRoute(id) })),
 ];

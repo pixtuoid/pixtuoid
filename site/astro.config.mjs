@@ -10,7 +10,6 @@ import rehypeCallouts from './config/rehype-callouts.mjs';
 import rehypeBeautifulMermaid from './config/rehype-beautiful-mermaid.mjs';
 import rehypeFigures from './config/rehype-figures.mjs';
 import rehypeRepoLinks from './config/rehype-repo-links.mjs';
-import docs from './src/docs.json' with { type: 'json' };
 import { markdownPages } from './config/blog.mjs';
 import features from './src/features.json' with { type: 'json' };
 import showcaseData from './src/showcase.json' with { type: 'json' };
@@ -189,7 +188,7 @@ export default defineConfig({
         rehypeBeautifulMermaid,
         rehypeFigures,
         rehypeScrollFocus,
-        [rehypeRepoLinks, { pages: markdownPages(docs), base: BASE }],
+        [rehypeRepoLinks, { pages: markdownPages(), base: BASE }],
         rehypeCallouts,
       ],
     }),

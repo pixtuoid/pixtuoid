@@ -59,7 +59,7 @@ test('a budget timeline starts a frame on its beat, or late when the one before 
     ),
   ]);
   const fig = figure(tree);
-  // Its playhead moves, so the figure waits for the reader to reach it.
+  // Its playhead moves, so the figure is one the reveal observer watches.
   assert.deepEqual(fig.properties.className, ['fig--budget', 'reveal']);
   const [before, after] = all(fig, withClass('fig-budget')).map((row) =>
     all(row, withClass('fig-budget__run')).map((r) => ({

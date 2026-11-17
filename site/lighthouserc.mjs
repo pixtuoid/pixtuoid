@@ -1,4 +1,3 @@
-import docs from './src/docs.json' with { type: 'json' };
 import { BLOG_ROUTE, markdownPages } from './config/blog.mjs';
 
 // `?theme=day`: without it local time picks the palette, and half of CI's runs would audit each.
@@ -12,7 +11,7 @@ export default {
     collect: {
       staticDistDir: './dist',
       numberOfRuns: 5,
-      url: ['', BLOG_ROUTE, ...markdownPages(docs).map((page) => page.route)].map(
+      url: ['', BLOG_ROUTE, ...markdownPages().map(({ route }) => route)].map(
         (route) => `http://localhost/${route}${QUERY}`
       ),
     },

@@ -57,7 +57,7 @@ test("every link to one of the site's pages names that page's canonical URL", as
   const targets = new Set<string>();
   for (const from of [
     './',
-    ...[BLOG_ROUTE, ...markdownPages(docs).map((page) => page.route)].map((r) => `./${r}`),
+    ...[BLOG_ROUTE, ...markdownPages().map(({ route }) => route)].map((r) => `./${r}`),
   ]) {
     await page.goto(from);
     const canonical = await page.locator('link[rel="canonical"]').getAttribute('href');

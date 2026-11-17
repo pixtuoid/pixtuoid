@@ -5,7 +5,7 @@
 export const DOC_DIR = 'docs';
 
 /**
- * A doc page's name: its `[doc]` route param, and so its directory in dist/.
+ * A rendered page's name, its directory in dist/: a doc's is its `[doc]` route param.
  * @param {{ route: string }} doc
  */
 export const docSlug = (doc) => doc.route.replace(/\/$/, '');
