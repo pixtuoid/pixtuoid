@@ -8,7 +8,7 @@
 //!   - daemon presence    → the sibling channel (`apply_presence`) (openclaw)
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, LazyLock, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::SceneState;
@@ -52,7 +52,7 @@ fn new_renderer(cols: u16, rows: u16) -> TuiRenderer<TestBackend> {
 /// the final frame's subpixels. The empty baseline and the occupied frame go
 /// through the IDENTICAL sequence, so a later pixel-diff cancels the
 /// (timezone-dependent) sky and isolates the agent's footprint.
-fn settled_pixels(scene: &SceneState, cols: u16, rows: u16, now: SystemTime) -> Vec<(u8, u8, u8)> {
+fn settled_pixels(scene: &SceneState, now: SystemTime) -> Vec<(u8, u8, u8)> {
     // Bounded on BOTH sides: long enough for the entry walk to finish, and
     // shorter than the vacancy debounce, past which the empty office's floor dim
     // would start easing while the occupied office holds its lights, and the
@@ -62,6 +62,7 @@ fn settled_pixels(scene: &SceneState, cols: u16, rows: u16, now: SystemTime) -> 
         PAINT_FRAME.as_nanos() * (SETTLE_FRAMES as u128)
             < Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS).as_nanos()
     );
+    let (cols, rows) = (120, 44);
     let mut r = new_renderer(cols, rows);
     let mut t = now;
     for _ in 0..SETTLE_FRAMES {
@@ -165,12 +166,12 @@ fn assert_renders_a_sprite(case: &WireCase) {
 
     // Both skies are byte-identical (the agent touches neither weather nor
     // stars), so the diff is exactly the character's footprint.
-    let (cols, rows) = (120, 44);
-    // The empty baseline must be shaped like the driven scene (same desk
-    // capacity), or the diff would carry a layout difference as well as the agent.
-    let empty = settled_pixels(&SceneState::uniform(DRIVEN_DESKS), cols, rows, t0());
-    let occupied = settled_pixels(&driven.scene, cols, rows, t0());
-    let changed = empty.iter().zip(&occupied).filter(|(a, b)| a != b).count();
+    // The empty baseline, every case's, must be shaped like the driven scene (same
+    // desk capacity), or the diff would carry a layout difference as well as the agent.
+    static EMPTY: LazyLock<Vec<(u8, u8, u8)>> =
+        LazyLock::new(|| settled_pixels(&SceneState::uniform(DRIVEN_DESKS), t0()));
+    let occupied = settled_pixels(&driven.scene, t0());
+    let changed = EMPTY.iter().zip(&occupied).filter(|(a, b)| a != b).count();
     assert!(
         changed >= MIN_SPRITE_PIXELS,
         "{}: an occupied office (from real {} wire bytes) must repaint materially more \
