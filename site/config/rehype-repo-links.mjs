@@ -23,7 +23,8 @@ export default function rehypeRepoLinks({ pages, base }) {
     if (node.tagName !== 'a' || typeof node.properties?.href !== 'string') return;
     const href = node.properties.href;
     if (href.startsWith('#') || ABSOLUTE.test(href)) return;
-    const [path, hash = ''] = href.split(/(?=#)/);
+    const at = href.indexOf('#');
+    const [path, hash] = at < 0 ? [href, ''] : [href.slice(0, at), href.slice(at)];
     // GitHub resolves a Markdown link "relative to the current file", and one that starts with
     // a `/` from the repository root ("Relative links and image paths in markdown files",
     // docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes);

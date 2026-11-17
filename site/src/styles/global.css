@@ -724,8 +724,8 @@ code {
   opacity: 1;
   transform: none;
 }
-/* Scripting off: nothing ever adds `.in`. */
-@media (scripting: none) {
+/* Scripting off, or on paper: nothing scrolls it into view, so nothing adds `.in`. */
+@media (scripting: none), print {
   .reveal {
     opacity: 1;
     transform: none;
@@ -918,7 +918,7 @@ code {
   }
 }
 
-/* ---------- prose: rendered markdown (the /config page) ---------- */
+/* ---------- prose: rendered markdown (a wing's pages) ---------- */
 .prose {
   line-height: 1.7;
 }

@@ -58,3 +58,7 @@ test("a post's links resolve from the post's own directory, and one to a sibling
   assert.equal(rewritten('./notes.txt', '/', post), `${REPO_BLOB}/${BLOG_DIR_FROM_ROOT}/notes.txt`);
   assert.equal(rewritten('../../../../docs/ARCHITECTURE.md', '/', post), '/architecture/');
 });
+
+test('a fragment keeps every character after its first #', () => {
+  assert.equal(rewritten('ARCHITECTURE.md#a#b'), '/architecture/#a#b');
+});

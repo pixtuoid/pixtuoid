@@ -3735,3 +3735,14 @@ test("the home page's title carries Cargo.toml's tagline", async ({ page }) => {
   await page.goto('./');
   await expect(page).toHaveTitle(`pixtuoid — ${tagline.replace(/\.$/, '')}`);
 });
+
+// Nothing scrolls a printed page into view, so the reveal observer never fires there.
+test('a printed page shows what waits to be revealed', async ({ page }) => {
+  await page.emulateMedia({ media: 'print' });
+  await page.goto('./');
+  const hidden = await page
+    .locator('.reveal:not(.in)')
+    .evaluateAll((els) => els.filter((el) => getComputedStyle(el).opacity !== '1').length);
+  expect(await page.locator('.reveal:not(.in)').count()).toBeGreaterThan(0);
+  expect(hidden).toBe(0);
+});
