@@ -46,15 +46,18 @@ office over local IPC, never a network.
 - **On Unix** it writes to a Unix domain socket at a per-user path:
   `$XDG_RUNTIME_DIR/pixtuoid.sock`, else `/tmp/pixtuoid-<uid>/pixtuoid.sock` in
   a per-user `0700` directory; `PIXTUOID_SOCKET` overrides it. The socket is
-  created `0600`, owner-only. The `/tmp` fallback directory is made with a
-  TOCTOU-safe `mkdir` and its owner and mode are checked, and the shim checks
-  the connected peer's uid (`getpeereid`/`SO_PEERCRED`) before writing. So
+  created `0600`, owner-only. In the `/tmp` fallback, the directory is made
+  with a TOCTOU-safe `mkdir` and its owner and mode are checked, and the shim
+  writes only to a peer whose uid (`getpeereid`/`SO_PEERCRED`) is its own. So
   another user can't squat the path to turn the hooks off, or race a listener
-  onto it to read the payload.
+  onto it to read the payload. `$XDG_RUNTIME_DIR` is already yours alone
+  ([XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/latest/):
+  "Its Unix access mode MUST be 0700"), and a `PIXTUOID_SOCKET` endpoint is
+  yours to trust, so neither gets the peer check.
 - **On Windows** it writes to a named pipe, `\\.\pipe\pixtuoid-<user>`,
-  with an owner-only DACL. The shim checks that the pipe server's token user
-  SID matches its own (`GetNamedPipeServerProcessId`, then a token compare)
-  before writing, which closes the same squat-and-read attack in Windows'
+  with an owner-only DACL. On that default pipe the shim checks that the pipe
+  server's token user SID matches its own (`GetNamedPipeServerProcessId`, then
+  a token compare) before writing, which closes the same squat-and-read attack in Windows'
   machine-wide pipe namespace (#495).
 - **It never blocks the agent.** It exits `0` on any error, and a watchdog
   bounds its send (pixtuoid-hook's `transport::WRITE_TIMEOUT`). It never runs

@@ -13,7 +13,9 @@ use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
-/// The least a `file_log` run's file records unless something raises it.
+/// The least severe level a `file_log` run's file records by default: a
+/// stricter `--log-level` records less, and a [`VERBOSE`] one, `$RUST_LOG` or
+/// `$PIXTUOID_LOG` more.
 const FILE_FLOOR: LogLevel = LogLevel::Warn;
 
 /// The `--log-level`s that raise a `file_log` run's file past [`FILE_FLOOR`].
@@ -23,8 +25,9 @@ const VERBOSE: [LogLevel; 2] = [LogLevel::Debug, LogLevel::Trace];
 /// sees and the guard that flushes its sink. A `file_log` run (the TUI, and `floating`, a long-running GUI whose
 /// launching terminal would just collect noise) logs to a file — the alternate
 /// screen owns the terminal, so the log file is the only place a runtime error
-/// can surface — at [`FILE_FLOOR`] unless $RUST_LOG, $PIXTUOID_LOG or
-/// --log-level raises it. Every other mode goes to stderr.
+/// can surface — at [`FILE_FLOOR`], or a stricter --log-level, unless
+/// $RUST_LOG, $PIXTUOID_LOG or a [`VERBOSE`] --log-level records more. Every
+/// other mode goes to stderr.
 pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<LogFlush>) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -52,11 +55,7 @@ pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<Lo
             EnvFilter::try_new(filter_directives(rust_log.as_deref(), floor))
                 .unwrap_or_else(|_| EnvFilter::new(floor))
         } else {
-            EnvFilter::new(if log_level <= FILE_FLOOR {
-                level
-            } else {
-                floor
-            })
+            EnvFilter::new(log_level.min(FILE_FLOOR).as_str())
         };
         match log_at.open_sink(SystemTime::now()) {
             Ok(f) => {
