@@ -141,9 +141,9 @@ fn inset_offices() -> impl Iterator<Item = (Viewport, u64)> {
     })
 }
 
-/// Records a check's violations under the check's own name, the one its doc and
-/// the guides call it by. The call runs before the record, so it may borrow
-/// `found`; `check => violations` records a sweep-wide verdict on that check.
+/// Records a check's violations under its function's name. The call runs before
+/// the record, so it may borrow `found`; `check => violations` records a
+/// sweep-wide verdict on that check.
 macro_rules! check {
     ($found:expr, $check:ident($($arg:expr),* $(,)?)) => {{
         let violations = $check($($arg),*);

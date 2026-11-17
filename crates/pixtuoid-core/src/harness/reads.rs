@@ -812,17 +812,17 @@ mod tests {
         stale
     }
 
-    /// Stripping a committed scenario keeps its events, and a recording's
-    /// bytes. And a field a capture's strip blanked, once a decoder reads it,
-    /// holds no value that decoder can see: the golden encodes "absent" where
-    /// the wire carried one, so the scenario is owed a re-recording, judged
-    /// against the reads its record kept when the strip ran. One walk strips a
-    /// copy of each scenario and judges the reads that strip probed: on a
-    /// recording, which strips to its own bytes, they are the committed bytes'.
+    /// Stripping a committed scenario keeps its events and its bytes. And a
+    /// field a capture's strip blanked, once a decoder reads it, holds no value
+    /// that decoder can see: the golden encodes "absent" where the wire carried
+    /// one, so the scenario is owed a re-recording, judged against the reads its
+    /// record kept when the strip ran. One walk strips a copy of each scenario
+    /// and judges the reads that strip probed: a scenario strips to its own
+    /// bytes, so they are the committed bytes'.
     #[test]
     fn a_committed_scenario_strips_to_its_events_and_bytes_and_blanked_no_field_a_decoder_reads() {
         let root = sources_root();
-        let (mut unstripped, mut stale) = (Vec::new(), Vec::new());
+        let (mut failures, mut stale) = (Vec::new(), Vec::new());
         let mut walked = BTreeSet::new();
         for capture in captures(&root) {
             let (scenario, source) = (&capture.dir, &capture.source);
@@ -830,12 +830,12 @@ mod tests {
             let record = Provenance::read_if_any(&capture.provenance_path())
                 .expect("a committed record parses");
             let Some(record) = record else {
-                unstripped.push(format!("{label}: no record to judge its reads against"));
+                failures.push(format!("{label}: no record to judge its reads against"));
                 continue;
             };
             let jsonl = capture.jsonl_files();
             if jsonl.is_empty() {
-                unstripped.push(format!("{label}: a provenance with no bytes under it"));
+                failures.push(format!("{label}: a provenance with no bytes under it"));
                 continue;
             }
             let d = tempfile::tempdir().expect("tempdir");
@@ -849,13 +849,13 @@ mod tests {
                 })
                 .collect();
             if registry::descriptor_for(source).is_none() {
-                unstripped.push(format!(
+                failures.push(format!(
                     "{label}: {source:?} is not a registered source, so every rule keyed on it \
                      misses"
                 ));
             }
             for f in files.iter().filter(|f| drive_for(source, f).is_none()) {
-                unstripped.push(format!(
+                failures.push(format!(
                     "{label}: {} cannot be routed as {source}, so the walk would skip it",
                     f.display()
                 ));
@@ -864,12 +864,12 @@ mod tests {
             let strip = strip_unread(source, &files).expect("strip");
             let after = scenario_events(source, &files);
             if after != before {
-                unstripped.push(format!(
+                failures.push(format!(
                     "{label}: the strip changed its events from {before:?} to {after:?}"
                 ));
             }
             if strip.blanked > 0 {
-                unstripped.push(format!(
+                failures.push(format!(
                     "{label}: {} subtrees no decoder reads any more; `just restrip-fixtures`",
                     strip.blanked
                 ));
@@ -887,10 +887,9 @@ mod tests {
             "grok/fixtures/tool-run-hermetic",
         ] {
             if !walked.contains(sentinel) {
-                unstripped.push(format!("walk missed {sentinel}: {walked:?}"));
+                failures.push(format!("walk missed {sentinel}: {walked:?}"));
             }
         }
-        let mut failures = unstripped;
         if !stale.is_empty() {
             failures.push(format!(
                 "a decoder reads what these captures' strip blanked; re-record each scenario:\n  {}",
