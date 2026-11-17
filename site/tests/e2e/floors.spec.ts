@@ -4,8 +4,6 @@ import featuresData from '../../src/features.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 
 const TOP = FLOORS[0].fl;
-// A floor in the middle of the building, between the ends the tests ride from and to.
-const MID = floorById('how').fl;
 
 // Read the manifests directly rather than hand-copying expected strings, which
 // would silently go stale.
@@ -103,7 +101,7 @@ test('CRT channel keys: a digit tunes the channel and does NOT ride the floor el
   await expect(page.locator('[data-lift-digit]')).not.toHaveText('2F');
 });
 
-test('the floors declare the elevator anchor contract, top floor down', async ({ page }) => {
+test('the floors declare the anchor contract, top floor down', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   const floors = await page.$$eval('[data-floor]', (els) =>
@@ -131,148 +129,24 @@ test('the floating-window still gap is retired (wb-4 owns the slot)', async ({ p
   await expect(page.locator('.office-gap')).toHaveCount(2);
 });
 
-test('elevator shaft: click-to-ride lands the floor, LED + lift readout agree', async ({
+test('every floor is reachable from the floor popover, and the statusline digit reads that floor', async ({
   page,
 }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
-  await expect(page.locator('[data-shaft-stop]')).toHaveCount(FLOORS.length);
-  await expect(page.locator(`[data-shaft-stop="${TOP}"]`)).toHaveAttribute('aria-current', 'true');
-  const carY = () =>
-    page.evaluate(
-      () =>
-        new DOMMatrix(getComputedStyle(document.querySelector('[data-shaft-car]')!).transform).m42
-    );
-  // The top floor's resting Y is already > 0, so a bare "> 0" after the ride would pass even
-  // if the car never moved — record a baseline and assert the DELTA instead.
-  const preY = await carY();
-  await page.locator('[data-shaft-stop="1F"]').click();
-  await expect(page.locator('[data-shaft-stop="1F"]')).toHaveAttribute('aria-current', 'true', {
-    timeout: 10_000,
-  });
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const r = document.querySelector('[data-floor="1F"]')!.getBoundingClientRect();
-        return r.top < window.innerHeight * 0.55 && r.bottom > window.innerHeight * 0.45;
-      })
-    )
-    .toBe(true);
-  await expect(page.locator('[data-lift-digit]')).toHaveText('1F');
-  // Threshold is half an inter-stop gap — derived from the rail's own geometry
-  // rather than a literal, and well above layout jitter but far below the
-  // several gaps a real top-to-bottom ride covers.
-  const gap = await page.evaluate(() => {
-    const stops = Array.from(document.querySelectorAll<HTMLElement>('[data-shaft-stop]'));
-    return (stops[stops.length - 1].offsetTop - stops[0].offsetTop) / (stops.length - 1);
-  });
-  const postY = await carY();
-  expect(postY - preY).toBeGreaterThan(gap / 2);
-});
-
-test('elevator shaft: the current-floor LED dot is actually lit, not just text-colored', async ({
-  page,
-}) => {
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./');
-  // Resolve --led through a live probe rather than a literal, so the comparison
-  // never depends on hex vs. rgb() string formatting.
-  const litColor = await page.evaluate(() => {
-    const probe = document.createElement('span');
-    probe.style.background = 'var(--led)';
-    document.body.appendChild(probe);
-    const c = getComputedStyle(probe).backgroundColor;
-    probe.remove();
-    return c;
-  });
-  const dotColor = (fl: string) =>
-    page
-      .locator(`[data-shaft-stop="${fl}"] .led-dot`)
-      .evaluate((el) => getComputedStyle(el).backgroundColor);
-  await expect(page.locator(`[data-shaft-stop="${TOP}"]`)).toHaveAttribute('aria-current', 'true');
-  expect(await dotColor(TOP)).toBe(litColor);
-  expect(await dotColor(FLOORS[1].fl)).not.toBe(litColor);
-  await page.locator(`[data-shaft-stop="${MID}"]`).click();
-  await expect(page.locator(`[data-shaft-stop="${MID}"]`)).toHaveAttribute('aria-current', 'true', {
-    timeout: 10_000,
-  });
-  expect(await dotColor(MID)).toBe(litColor);
-  expect(await dotColor(TOP)).not.toBe(litColor);
-});
-
-test('elevator shaft: every floor is reachable and reads current on BOTH the shaft LED and the statusline digit', async ({
-  page,
-}) => {
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./');
-  // A floor whose section is too short to ever own the floor-spy center band
+  await expect(page.locator('[data-lift-digit]')).toHaveText(TOP);
+  // A floor whose section is too short to ever own the floor-spy band
   // settles on a DIFFERENT floor here instead of its own.
   for (const { fl } of FLOORS) {
-    await page.locator(`[data-shaft-stop="${fl}"]`).click();
-    await expect(page.locator(`[data-shaft-stop="${fl}"]`)).toHaveAttribute(
+    await page.locator('[data-floor-toggle]').click();
+    await page.locator(`#sl-floors [data-floor-btn="${fl}"]`).click();
+    await expect(page.locator('[data-lift-digit]')).toHaveText(fl, { timeout: 10_000 });
+    await expect(page.locator('#sl-floors [data-floor-btn][aria-current]')).toHaveCount(1);
+    await expect(page.locator(`#sl-floors [data-floor-btn="${fl}"]`)).toHaveAttribute(
       'aria-current',
-      'true',
-      {
-        timeout: 10_000,
-      }
+      'location'
     );
-    await expect
-      .poll(() =>
-        page.evaluate((f) => {
-          const r = document.querySelector(`[data-floor="${f}"]`)!.getBoundingClientRect();
-          return r.top < window.innerHeight * 0.55 && r.bottom > window.innerHeight * 0.45;
-        }, fl)
-      )
-      .toBe(true);
-    await expect(page.locator('[data-shaft-stop][aria-current="true"]')).toHaveCount(1);
-    await expect(page.locator('[data-lift-digit]')).toHaveText(fl);
   }
-
-  // 1F + the footer rarely fill the center band the observer keys off, so at the
-  // TRUE scroll max both readouts must clamp to 1F whatever the observer reported.
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await expect(page.locator('[data-shaft-stop="1F"]')).toHaveAttribute('aria-current', 'true', {
-    timeout: 10_000,
-  });
-  await expect(page.locator('[data-shaft-stop][aria-current="true"]')).toHaveCount(1);
-  await expect(page.locator('[data-lift-digit]')).toHaveText('1F');
-});
-
-test('elevator shaft: reduced motion is a static indicator', async ({ browser }) => {
-  const ctx = await browser.newContext({ reducedMotion: 'reduce' });
-  const page = await ctx.newPage();
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./');
-  // The reduced-motion reset forces transition-duration near-zero but not
-  // literally 0, so transitionend still fires — assert "no perceptible motion"
-  // rather than an exact value.
-  const styles = await page.evaluate(() => {
-    const car = getComputedStyle(document.querySelector('[data-shaft-car]')!);
-    return { transition: car.transitionDuration };
-  });
-  expect(parseFloat(styles.transition)).toBeLessThan(0.001);
-  await page.locator(`[data-shaft-stop="${MID}"]`).click();
-  await expect(page.locator(`[data-shaft-stop="${MID}"]`)).toHaveAttribute('aria-current', 'true', {
-    timeout: 10_000,
-  });
-  await ctx.close();
-});
-
-test('elevator shaft: the ding pulse joins the pix:paused set', async ({ page }) => {
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./');
-  await page.evaluate(() =>
-    document.dispatchEvent(new CustomEvent('pix:paused', { detail: { paused: true } }))
-  );
-  await page.locator('[data-shaft-stop="1F"]').click();
-  await expect(page.locator('[data-shaft-stop="1F"]')).toHaveAttribute('aria-current', 'true', {
-    timeout: 10_000,
-  });
-  expect(
-    await page.evaluate(() =>
-      document.querySelector('[data-shaft-stop="1F"]')!.classList.contains('is-ding')
-    )
-  ).toBe(false);
 });
 
 test('scroll budget: the page fits its roster-aware viewport-height budget at 1440×900', async ({

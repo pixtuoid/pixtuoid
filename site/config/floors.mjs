@@ -1,6 +1,6 @@
 // The landing page's floors, top floor down, in a module the build, the unit
 // tests and the Playwright specs can import (src/consts.ts reads `import.meta.env`).
-// The Statusline lift, the ElevatorShaft and every narrative section stamp their
+// The Statusline lift and every narrative section stamp their
 // id / data-floor / data-floor-label / eyebrow from this ONE array, so a rename
 // or an added row can't desync them.
 import floors from '../src/floors.json' with { type: 'json' };

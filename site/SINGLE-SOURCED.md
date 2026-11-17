@@ -27,9 +27,8 @@ Notes no gate carries:
   enforced by the `astro.config.mjs` guard — build fails loud on the offending
   id. Rows without `channel` render as the quiet roster grid.
 - The floor vocabulary (`data-floor`/`data-floor-label`) stamps from the
-  ONE `FLOORS` manifest (`src/floors.json`, numbered in `config/floors.mjs`); statusline lift, `ElevatorShaft`, and
-  the scrollspy all read the same `FLOOR_SPY_ROOT_MARGIN` band so readouts
-  can't disagree. `#features` is an anchor-compat shim atop the merged studio
+  ONE `FLOORS` manifest (`src/floors.json`, numbered in `config/floors.mjs`); the statusline's lift and
+  scrollspy read it. `#features` is an anchor-compat shim atop the merged studio
   band. `data-keys-scope="channels"` on `#showcase` claims digits locally.
 - `__GH_STARS__` is a build-time `vite.define`, null on offline builds — every
   consumer omits its ★ segment on null (`config/plaque-stars.mjs` is the

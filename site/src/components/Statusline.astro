@@ -3,7 +3,7 @@
 // elevator's organs (floor readout, scrollspy, digit keys, jump list); elsewhere, the page's path. Sits on
 // --screen (the office's own hardware black) and is NEVER subject to the dimmer.
 import sources from '../sources.json';
-import { DIM_RESTING, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX, floorHref } from '../consts';
+import { DIM_RESTING, floorHref } from '../consts';
 import { FLOORS, floorById, floorName } from '../../config/floors.mjs';
 import { GH_API_REPO, GH_FETCH_TIMEOUT_MS, REPO } from '../../config/github.mjs';
 
@@ -88,6 +88,10 @@ const badgeColor = (who: string): string | undefined => {
   return hit && 'badge_color' in hit ? (hit.badge_color as string) : undefined;
 };
 
+// The band of the viewport a floor must cross to be the one the readout names.
+const FLOOR_SPY_ROOT_MARGIN = '-45% 0px -45% 0px';
+// Rounding slack at true scroll max: scrollY + innerHeight and scrollHeight can differ by a subpixel.
+const BOTTOM_CLAMP_EPSILON_PX = 2;
 // The CSS fade (`--feed-fade`) and the JS out→in gap derive from ONE value: a
 // fade longer than the gap would re-expose two lines mid-swap (ghosting).
 const FEED_FADE_MS = 300;
@@ -510,7 +514,6 @@ const FEED_ROTATE_MS = 6000;
     }
     function go(btn) {
       const sec = document.getElementById(btn.dataset.target);
-      if (!sec) return;
       sec.scrollIntoView({ behavior: mq.matches ? 'auto' : 'smooth', block: 'start' });
       sec.setAttribute('tabindex', '-1');
       sec.focus({ preventScroll: true });
@@ -559,10 +562,7 @@ const FEED_ROTATE_MS = 6000;
         renderKeys(next);
       });
     }
-    // DEFERRED: this is:inline script renders BEFORE <main>, so a parse-time
-    // querySelectorAll sees zero [data-floor] sections.
-    function observeFloors() {
-      if (!('IntersectionObserver' in window)) return;
+    if ('IntersectionObserver' in window) {
       const io = new IntersectionObserver(
         function (entries) {
           entries.forEach(function (e) {
@@ -575,15 +575,10 @@ const FEED_ROTATE_MS = 6000;
         io.observe(s);
       });
     }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', observeFloors, { once: true });
-    } else {
-      observeFloors();
-    }
 
     // 1F + the footer rarely fill the center band the observer keys off, so
     // without this the readout freezes on the SECOND-to-last floor while the
-    // visitor reads the very end of the page. ElevatorShaft mirrors this clamp.
+    // visitor reads the very end of the page.
     function clampToLastFloorAtBottom() {
       if (!btns.length) return;
       const atBottom =

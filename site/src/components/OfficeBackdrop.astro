@@ -210,6 +210,8 @@ const officeDriverUrl = asset('office-driver.js');
     --office-ctl-edge: 10px;
     --office-ctl-w: 36px;
     --office-ctl-gap: 8px;
+    /* What a box beside the controls keeps free at its end. */
+    --office-ctl-gutter: calc(var(--office-ctl-edge) + var(--office-ctl-w) + var(--office-ctl-gap));
   }
   .office-ctl[hidden] {
     display: none;
@@ -235,24 +237,25 @@ const officeDriverUrl = asset('office-driver.js');
     opacity: 0.45;
     transition: opacity 0.15s ease;
   }
-  /* Footer.astro's row wraps non-monotonically with viewport width, so no flat offset clears it — --footer-h tracks its REAL height, the fallback shows pre-JS only. */
   @media (max-width: 960px) {
+    /* Footer.astro's row wraps non-monotonically with viewport width, so no flat offset clears it — --footer-h tracks its REAL height, the fallback shows pre-JS only. */
     .office-ctl {
       --ctl-bottom: calc(var(--statusline-h) + var(--footer-h, 74px) + var(--office-ctl-edge));
     }
-  }
-  @media (max-width: 760px) {
-    .container {
-      padding-inline-end: calc(
-        var(--container-pad-x) + var(--office-ctl-edge) + var(--office-ctl-w) +
-          var(--office-ctl-gap)
-      );
+    /* Copy that scrolls past the controls: the nav bar above <main> and the footer below it are
+       left out. */
+    main .container {
+      padding-inline-end: calc(var(--container-pad-x) + var(--office-ctl-gutter));
     }
     .gap-caption {
-      max-width: calc(
-        100% - var(--gap-caption-inset) - var(--office-ctl-edge) - var(--office-ctl-w) -
-          var(--office-ctl-gap)
-      );
+      max-width: calc(100% - var(--gap-caption-inset) - var(--office-ctl-gutter));
+    }
+    /* In a viewport this short the lifted controls reach up to the nav bar's row at the page's
+       top, so the row takes the gutter too. */
+    @media (max-height: 340px) {
+      .nav__inner {
+        padding-inline-end: calc(var(--container-pad-x) + var(--office-ctl-gutter));
+      }
     }
   }
   .office-ctl:hover,
@@ -933,7 +936,7 @@ const officeDriverUrl = asset('office-driver.js');
       window.addEventListener('keydown', restore, true);
     }
 
-    // Publishes --footer-h for .office-ctl's ≤960px clearance. DEFERRED: this is:inline script renders
+    // Publishes --footer-h for .office-ctl's --ctl-bottom. DEFERRED: this is:inline script renders
     // BEFORE <footer>, so a parse-time querySelector sees no footer yet.
     function wireFooterHeight() {
       const footerEl = document.querySelector('.footer');

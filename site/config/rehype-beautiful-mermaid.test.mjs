@@ -89,15 +89,18 @@ test('the stylesheet fetches nothing: no @import, no URL (CSP style-src/font-src
 // counts each page's `<svg role="img">`. Every committed diagram is the population.
 for (const { path } of markdownPages()) {
   const doc = readFileSync(new URL(`../../${path}`, import.meta.url), 'utf8');
-  for (const source of mermaidFences(doc)) {
-    test(`${path}'s diagram renders every subgraph, node and edge it declares`, () => {
+  for (const [i, source] of mermaidFences(doc).entries()) {
+    test(`${path}'s diagram ${i + 1} renders every subgraph, node and edge it declares`, () => {
       const svg = svgOf(run({ type: 'root', children: [codeBlock('mermaid', source)] }));
       assert.equal(
         all(svg, withClass('subgraph')).length,
         (source.match(/^\s*subgraph\s/gm) ?? []).length
       );
       assert.equal(all(svg, withClass('node')).length, new Set(source.match(/\b\w+(?=\[)/g)).size);
-      assert.equal(all(svg, tagged('polyline')).length, source.match(/->/g).length);
+      // `->` is the one edge operator counted here: a diagram drawn with another fails, not passes.
+      const edges = source.match(/->/g);
+      assert.ok(edges, 'the diagram declares no `->` edge');
+      assert.equal(all(svg, tagged('polyline')).length, edges.length);
     });
   }
 }

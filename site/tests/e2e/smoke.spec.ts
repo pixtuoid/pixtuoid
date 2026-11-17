@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
@@ -673,8 +673,11 @@ test('scrolled to the true page bottom, the statusline clamps to the last floor'
   page,
 }) => {
   await gotoLive(page);
+  // An instant jump sweeps no floor through the observer's band, so only the clamp can name 1F.
   await expect(async () => {
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.evaluate(() =>
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' })
+    );
     await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 500 });
   }).toPass({ timeout: 10_000 });
 });
@@ -2276,7 +2279,7 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
   await ctx.close();
 });
 
-test('landing fixed chrome: floating nav, statusline readouts, floor popover', async ({ page }) => {
+test('landing chrome: floating nav, statusline readouts, floor popover', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./'); // no live-office wait — everything here is wasm-independent
   // The load-bearing half of the floating variant: no live blur filter over a
@@ -3338,60 +3341,49 @@ test('the pause control never overlaps a footer link across the mobile wrap rang
   }
 });
 
-test('the pause control never occludes in-page copy at mobile widths', async ({ page }) => {
-  // .office-ctl is position:fixed, so its band is CONSTANT across the whole scroll — every section's copy passes under it, not just the footer's.
+test('the pause control never occludes in-page copy at 390, 768 and 960px', async ({ page }) => {
+  // .office-ctl is position:fixed, so its band is CONSTANT across the whole scroll — every section's copy passes it.
   // Each spot scrolls its OWN midpoint onto the band's midpoint (worst case); scrollIntoView({block:'center'}) centers in the VIEWPORT and misses it.
   await gotoLive(page);
-  await page.setViewportSize({ width: 390, height: 844 });
 
-  async function assertClearOfPause(selector: string): Promise<void> {
-    const overlap = await page.evaluate((sel) => {
-      const el = document.querySelector(sel) as HTMLElement | null;
-      const btn = document.getElementById('office-pause') as HTMLElement | null;
-      if (!el || !btn || btn.hidden) return { found: !!el, overlap: false };
-      const b = btn.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      const elAbsMid = (r.top + r.bottom) / 2 + window.scrollY;
-      const bandMid = (b.top + b.bottom) / 2;
-      window.scrollTo({ top: Math.max(0, Math.round(elAbsMid - bandMid)), behavior: 'instant' });
-      const r2 = el.getBoundingClientRect();
-      const b2 = btn.getBoundingClientRect();
-      const overlap = !(
-        r2.right <= b2.left ||
-        r2.left >= b2.right ||
-        r2.bottom <= b2.top ||
-        r2.top >= b2.bottom
-      );
-      return { found: true, overlap };
-    }, selector);
-    expect(overlap.found, `${selector} not found`).toBe(true);
-    expect(overlap.overlap, `${selector} overlaps #office-pause's fixed band`).toBe(false);
+  async function assertClearOfPause(selector: string, nth = 0): Promise<void> {
+    const overlap = await page.evaluate(
+      ([sel, i]) => {
+        const el = document.querySelectorAll<HTMLElement>(sel)[i];
+        const btn = document.getElementById('office-pause') as HTMLElement | null;
+        if (!el || !btn || btn.hidden) return { found: !!el, overlap: false };
+        const b = btn.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        const elAbsMid = (r.top + r.bottom) / 2 + window.scrollY;
+        const bandMid = (b.top + b.bottom) / 2;
+        window.scrollTo({ top: Math.max(0, Math.round(elAbsMid - bandMid)), behavior: 'instant' });
+        const r2 = el.getBoundingClientRect();
+        const b2 = btn.getBoundingClientRect();
+        const overlap = !(
+          r2.right <= b2.left ||
+          r2.left >= b2.right ||
+          r2.bottom <= b2.top ||
+          r2.top >= b2.bottom
+        );
+        return { found: true, overlap };
+      },
+      [selector, nth] as const
+    );
+    expect(overlap.found, `${selector} #${nth} not found`).toBe(true);
+    expect(overlap.overlap, `${selector} #${nth} overlaps #office-pause's fixed band`).toBe(false);
   }
 
-  await assertClearOfPause('.hero__ghost[href="#showcase-vibing"]');
-  await assertClearOfPause('.office-gap:not(.office-gap--closer) .gap-caption');
-  await assertClearOfPause('.how__step:first-child .how__detail p');
-  await assertClearOfPause('[data-vibing-time-label]');
-});
-
-test('the elevator shaft never overlaps the studio panel copy at 390 or 768', async ({ page }) => {
-  // .shaft is position:fixed at every width and .container reserves no gutter
-  // for it. Horizontal position doesn't depend on scroll — pure geometry.
-  await gotoLive(page);
-  for (const width of [390, 768]) {
+  // A phone, a tablet and the widest the gutter reaches.
+  for (const width of [390, 768, 960]) {
     await page.setViewportSize({ width, height: 844 });
-    const overlaps = await page.evaluate(() => {
-      const shaft = document.querySelector('.shaft');
-      if (!shaft) return [];
-      const shaftLeft = shaft.getBoundingClientRect().left;
-      return Array.from(document.querySelectorAll<HTMLElement>('.roster__row'))
-        .map((el) => el.getBoundingClientRect().right - shaftLeft)
-        .filter((over) => over > 0);
-    });
-    expect(
-      overlaps,
-      `${width}px: roster rows reach ${overlaps}px past the shaft's left edge`
-    ).toEqual([]);
+    await assertClearOfPause('.hero__ghost[href="#showcase-vibing"]');
+    await assertClearOfPause('.office-gap:not(.office-gap--closer) .gap-caption');
+    await assertClearOfPause('.how__step:first-child .how__detail p');
+    await assertClearOfPause('[data-vibing-time-label]');
+    // Every roster row: above a phone's width the grid's last column ends at `.container`'s edge.
+    for (let i = 0; i < (await page.locator('.roster__row').count()); i++) {
+      await assertClearOfPause('.roster__row', i);
+    }
   }
 });
 
@@ -3737,3 +3729,47 @@ test('a printed page shows what waits to be revealed', async ({ page }) => {
   expect(await page.locator('.reveal:not(.in)').count()).toBeGreaterThan(0);
   expect(hidden).toBe(0);
 });
+
+test("at phone width the floating nav's buttons end as far from the right edge as its logo starts from the left, and the footer keeps its own padding", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  const { left, right, width, footer } = await page.evaluate(() => {
+    const line = getComputedStyle(document.querySelector('.footer__line')!);
+    return {
+      left: document.querySelector('.nav__logo')!.getBoundingClientRect().left,
+      right: document.querySelector('.nav__toggle')!.getBoundingClientRect().right,
+      width: document.documentElement.clientWidth,
+      footer: [line.paddingInlineStart, line.paddingInlineEnd],
+    };
+  });
+  expect(Math.abs(width - right - left)).toBeLessThanOrEqual(1);
+  expect(footer[1]).toBe(footer[0]);
+});
+
+for (const device of ['Galaxy Z Flip 6 Cover', 'Pixel 5 landscape']) {
+  test(`on a ${device}'s viewport the nav bar ends left of the office controls`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(devices[device].viewport);
+    await gotoLive(page);
+    // Their columns, not their boxes: how high the controls sit follows the footer's wrap, which
+    // follows the clock.
+    const { nav, controls } = await page.evaluate(() => {
+      const boxes = (sel: string) =>
+        [...document.querySelectorAll<HTMLElement>(sel)]
+          .filter((el) => !el.hidden && el.getClientRects().length > 0)
+          .map((el) => el.getBoundingClientRect());
+      return {
+        nav: boxes('#theme-toggle, #nav-burger, .nav__links > *').map((box) => box.right),
+        controls: boxes('.office-ctl').map((box) => box.left),
+      };
+    });
+    // teeth: with either set empty, the comparison below would pass vacuously.
+    expect(nav.length).toBeGreaterThan(0);
+    expect(controls.length).toBeGreaterThan(0);
+    expect(Math.max(...nav)).toBeLessThanOrEqual(Math.min(...controls));
+  });
+}
