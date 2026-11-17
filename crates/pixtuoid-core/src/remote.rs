@@ -43,7 +43,8 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office: a device takes
-/// silence past this for a dead link.
+/// silence past this for a dead link, so a change to it is a break in the link
+/// that bumps [`VERSION`].
 pub const HEARTBEAT: Duration = Duration::from_secs(15);
 
 /// How far a line's clock may stray from the skew already held before it is
