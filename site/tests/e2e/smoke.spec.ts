@@ -331,6 +331,32 @@ async function expectSectionReveal(page: Page, sectionId: string): Promise<void>
   }).toPass({ timeout: 10_000 });
 }
 
+/**
+ * The narrowest viewport width, from 320px to 1440px at `height`, at which `holds` holds, and the
+ * page left at it. A wider viewport only gives a row more room, so a row that fits there fits at
+ * every width past it.
+ */
+async function firstWidthWhere(
+  page: Page,
+  height: number,
+  holds: () => Promise<boolean>
+): Promise<number> {
+  const at = async (width: number) => {
+    await page.setViewportSize({ width, height });
+    return holds();
+  };
+  let [no, yes] = [320, 1440];
+  expect(await at(no)).toBe(false);
+  expect(await at(yes)).toBe(true);
+  while (yes - no > 1) {
+    const mid = Math.floor((no + yes) / 2);
+    if (await at(mid)) yes = mid;
+    else no = mid;
+  }
+  await page.setViewportSize({ width: yes, height });
+  return yes;
+}
+
 async function gotoLive(page: Page): Promise<void> {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
@@ -1516,51 +1542,60 @@ test('docs pages keep the sticky nav with its links', async ({ page }) => {
   expect(errors()).toEqual([]);
 });
 
-test('at every width that lays the nav out as a bar, its items sit on one line, in order, inside the bar', async ({
+test('at the narrowest width that lays the nav out as a bar, its items sit on one line, in order, inside the bar', async ({
   page,
 }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  const isBar = () =>
+    page.locator('#nav-burger').evaluate((el) => getComputedStyle(el).display === 'none');
   for (const path of ['./', './config/']) {
     await page.goto(path);
-    let bars = 0;
-    // 340px: OfficeBackdrop's shortest viewports, where the office controls take a gutter from the bar's row.
-    for (const height of [340, 600])
-      for (let width = 600; width <= 1440; width += 10) {
-        await page.setViewportSize({ width, height });
-        const row = await page.evaluate(() => {
-          if (getComputedStyle(document.getElementById('nav-burger')!).display !== 'none')
-            return null;
-          const inner = document.querySelector('.nav__inner')!.getBoundingClientRect();
-          const items = [
-            ...document.querySelectorAll<HTMLElement>(
-              '.nav__logo, .nav__version, .nav__links > *, #theme-toggle'
-            ),
-          ].map((el) => {
+    // 340px: short enough that OfficeBackdrop's office controls take a gutter from the home page's bar.
+    for (const height of [340, 600]) {
+      const width = await firstWidthWhere(page, height, isBar);
+      const row = await page.evaluate(() => {
+        const inner = document.querySelector<HTMLElement>('.nav__inner')!;
+        const pad = getComputedStyle(inner);
+        const items = [...inner.children]
+          .flatMap((el) => (el.id === 'nav-links' ? [...el.children] : [el]))
+          .filter((el) => el.getClientRects().length > 0)
+          .map((el) => {
             const box = el.getBoundingClientRect();
-            // A wrapped link's text breaks into line boxes whose tops differ by a line.
             const range = document.createRange();
             range.selectNodeContents(el);
             const tops = [...range.getClientRects()].map((r) => r.top);
-            const lines = tops.length ? Math.max(...tops) - Math.min(...tops) : 0;
-            return { name: el.textContent!.trim(), left: box.left, right: box.right, lines };
+            return {
+              name: el.textContent!.trim() || el.id,
+              left: box.left,
+              right: box.right,
+              // A wrapped line starts at least a font size below the one above it.
+              wraps:
+                Math.max(...tops) - Math.min(...tops) >= parseFloat(getComputedStyle(el).fontSize),
+            };
           });
-          return { left: inner.left, right: inner.right, items };
-        });
-        if (!row) continue;
-        bars += 1;
-        const where = `${path} at ${width}×${height}px`;
-        expect(row.items[0].left, where).toBeGreaterThanOrEqual(row.left);
-        expect(row.items.at(-1)!.right, where).toBeLessThanOrEqual(row.right);
-        for (const [i, item] of row.items.entries()) {
-          expect(item.lines, `${where}: "${item.name}" wraps`).toBeLessThan(10);
-          if (i > 0)
-            expect(item.left, `${where}: "${item.name}" overlaps`).toBeGreaterThanOrEqual(
-              row.items[i - 1].right
-            );
+        const box = inner.getBoundingClientRect();
+        return {
+          left: box.left,
+          right: box.right,
+          gutter: parseFloat(pad.paddingInlineEnd) > parseFloat(pad.paddingInlineStart),
+          items,
+        };
+      });
+      const where = `${path} at ${width}×${height}px`;
+      if (path === './' && height === 340) {
+        expect(row.gutter, `${where}: the office controls' gutter applies`).toBe(true);
+      }
+      expect(row.items[0].left, where).toBeGreaterThanOrEqual(row.left);
+      expect(row.items.at(-1)!.right, where).toBeLessThanOrEqual(row.right);
+      for (const [i, item] of row.items.entries()) {
+        expect(item.wraps, `${where}: "${item.name}" wraps`).toBe(false);
+        if (i > 0) {
+          expect(item.left, `${where}: "${item.name}" overlaps`).toBeGreaterThanOrEqual(
+            row.items[i - 1].right
+          );
         }
       }
-    // teeth: a breakpoint past the last width would leave nothing to check.
-    expect(bars, path).toBeGreaterThan(0);
+    }
   }
 });
 
@@ -3313,23 +3348,12 @@ test("the footer's row fits on one line at the first width that shows its dots",
   // The row at its longest: the night clock's words show.
   await page.evaluate(() => document.documentElement.setAttribute('data-clock-night', '1'));
   await expect(page.locator('.footer__clock')).toBeVisible();
-  const dotsShow = async (width: number) => {
-    await page.setViewportSize({ width, height: 900 });
-    return page
+  const shown = await firstWidthWhere(page, 900, () =>
+    page
       .locator('.footer__sep')
       .first()
-      .evaluate((el) => getComputedStyle(el).display !== 'none');
-  };
-  let [hidden, shown] = [320, 1440];
-  expect(await dotsShow(hidden)).toBe(false);
-  expect(await dotsShow(shown)).toBe(true);
-  // A wider viewport only gives the row more room, so the narrowest width that shows the dots decides.
-  while (shown - hidden > 1) {
-    const mid = Math.floor((hidden + shown) / 2);
-    if (await dotsShow(mid)) shown = mid;
-    else hidden = mid;
-  }
-  await page.setViewportSize({ width: shown, height: 900 });
+      .evaluate((el) => getComputedStyle(el).display !== 'none')
+  );
   // The row centres items of unequal height, so one line is every item starting above the highest bottom.
   const wrapped = await page.evaluate(() => {
     const boxes = Array.from(document.querySelector('.footer__line')!.children)
