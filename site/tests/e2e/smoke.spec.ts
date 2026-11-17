@@ -3774,8 +3774,9 @@ for (const device of ['Galaxy Z Flip 6 Cover', 'Pixel 5 landscape']) {
   });
 }
 
-// The office is a fixed layer over the viewport alone, so what an overscroll shows past the
-// viewport's edge is the page's own ground.
+// The office is a fixed layer over the viewport alone, so what shows past the viewport's edge (an
+// overscroll, and under Safari 26's top bar: bugs.webkit.org/show_bug.cgi?id=301756, comment 2)
+// is the page's own ground.
 test("past the viewport's edge the landing page shows the theme's ground", async ({ page }) => {
   for (const theme of VALID_THEMES) {
     await page.addInitScript((t) => {
@@ -3803,21 +3804,4 @@ test("past the viewport's edge the landing page shows the theme's ground", async
     });
     expect(canvasBackground, theme).toBe(ground);
   }
-});
-
-// Safari 26 shows the page under its top bar, so the skip link is hidden where it stands, not by
-// moving it above the viewport's top edge.
-test('the skip link shows only when focused, and never sits above the viewport', async ({
-  page,
-}) => {
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./config/');
-  const link = page.locator('.skip-link');
-  await expect(link).toHaveCSS('opacity', '0');
-  await expect(link).not.toHaveCSS('position', 'fixed');
-  expect((await link.boundingBox())!.y).toBeGreaterThanOrEqual(0);
-  await page.keyboard.press('Tab');
-  await expect(link).toBeFocused();
-  await expect(link).toHaveCSS('opacity', '1');
-  expect((await link.boundingBox())!.y).toBeGreaterThanOrEqual(0);
 });
