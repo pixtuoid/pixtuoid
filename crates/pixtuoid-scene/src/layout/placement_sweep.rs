@@ -175,13 +175,12 @@ fn every_swept_office_holds_its_invariants() {
         .iter()
         .flat_map(|&(w, h)| seeds.iter().map(move |&seed| (w, h, seed)))
         .collect();
-    // the offices are independent: across the cores nextest reserves for it
-    // (`threads-required` in .config/nextest.toml)
-    let mut found = crate::par::map(&offices, crate::par::cores(), |&(w, h, seed)| {
-        check_offices_of(w, h, seed)
-    })
-    .into_iter()
-    .fold(Found::default(), Found::absorb);
+    // One thread: instrumented for coverage, threads sharing the counters run
+    // the sweep slower than one does.
+    let mut found = offices
+        .iter()
+        .map(|&(w, h, seed)| check_offices_of(w, h, seed))
+        .fold(Found::default(), Found::absorb);
     check!(
         found,
         every_kind_is_placed_somewhere_in_the_sweep(&found.kinds)
