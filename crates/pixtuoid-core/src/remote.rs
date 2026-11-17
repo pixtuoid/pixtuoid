@@ -1874,8 +1874,9 @@ mod tests {
         body.collect::<Vec<_>>().join("\n")
     }
 
-    /// The gate CI holds a change's samples to freezes the files this test
-    /// reads and reads every closed kind, or it would pass a break unseen.
+    /// `just wire-frozen`'s freeze names `GOLDEN` and `SAMPLES`, which the
+    /// sample test reads, and its `kind()` reads every [`closed`] root's kind;
+    /// otherwise a break would pass it unseen.
     #[test]
     fn wire_frozen_freezes_these_samples_and_reads_every_closed_kind() {
         let gate = recipe("wire-frozen");
