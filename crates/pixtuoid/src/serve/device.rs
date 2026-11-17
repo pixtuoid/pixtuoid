@@ -345,7 +345,7 @@ mod tests {
     use std::sync::Arc;
 
     use pixtuoid_core::SceneState;
-    use pixtuoid_core::remote::{Outcome, RemoteOffice, SourceState};
+    use pixtuoid_core::remote::{Outcome, RemoteOffice, SILENCE_LIMIT, SourceState};
     use pixtuoid_core::state::Today;
     use tokio::io::{BufReader, DuplexStream, ReadHalf, WriteHalf, duplex, split};
     use tokio::sync::watch;
@@ -821,12 +821,13 @@ mod tests {
         assert_eq!(started.elapsed(), WRITE_TIMEOUT);
     }
 
+    /// Inside the wait a device gives a silent stream, or it drops a live one.
     #[tokio::test(start_paused = true)]
     async fn a_quiet_office_still_sends_its_line() {
         let fixture = fixture();
         let mut peer = streaming(&fixture).await;
 
-        let beat = timeout(HEARTBEAT * 2, peer.line()).await;
+        let beat = timeout(SILENCE_LIMIT, peer.line()).await;
 
         assert!(beat.is_ok_and(|line| !line.is_empty()));
     }
