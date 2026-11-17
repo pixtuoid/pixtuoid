@@ -114,6 +114,58 @@ const CHANGES = [
   [52, 37, 5, 3],
   [80, 15, 4, 5],
 ];
+// What changed in a frame, in the groups a merge would box together: the left pane draws every
+// change, the right one the box around each group.
+const GROUPS = [
+  [
+    [4, 3, 5, 3],
+    [12, 5, 4, 3],
+    [8, 9, 5, 2],
+  ],
+  [
+    [30, 2, 6, 3],
+    [39, 4, 5, 3],
+    [34, 8, 4, 3],
+  ],
+  [
+    [58, 3, 4, 4],
+    [64, 6, 5, 3],
+  ],
+  [
+    [82, 4, 5, 3],
+    [86, 9, 4, 4],
+    [80, 10, 3, 3],
+  ],
+  [
+    [10, 24, 5, 3],
+    [17, 27, 4, 3],
+  ],
+  [
+    [44, 22, 5, 4],
+    [51, 25, 4, 3],
+    [47, 29, 5, 2],
+  ],
+  [
+    [6, 42, 5, 4],
+    [13, 45, 5, 3],
+    [20, 43, 4, 4],
+  ],
+  [
+    [70, 40, 5, 3],
+    [77, 43, 5, 4],
+    [84, 41, 4, 3],
+  ],
+];
+const around = (group) => {
+  const x = Math.min(...group.map(([left]) => left));
+  const y = Math.min(...group.map(([, top]) => top));
+  return [
+    x,
+    y,
+    Math.max(...group.map(([left, , width]) => left + width)) - x,
+    Math.max(...group.map(([, top, , height]) => top + height)) - y,
+  ];
+};
 const TILES = { fine: [16, 9], coarse: [4, 3] };
 const box = (className, [x, y, width, height]) => s('rect', { className, x, y, width, height });
 
@@ -177,6 +229,23 @@ const KINDS = {
         ]),
       ],
       { moving: true }
+    );
+  },
+  boxes: (table) => {
+    const [[changes, changeCount], [merged, mergedCount]] = pair('boxes', table, ['step', 'count']);
+    const marks = GROUPS.flat().map((at) => box('fig-pane__change', at));
+    return windowed(
+      'what changed, and the boxes that get repainted (not to scale)',
+      [
+        h('ul.fig__panes', [
+          pane(changes, changeCount, marks),
+          pane(merged, mergedCount, [
+            ...marks,
+            ...GROUPS.map((group) => box('fig-pane__box', around(group))),
+          ]),
+        ]),
+      ],
+      { moving: false }
     );
   },
   tiles: (table) => {

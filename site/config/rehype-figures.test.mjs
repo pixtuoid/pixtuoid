@@ -130,6 +130,31 @@ test('tiles cut the same frame fine and coarse, and nothing in it moves', () => 
   ]);
 });
 
+test('boxes draw every change twice, and around the second set one box a group', () => {
+  const tree = run([
+    marker('boxes'),
+    nl,
+    table(
+      ['Step', 'Count'],
+      ['What changed', 'two dozen rectangles'],
+      ['What is repainted', '8 boxes']
+    ),
+  ]);
+  const [changes, merged] = all(figure(tree), withClass('fig-pane'));
+  const count = (pane, name) => all(pane, withClass(name)).length;
+  assert.equal(count(changes, 'fig-pane__box'), 0);
+  assert.equal(count(merged, 'fig-pane__change'), count(changes, 'fig-pane__change'));
+  assert.equal(count(merged, 'fig-pane__box'), 8);
+  // Every change lies inside one of the boxes drawn around it.
+  const at = (rect) => ['x', 'y', 'width', 'height'].map((key) => rect.properties[key]);
+  const boxes = all(merged, withClass('fig-pane__box')).map(at);
+  for (const [x, y, w, hgt] of all(merged, withClass('fig-pane__change')).map(at)) {
+    assert.ok(
+      boxes.some(([bx, by, bw, bh]) => bx <= x && by <= y && x + w <= bx + bw && y + hgt <= by + bh)
+    );
+  }
+});
+
 test('a two-pane figure needs exactly its two rows', () => {
   assert.throws(
     () => run([marker('repaint'), nl, table(['Pass', 'Pixels'], ['Only one', '1'])]),

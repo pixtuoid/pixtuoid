@@ -249,7 +249,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   /* rendered markdown carries no astro scope hash, hence :global throughout */
   /* One terminal chrome for a callout, a diagram's figure
      (config/rehype-beautiful-mermaid.mjs) and a moving one (config/rehype-figures.mjs). */
-  .wing :global(:is(.callout, .fig--diagram, .fig--budget, .fig--repaint, .fig--tiles)) {
+  .wing
+    :global(:is(.callout, .fig--diagram, .fig--budget, .fig--repaint, .fig--boxes, .fig--tiles)) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
@@ -392,6 +393,15 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   .wing :global(.fig-pane__desk) {
     fill: var(--chip-line);
+  }
+  .wing :global(.fig-pane__change) {
+    fill: var(--chip-accent);
+  }
+  .wing :global(.fig-pane__box) {
+    fill: none;
+    stroke: var(--led);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
   }
   .wing :global(.fig-pane__cuts) {
     fill: none;
