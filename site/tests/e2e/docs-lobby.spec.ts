@@ -1,3 +1,4 @@
+import { floorById } from '../../config/floors.mjs';
 import { expect, test, type Page } from '@playwright/test';
 import { readingRoutes } from '../../config/blog.mjs';
 import { DOC_DIR } from '../../config/docs.mjs';
@@ -26,6 +27,7 @@ test('docs mount the statusline: route path left, install chip right, no index-o
   await expect(bar.locator('#sl-install')).toBeAttached();
   await expect(bar.locator('[data-floor-toggle]')).toHaveCount(0);
   await expect(bar.locator('.sl__feed')).toHaveCount(0);
+  await expect(bar.locator('.sl__keys')).toHaveCount(0);
   expect(errors()).toEqual([]);
 });
 
@@ -225,4 +227,19 @@ test('pantry FAQ: bubbles pop in sequence, join pix:paused, reduced-motion is st
   expect(await mb.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
   expect(await mb.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
   await ctx.close();
+});
+
+test("off the index, the install chip leaves for the install floor, whatever the page's own ids", async ({
+  page,
+}) => {
+  await page.goto('./config/');
+  // A heading that slugs to the floor's id must not catch the chip.
+  await page.evaluate((id) => {
+    const heading = document.createElement('h2');
+    heading.id = id;
+    document.querySelector('article')!.append(heading);
+  }, floorById('install').id);
+  await page.locator('#sl-install').click();
+  await expect(page).toHaveURL(new RegExp(`/#${floorById('install').id}$`));
+  expect(new URL(page.url()).pathname).toBe('/');
 });

@@ -1,6 +1,6 @@
 ---
-// The page's one piece of fixed chrome: a build-time merged-PR feed plus the
-// elevator's organs (floor readout, scrollspy, digit keys, jump list). Sits on
+// The page's one piece of fixed chrome: on the index, a build-time merged-PR feed plus the
+// elevator's organs (floor readout, scrollspy, digit keys, jump list); elsewhere, the page's path. Sits on
 // --screen (the office's own hardware black) and is NEVER subject to the dimmer.
 import sources from '../sources.json';
 import { DIM_RESTING, FLOOR_SPY_ROOT_MARGIN, BOTTOM_CLAMP_EPSILON_PX, floorHref } from '../consts';
@@ -716,9 +716,10 @@ const FEED_ROTATE_MS = 6000;
       }, CHIP_FLASH_MS);
     }
     installLink.addEventListener('click', function (e) {
+      // Off the index the href names another page: DON'T preventDefault, let it carry the
+      // visitor, whatever this page's own ids are.
+      if (installLink.pathname !== location.pathname) return;
       const sec = document.getElementById(installLink.hash.slice(1));
-      // Off the index there is no such section — DON'T preventDefault; let the
-      // cross-page href carry the visitor instead of eating the click.
       if (!sec) return;
       e.preventDefault();
       sec.scrollIntoView({ behavior: mq.matches ? 'auto' : 'smooth', block: 'start' });

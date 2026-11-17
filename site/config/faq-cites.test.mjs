@@ -16,7 +16,7 @@ for (const { src } of faq) {
     assert.ok(at > 0, `${src} names no heading of a repo file`);
     const [file, fragment] = [src.slice(0, at), src.slice(at + 1)];
     assert.ok(existsSync(repoFile(file)), `${file} is not at the repo root`);
-    // One slugger per file, so a repeated heading gets GitHub's numbered anchor.
+    // One slugger per file: `slug` numbers a heading it has already given (`foo`, then `foo-1`).
     const slugger = new GithubSlugger();
     const anchors = [...readFileSync(repoFile(file), 'utf8').matchAll(/^#{1,6} (.+)$/gm)].map((m) =>
       slugger.slug(m[1])

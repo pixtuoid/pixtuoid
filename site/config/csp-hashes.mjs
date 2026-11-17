@@ -75,7 +75,8 @@ function decodeAttr(value) {
       }
       return String.fromCodePoint(cp);
     }
-    const ch = ENTITIES[name.toLowerCase()];
+    const key = name.toLowerCase();
+    const ch = Object.hasOwn(ENTITIES, key) ? ENTITIES[key] : undefined;
     if (ch === undefined) throw new Error(`csp-hashes: ${ref} is not in ENTITIES; add it`);
     return ch;
   });

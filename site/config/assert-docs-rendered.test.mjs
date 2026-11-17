@@ -24,7 +24,7 @@ test('a collapsed (empty) doc <article> body fails — the exact bug', () => {
   assert.ok(failures.some((f) => f.includes('/config') && f.includes('render collapsed')));
 });
 
-test('a page with fewer <svg> than its doc declares mermaid blocks fails', () => {
+test('a page with fewer <svg role="img"> than its source declares mermaid blocks fails', () => {
   const { failures } = checkPages(
     [{ name: 'how-we-build', html: doc(`${SVG}${body(MIN_BODY_CHARS)}`) }],
     { 'how-we-build': 2 }
@@ -43,7 +43,7 @@ test('a decorative svg is no diagram', () => {
   assert.deepEqual(failures, []);
 });
 
-test('a page with more <svg> than its doc declares mermaid blocks fails', () => {
+test('a page with more <svg role="img"> than its source declares mermaid blocks fails', () => {
   const { failures } = checkPages(
     [{ name: 'config', html: doc(`${SVG}${SVG}${body(MIN_BODY_CHARS)}`) }],
     { config: 1 }

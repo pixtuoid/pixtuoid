@@ -112,7 +112,7 @@ test('repaint shows its two passes side by side, each with what it repaints', ()
   assert.deepEqual(fig.properties.className, ['fig--repaint', 'reveal']);
   const panes = all(fig, withClass('fig-pane'));
   assert.deepEqual(panes.map(said), ['The whole frame 6.8 million', 'Only what changed 7,936']);
-  // The first pass washes the frame; the second washes a few boxes inside it.
+  // The first pass washes the frame; the second washes only the areas that changed (`CHANGES`).
   const washes = panes.map((pane) => all(pane, withClass('fig-pane__wash')).length);
   assert.equal(washes[0], 1);
   assert.ok(washes[1] > 1);

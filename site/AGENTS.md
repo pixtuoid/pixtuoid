@@ -47,7 +47,7 @@ gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
 the mechanism; `pages.yml`'s pins carry their own.
 
 **Wing shell**: the doc routes (`src/docs.json` is the roster) and the blog
-mount the Statusline without its index organs (no PR feed fetch); `Wing.astro`'s sidebar
+mount the Statusline without its index-only organs (no PR feed fetch); `Wing.astro`'s sidebar
 reads the one `FLOORS` manifest. A post is one file in `src/content/blog/`:
 its route, the lobby, the feed, Lighthouse's URLs and `check:docs`'s roster
 derive from that directory (`config/blog.mjs`). Edited by hand: the e2e rows

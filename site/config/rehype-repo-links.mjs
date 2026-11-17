@@ -28,7 +28,9 @@ export default function rehypeRepoLinks({ pages, base }) {
     // GitHub resolves a Markdown link "relative to the current file", and one that starts with
     // a `/` from the repository root ("Relative links and image paths in markdown files",
     // docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes);
-    // rooted, `normalize` drops a climb above the root.
+    // rooted, `normalize` drops a climb above the root (Node's lib/path.js: posix `normalize`
+    // passes `normalizeString` `allowAboveRoot` false for an absolute path, at mise.toml's node),
+    // which this file's test of a climb holds.
     const joined = path.startsWith('/') ? path : posix.join(dir, path);
     const rel = posix.normalize(`/${joined}`).slice(1);
     node.properties.href = `${routes.get(rel) ?? `${REPO_BLOB}/${rel}`}${hash}`;
