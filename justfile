@@ -146,10 +146,10 @@ ci-observability:
     bash policy/ci-observability/check.sh
     bash policy/ci-observability/action_behavior_test.sh
 
-# An App or CLI reads what a released build wrote, so a change never edits a
-# sample its base holds. CI's base is HEAD^1: a PR merge commit's first parent
-# (path-changed's rule), or the commit a push follows.
-[doc("Fail when a change that keeps remote::VERSION edits or deletes a v2 wire sample its base holds, or adds a sample of a hello, reply, ask or answer kind its base's samples lack")]
+# An App or CLI reads what a released build wrote, so a change edits no sample
+# its base holds at the same `VERSION`. CI's base is HEAD^1: a PR merge commit's
+# first parent (path-changed's rule), or the commit a push follows.
+[doc("Fail when a change that keeps remote::VERSION edits or deletes a wire sample its base holds, or adds a sample of a hello, reply, ask or answer kind its base's samples lack")]
 [group('rust')]
 wire-frozen:
     #!/usr/bin/env bash
@@ -164,12 +164,12 @@ wire-frozen:
     # A bump is the sanctioned break, new kinds included: the version gate
     # answers every peer across it.
     [[ "$was" == "$now" ]] || exit 0
-    git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.v2.golden.json fuzz/seeds/remote ||
-        { echo "a v2 break: bump remote::VERSION, which lets the golden and every sample change" >&2; exit 1; }
-    # A v2 server ends the connection on a hello or ask kind it doesn't name, and
-    # a v2 device can't stream behind a reply kind or match an answer kind it
-    # doesn't name, so a sample of a new one would hide the break `remote`'s v2
-    # sample test reports.
+    git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.golden.json fuzz/seeds/remote ||
+        { echo "a wire break: bump remote::VERSION, which lets the golden and every sample change" >&2; exit 1; }
+    # A server ends the connection on a hello or ask kind it doesn't name, and a
+    # device can't stream behind a reply kind or match an answer kind it doesn't
+    # name, so a sample of a new one would hide the break `remote`'s sample test
+    # reports.
     export LC_ALL=C
     kind() { jq -rRs 'fromjson? | objects | first(("hello", "reply", "ask", "answer") as $tag | select(.[$tag]) | "\($tag) \(.[$tag])")'; }
     held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
@@ -191,7 +191,7 @@ wire-frozen-selftest:
     remote=crates/pixtuoid-core/src/remote.rs
     bumped='pub const VERSION: u32 = 3;'
     mkdir -p "$d/$seeds" "$d/crates/pixtuoid-core/src"
-    printf '{}' >"$d/crates/pixtuoid-core/src/remote.v2.golden.json"
+    printf '{}' >"$d/crates/pixtuoid-core/src/remote.golden.json"
     printf 'pub const VERSION: u32 = 2;\n' >"$d/$remote"
     printf '{"v":2,"hello":"pair","code":"C","name":"N"}' >"$d/$seeds/hello"
     printf '{"v":2,"reply":"resumed"}' >"$d/$seeds/reply-resumed"

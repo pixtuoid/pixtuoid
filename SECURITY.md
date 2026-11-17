@@ -91,7 +91,7 @@ The components that handle untrusted or privileged input, and how they're bounde
    pixtuoid.dev whose fields ride the fragment, which a browser keeps to
    itself: a phone without the app opens a `/pair/` page there that runs no
    script. The key, the hashes of the code and tokens and each device's name
-   sit in one owner-only file in the state directory, never
+   and paired-at sit in one owner-only file in the state directory, never
    in a dotfiles-prone `~/.config`. `pair --forget` forgets one device by the id
    `pair --list` shows and `pair --reset` every device, ending its stream. Past
    its hello a device can only ask, and a line past `MAX_LINE_BYTES` or not an ask ends the connection. Its one write connects or

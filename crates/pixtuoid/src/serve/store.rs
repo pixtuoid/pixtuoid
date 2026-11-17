@@ -91,7 +91,8 @@ impl Hashed {
         Self(hex(digest(&SHA256, token.as_bytes()).as_ref()))
     }
 
-    /// Enough of it to tell a log's devices apart, and no more.
+    /// Enough of it to tell a log's devices apart, and no more: the id
+    /// `pair --list` shows and `pair --forget` takes.
     pub(super) fn short(&self) -> &str {
         self.0.get(..SHORT_HEX).unwrap_or(&self.0)
     }
@@ -199,17 +200,19 @@ impl Store {
         Ok(self.read()?.devices)
     }
 
-    /// Forget the one device whose [`Hashed::short`] is `id`, returning it.
+    /// Forget the one device whose [`Hashed::short`] is `id`, in either case as
+    /// hex is, returning it.
     pub(super) fn forget(&self, id: &str) -> Result<Paired> {
         self.update(|stored| {
             let matching: Vec<usize> = (stored.devices.iter().enumerate())
-                .filter(|(_, paired)| paired.hash.short() == id)
+                .filter(|(_, paired)| paired.hash.short().eq_ignore_ascii_case(id))
                 .map(|(at, _)| at)
                 .collect();
             match matching[..] {
                 [at] => Ok(stored.devices.remove(at)),
                 [] => bail!("no paired device has the id {id}; `pixtuoid pair --list` shows each"),
-                // Two hashes sharing a short id, which no longer id tells apart.
+                // Devices that share a short id are refused, as no id names one
+                // of them: `--reset` forgets every device.
                 _ => bail!(
                     "{} paired devices have the id {id}; `pixtuoid pair --reset` forgets them all",
                     matching.len()
@@ -338,18 +341,34 @@ mod tests {
         assert_eq!(listed, [paired(&phone, PHONE), paired(&tablet, "iPad")]);
     }
 
+    /// The id as `--list` prints it, or typed in lowercase: hex is either case.
     #[test]
     fn forgetting_a_device_by_its_short_id_leaves_the_others() {
         let (_dir, store) = fixture();
         let phone = Hashed::of(&pair(&store, PHONE));
         let tablet = Hashed::of(&pair(&store, "iPad"));
+        // Letters in its id, which a random hash's may lack.
+        let watch = Hashed("ABCDEF0123".to_owned());
+        let paired = Paired {
+            hash: watch.clone(),
+            name: "Watch".to_owned(),
+            paired_at: now(),
+        };
+        store
+            .update(|stored| {
+                stored.devices.push(paired);
+                Ok(())
+            })
+            .expect("it writes");
 
         let forgotten = store.forget(phone.short()).expect("one device has it");
+        let typed = store.forget("abcdef01").expect("one device has it");
 
         assert_eq!(
             (forgotten.hash, forgotten.name.as_str()),
             (phone.clone(), PHONE)
         );
+        assert_eq!(typed.hash, watch);
         assert!(!store.knows(&phone).expect("it reads"));
         assert!(store.knows(&tablet).expect("it reads"));
     }
