@@ -166,10 +166,8 @@ wire-frozen:
     [[ "$was" == "$now" ]] || exit 0
     git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.golden.json fuzz/seeds/remote ||
         { echo "a wire break: bump remote::VERSION, which lets the golden and every sample change" >&2; exit 1; }
-    # A server ends the connection on a hello or ask kind it doesn't name, and a
-    # device can't stream behind a reply kind or match an answer kind it doesn't
-    # name, so a sample of a new one would hide the break `remote`'s sample test
-    # reports.
+    # `remote`'s `closed()` names the kinds a version closes; a sample of a new one
+    # would hide the break `remote`'s sample test reports.
     export LC_ALL=C
     kind() { jq -rRs 'fromjson? | objects | first(("hello", "reply", "ask", "answer") as $tag | select(.[$tag]) | "\($tag) \(.[$tag])")'; }
     held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
@@ -191,7 +189,6 @@ wire-frozen-selftest:
     remote=crates/pixtuoid-core/src/remote.rs
     bumped='pub const VERSION: u32 = 3;'
     mkdir -p "$d/$seeds" "$d/crates/pixtuoid-core/src"
-    printf '{}' >"$d/crates/pixtuoid-core/src/remote.golden.json"
     printf 'pub const VERSION: u32 = 2;\n' >"$d/$remote"
     printf '{"v":2,"hello":"pair","code":"C","name":"N"}' >"$d/$seeds/hello"
     printf '{"v":2,"reply":"resumed"}' >"$d/$seeds/reply-resumed"

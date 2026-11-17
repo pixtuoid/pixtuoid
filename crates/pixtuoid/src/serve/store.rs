@@ -200,8 +200,7 @@ impl Store {
         Ok(self.read()?.devices)
     }
 
-    /// Forget the one device whose [`Hashed::short`] is `id`, in either case as
-    /// hex is, returning it.
+    /// Forget the one device whose [`Hashed::short`] is `id`, returning it.
     pub(super) fn forget(&self, id: &str) -> Result<Paired> {
         self.update(|stored| {
             let matching: Vec<usize> = (stored.devices.iter().enumerate())
@@ -211,8 +210,7 @@ impl Store {
             match matching[..] {
                 [at] => Ok(stored.devices.remove(at)),
                 [] => bail!("no paired device has the id {id}; `pixtuoid pair --list` shows each"),
-                // Devices that share a short id are refused, as no id names one
-                // of them: `--reset` forgets every device.
+                // No short id names one of the devices that share it.
                 _ => bail!(
                     "{} paired devices have the id {id}; `pixtuoid pair --reset` forgets them all",
                     matching.len()
