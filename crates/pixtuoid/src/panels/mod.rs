@@ -1276,9 +1276,7 @@ mod dispatch_tests {
                 format!("e.key !== '{APPEARANCE}'"),
             ),
         ] {
-            let Some(text) = crate::test_io::repo_prose(file) else {
-                return;
-            };
+            let text = crate::test_io::repo_prose(file);
             assert!(text.contains(&says), "{file} no longer says {says:?}");
         }
     }

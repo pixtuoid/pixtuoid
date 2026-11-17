@@ -369,9 +369,7 @@ mod tests {
     #[test]
     fn a_run_log_stays_the_week_the_docs_say() {
         const WEEK: Duration = Duration::from_hours(7 * 24);
-        let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
-            return;
-        };
+        let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
         assert_eq!(RUN_LOG_RETAIN, WEEK);
         assert!(doc.contains("removed a week after its last write"));
     }

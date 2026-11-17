@@ -267,7 +267,8 @@ pub(crate) enum SourcesAction {
 /// `--log-level` values. A typed enum (not a free `String`) so a typo like
 /// `dbug` is a hard clap parse error instead of silently parsing as an
 /// `EnvFilter` TARGET directive (`dbug=trace`) that filters everything off.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+/// Declared strictest first, so `<=` reads as "at least as strict".
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub(crate) enum LogLevel {
     Error,
     Warn,

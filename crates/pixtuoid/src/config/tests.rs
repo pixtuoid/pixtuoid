@@ -1156,9 +1156,7 @@ fn an_unknown_look_value_warns_and_falls_back_to_auto() {
 #[test]
 fn the_docs_state_each_settings_values_and_default() {
     use clap::ValueEnum;
-    let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
-        return;
-    };
+    let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
     let unset = AppConfig::default();
     let mut w = Vec::new();
     let name =
@@ -1216,20 +1214,30 @@ fn the_docs_state_each_settings_values_and_default() {
         );
     }
     assert!(w.is_empty(), "{w:?}");
-    let section = |heading: &str| {
-        doc.split_once(&format!("### {heading} "))
-            .and_then(|(_, rest)| rest.split(" ##").next())
-            .unwrap_or_else(|| panic!("CONFIGURATION.md's {heading} section was renamed"))
-            .to_owned()
+    let bullets = |heading: &str, values: Vec<String>| {
+        let text = crate::test_io::doc_section(&doc, heading);
+        assert_eq!(
+            text.matches("- **`").count(),
+            values.len(),
+            "{heading} lists a value its parser doesn't take"
+        );
+        for v in values {
+            let says = format!("- **`{v}`**");
+            assert!(text.contains(&says), "{heading} no longer says {says:?}");
+        }
     };
-    let look = section("The look");
-    for v in crate::graphics::LookMode::value_variants() {
-        let says = format!("- **`{}`**", name(v.to_possible_value()));
-        assert!(look.contains(&says), "The look no longer says {says:?}");
-    }
-    let motion = section("Motion");
-    for v in MotionMode::value_variants() {
-        let says = format!("- **`{}`**", name(v.to_possible_value()));
-        assert!(motion.contains(&says), "Motion no longer says {says:?}");
-    }
+    bullets(
+        "The look",
+        crate::graphics::LookMode::value_variants()
+            .iter()
+            .map(|v| name(v.to_possible_value()))
+            .collect(),
+    );
+    bullets(
+        "Motion",
+        MotionMode::value_variants()
+            .iter()
+            .map(|v| name(v.to_possible_value()))
+            .collect(),
+    );
 }

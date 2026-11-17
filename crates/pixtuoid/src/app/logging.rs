@@ -52,9 +52,10 @@ pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<Lo
             EnvFilter::try_new(filter_directives(rust_log.as_deref(), floor))
                 .unwrap_or_else(|_| EnvFilter::new(floor))
         } else {
-            EnvFilter::new(match log_level {
-                FILE_FLOOR | LogLevel::Error => level,
-                _ => floor,
+            EnvFilter::new(if log_level <= FILE_FLOOR {
+                level
+            } else {
+                floor
             })
         };
         match log_at.open_sink(SystemTime::now()) {
@@ -261,9 +262,7 @@ mod tests {
     /// raise it, as text no build reaches.
     #[test]
     fn the_docs_state_the_log_files_levels() {
-        let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
-            return;
-        };
+        let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
         let [verbose, more] = VERBOSE.map(LogLevel::as_str);
         for says in [
             format!("| Level | `{}` and above by default", FILE_FLOOR.as_str()),

@@ -972,9 +972,7 @@ mod tests {
     /// reaches the site, so this test is the only bridge to the code's.
     #[test]
     fn the_site_names_every_image_protocol() {
-        let Some(json) = crate::test_io::repo_file("site/src/features.json") else {
-            return;
-        };
+        let json = crate::test_io::repo_file("site/src/features.json");
         let features: Vec<serde_json::Value> =
             serde_json::from_str(&json).expect("features.json parses");
         let rows: Vec<_> = features

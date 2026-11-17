@@ -84,14 +84,20 @@ fn first_chord(zoom: ZoomKey) -> &'static str {
 pub(crate) static ZOOM_SHORTCUTS: std::sync::LazyLock<[crate::panels::widgets::Shortcut; 2]> =
     std::sync::LazyLock::new(|| {
         use crate::panels::widgets::shortcut;
-        let first = first_chord;
         let hold = ZOOM_HOLD.1;
         [
             shortcut(
-                format!("{hold} {}/{}", first(ZoomKey::In), first(ZoomKey::Out)),
+                format!(
+                    "{hold} {}/{}",
+                    first_chord(ZoomKey::In),
+                    first_chord(ZoomKey::Out)
+                ),
                 "zoom in / out",
             ),
-            shortcut(format!("{hold} {}", first(ZoomKey::Reset)), "reset zoom"),
+            shortcut(
+                format!("{hold} {}", first_chord(ZoomKey::Reset)),
+                "reset zoom",
+            ),
         ]
     });
 
@@ -236,9 +242,7 @@ mod tests {
     /// no build reaches.
     #[test]
     fn the_docs_name_the_zoom_chords() {
-        let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
-            return;
-        };
+        let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
         let holds = "Cmd/Ctrl";
         assert!(
             holds.split('/').any(|h| h == ZOOM_HOLD.1),

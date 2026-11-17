@@ -777,13 +777,8 @@ mod tests {
     /// no build reaches.
     #[test]
     fn the_security_policy_names_each_plugin_cli() {
-        let Some(policy) = crate::test_io::repo_prose("SECURITY.md") else {
-            return;
-        };
-        let section = policy
-            .split_once("### Hook installation")
-            .and_then(|(_, rest)| rest.split(" ### ").next())
-            .expect("SECURITY.md's Hook installation section was renamed");
+        let policy = crate::test_io::repo_prose("SECURITY.md");
+        let section = crate::test_io::doc_section(&policy, "Hook installation");
         for t in TARGETS {
             let name = t.display_name();
             assert_eq!(

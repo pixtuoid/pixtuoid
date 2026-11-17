@@ -517,9 +517,7 @@ mod tests {
     /// docs/CONFIGURATION.md lists the tokens as text no build reaches.
     #[test]
     fn the_docs_list_the_suppress_tokens() {
-        let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
-            return;
-        };
+        let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
         let [init @ .., last] = SUPPRESS_TOKENS.map(|t| format!("`{t}`"));
         let says = format!("(any of {} or {last})", init.join(", "));
         assert!(
