@@ -234,15 +234,19 @@ const officeDriverUrl = asset('office-driver.js');
     opacity: 0.45;
     transition: opacity 0.15s ease;
   }
+  /* Copy that scrolls past the controls keeps its padding clear of their gutter, less the margin a
+     column narrower than the page already leaves: the nav bar above <main> and the footer below it
+     are left out. */
+  main .container {
+    padding-inline-end: max(
+      var(--container-pad-x),
+      calc(var(--container-pad-x) + var(--office-ctl-gutter) - max(0px, (100% - var(--maxw)) / 2))
+    );
+  }
   @media (max-width: 960px) {
     /* Footer.astro's row wraps non-monotonically with viewport width, so no flat offset clears it — --footer-h tracks its REAL height, the fallback shows pre-JS only. */
     .office-ctl {
       --ctl-bottom: calc(var(--statusline-h) + var(--footer-h, 74px) + var(--office-ctl-edge));
-    }
-    /* Copy that scrolls past the controls: the nav bar above <main> and the footer below it are
-       left out. */
-    main .container {
-      padding-inline-end: calc(var(--container-pad-x) + var(--office-ctl-gutter));
     }
     .gap-caption {
       max-width: calc(100% - var(--gap-caption-inset) - var(--office-ctl-gutter));

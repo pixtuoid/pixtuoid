@@ -3329,7 +3329,9 @@ test('the pause control never overlaps a footer link across the mobile wrap rang
   }
 });
 
-test('the pause control never occludes in-page copy at 390, 768 and 960px', async ({ page }) => {
+test('the pause control never occludes in-page copy, from a phone to a column the page centres', async ({
+  page,
+}) => {
   // .office-ctl is position:fixed, so its band is CONSTANT across the whole scroll — every section's copy passes it.
   // Each spot scrolls its OWN midpoint onto the band's midpoint (worst case); scrollIntoView({block:'center'}) centers in the VIEWPORT and misses it.
   await gotoLive(page);
@@ -3361,8 +3363,9 @@ test('the pause control never occludes in-page copy at 390, 768 and 960px', asyn
     expect(overlap.overlap, `${selector} #${nth} overlaps #office-pause's fixed band`).toBe(false);
   }
 
-  // A phone, a tablet and the widest the gutter reaches.
-  for (const width of [390, 768, 960]) {
+  // A phone, a tablet, a tablet held sideways, and a width where the centred column's own margin
+  // is still narrower than the gutter.
+  for (const width of [390, 768, 960, 1024, 1140]) {
     await page.setViewportSize({ width, height: 844 });
     await assertClearOfPause('.hero__ghost[href="#showcase-vibing"]');
     await assertClearOfPause('.office-gap:not(.office-gap--closer) .gap-caption');
