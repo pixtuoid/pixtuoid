@@ -324,17 +324,39 @@ pub(crate) mod test_io {
         }
     }
 
-    /// A repo file whose text a test pins to the code, `None` in a
-    /// crates.io-packaged test run, which ships neither site/ nor docs/.
+    /// A repo file whose text a test pins to the code. `None` in a
+    /// crates.io-packaged test run, which ships neither site/ nor docs/; a file
+    /// missing from a tree that has site/ fails instead, so a moved file can't
+    /// leave its pin passing unchecked.
     pub(crate) fn repo_file(path: &str) -> Option<String> {
-        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
-        if !std::path::Path::new(&format!("{root}/site")).is_dir() {
+        repo_file_in(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
+            path,
+        )
+    }
+
+    fn repo_file_in(root: &std::path::Path, path: &str) -> Option<String> {
+        if !root.join("site").is_dir() {
             return None;
         }
         Some(
-            std::fs::read_to_string(format!("{root}/{path}"))
+            std::fs::read_to_string(root.join(path))
                 .unwrap_or_else(|e| panic!("{path} moved or was renamed: {e}")),
         )
+    }
+
+    #[test]
+    fn a_tree_with_no_site_skips() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        assert_eq!(repo_file_in(dir.path(), "README.md"), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "README.md moved or was renamed")]
+    fn a_file_missing_from_a_tree_with_a_site_fails() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join("site")).expect("site");
+        let _ = repo_file_in(dir.path(), "README.md");
     }
 
     /// [`repo_file`]'s text with each run of whitespace one space, so a pinned

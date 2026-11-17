@@ -1150,10 +1150,11 @@ fn an_unknown_look_value_warns_and_falls_back_to_auto() {
     assert_eq!(w.len(), 1, "{w:?}");
 }
 
-/// docs/CONFIGURATION.md states what each setting is when the file leaves it
-/// out, as text no build reaches, so each phrase is built from its resolver.
+/// docs/CONFIGURATION.md states each setting's values, and what it is when the
+/// file leaves it out, as text no build reaches, so each phrase is built from
+/// its parser or resolver.
 #[test]
-fn the_docs_state_each_settings_default() {
+fn the_docs_state_each_settings_values_and_default() {
     use clap::ValueEnum;
     let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
         return;
@@ -1200,6 +1201,14 @@ fn the_docs_state_each_settings_default() {
             audio.volume
         ),
         format!("{} when left out", pets.join(" or ")),
+        format!(
+            "`kind` is {}",
+            pixtuoid_scene::pet::PetKind::ALL
+                .iter()
+                .map(|k| format!("`\"{}\"`", k.config_name()))
+                .collect::<Vec<_>>()
+                .join(" or ")
+        ),
     ] {
         assert!(
             doc.contains(&says),
@@ -1207,4 +1216,20 @@ fn the_docs_state_each_settings_default() {
         );
     }
     assert!(w.is_empty(), "{w:?}");
+    let section = |heading: &str| {
+        doc.split_once(&format!("### {heading} "))
+            .and_then(|(_, rest)| rest.split(" ##").next())
+            .unwrap_or_else(|| panic!("CONFIGURATION.md's {heading} section was renamed"))
+            .to_owned()
+    };
+    let look = section("The look");
+    for v in crate::graphics::LookMode::value_variants() {
+        let says = format!("- **`{}`**", name(v.to_possible_value()));
+        assert!(look.contains(&says), "The look no longer says {says:?}");
+    }
+    let motion = section("Motion");
+    for v in MotionMode::value_variants() {
+        let says = format!("- **`{}`**", name(v.to_possible_value()));
+        assert!(motion.contains(&says), "Motion no longer says {says:?}");
+    }
 }

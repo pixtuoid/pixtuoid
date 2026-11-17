@@ -78,7 +78,6 @@ pub fn run() -> Result<()> {
              PIXTUOID_NO_TRUECOLOR_WARN=1 to silence."
         );
     }
-    let log_level: &'static str = log_level.as_str();
     let file_log = is_run_tui || matches!(&cmd, Cmd::Floating { .. });
     let (drift, log_flush) = logging::init(file_log, log_level);
     let ran = dispatch(cmd, drift);

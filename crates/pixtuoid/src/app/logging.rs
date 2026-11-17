@@ -5,6 +5,7 @@ use std::fmt::Write as _;
 use std::io::Write;
 use std::path::Path;
 
+use crate::cli::LogLevel;
 use crate::doctor::DriftSeen;
 use crate::run_log::LogLocation;
 use std::time::SystemTime;
@@ -13,24 +14,29 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
 /// The least a `file_log` run's file records unless something raises it.
-pub(crate) const FILE_FLOOR: &str = "warn";
+const FILE_FLOOR: LogLevel = LogLevel::Warn;
+
+/// The `--log-level`s that raise a `file_log` run's file past [`FILE_FLOOR`].
+const VERBOSE: [LogLevel; 2] = [LogLevel::Debug, LogLevel::Trace];
 
 /// Install the global tracing subscriber, and return what its drift layer
 /// sees and the guard that flushes its sink. A `file_log` run (the TUI, and `floating`, a long-running GUI whose
 /// launching terminal would just collect noise) logs to a file — the alternate
 /// screen owns the terminal, so the log file is the only place a runtime error
-/// can surface — at a `warn` floor unless $RUST_LOG, $PIXTUOID_LOG or
+/// can surface — at [`FILE_FLOOR`] unless $RUST_LOG, $PIXTUOID_LOG or
 /// --log-level raises it. Every other mode goes to stderr.
-pub(crate) fn init(file_log: bool, log_level: &'static str) -> (DriftSeen, Option<LogFlush>) {
+pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<LogFlush>) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     let rust_log = pixtuoid_core::platform::text_env("RUST_LOG");
+    let level = log_level.as_str();
+    let floor = FILE_FLOOR.as_str();
     let make_filter = || {
-        EnvFilter::try_new(filter_directives(rust_log.as_deref(), log_level))
-            .unwrap_or_else(|_| EnvFilter::new(log_level))
+        EnvFilter::try_new(filter_directives(rust_log.as_deref(), level))
+            .unwrap_or_else(|_| EnvFilter::new(level))
     };
 
-    let wants_verbose = matches!(log_level, "debug" | "trace");
+    let wants_verbose = VERBOSE.contains(&log_level);
     let log_at = LogLocation::from_env();
     let explicit_log_file = matches!(log_at, LogLocation::File(_));
     let drift = DriftSeen::default();
@@ -41,14 +47,14 @@ pub(crate) fn init(file_log: bool, log_level: &'static str) -> (DriftSeen, Optio
         let filter = if wants_verbose || explicit_log_file {
             make_filter()
         } else if rust_log_set {
-            // Honor RUST_LOG, but floor the parse-failure fallback at warn (not
-            // log_level) so the always-on file stays quiet by default.
-            EnvFilter::try_new(filter_directives(rust_log.as_deref(), FILE_FLOOR))
-                .unwrap_or_else(|_| EnvFilter::new(FILE_FLOOR))
+            // Honor RUST_LOG, but floor the parse-failure fallback at FILE_FLOOR
+            // (not log_level) so the always-on file stays quiet by default.
+            EnvFilter::try_new(filter_directives(rust_log.as_deref(), floor))
+                .unwrap_or_else(|_| EnvFilter::new(floor))
         } else {
             EnvFilter::new(match log_level {
-                lvl @ (FILE_FLOOR | "error") => lvl,
-                _ => FILE_FLOOR,
+                FILE_FLOOR | LogLevel::Error => level,
+                _ => floor,
             })
         };
         match log_at.open_sink(SystemTime::now()) {
@@ -251,17 +257,23 @@ fn log_open_failure(path: &Path, e: &std::io::Error) -> String {
 mod tests {
     use super::*;
 
-    /// docs/CONFIGURATION.md states the file's floor as text no build reaches.
+    /// docs/CONFIGURATION.md states the file's floor, and the levels that
+    /// raise it, as text no build reaches.
     #[test]
-    fn the_docs_state_the_log_files_floor() {
+    fn the_docs_state_the_log_files_levels() {
         let Some(doc) = crate::test_io::repo_prose("docs/CONFIGURATION.md") else {
             return;
         };
-        let says = format!("| Level | `{FILE_FLOOR}` and above by default");
-        assert!(
-            doc.contains(&says),
-            "CONFIGURATION.md no longer says {says:?}"
-        );
+        let [verbose, more] = VERBOSE.map(LogLevel::as_str);
+        for says in [
+            format!("| Level | `{}` and above by default", FILE_FLOOR.as_str()),
+            format!("`--log-level {verbose}` or `{more}`, or `$RUST_LOG`, raises it"),
+        ] {
+            assert!(
+                doc.contains(&says),
+                "CONFIGURATION.md no longer says {says:?}"
+            );
+        }
     }
 
     #[test]

@@ -197,8 +197,10 @@ once the office takes over. `$COLORTERM=truecolor` counts as a yes and skips
 the query. `pixtuoid doctor` shows the verdict.
 
 A terminal that is truecolor but doesn't answer the query can still get the
-warning. tmux doesn't answer it, and sets `$COLORTERM` in its panes only from
-3.6 ([environ.c](https://github.com/tmux/tmux/blob/3.6/environ.c#L265)), so a
+warning. tmux doesn't answer it
+([input.c](https://github.com/tmux/tmux/blob/3.5a/input.c#L2310-L2353)), and
+sets `$COLORTERM` in its panes only from 3.6
+([environ.c](https://github.com/tmux/tmux/blob/3.6/environ.c#L265)), so a
 pane in an older tmux can get the warning too. Silence it with `$PIXTUOID_NO_TRUECOLOR_WARN=1` (any
 of `1`, `true`, `yes` or `on`).
 
