@@ -1548,10 +1548,19 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   const isBar = () =>
     page.locator('#nav-burger').evaluate((el) => getComputedStyle(el).display === 'none');
-  for (const path of ['./', './config/']) {
-    await page.goto(path);
-    // 340px: short enough that OfficeBackdrop's office controls take a gutter from the home page's bar.
-    for (const height of [340, 600]) {
+  const cdp = await page.context().newCDPSession(page);
+  let gutters = 0;
+  // The bar holds rem- and px-sized parts, so the browser's default font size moves only some of them:
+  // one smaller and one larger than the 16px default, set as a reader's preference is. 340px is short
+  // enough that OfficeBackdrop's office controls, on the home page alone, take a gutter from its bar.
+  for (const fontSize of [12, 16, 20])
+    for (const [path, height] of [
+      ['./', 340],
+      ['./', 600],
+      ['./config/', 600],
+    ] as const) {
+      await page.goto(path);
+      await cdp.send('Page.setFontSizes', { fontSizes: { standard: fontSize } });
       const width = await firstWidthWhere(page, height, isBar);
       const row = await page.evaluate(() => {
         const inner = document.querySelector<HTMLElement>('.nav__inner')!;
@@ -1565,7 +1574,7 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
             range.selectNodeContents(el);
             const tops = [...range.getClientRects()].map((r) => r.top);
             return {
-              name: el.textContent!.trim() || el.id,
+              name: (el as HTMLElement).innerText.trim(),
               left: box.left,
               right: box.right,
               // A wrapped line starts at least a font size below the one above it.
@@ -1573,18 +1582,17 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
                 Math.max(...tops) - Math.min(...tops) >= parseFloat(getComputedStyle(el).fontSize),
             };
           });
+        // The content box: the gutter is padding, which the bar's items stay out of.
         const box = inner.getBoundingClientRect();
         return {
-          left: box.left,
-          right: box.right,
+          left: box.left + parseFloat(pad.paddingLeft),
+          right: box.right - parseFloat(pad.paddingRight),
           gutter: parseFloat(pad.paddingInlineEnd) > parseFloat(pad.paddingInlineStart),
           items,
         };
       });
-      const where = `${path} at ${width}×${height}px`;
-      if (path === './' && height === 340) {
-        expect(row.gutter, `${where}: the office controls' gutter applies`).toBe(true);
-      }
+      const where = `${path} at ${width}×${height}px, a ${fontSize}px default`;
+      if (row.gutter) gutters += 1;
       expect(row.items[0].left, where).toBeGreaterThanOrEqual(row.left);
       expect(row.items.at(-1)!.right, where).toBeLessThanOrEqual(row.right);
       for (const [i, item] of row.items.entries()) {
@@ -1596,7 +1604,8 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
         }
       }
     }
-  }
+  // teeth: with no bar in the gutter, the office controls' case would go unchecked.
+  expect(gutters, "bars that take the office controls' gutter").toBeGreaterThan(0);
 });
 
 test('reduced motion stays on the still poster without errors', async ({ browser }) => {

@@ -274,9 +274,10 @@ const { floating = false } = Astro.props;
   .nav__docs-btn {
     display: none;
   }
-  /* In em: the bar's items are sized in rem, and a media query's em follows the user's default
-     font size, so the bar waits for the room its items take at any default. */
-  @media (min-width: 50em) {
+  /* The bar's text and gaps are sized in rem, and its mark, toggle and the office controls' gutter
+     in px. A media query's em follows the user's default font size
+     (www.w3.org/TR/mediaqueries-4/#units), so the bar waits for the wider of the two. */
+  @media (min-width: 800px) and (min-width: 50em) {
     .nav__links {
       display: flex;
       position: static;
