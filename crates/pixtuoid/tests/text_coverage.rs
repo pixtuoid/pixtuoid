@@ -222,14 +222,13 @@ fn written() -> Vec<(PathBuf, Vec<char>)> {
 /// written.
 fn tofu<'a>(
     files: impl IntoIterator<Item = &'a (PathBuf, Vec<char>)>,
-    draws: impl Fn(char, &pixtuoid_scene::pack::OfficeArt) -> bool,
+    draws: impl Fn(char) -> bool,
 ) -> BTreeMap<String, Vec<String>> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let pack = pixtuoid_scene::pack::load_bundled_pack().expect("the bundled pack loads");
     let mut tofu = BTreeMap::<String, Vec<String>>::new();
     for (file, chars) in files {
         for &c in chars {
-            if drawn(c) && !draws(c, &pack) {
+            if drawn(c) && !draws(c) {
                 let at = file
                     .strip_prefix(root)
                     .unwrap_or(file)
@@ -247,28 +246,24 @@ fn tofu<'a>(
     tofu
 }
 
+/// One test, so the trees are parsed once for both checks: nextest runs each
+/// test in its own process.
 #[test]
-fn the_window_draws_every_character_the_office_writes() {
-    let missing = tofu(&written(), pixtuoid_scene::cutaway::draws);
-    assert!(
-        missing.is_empty(),
-        "the window draws these as tofu: {missing:#?}"
-    );
-}
-
-#[test]
-fn the_office_draws_every_character_its_signs_and_names_write() {
+fn the_window_and_the_office_draw_every_character_written_for_them() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let written = written();
+    let pack = pixtuoid_scene::pack::load_bundled_pack().expect("the bundled pack loads");
+    let window = tofu(&written, |c| pixtuoid_scene::cutaway::draws(c, &pack));
     let writers: Vec<PathBuf> = WORLD_WRITERS.iter().map(|w| root.join(w)).collect();
     let off: Vec<PathBuf> = OFF_THE_OFFICE.iter().map(|p| root.join(p)).collect();
-    let world: Vec<(PathBuf, Vec<char>)> = written()
-        .into_iter()
+    let world = written
+        .iter()
         .filter(|(file, _)| writers.iter().any(|w| file.starts_with(w)))
-        .filter(|(file, _)| !off.contains(file))
-        .collect();
-    let missing = tofu(&world, |c, _| pixtuoid_scene::cutaway::office_text_draws(c));
+        .filter(|(file, _)| !off.contains(file));
+    let office = tofu(world, pixtuoid_scene::cutaway::office_text_draws);
     assert!(
-        missing.is_empty(),
-        "the office's text draws these as tofu: {missing:#?}"
+        window.is_empty() && office.is_empty(),
+        "the window draws these as tofu: {window:#?}\nthe office's text draws these as tofu: \
+         {office:#?}"
     );
 }
