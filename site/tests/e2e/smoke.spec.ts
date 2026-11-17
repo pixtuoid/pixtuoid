@@ -3419,7 +3419,9 @@ test('the pause control never overlaps a footer link across the mobile wrap rang
   }
 });
 
-test('the pause control never occludes in-page copy at 390, 768 and 960px', async ({ page }) => {
+test('the pause control never occludes in-page copy, from a phone to a centred column', async ({
+  page,
+}) => {
   // .office-ctl is position:fixed, so its band is CONSTANT across the whole scroll — every section's copy passes it.
   // Each spot scrolls its OWN midpoint onto the band's midpoint (worst case); scrollIntoView({block:'center'}) centers in the VIEWPORT and misses it.
   await gotoLive(page);
@@ -3447,12 +3449,15 @@ test('the pause control never occludes in-page copy at 390, 768 and 960px', asyn
       },
       [selector, nth] as const
     );
-    expect(overlap.found, `${selector} #${nth} not found`).toBe(true);
-    expect(overlap.overlap, `${selector} #${nth} overlaps #office-pause's fixed band`).toBe(false);
+    const where = `${page.viewportSize()!.width}px: ${selector} #${nth}`;
+    expect(overlap.found, `${where} not found`).toBe(true);
+    expect(overlap.overlap, `${where} overlaps #office-pause's fixed band`).toBe(false);
   }
 
-  // A phone, a tablet and the widest the gutter reaches.
-  for (const width of [390, 768, 960]) {
+  // A phone, a tablet, the widest the (max-width: 960px) block reaches, the studio's two tracks at
+  // their narrowest, a column that fills the page, and a centred column whose margin alone left
+  // its copy under the controls.
+  for (const width of [390, 768, 960, 980, 1024, 1128]) {
     await page.setViewportSize({ width, height: 844 });
     await assertClearOfPause('.hero__ghost[href="#showcase-vibing"]');
     await assertClearOfPause('.office-gap:not(.office-gap--closer) .gap-caption');
@@ -3462,7 +3467,21 @@ test('the pause control never occludes in-page copy at 390, 768 and 960px', asyn
     for (let i = 0; i < (await page.locator('.roster__row').count()); i++) {
       await assertClearOfPause('.roster__row', i);
     }
+    // Every dial channel: a dial wider than its panel runs past its edge.
+    for (let i = 0; i < (await page.locator('.dial__ch').count()); i++) {
+      await assertClearOfPause('.dial__ch', i);
+    }
   }
+  // Past the gutter's reach the column keeps its usual padding at both ends.
+  await page.setViewportSize({ width: 1280, height: 844 });
+  const [start, end] = await page
+    .locator('main .container')
+    .first()
+    .evaluate((el) => {
+      const style = getComputedStyle(el);
+      return [style.paddingInlineStart, style.paddingInlineEnd];
+    });
+  expect(end).toBe(start);
 });
 
 test('an install copy from the Install section hires a coworker: pix:install-copy → pix:hired', async ({
