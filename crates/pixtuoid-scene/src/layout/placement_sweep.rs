@@ -165,7 +165,7 @@ macro_rules! check {
 /// own process (<https://nexte.st/docs/design/why-process-per-test/>), where a
 /// check of its own would lay every office out again.
 #[test]
-fn every_swept_office_holds_its_placement_invariants() {
+fn every_swept_office_holds_its_invariants() {
     let seeds: BTreeSet<u64> = SWEEP_SEEDS
         .chain((0..crate::floor::MAX_FLOORS).map(crate::floor::floor_seed))
         .collect();
