@@ -22,8 +22,8 @@ const VERBOSE: [LogLevel; 2] = [LogLevel::Debug, LogLevel::Trace];
 /// screen owns the terminal, so the log file is the only place a runtime error
 /// can surface — at [`FILE_FLOOR`] and above. A stricter --log-level records
 /// less; a [`VERBOSE`] one, or a $PIXTUOID_LOG file, records at --log-level; a
-/// set $RUST_LOG replaces the level in every case. Every other mode goes to
-/// stderr.
+/// set $RUST_LOG that parses replaces the level in every case, and one that
+/// doesn't is ignored. Every other mode goes to stderr.
 pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<LogFlush>) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
