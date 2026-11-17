@@ -513,13 +513,17 @@ fn every_role_enum_variant_maps_to_a_furniture_row() {
 
 #[test]
 fn compute_does_not_overflow_on_huge_terminal() {
-    for &seed in &[0u64, 1, 2, 3, 4] {
+    use super::compute::FloorVariant;
+    for variant in FloorVariant::ALL {
+        let seed = (0..)
+            .find(|&seed| FloorVariant::from_seed(seed) == variant)
+            .expect("every variant has a seed");
         // 4000×4000 px buffer → the percentage math's `buf_h * 30` = 120_000, well
         // past u16::MAX.
         let l = SceneLayout::compute(Viewport::full(4000, 4000), Some(TEST_DEFAULT_DESKS), seed);
         assert!(
             l.is_some(),
-            "huge terminal (seed {seed}) must lay out, not overflow"
+            "huge terminal ({variant:?}) must lay out, not overflow"
         );
     }
 }
