@@ -942,6 +942,11 @@ code {
 .prose p + p {
   margin-top: 1rem;
 }
+/* A Markdown image carries its file's width and height: the height follows the width it is given. */
+.prose img {
+  height: auto;
+  margin: 1.4rem 0;
+}
 .prose a {
   color: var(--coral-deep);
   font-weight: 600;

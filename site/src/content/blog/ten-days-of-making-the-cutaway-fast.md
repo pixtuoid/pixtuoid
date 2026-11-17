@@ -1,21 +1,29 @@
 ---
 title: Ten days of making the cutaway fast
-description: 'pixtuoid paints an office of your AI coding agents as an image, inside your terminal, thirty times a second. A night frame used to take 43 ms to paint. It now takes 10.'
+description: 'Painting one night frame took 43 ms, and a frame gets 33. Ten days of pull requests later the cutaway was the default look. What we changed, what each change cost, and what we threw away.'
 pubDate: 2026-11-17
 ---
 
-A frame of the cutaway gets 33 ms. On September 30, painting a night frame
-alone took 43.4 ms. Ten days later it took 9.9 ms, and the whole pipeline
-around it had been rebuilt. On October 21 the cutaway became pixtuoid's
-default look ([#1835](https://github.com/pixtuoid/pixtuoid/pull/1835)).
+pixtuoid draws your AI coding agents as coworkers in a pixel office, inside
+your terminal. It has two looks. This is the same moment in both:
 
-This is what we changed, in the order we changed it, with what it cost and
-what we threw away.
+![The same office drawn twice: the cutaway on the left, in fine pixel detail with lit windows and shaded furniture, and the classic look on the right, in coarse blocks.](../../../../docs/images/looks-composite.png)
 
-The cutaway is the office drawn as real pixels, sent to your terminal through
-the kitty, SIXEL or iTerm2 image protocol. The older classic look uses
-half-block characters, two pixels to a cell. Pixels are prettier. They are
-also a great deal more work.
+On the right is the classic look, made of half-block characters, two pixels
+to a terminal cell. On the left is the cutaway: real pixels, sent through the
+kitty, SIXEL or iTerm2 image protocol.
+
+Pixels are prettier. They are also a great deal more work, and the office
+redraws thirty times a second. **A frame gets 33 ms.**
+
+On September 30 we measured the cutaway for the first time. Painting one
+night frame took 43.4 ms. Not sending it. Just painting it.
+
+Ten days later the whole pipeline around that frame had been rebuilt, and on
+October 21 the cutaway became the default look
+([#1835](https://github.com/pixtuoid/pixtuoid/pull/1835)). This is what we
+changed, in the order we changed it, with what each change cost and what we
+threw away.
 
 Every number here is quoted from the pull request it links to. They come from
 different days, machines and terminals. **Compare each pair with itself, and
@@ -23,8 +31,9 @@ never add them up.**
 
 ## Painting a night frame: 43.4 ms → 9.9 ms
 
-**That's 4.4x faster**, from one pull request
-([#1134](https://github.com/pixtuoid/pixtuoid/pull/1134)).
+**That's 4.4x faster**, from one pull request, merged the same day as the
+measurement ([#1134](https://github.com/pixtuoid/pixtuoid/pull/1134)). Here
+are both in slow motion. Every time a bar fills, a frame is painted.
 
 <!-- figure: laps -->
 
@@ -33,7 +42,7 @@ never add them up.**
 | Night frame, before | 43.4 ms |
 | Night frame, after  | 9.9 ms  |
 
-It started with a pull request that changed nothing
+It began with a pull request that changed nothing
 ([#1100](https://github.com/pixtuoid/pixtuoid/pull/1100)). It only added a
 bench: paint a busy office at noon, paint it at night, time both.
 
@@ -102,6 +111,20 @@ got there:
 _Median frame: #1389 at noon on kitty, #1402 at night on SIXEL, #1395 the
 compose step at noon. Three benches, three baselines._
 
+Why eight boxes, and not one per change? We measured it. More boxes mean less
+to paint, until keeping track of the boxes costs more than it saves:
+
+| Boxes | Night frame | Weather changing |
+| ----- | ----------- | ---------------- |
+| 1     | 4.78 ms     | 7.85 ms          |
+| 2     | 3.64 ms     | 6.19 ms          |
+| 4     | 2.46 ms     | 5.24 ms          |
+| 8     | 1.70 ms     | 4.77 ms          |
+| 12    | 1.63 ms     | 5.17 ms          |
+
+Twelve is barely better at night and worse when the weather turns. Eight it
+is.
+
 Reuse is not free. Keeping the last frame around raised the peak memory of a
 360×240 render from 562.6 KB to 639.5 KB. That's 12% more, and we took the
 trade.
@@ -124,7 +147,8 @@ For a terminal on the same machine,
 shared memory. Bytes per frame fell from about 275 KB to about 15 KB.
 **18x fewer.**
 
-The 99th-percentile frame went from 157 ms to 140 ms.
+The slow frames barely moved. The 99th-percentile frame, the one in a
+hundred you actually notice, went from 157 ms to 140 ms.
 
 Almost nothing. In a maximized Ghostty window the terminal was not slow
 because of the bytes. It was slow because of **how many images** were on
@@ -169,7 +193,8 @@ requests keep the record.
 **A thread pool.** The obvious way to use every core is a library pool that
 keeps its threads alive. We measured it against starting fresh threads for
 each frame. The pool's 99th-percentile encode took 34.7 ms and 48.7 ms over
-two runs. Fresh threads took 21.9 ms and 27.7 ms. Work sat waiting on workers
+two runs. Fresh threads took 21.9 ms and 27.7 ms. In the pool's worst frames
+only 4 to 6 of its 10 workers were running: the work sat waiting on the ones
 that had gone to sleep. Reverted
 ([#1497](https://github.com/pixtuoid/pixtuoid/pull/1497)).
 
@@ -201,3 +226,9 @@ every second the office ran. Ten or fewer passes.
 `just pace-check` runs the release binary into a storm and across dusk, and
 fails above that bar. It runs on a developer's machine before a release, and
 never in CI. A shared runner's clock is too noisy to judge a 33 ms budget.
+
+## Try it
+
+The cutaway is on by default wherever your terminal can draw it. Everywhere
+else you get the classic look, with nothing to configure. [Install pixtuoid](/) and
+open a terminal next to your agents.
