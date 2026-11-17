@@ -196,7 +196,8 @@ export function audioBus(ctx, audio) {
 }
 
 // The ♩ music: the office's lofi stream, rendered in the music worker (loading the music's own wasm glue) and played by
-// the worklet `aheadS` ahead, the two joined by their own MessageChannel so the main thread stays off the audio path. `controls`, a tick's `music.controls`, pick the first song. Resolves, once the worklet loads, to
+// the worklet `aheadS` ahead, the two joined by their own MessageChannel so the main thread stays off the audio path.
+// `controls`, a tick's `music.controls`, pick the first song. Resolves, once the worklet loads, to
 // `{ node, primed, failed, setControls, stop }`: `node` to connect, `primed` on the worklet's first chunk, `failed` on
 // the worker's death; rejects where there is no AudioWorklet.
 export async function startMusic(ctx, aheadS, nowMs, controls) {
