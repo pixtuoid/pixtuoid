@@ -32,15 +32,21 @@ never add them up.**
 ## Painting a night frame: 43.4 ms → 9.9 ms
 
 **That's 4.4x faster**, from one pull request, merged the same day as the
-measurement ([#1134](https://github.com/pixtuoid/pixtuoid/pull/1134)). Here
-are both in slow motion. Every time a bar fills, a frame is painted.
+measurement ([#1134](https://github.com/pixtuoid/pixtuoid/pull/1134)).
 
-<!-- figure: laps -->
+Here is what that does to a loop that owes a frame every 33 ms. Each tick is
+a frame coming due, and each block is one being painted.
 
-| Runner              | Lap     |
-| ------------------- | ------- |
-| Night frame, before | 43.4 ms |
-| Night frame, after  | 9.9 ms  |
+<!-- figure: budget -->
+
+| Frame               | Takes   | Budget |
+| ------------------- | ------- | ------ |
+| Night frame, before | 43.4 ms | 33 ms  |
+| Night frame, after  | 9.9 ms  | 33 ms  |
+
+Before, the first frame runs past its tick, and every frame after it starts
+later than the one before. After, a frame is painted with most of its budget
+left for everything else: encoding it, writing it, showing it.
 
 It began with a pull request that changed nothing
 ([#1100](https://github.com/pixtuoid/pixtuoid/pull/1100)). It only added a
@@ -64,13 +70,6 @@ machine._
 
 Painting is half the job. The painted frame still has to become bytes a
 terminal accepts, and that ran on one core.
-
-<!-- figure: laps -->
-
-| Runner              | Lap    |
-| ------------------- | ------ |
-| Encode on one core  | 34 ms  |
-| Encode on ten cores | 9.5 ms |
 
 [#1282](https://github.com/pixtuoid/pixtuoid/pull/1282) cut the frame into
 tiles and handed them to every core the machine has. **3.6x faster**, same
@@ -100,13 +99,13 @@ That is about 850 times less to paint on a typical frame
 ([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389)). Three pull requests
 got there:
 
-<!-- figure: bars -->
-
-| Measure                                                                                             | Before  | After   |
-| --------------------------------------------------------------------------------------------------- | ------- | ------- |
-| Repaint one box around the changes ([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389))        | 8.26 ms | 3.80 ms |
-| Repaint up to eight boxes ([#1402](https://github.com/pixtuoid/pixtuoid/pull/1402))                 | 4.78 ms | 1.70 ms |
-| Reuse the last frame's windows and lights ([#1395](https://github.com/pixtuoid/pixtuoid/pull/1395)) | 1.77 ms | 0.48 ms |
+- **One box around the changes**: a typical frame went from 8.26 ms to
+  3.80 ms ([#1389](https://github.com/pixtuoid/pixtuoid/pull/1389)).
+- **Up to eight boxes**: 4.78 ms to 1.70 ms
+  ([#1402](https://github.com/pixtuoid/pixtuoid/pull/1402)).
+- **Reusing the last frame's windows and lights**: composing a frame went
+  from 1.77 ms to 0.48 ms
+  ([#1395](https://github.com/pixtuoid/pixtuoid/pull/1395)).
 
 _Median frame: #1389 at noon on kitty, #1402 at night on SIXEL, #1395 the
 compose step at noon. Three benches, three baselines._
@@ -159,12 +158,15 @@ many small tiles. A tile now grows until the whole frame fits a budget of 400
 images. A small window keeps small tiles and sends only what changed. A big
 window gets big tiles.
 
-<!-- figure: bars -->
+<!-- figure: tiles -->
 
-| Measure                      | Before   | After   |
-| ---------------------------- | -------- | ------- |
-| 99th-percentile frame, storm | 148.9 ms | 35.5 ms |
-| 99th-percentile frame, dusk  | 74.8 ms  | 6.1 ms  |
+| Tiles                                    | Images             |
+| ---------------------------------------- | ------------------ |
+| Before: small tiles, whatever the window | as many as it took |
+| After: tiles that grow with the window   | 400 at most        |
+
+In a storm, the 99th-percentile frame went from 148.9 ms to 35.5 ms. At dusk,
+from 74.8 ms to 6.1 ms.
 
 _Maximized Ghostty, 239×123 cells at 16x, 60 seconds a run._
 

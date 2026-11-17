@@ -33,9 +33,9 @@ test('a page with fewer <svg> than its doc declares mermaid blocks fails', () =>
 });
 
 test('a decorative svg is no diagram', () => {
-  const bar = '<svg class="fig-bar__track" aria-hidden="true"></svg>';
+  const drawing = '<svg class="fig-budget__line" aria-hidden="true"></svg>';
   const { failures } = checkDocPages(
-    [{ name: 'post', html: doc(`${bar}${body(MIN_BODY_CHARS)}`) }],
+    [{ name: 'post', html: doc(`${drawing}${body(MIN_BODY_CHARS)}`) }],
     {
       post: 0,
     }

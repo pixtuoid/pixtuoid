@@ -60,7 +60,7 @@ export function checkDocPages(entries, diagrams) {
       );
       continue;
     }
-    // A diagram is the svg a reader is told about (`role="img"`); a figure's bars are `aria-hidden`.
+    // A diagram is the svg a reader is told about (`role="img"`); a figure's drawing is `aria-hidden`.
     const drawn = (m[1].match(/<svg\s[^>]*\brole="img"/g) ?? []).length;
     const declared = diagrams[name];
     if (drawn !== declared) {

@@ -249,7 +249,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   /* rendered markdown carries no astro scope hash, hence :global throughout */
   /* One terminal chrome for a callout, a diagram's figure
      (config/rehype-beautiful-mermaid.mjs) and a moving one (config/rehype-figures.mjs). */
-  .wing :global(:is(.callout, .fig--diagram, .fig--laps, .fig--repaint)) {
+  .wing :global(:is(.callout, .fig--diagram, .fig--budget, .fig--repaint, .fig--tiles)) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
@@ -330,44 +330,50 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: var(--chip-ink);
     cursor: pointer;
   }
-  .wing :global(:is(.fig__laps, .fig__panes)) {
+  .wing :global(:is(.fig__budgets, .fig__panes)) {
     display: grid;
     gap: 0.9rem;
     margin: 0;
     padding: 0;
     list-style: none;
   }
-  .wing :global(.fig-lap) {
-    display: grid;
-    grid-template-columns: minmax(5rem, 11rem) minmax(0, 1fr) 4.6rem;
-    align-items: center;
-    gap: 0.8rem;
-    margin: 0;
-  }
-  .wing :global(:is(.fig-lap, .fig-pane) p) {
+  .wing :global(:is(.fig-budget, .fig-pane) p) {
     margin: 0;
     font-family: var(--font-mono);
     font-size: 0.82rem;
     line-height: 1.35;
     color: var(--chip-bright);
   }
-  .wing :global(.fig-lap__time) {
-    text-align: right;
+  .wing :global(.fig-budget) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.35rem 0.8rem;
+    margin: 0;
   }
-  .wing :global(.fig-lap__track) {
+  .wing :global(.fig-budget__line) {
+    grid-column: 1 / -1;
+    display: block;
     width: 100%;
-    height: 0.8rem;
-    background: var(--chip-line);
+    height: 2rem;
   }
-  .wing :global(.fig-lap__track rect) {
+  .wing :global(.fig-budget__run) {
+    fill: var(--chip-ink);
+  }
+  .wing :global(.fig-budget__run--late) {
     fill: var(--chip-accent);
-    transform-box: fill-box;
-    transform-origin: left;
-    animation: fig-lap var(--lap) linear infinite;
   }
-  @keyframes fig-lap {
-    from {
-      transform: scaleX(0);
+  .wing :global(.fig-budget__beat) {
+    stroke: var(--chip-bright);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+  .wing :global(.fig-budget__now) {
+    fill: var(--led);
+    animation: fig-now 4s linear infinite;
+  }
+  @keyframes fig-now {
+    to {
+      transform: translateX(100%);
     }
   }
   .wing :global(.fig__panes) {
@@ -386,6 +392,12 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   .wing :global(.fig-pane__desk) {
     fill: var(--chip-line);
+  }
+  .wing :global(.fig-pane__cuts) {
+    fill: none;
+    stroke: var(--chip-accent);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
   }
   .wing :global(.fig-pane__wash) {
     fill: var(--chip-accent);
@@ -406,67 +418,22 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
       opacity: 0;
     }
   }
-  .wing :global(p.fig-pane__pixels) {
+  .wing :global(p.fig-pane__count) {
     font-family: var(--font-display);
     font-size: 1.5rem;
   }
-  .wing :global(:has(.fig__pause input:checked) :is(.fig-lap__track rect, .fig-pane__wash)) {
+  .wing :global(:has(.fig__pause input:checked) :is(.fig-budget__now, .fig-pane__wash)) {
     animation-play-state: paused;
   }
   /* global.css shortens every animation to an instant, which an endless one would repeat without
-     end: these stand still, as the bars and the boxes they already are. */
+     end: these stand still, as the timeline and the boxes they already are. */
   @media (prefers-reduced-motion: reduce) {
-    .wing :global(:is(.fig-lap__track rect, .fig-pane__wash)) {
+    .wing :global(.fig-pane__wash) {
       animation: none;
     }
-    .wing :global(.fig__pause) {
+    .wing :global(:is(.fig-budget__now, .fig__pause)) {
       display: none;
     }
-  }
-  .wing :global(.fig__bars) {
-    display: grid;
-    gap: 0.9rem;
-    margin: 1.8rem 0;
-    padding: 0;
-    list-style: none;
-  }
-  .wing :global(.fig-bar) {
-    margin: 0;
-    padding: 0.9rem 1.1rem 1rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-  }
-  .wing :global(.fig-bar__what) {
-    margin: 0 0 0.5rem;
-    font-size: 0.95rem;
-    line-height: 1.4;
-  }
-  .wing :global(.fig-bar__row) {
-    display: grid;
-    grid-template-columns: 3.4rem minmax(0, 1fr) minmax(5.5rem, auto);
-    align-items: center;
-    gap: 0.7rem;
-    margin: 0.25rem 0 0;
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
-    line-height: 1.3;
-  }
-  .wing :global(.fig-bar__track) {
-    width: 100%;
-    height: 0.7rem;
-    background: var(--border);
-    border-radius: 3px;
-  }
-  .wing :global(.fig-bar__track rect) {
-    fill: var(--fg-muted);
-  }
-  /* The second row is the "after": the one a reader came for. */
-  .wing :global(.fig-bar__row ~ .fig-bar__row rect) {
-    fill: var(--coral-deep);
-  }
-  .wing :global(.fig-bar__num) {
-    text-align: right;
   }
   .wing :global(.callout__body) {
     margin: 0;
