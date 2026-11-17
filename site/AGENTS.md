@@ -45,9 +45,12 @@ installed only for `site.yml`'s e2e step. The empty-render class is
 gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
 the mechanism; `pages.yml`'s pins carry their own.
 
-**Docs shell**: the doc routes (`src/docs.json` is the roster) mount the
-Statusline wing variant (no PR feed fetch); `Wing.astro`'s sidebar reads the
-one `FLOORS` manifest.
+**Wing shell**: the doc routes (`src/docs.json` is the roster) and the blog
+mount the Statusline wing variant (no PR feed fetch); `Wing.astro`'s sidebar
+reads the one `FLOORS` manifest. A post is one file in `src/content/blog/`:
+its route, the lobby, the feed, Lighthouse's URLs and `check:docs`'s roster
+derive from that directory (`config/blog.mjs`), and only the e2e rows that
+name its route (smoke's `PLATE_SURFACES` table) are edited by hand.
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
 unit-tested). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its
