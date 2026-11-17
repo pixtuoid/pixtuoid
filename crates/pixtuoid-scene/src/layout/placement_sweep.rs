@@ -1806,10 +1806,12 @@ fn scatter_plants_keep_obstacle_clearance_and_survive_by_sliding(
     // to land — so this guards an office-WIDE loss at flagship sizes only.
     if l.cubicle_band.width >= ROOMY_BAND_MIN_W {
         let has = |k: WaypointKind| l.waypoints.iter().any(|w| w.kind == k);
+        let aisle = l.cubicle_aisle.y..l.cubicle_aisle.y + l.cubicle_aisle.height;
         let corridor_plant = |kind: PlantKind| {
+            let h = furniture_def(kind.furniture()).visual.h;
             l.plants
                 .iter()
-                .any(|p| p.kind == kind && p.pos.y + 6 >= l.cubicle_aisle.y)
+                .any(|p| p.kind == kind && aisle.contains(&sort_row_at(Pivot::Center, p.pos, h)))
         };
         if has(WaypointKind::VendingMachine) && !corridor_plant(PlantKind::Flower) {
             v.push(format!(
@@ -2302,16 +2304,9 @@ fn the_route_sweeps_hold_inside_insets() {
         v.extend(no_route_around_a_wall_corner_cuts_through_it(
             w, h, seed, &l,
         ));
-        v.extend(wander_legs(&l).into_iter().filter_map(|leg| {
-            let Some(path) = &leg.path else {
-                return Some(format!("{viewport:?} seed {seed}: {leg} is unroutable"));
-            };
-            let (p, wall) = route_through_wall(&l, path)?;
-            Some(format!(
-                "{viewport:?} seed {seed}: {leg} passes {p:?} inside {:?}",
-                wall.footprint()
-            ))
-        }));
+        v.extend(every_wander_destination_is_routable_from_its_desk(
+            w, h, seed, &l,
+        ));
         v
     };
     // the offices are independent: across the cores nextest reserves for it
