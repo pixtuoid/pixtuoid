@@ -1,7 +1,7 @@
 //! The cutaway painted into a buffer kept across frames: a frame whose display
-//! list matches the last one's is not painted at all, and one that differs is
-//! repainted only in the boxes around what changed and reports them, so a
-//! painter re-encodes only there.
+//! list matches the last one's is not painted at all, one under a new
+//! [`Repaint`] input is painted whole, and any other only around what changed,
+//! each reporting where it can differ, so a painter re-encodes only there.
 
 use std::collections::HashMap;
 use std::sync::Arc;
