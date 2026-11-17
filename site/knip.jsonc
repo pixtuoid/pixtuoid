@@ -13,9 +13,9 @@
     "public/office-host.js",
     "public/music-worker.js",
     "public/music-worklet.js",
-    // The #721 shared wasm-Office driver and the How it works journey:
-    // dynamic-`import()`ed at runtime from the live-office consumers' scripts
-    // (Wing.astro's is:inline loader for journey.js), which knip cannot trace.
+    // The #721 shared wasm-Office driver and the How it works journey that
+    // imports it: dynamic-`import()`ed at runtime from is:inline scripts
+    // (OfficeBackdrop's, Showcase's, Wing.astro's), which knip cannot trace.
     "public/office-driver.js",
     "public/journey.js",
   ],
