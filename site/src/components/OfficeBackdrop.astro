@@ -90,6 +90,11 @@ const officeDriverUrl = asset('office-driver.js');
 </button>
 
 <style is:global>
+  /* The office is a fixed layer over the viewport alone: past its edge a browser shows the root's
+     ground, which a transparent body would leave the browser's own. */
+  html {
+    background: var(--bg);
+  }
   body {
     background: transparent;
   }

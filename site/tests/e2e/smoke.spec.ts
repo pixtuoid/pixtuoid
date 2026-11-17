@@ -3773,3 +3773,25 @@ for (const device of ['Galaxy Z Flip 6 Cover', 'Pixel 5 landscape']) {
     expect(Math.max(...nav)).toBeLessThanOrEqual(Math.min(...controls));
   });
 }
+
+// What a browser shows past the viewport's edge (an overscroll, the band under a phone's status
+// bar) is the root's ground: the office is a fixed layer over the viewport alone.
+test("the landing page's root takes the theme's ground", async ({ page }) => {
+  for (const theme of VALID_THEMES) {
+    await page.addInitScript((t) => {
+      sessionStorage.setItem('pix-booted', '1');
+      localStorage.setItem('pix-theme', t);
+    }, theme);
+    await page.goto('./');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const { root, ground } = await page.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.background = 'var(--bg)';
+      document.body.appendChild(probe);
+      const ground = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return { root: getComputedStyle(document.documentElement).backgroundColor, ground };
+    });
+    expect(root, theme).toBe(ground);
+  }
+});
