@@ -2279,7 +2279,7 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
   await ctx.close();
 });
 
-test('landing fixed chrome: floating nav, statusline readouts, floor popover', async ({ page }) => {
+test('landing chrome: floating nav, statusline readouts, floor popover', async ({ page }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./'); // no live-office wait — everything here is wasm-independent
   // The load-bearing half of the floating variant: no live blur filter over a
@@ -3341,40 +3341,52 @@ test('the pause control never overlaps a footer link across the mobile wrap rang
   }
 });
 
-test('the pause control never occludes in-page copy at mobile widths', async ({ page }) => {
-  // .office-ctl is position:fixed, so its band is CONSTANT across the whole scroll — every section's copy passes under it, not just the footer's.
+test('the pause control never occludes in-page copy, at every width its gutter covers', async ({
+  page,
+}) => {
+  // .office-ctl is position:fixed, so its band is CONSTANT across the whole scroll — every section's copy passes it.
   // Each spot scrolls its OWN midpoint onto the band's midpoint (worst case); scrollIntoView({block:'center'}) centers in the VIEWPORT and misses it.
   await gotoLive(page);
-  await page.setViewportSize({ width: 390, height: 844 });
 
-  async function assertClearOfPause(selector: string): Promise<void> {
-    const overlap = await page.evaluate((sel) => {
-      const el = document.querySelector(sel) as HTMLElement | null;
-      const btn = document.getElementById('office-pause') as HTMLElement | null;
-      if (!el || !btn || btn.hidden) return { found: !!el, overlap: false };
-      const b = btn.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      const elAbsMid = (r.top + r.bottom) / 2 + window.scrollY;
-      const bandMid = (b.top + b.bottom) / 2;
-      window.scrollTo({ top: Math.max(0, Math.round(elAbsMid - bandMid)), behavior: 'instant' });
-      const r2 = el.getBoundingClientRect();
-      const b2 = btn.getBoundingClientRect();
-      const overlap = !(
-        r2.right <= b2.left ||
-        r2.left >= b2.right ||
-        r2.bottom <= b2.top ||
-        r2.top >= b2.bottom
-      );
-      return { found: true, overlap };
-    }, selector);
-    expect(overlap.found, `${selector} not found`).toBe(true);
-    expect(overlap.overlap, `${selector} overlaps #office-pause's fixed band`).toBe(false);
+  async function assertClearOfPause(selector: string, nth = 0): Promise<void> {
+    const overlap = await page.evaluate(
+      ([sel, i]) => {
+        const el = document.querySelectorAll<HTMLElement>(sel)[i];
+        const btn = document.getElementById('office-pause') as HTMLElement | null;
+        if (!el || !btn || btn.hidden) return { found: !!el, overlap: false };
+        const b = btn.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        const elAbsMid = (r.top + r.bottom) / 2 + window.scrollY;
+        const bandMid = (b.top + b.bottom) / 2;
+        window.scrollTo({ top: Math.max(0, Math.round(elAbsMid - bandMid)), behavior: 'instant' });
+        const r2 = el.getBoundingClientRect();
+        const b2 = btn.getBoundingClientRect();
+        const overlap = !(
+          r2.right <= b2.left ||
+          r2.left >= b2.right ||
+          r2.bottom <= b2.top ||
+          r2.top >= b2.bottom
+        );
+        return { found: true, overlap };
+      },
+      [selector, nth] as const
+    );
+    expect(overlap.found, `${selector} #${nth} not found`).toBe(true);
+    expect(overlap.overlap, `${selector} #${nth} overlaps #office-pause's fixed band`).toBe(false);
   }
 
-  await assertClearOfPause('.hero__ghost[href="#showcase-vibing"]');
-  await assertClearOfPause('.office-gap:not(.office-gap--closer) .gap-caption');
-  await assertClearOfPause('.how__step:first-child .how__detail p');
-  await assertClearOfPause('[data-vibing-time-label]');
+  // A phone, a tablet and the widest the gutter reaches.
+  for (const width of [390, 768, 960]) {
+    await page.setViewportSize({ width, height: 844 });
+    await assertClearOfPause('.hero__ghost[href="#showcase-vibing"]');
+    await assertClearOfPause('.office-gap:not(.office-gap--closer) .gap-caption');
+    await assertClearOfPause('.how__step:first-child .how__detail p');
+    await assertClearOfPause('[data-vibing-time-label]');
+    // Every roster row: above a phone's width the grid's last column ends at the column's edge.
+    for (let i = 0; i < (await page.locator('.roster__row').count()); i++) {
+      await assertClearOfPause('.roster__row', i);
+    }
+  }
 });
 
 test('an install copy from the Install section hires a coworker: pix:install-copy → pix:hired', async ({

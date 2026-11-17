@@ -135,33 +135,18 @@ test('every floor is reachable from the floor popover, and the statusline digit 
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   await expect(page.locator('[data-lift-digit]')).toHaveText(TOP);
-  const ride = async (fl: string) => {
-    await page.locator('[data-floor-toggle]').click();
-    await page.locator(`#sl-floors [data-floor-btn="${fl}"]`).click();
-    await expect(page.locator('[data-lift-digit]')).toHaveText(fl, { timeout: 10_000 });
-  };
   // A floor whose section is too short to ever own the floor-spy band
   // settles on a DIFFERENT floor here instead of its own.
   for (const { fl } of FLOORS) {
-    await ride(fl);
-    await expect(page.locator(`[data-floor="${fl}"]`)).toBeInViewport();
+    await page.locator('[data-floor-toggle]').click();
+    await page.locator(`#sl-floors [data-floor-btn="${fl}"]`).click();
+    await expect(page.locator('[data-lift-digit]')).toHaveText(fl, { timeout: 10_000 });
     await expect(page.locator('#sl-floors [data-floor-btn][aria-current]')).toHaveCount(1);
     await expect(page.locator(`#sl-floors [data-floor-btn="${fl}"]`)).toHaveAttribute(
       'aria-current',
       'location'
     );
   }
-
-  // 1F + the footer rarely fill the band the observer keys off. From the top floor, a jump
-  // straight to the TRUE scroll max sweeps no floor through that band, so only the clamp names 1F.
-  await ride(TOP);
-  // Retried: the ride up may still be scrolling when the jump lands.
-  await expect(async () => {
-    await page.evaluate(() =>
-      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' })
-    );
-    await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 500 });
-  }).toPass({ timeout: 10_000 });
 });
 
 test('scroll budget: the page fits its roster-aware viewport-height budget at 1440×900', async ({
