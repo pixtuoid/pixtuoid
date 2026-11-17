@@ -55,14 +55,13 @@ someone else's publish would short-circuit every check below it). npm 12 is requ
   stays on the still). Scrolling is the light switch — the `#dimmer` sheet
   darkens toward statements and releases in office gaps. Each section is a
   floor (top floor → 1F); fixed chrome is `Statusline.astro` (floor readout +
-  scrollspy + PR feed + install chip), `ElevatorShaft.astro` (click-to-ride
-  rail), and the `#office-pause` switch. Floor digits ride to their floors
+  scrollspy + PR feed + install chip) and the `#office-pause` switch. Floor digits ride to their floors
   document-global (typing surfaces, modifiers, the boot splash, and focused
   `[data-keys-scope]` regions claim them locally); the appearance key retints,
   focus-gated (WCAG 2.1.4); the statusline popover carries the persisted keys
   off-switch. 404 is the office at 3 a.m.
 - **Cross-component seams** (what a new section wires): `data-lit` (dimmer)
-  and a row in `src/floors.json` (statusline, shaft, section ids all
+  and a row in `src/floors.json` (the statusline and the section ids
   derive from it). The backdrop publishes `window.__pixLights`, `pix:onair` /
   `.is-live`, and `pix:paused` (every >5s auto-motion listens — one control
   governs page motion). `Install.astro` fires `pix:install-copy` → the

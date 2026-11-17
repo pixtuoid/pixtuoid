@@ -3374,27 +3374,6 @@ test('the pause control never occludes in-page copy at mobile widths', async ({ 
   await assertClearOfPause('[data-vibing-time-label]');
 });
 
-test('the elevator shaft never overlaps the studio panel copy at 390 or 768', async ({ page }) => {
-  // .shaft is position:fixed at every width and .container reserves no gutter
-  // for it. Horizontal position doesn't depend on scroll — pure geometry.
-  await gotoLive(page);
-  for (const width of [390, 768]) {
-    await page.setViewportSize({ width, height: 844 });
-    const overlaps = await page.evaluate(() => {
-      const shaft = document.querySelector('.shaft');
-      if (!shaft) return [];
-      const shaftLeft = shaft.getBoundingClientRect().left;
-      return Array.from(document.querySelectorAll<HTMLElement>('.roster__row'))
-        .map((el) => el.getBoundingClientRect().right - shaftLeft)
-        .filter((over) => over > 0);
-    });
-    expect(
-      overlaps,
-      `${width}px: roster rows reach ${overlaps}px past the shaft's left edge`
-    ).toEqual([]);
-  }
-});
-
 test('an install copy from the Install section hires a coworker: pix:install-copy → pix:hired', async ({
   page,
   context,
@@ -3736,4 +3715,17 @@ test('a printed page shows what waits to be revealed', async ({ page }) => {
     .evaluateAll((els) => els.filter((el) => getComputedStyle(el).opacity !== '1').length);
   expect(await page.locator('.reveal:not(.in)').count()).toBeGreaterThan(0);
   expect(hidden).toBe(0);
+});
+
+// The office controls' gutter is for copy that scrolls past them; the bar sits at the page's top.
+test("the phone bar's buttons end where the page's column does", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./');
+  const { left, right, width } = await page.evaluate(() => ({
+    left: document.querySelector('.nav__logo')!.getBoundingClientRect().left,
+    right: document.querySelector('.nav__toggle')!.getBoundingClientRect().right,
+    width: document.documentElement.clientWidth,
+  }));
+  expect(Math.abs(width - right - left)).toBeLessThanOrEqual(1);
 });

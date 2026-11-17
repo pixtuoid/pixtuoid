@@ -31,14 +31,6 @@ export const THEME_BG: Record<ThemeId, string> = {
   dracula: '#282a36',
 };
 
-// The ONE floor-spy IntersectionObserver band: the Statusline scrollspy and the
-// ElevatorShaft LED each build their own observer over the SAME [data-floor]
-// sections, so a one-sided retune would make the two readouts silently disagree.
-export const FLOOR_SPY_ROOT_MARGIN = '-45% 0px -45% 0px';
-// Rounding slack for the bottom-clamp both floor-spy consumers apply at true
-// scroll max (scrollY+innerHeight vs scrollHeight can differ by a subpixel).
-export const BOTTOM_CLAMP_EPSILON_PX = 2;
-
 // The dimmer's resting opacity, straddling a JS↔CSS boundary: OfficeBackdrop
 // emits it into #dimmer's CSS as `--dim-rest`, Statusline derives its
 // 'lights N%' readout from it (100·(1 − DIM_RESTING)).

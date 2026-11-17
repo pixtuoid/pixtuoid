@@ -241,8 +241,9 @@ const officeDriverUrl = asset('office-driver.js');
       --ctl-bottom: calc(var(--statusline-h) + var(--footer-h, 74px) + var(--office-ctl-edge));
     }
   }
+  /* The bar is at the page's top and these controls at the viewport's bottom: it needs no gutter. */
   @media (max-width: 760px) {
-    .container {
+    .container:not(.nav__inner) {
       padding-inline-end: calc(
         var(--container-pad-x) + var(--office-ctl-edge) + var(--office-ctl-w) +
           var(--office-ctl-gap)

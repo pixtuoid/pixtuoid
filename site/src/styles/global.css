@@ -574,8 +574,8 @@ section {
 }
 
 /* ── Working Building primitives (§5) ──────────────────────────────────
-   ONE geometry rule: HARDWARE components (screens, boards, the statusline,
-   the elevator shaft) are .hw-panel — sharp corners, 1px light top edge,
+   ONE geometry rule: HARDWARE components (screens, boards, the statusline)
+   are .hw-panel — sharp corners, 1px light top edge,
    dark --screen ground. PAPER components (cards, quotes) stay the existing
    .card — rounded (--radius) + warm shadow. ONE selected-state everywhere:
    the LED glow (.led-selected / .led-dot.is-on). */
