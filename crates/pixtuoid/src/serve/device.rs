@@ -161,13 +161,12 @@ impl Devices {
         let store = self.store.clone();
         let verdict = tokio::task::spawn_blocking(move || -> Result<_> {
             Ok(match hello {
-                Hello::Pair { code, .. } => store.redeem(&code, SystemTime::now())?.map_or(
-                    (Reply::Refused, None),
-                    |token| {
+                Hello::Pair { code, name, .. } => store
+                    .redeem(&code, &name, SystemTime::now())?
+                    .map_or((Reply::Refused, None), |token| {
                         let device = Hashed::of(&token);
                         (Reply::Paired { token }, Some(device))
-                    },
-                ),
+                    }),
                 Hello::Resume { token } => {
                     let device = Hashed::of(&token);
                     if store.knows(&device)? {
@@ -568,7 +567,7 @@ mod tests {
             .code;
         fixture
             .store
-            .redeem(&code, SystemTime::now())
+            .redeem(&code, DEVICE, SystemTime::now())
             .expect("it redeems")
             .expect("a good code")
     }
@@ -591,7 +590,12 @@ mod tests {
         office
             .apply(peer.line().await.as_bytes(), SystemTime::now())
             .expect("a line");
-        assert!(fixture.store.knows(&Hashed::of(&token)).expect("it reads"));
+        let devices = fixture.store.devices().expect("it reads");
+        let [device] = devices.try_into().expect("one device");
+        assert_eq!(
+            (device.hash, device.name.as_str()),
+            (Hashed::of(&token), DEVICE)
+        );
     }
 
     #[tokio::test]
