@@ -29,7 +29,7 @@ ready; stop it before `just site-e2e` (dev and preview share port 4321).
 
 ```sh
 npm run verify     # format:check → lint → check → knip → test:unit → test:demos → build → check:docs → audit
-npm run lighthouse # three-run a11y / SEO / performance budgets (in-repo runner)
+npm run lighthouse # Lighthouse CI's budgets
 ```
 
 From the repo root: `just site-check`, `just site-fmt`, and `just site-e2e` for

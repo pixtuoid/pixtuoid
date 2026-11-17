@@ -1,34 +1,23 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import config from '../lighthouserc.mjs';
 
-const config = JSON.parse(
-  readFileSync(new URL('../lighthouserc.json', import.meta.url), 'utf8')
-).ci;
+const { collect, assert: asserted } = config.ci;
 
 test('performance budgets use stable samples', () => {
   // "The median Lighthouse score of 5 runs is twice as stable as 1 run" (docs/variability.md)
-  assert.ok(config.collect.numberOfRuns >= 5);
-  for (const audit of [
-    'categories:performance',
-    'first-contentful-paint',
-    'largest-contentful-paint',
-    'speed-index',
-    'interactive',
-    'total-blocking-time',
-    'cumulative-layout-shift',
-  ]) {
-    assert.equal(
-      config.assert.assertions[audit][1].aggregationMethod,
-      'median',
-      `${audit} must aggregate volatile CI samples by median`
-    );
-  }
+  assert.ok(collect.numberOfRuns >= 5);
 });
 
-test('the first-visit reveal has a hard upper bound', () => {
-  assert.deepEqual(config.assert.assertions['user-timings:pixtuoid-revealed'], [
-    'error',
-    { maxNumericValue: 6500, aggregationMethod: 'pessimistic' },
-  ]);
+// LHCI's defaults pass what should fail.
+test('every assertion fails CI, has a bound and names how its runs aggregate', () => {
+  for (const [audit, [level, options]] of Object.entries(asserted.assertions)) {
+    // A `warn` exits 0.
+    assert.equal(level, 'error', audit);
+    // One without a bound it knows is graded as `minScore: 0.9` (`realMinScore` in @lhci/utils' assertions.js).
+    assert.ok('minScore' in options || 'maxNumericValue' in options, audit);
+    // One without an aggregationMethod takes the run "most likely to pass"
+    // (github.com/GoogleChrome/lighthouse-ci/blob/main/docs/configuration.md#assertions).
+    assert.ok(['median', 'pessimistic'].includes(options.aggregationMethod), audit);
+  }
 });

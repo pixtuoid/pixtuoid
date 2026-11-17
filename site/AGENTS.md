@@ -88,19 +88,12 @@ PRODUCTION build — the runtime-contract tier (`__pixLights`/`pix:onair`/
 `data-lit` seams, scrollspy keys, docs-nav variant, reduced-motion, console
 watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 
-- **Lighthouse** (`npm run lighthouse`, in-repo runner
-  `config/lighthouse-runner.mjs`, lighthouse's programmatic API, median of
-  `lighthouserc.json`'s `numberOfRuns` serial runs; runner-semantics pinned by
-  its test — a renamed audit FAILS instead of passing vacuously).
-  **A category score is a budget, not a
-  contract**: `color-contrast` is a small weight in the a11y category, so a total
-  contrast failure still clears the category budget — anything that must never regress gets
-  its own per-audit assertion with `aggregationMethod: pessimistic` (median
-  greens a binary audit that failed one run). Collect URLs pin `?theme=day`
-  (otherwise local time picks the palette — half of CI runs would audit
-  each). **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
-  doubled collect list. LCP, `interactive` and `speed-index` are CI's median
-  plus run spread; the office's wasm is fetched by its worker, which
+- **Lighthouse** (`npm run lighthouse`: `lhci autorun` over `lighthouserc.mjs`,
+  which serves `dist/` itself and audits the home page and every route
+  `src/docs.json` renders; `config/lighthouse-budget.test.mjs` holds the
+  assertion policy).
+  **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
+  doubled collect list. The office's wasm is fetched by its worker, which
   Lighthouse's simulation drops, so `just gen-wasm-check` alone gates it (#1124).
 - **Fonts**: WOFF2, `font-display: optional`, loaded before use (a preload;
   the captions' face: OfficeBackdrop's boot) — never `swap` (Ubuntu cold
