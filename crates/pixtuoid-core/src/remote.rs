@@ -37,15 +37,19 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 /// only gains fields and tags, each held to a sample `just wire-frozen` never
 /// lets a change edit; a reader ignores what it doesn't know and maps an
 /// unknown tag to its nearest state. A server drops a hello kind it can't
-/// name, so a new one, like any break in a line or the link, bumps it, and
-/// every pairing or reconnect across it ends in a precise "update" on the side
-/// that can act ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]).
+/// name, so a new one, like any break in a line, a pairing link or the stream's
+/// timing ([`HEARTBEAT`], [`SILENCE_LIMIT`]), bumps it, and every pairing or
+/// reconnect across it ends in a precise "update" on the side that can act
+/// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]).
 pub const VERSION: u32 = 1;
 
-/// How often a server writes its line however quiet the office: a device takes
-/// silence past this for a dead link, so a change to it is a break in the link
-/// that bumps [`VERSION`].
+/// How often a server writes its line however quiet the office.
 pub const HEARTBEAT: Duration = Duration::from_secs(15);
+
+/// How long a device waits on a silent stream before taking it for dead: a
+/// [`HEARTBEAT`], and a margin for the server's pause after each line and the
+/// line's delivery.
+pub const SILENCE_LIMIT: Duration = HEARTBEAT.saturating_add(Duration::from_secs(5));
 
 /// How far a line's clock may stray from the skew already held before it is
 /// taken for a clock change rather than delivery latency.
@@ -2345,6 +2349,17 @@ mod tests {
                 "{line}"
             );
         }
+    }
+
+    /// A device of another release times its stream by the values it was built
+    /// with, so v1 holds them as it holds its lines.
+    #[test]
+    fn the_stream_keeps_v1s_timing() {
+        assert_eq!(
+            (VERSION, HEARTBEAT, SILENCE_LIMIT),
+            (1, Duration::from_secs(15), Duration::from_secs(20)),
+            "a change to HEARTBEAT or SILENCE_LIMIT bumps remote::VERSION"
+        );
     }
 
     /// A new tag must not send every older device back to a QR.
