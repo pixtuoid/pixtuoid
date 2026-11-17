@@ -15,7 +15,7 @@ function watchErrors(page: Page): () => string[] {
   return () => errors;
 }
 
-test('docs mount the statusline: route path left, install chip right, no landing organs', async ({
+test('docs mount the statusline: route path left, install chip right, no index-only organs', async ({
   page,
 }) => {
   const errors = watchErrors(page);

@@ -29,7 +29,7 @@ test('a page with fewer <svg> than its doc declares mermaid blocks fails', () =>
     [{ name: 'how-we-build', html: doc(`${SVG}${body(MIN_BODY_CHARS)}`) }],
     { 'how-we-build': 2 }
   );
-  assert.ok(failures.some((f) => f.includes('/how-we-build: 1 inline <svg> for the 2')));
+  assert.ok(failures.some((f) => f.includes('/how-we-build: 1 <svg role="img"> for the 2')));
 });
 
 test('a decorative svg is no diagram', () => {
@@ -48,7 +48,7 @@ test('a page with more <svg> than its doc declares mermaid blocks fails', () => 
     [{ name: 'config', html: doc(`${SVG}${SVG}${body(MIN_BODY_CHARS)}`) }],
     { config: 1 }
   );
-  assert.ok(failures.some((f) => f.includes('/config: 2 inline <svg> for the 1')));
+  assert.ok(failures.some((f) => f.includes('/config: 2 <svg role="img"> for the 1')));
 });
 
 test('a rendered article no roster lists fails', () => {
@@ -116,7 +116,7 @@ test('a page the rosters list that rendered no article fails', () => {
   assert.deepEqual(failures, ['/blog/a-post: in the rosters, but no rendered article']);
 });
 
-test("a page named after one of Object's own keys is listed only if a roster lists it", () => {
+test('a page named after a key every object inherits is listed only if a roster lists it', () => {
   const { failures } = checkPages([{ name: 'constructor', html: doc(body(MIN_BODY_CHARS)) }], {});
   assert.ok(failures.some((f) => f.includes('/constructor') && f.includes('do not list')));
 });

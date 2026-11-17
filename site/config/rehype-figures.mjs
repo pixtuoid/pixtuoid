@@ -34,7 +34,7 @@ function rows(kind, tableNode, columns) {
   );
 }
 
-// What moves in a figure carries the first class, and its figure the page's reveal-on-scroll
+// What moves in a figure carries MOVING, and its figure REVEAL, the page's reveal-on-scroll
 // class, which Base.astro's observer completes: Wing.astro plays the motion from there.
 const MOVING = 'fig__moving';
 const REVEAL = 'reveal';
@@ -115,7 +115,7 @@ const timeline = (takes, budget) =>
   );
 
 // The frame a two-pane figure draws, and what it holds: the furniture is there to be a picture,
-// the boxes are where a repaint's changes are, and the tiles are a frame cut fine and cut coarse.
+// `CHANGES` are where a repaint's changes are, and the tiles are a frame cut fine and cut coarse.
 // None is to scale.
 const FRAME = { width: 96, height: 54 };
 const FURNITURE = [
@@ -184,7 +184,7 @@ const around = (group) => {
   ];
 };
 const TILES = { fine: [16, 9], coarse: [4, 3] };
-const box =
+const rect =
   (...className) =>
   ([x, y, width, height]) =>
     s('rect', { className, x, y, width, height });
@@ -200,8 +200,8 @@ function cuts([across, down]) {
 const pane = (what, count, over) =>
   h('li.fig-pane', [
     s('svg', { viewBox: `0 0 ${FRAME.width} ${FRAME.height}`, ariaHidden: 'true' }, [
-      box('fig-pane__frame')([0, 0, FRAME.width, FRAME.height]),
-      ...FURNITURE.map(box('fig-pane__desk')),
+      rect('fig-pane__frame')([0, 0, FRAME.width, FRAME.height]),
+      ...FURNITURE.map(rect('fig-pane__desk')),
       ...over,
     ]),
     h('p.fig-pane__what', what),
@@ -236,7 +236,7 @@ const KINDS = {
       'pass',
       'pixels',
     ]);
-    const washes = (boxes) => boxes.map(box('fig-pane__wash', MOVING));
+    const washes = (areas) => areas.map(rect('fig-pane__wash', MOVING));
     return windowed('one frame, repainted (not to scale)', [
       h('ul.fig__panes', [
         pane(whole, wholePixels, washes([[0, 0, FRAME.width, FRAME.height]])),
@@ -246,11 +246,11 @@ const KINDS = {
   },
   boxes: (table) => {
     const [[changes, changeCount], [merged, mergedCount]] = pair('boxes', table, ['step', 'count']);
-    const marks = GROUPS.flat().map(box('fig-pane__change'));
+    const marks = GROUPS.flat().map(rect('fig-pane__change'));
     return windowed('what changed, and the boxes that get repainted (not to scale)', [
       h('ul.fig__panes', [
         pane(changes, changeCount, marks),
-        pane(merged, mergedCount, [...marks, ...GROUPS.map(around).map(box('fig-pane__box'))]),
+        pane(merged, mergedCount, [...marks, ...GROUPS.map(around).map(rect('fig-pane__box'))]),
       ]),
     ]);
   },
@@ -283,7 +283,7 @@ export default function rehypeFigures() {
     visit(tree, 'raw', (node, i, parent) => {
       const kind = MARKER.exec(node.value.trim())?.[1];
       if (!kind || !parent) return;
-      const draw = KINDS[kind];
+      const draw = Object.hasOwn(KINDS, kind) && KINDS[kind];
       if (!draw)
         throw new Error(`unknown figure kind "${kind}" (known: ${FIGURE_KINDS.join(', ')})`);
       let j = i + 1;

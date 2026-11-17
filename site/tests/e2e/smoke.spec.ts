@@ -2331,7 +2331,7 @@ test('on a short landscape phone every row of the floor popover can be reached',
 test('no horizontal overflow at phone widths (mobile pan guard)', async ({ browser }) => {
   // `body { overflow-x: hidden }` masks the desktop scrollbar, so a full-width block whose ::before glow pokes past the viewport
   // is INVISIBLE on desktop yet PANS on mobile — and a pseudo-element dodges every querySelectorAll('*') scan.
-  // What overflows instead scrolls inside a doc's own scroller: a code block or table
+  // What overflows instead scrolls inside a page's own scroller: a code block or table
   // (config/rehype-scroll-focus.mjs) or a diagram body (config/rehype-beautiful-mermaid.mjs), each a tab stop.
   let scrollersSeen = 0;
   for (const [path, width] of [
@@ -2384,7 +2384,7 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     }
     await context.close();
   }
-  expect(scrollersSeen, 'no doc scroller to hold to the tab-stop check').toBeGreaterThan(0);
+  expect(scrollersSeen, 'no page scroller to hold to the tab-stop check').toBeGreaterThan(0);
 });
 
 test('the hero copy clears the floating nav at phone viewports (vertical overlap guard)', async ({

@@ -918,7 +918,7 @@ code {
   }
 }
 
-/* ---------- prose: rendered markdown (a wing's pages) ---------- */
+/* ---------- prose: the body of every page Wing.astro frames (its rendered markdown, and a wing's lobby) ---------- */
 .prose {
   line-height: 1.7;
 }

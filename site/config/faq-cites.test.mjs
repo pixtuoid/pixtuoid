@@ -13,6 +13,7 @@ const repoFile = (rel) => fileURLToPath(new URL(`../../${rel}`, import.meta.url)
 for (const { src } of faq) {
   test(`the FAQ's ${src} names a heading of a repo file`, () => {
     const at = src.indexOf('#');
+    assert.ok(at > 0, `${src} names no heading of a repo file`);
     const [file, fragment] = [src.slice(0, at), src.slice(at + 1)];
     assert.ok(existsSync(repoFile(file)), `${file} is not at the repo root`);
     // One slugger per file, so a repeated heading gets GitHub's numbered anchor.

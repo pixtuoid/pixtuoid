@@ -65,7 +65,7 @@ export function checkPages(entries, diagrams) {
     const declared = diagrams[name];
     if (drawn !== declared) {
       failures.push(
-        `/${name}: ${drawn} inline <svg> for the ${declared} mermaid blocks its source declares`
+        `/${name}: ${drawn} <svg role="img"> for the ${declared} mermaid blocks its source declares`
       );
     }
   }
