@@ -8,9 +8,10 @@ import { FLOORS, floorById, floorName } from '../../config/floors.mjs';
 import { GH_API_REPO, GH_FETCH_TIMEOUT_MS, REPO } from '../../config/github.mjs';
 
 interface Props {
-  /** Either prop renders the path, the wing's where the page is in one and then the page's, in
-   * place of the index-only organs. The #sl-install chip renders either way. */
+  /** The wing the page is in, the bar's path after "~ pixtuoid" (none on the 404). */
   wingPath?: string;
+  /** The page's last route segment, the path's end. Either prop swaps the index-only organs for
+   * the path; the #sl-install chip renders either way. */
   pageSlug?: string;
 }
 const { wingPath, pageSlug } = Astro.props;

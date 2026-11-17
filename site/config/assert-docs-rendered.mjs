@@ -22,7 +22,7 @@ import { pageName } from './docs.mjs';
 export const MIN_BODY_CHARS = 500;
 // \bprose\b, not a sole-class match, so a future `class="prose max-w-none"` or an
 // appended Astro scoped class doesn't drop the article → redden every deploy.
-const DOC_ARTICLE = /<article class="[^"]*\bprose\b[^"]*"[^>]*>([\s\S]*?)<\/article>/;
+const WING_ARTICLE = /<article class="[^"]*\bprose\b[^"]*"[^>]*>([\s\S]*?)<\/article>/;
 
 /** The source of every Mermaid code block a Markdown document holds. */
 export function mermaidFences(markdown) {
@@ -42,7 +42,7 @@ export function checkPages(entries, diagrams) {
   const failures = [];
   const seen = new Set();
   for (const { name, html } of entries) {
-    const m = html.match(DOC_ARTICLE);
+    const m = html.match(WING_ARTICLE);
     if (!m) continue; // not a wing's article
     seen.add(name);
     const body = m[1]
