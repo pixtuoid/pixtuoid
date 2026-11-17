@@ -55,7 +55,7 @@ const windowed = (title, body) => [
 
 function milliseconds(kind, cell) {
   const text = toText({ type: 'root', children: cell }).trim();
-  const ms = /^([\d.]+)\s*ms$/.exec(text)?.[1];
+  const ms = /^(\d+(?:\.\d+)?)\s*ms$/.exec(text)?.[1];
   if (!ms) throw new Error(`figure "${kind}": "${text}" is not a time in ms`);
   return Number(ms);
 }
@@ -94,7 +94,7 @@ const timeline = (takes, budget) =>
         s('rect', {
           className: ['fig-budget__run', ...(late ? ['fig-budget__run--late'] : [])],
           x: Math.round((start / budget) * BEAT * 10) / 10,
-          width: Math.round((takes / budget) * BEAT * 10) / 10 - GAP,
+          width: Math.max(Math.round((takes / budget) * BEAT * 10) / 10 - GAP, 0),
           height: LANE,
         })
       ),

@@ -83,10 +83,23 @@ test('a budget timeline starts a frame on its beat, or late when the one before 
 });
 
 test('a budget cell that is not a time in ms fails the build', () => {
-  assert.throws(
-    () => run([marker('budget'), nl, table(['Frame', 'Takes', 'Budget'], ['x', 'fast', '33 ms'])]),
-    /figure "budget": "fast" is not a time in ms/
-  );
+  for (const cell of ['fast', '1.2.3 ms', '. ms']) {
+    assert.throws(
+      () => run([marker('budget'), nl, table(['Frame', 'Takes', 'Budget'], ['x', cell, '33 ms'])]),
+      new RegExp(`figure "budget": "${cell.replace(/\./g, '\\.')}" is not a time in ms`)
+    );
+  }
+});
+
+test('a frame shorter than the gap between frames is drawn with no width, never a negative one', () => {
+  const tree = run([
+    marker('budget'),
+    nl,
+    table(['Frame', 'Takes', 'Budget'], ['Quick', '0.1 ms', '33 ms']),
+  ]);
+  for (const frame of all(figure(tree), withClass('fig-budget__run'))) {
+    assert.equal(frame.properties.width, 0);
+  }
 });
 
 test('repaint shows its two passes side by side, each with what it repaints', () => {
