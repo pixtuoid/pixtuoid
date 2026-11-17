@@ -3,7 +3,7 @@ import type { InferGetStaticPropsType } from 'astro';
 import { render } from 'astro:content';
 import Wing from '../../layouts/Wing.astro';
 import { blogWing, postDay, posts } from '../../blog';
-import { asset } from '../../consts';
+import { asset, floorHref } from '../../consts';
 import { BLOG_ROUTE, postRoute } from '../../../config/blog.mjs';
 
 export async function getStaticPaths() {
@@ -30,6 +30,9 @@ const wing = await blogWing();
   <h1>{post.data.title}</h1>
   <p class="post__lede">{post.data.description}</p>
   <Content />
+  <p>
+    <a href={floorHref('install')}>Install pixtuoid</a> and open a terminal next to your agents.
+  </p>
 </Wing>
 
 <style>

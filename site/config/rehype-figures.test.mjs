@@ -60,7 +60,7 @@ test('a budget timeline starts a frame on its beat, or late when the one before 
   ]);
   const fig = figure(tree);
   // Its playhead moves, so the figure waits for the reader to reach it.
-  assert.deepEqual(fig.properties.className, ['fig--budget', 'fig--window', 'reveal']);
+  assert.deepEqual(fig.properties.className, ['fig--budget', 'reveal']);
   const [before, after] = all(fig, withClass('fig-budget')).map((row) =>
     all(row, withClass('fig-budget__run')).map((r) => ({
       x: r.properties.x,
@@ -96,7 +96,7 @@ test('repaint shows its two passes side by side, each with what it repaints', ()
     table(['Pass', 'Pixels'], ['The whole frame', '6.8 million'], ['Only what changed', '7,936']),
   ]);
   const fig = figure(tree);
-  assert.deepEqual(fig.properties.className, ['fig--repaint', 'fig--window', 'reveal']);
+  assert.deepEqual(fig.properties.className, ['fig--repaint', 'reveal']);
   const panes = all(fig, withClass('fig-pane'));
   assert.deepEqual(panes.map(said), ['The whole frame 6.8 million', 'Only what changed 7,936']);
   // The first pass washes the frame; the second washes a few boxes inside it.
@@ -120,7 +120,7 @@ test('tiles cut the same frame fine and coarse, and nothing in it moves', () => 
     (path) => path.properties.d.split('M').length - 1
   );
   assert.ok(fine > coarse);
-  assert.deepEqual(fig.properties.className, ['fig--tiles', 'fig--window']);
+  assert.deepEqual(fig.properties.className, ['fig--tiles']);
   assert.deepEqual(all(fig, withClass('fig-pane')).map(said), [
     'Small tiles more than the terminal keeps up with',
     'Big tiles 400 at most',

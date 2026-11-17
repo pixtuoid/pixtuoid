@@ -1,7 +1,10 @@
 import { test } from 'node:test';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import rehypeRepoLinks from './rehype-repo-links.mjs';
 import { h } from 'hastscript';
+import { BLOG_DIR } from './blog.mjs';
 import { DOC_DIR } from './docs.mjs';
 import { REPO_BLOB } from './github.mjs';
 
@@ -9,9 +12,15 @@ const DOCS = [
   { file: 'ARCHITECTURE.md', route: 'architecture/' },
   { file: 'HOW-WE-BUILD.md', route: 'how-we-build/' },
 ];
-const rewritten = (href, base = '/') => {
+// config/blog.mjs's BLOG_DIR is under site/.
+const BLOG_DIR_FROM_ROOT = `site/${BLOG_DIR}`;
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const rewritten = (href, base = '/', from = `${DOC_DIR}/CONFIGURATION.md`) => {
   const a = h('a', { href });
-  rehypeRepoLinks({ docs: DOCS, base })({ type: 'root', children: [a] });
+  rehypeRepoLinks({ docs: DOCS, base })(
+    { type: 'root', children: [a] },
+    { path: join(REPO_ROOT, from) }
+  );
   return a.properties.href;
 };
 
@@ -41,4 +50,13 @@ test('an in-page anchor and an absolute URL are left alone', () => {
   assert.equal(rewritten('#the-arc-loop'), '#the-arc-loop');
   assert.equal(rewritten('https://pixtuoid.dev/'), 'https://pixtuoid.dev/');
   assert.equal(rewritten('//pixtuoid.dev/x'), '//pixtuoid.dev/x');
+});
+
+test("a post's links resolve from the post's own directory", () => {
+  const post = `${BLOG_DIR_FROM_ROOT}/a-post.md`;
+  assert.equal(
+    rewritten('./other-post.md', '/', post),
+    `${REPO_BLOB}/${BLOG_DIR_FROM_ROOT}/other-post.md`
+  );
+  assert.equal(rewritten('../../../../docs/ARCHITECTURE.md', '/', post), '/architecture/');
 });

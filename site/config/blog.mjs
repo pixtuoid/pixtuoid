@@ -22,6 +22,9 @@ export const POST_PATTERN = `*${POST_EXT}`;
 /** A post's id, from its file's name. @param {string} file */
 export const postId = (file) => file.slice(0, -POST_EXT.length);
 
+/** A post's file, under site/, from its id. @param {string} id */
+export const postFile = (id) => `${BLOG_DIR}/${id}${POST_EXT}`;
+
 /** The order the blog lists its posts in. @param {Date} a @param {Date} b */
 export const newestFirst = (a, b) => b.valueOf() - a.valueOf();
 

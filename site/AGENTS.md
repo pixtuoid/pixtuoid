@@ -29,8 +29,7 @@ rename/move of any FAILS the build:
   `assert-docs-rendered` globs every rendered `article.prose` and needs no
   edit), `site.yml`'s `scope` paths, and the e2e rows that name a route (smoke's
   pan and `PLATE_SURFACES` tables, `docs-lobby.spec.ts`).
-- `docs/images/looks-composite.png`, which the first post shows and
-  `media-regen.yml` rewrites: `site.yml`'s `scope` paths name it.
+- the `docs/` images the posts show, which `media-regen.yml` rewrites.
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:
@@ -51,8 +50,10 @@ the mechanism; `pages.yml`'s pins carry their own.
 mount the Statusline wing variant (no PR feed fetch); `Wing.astro`'s sidebar
 reads the one `FLOORS` manifest. A post is one file in `src/content/blog/`:
 its route, the lobby, the feed, Lighthouse's URLs and `check:docs`'s roster
-derive from that directory (`config/blog.mjs`), and only the e2e rows that
-name its route (smoke's `PLATE_SURFACES` table) are edited by hand.
+derive from that directory (`config/blog.mjs`). Edited by hand: the e2e rows
+that name its route (smoke's `PLATE_SURFACES` table), and `site.yml`'s `scope`
+paths for each `docs/` image it shows, which `rendered-docs-scope.test.mjs`
+holds to the posts.
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
 unit-tested). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its

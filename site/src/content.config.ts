@@ -18,8 +18,9 @@ export const collections = {
     loader: glob({
       pattern: POST_PATTERN,
       base: `./${BLOG_DIR}`,
-      // Astro's default slugs the name, and what reads the directory (`postIds`) would then
-      // name another route.
+      // Astro's default is the frontmatter `slug`, else the name slugged (`generateIdDefault` in
+      // its content/loaders/glob.js, at package.json's version), and what reads the directory
+      // (`postIds`) would then name another route.
       generateId: ({ entry }) => postId(entry),
     }),
     schema: z.object({

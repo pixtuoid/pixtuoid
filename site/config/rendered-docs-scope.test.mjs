@@ -3,18 +3,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { BLOG_DIR, postIds } from './blog.mjs';
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { visit } from 'unist-util-visit';
+import { BLOG_DIR, postFile, postIds } from './blog.mjs';
 import { DOC_DIR } from './docs.mjs';
 import docs from '../src/docs.json' with { type: 'json' };
 
-// What a post shows from the repo's docs directory: a path that climbs out of site/ to it.
+// What a post shows from the repo's docs directory: an image whose path climbs out of site/ to it.
 const shown = (id) => {
-  const post = readFileSync(new URL(`../${BLOG_DIR}/${id}.md`, import.meta.url), 'utf8');
   const climb = '../'.repeat(BLOG_DIR.split('/').length + 1);
-  return [...post.matchAll(/\]\(([^)\s]+)\)/g)]
-    .map(([, target]) => target)
-    .filter((target) => target.startsWith(`${climb}${DOC_DIR}/`))
-    .map((target) => target.slice(climb.length));
+  const images = [];
+  visit(
+    fromMarkdown(readFileSync(new URL(`../${postFile(id)}`, import.meta.url), 'utf8')),
+    ['image', 'definition'],
+    (node) => images.push(node.url)
+  );
+  return images
+    .filter((url) => url.startsWith(`${climb}${DOC_DIR}/`))
+    .map((url) => url.slice(climb.length));
 };
 
 test("site.yml's scope paths name exactly the docs the site renders and what its posts show", () => {
@@ -27,6 +33,6 @@ test("site.yml's scope paths name exactly the docs the site renders and what its
   // that no longer exists, so a renamed doc's old path must not outlive its roster entry.
   assert.deepEqual(
     listed.sort(),
-    [...docs.map((d) => `${DOC_DIR}/${d.file}`), ...postIds().flatMap(shown)].sort()
+    [...new Set([...docs.map((d) => `${DOC_DIR}/${d.file}`), ...postIds().flatMap(shown)])].sort()
   );
 });

@@ -67,30 +67,33 @@ test('the footer links the blog', async ({ page }) => {
 const MOTION_LIMIT_S = 5;
 
 test('a moving figure plays once the reader reaches it, and ends by itself', async ({ page }) => {
-  const [id] = postIds();
-  await page.goto(`./${postRoute(id)}`);
-  const figures = await page.locator('figure:has(.fig__moving)').all();
-  expect(figures.length).toBeGreaterThan(1);
-  for (const figure of figures) {
-    const motion = () =>
-      figure.locator('.fig__moving').evaluateAll((els) =>
-        els.map((el) => {
-          const { animationName, animationDuration, animationIterationCount } =
-            getComputedStyle(el);
-          return {
-            name: animationName,
-            seconds: parseFloat(animationDuration) * Number(animationIterationCount),
-          };
-        })
-      );
-    expect(new Set((await motion()).map(({ name }) => name))).toEqual(new Set(['none']));
-    await figure.scrollIntoViewIfNeeded();
-    await expect(figure).toHaveClass(/\bin\b/);
-    for (const { name, seconds } of await motion()) {
-      expect(name).not.toBe('none');
-      expect(seconds).toBeLessThanOrEqual(MOTION_LIMIT_S);
+  let moving = 0;
+  for (const id of postIds()) {
+    await page.goto(`./${postRoute(id)}`);
+    for (const figure of await page.locator('figure:has(.fig__moving)').all()) {
+      const motion = () =>
+        figure.locator('.fig__moving').evaluateAll((els) =>
+          els.map((el) => {
+            const { animationName, animationDuration, animationIterationCount } =
+              getComputedStyle(el);
+            return {
+              name: animationName,
+              seconds: parseFloat(animationDuration) * Number(animationIterationCount),
+            };
+          })
+        );
+      expect(new Set((await motion()).map(({ name }) => name))).toEqual(new Set(['none']));
+      await figure.scrollIntoViewIfNeeded();
+      await expect(figure).toHaveClass(/\bin\b/);
+      for (const { name, seconds } of await motion()) {
+        expect(name).not.toBe('none');
+        expect(seconds).toBeLessThanOrEqual(MOTION_LIMIT_S);
+        moving += 1;
+      }
     }
   }
+  // No post with a moving figure would pass the loop having checked nothing.
+  expect(moving).toBeGreaterThan(0);
 });
 
 for (const [why, options] of [
@@ -100,19 +103,26 @@ for (const [why, options] of [
   test(`a reader ${why} gets figures that stand still and show`, async ({ browser }) => {
     const context = await browser.newContext(options);
     const page = await context.newPage();
-    const [id] = postIds();
-    await page.goto(`./${postRoute(id)}`);
-    const figure = page.locator('figure:has(.fig__moving)').first();
-    await figure.scrollIntoViewIfNeeded();
-    await expect(figure).toHaveCSS('opacity', '1');
-    await expect(page.locator('.fig-budget__now').first()).toBeHidden();
-    const seconds = await page.locator('.fig__moving').evaluateAll((els) =>
-      els.map((el) => {
-        const style = getComputedStyle(el);
-        return style.animationName === 'none' ? 0 : parseFloat(style.animationDuration);
-      })
-    );
-    expect(Math.max(...seconds)).toBeLessThan(0.01);
+    let still = 0;
+    for (const id of postIds()) {
+      await page.goto(`./${postRoute(id)}`);
+      for (const figure of await page.locator('figure:has(.fig__moving)').all()) {
+        await figure.scrollIntoViewIfNeeded();
+        await expect(figure).toHaveCSS('opacity', '1');
+        for (const playhead of await figure.locator('.fig-budget__now').all()) {
+          await expect(playhead).toBeHidden();
+        }
+        const seconds = await figure.locator('.fig__moving').evaluateAll((els) =>
+          els.map((el) => {
+            const style = getComputedStyle(el);
+            return style.animationName === 'none' ? 0 : parseFloat(style.animationDuration);
+          })
+        );
+        expect(Math.max(...seconds)).toBeLessThan(0.01);
+        still += seconds.length;
+      }
+    }
+    expect(still).toBeGreaterThan(0);
     await context.close();
   });
 }

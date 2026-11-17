@@ -2689,7 +2689,7 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
   expect(swept, `${theme}: swept nothing`).toBeGreaterThan(0);
 });
 
-test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 boundary and its body a 3:1 focus ring, in every theme', async ({
+test('every doc and post diagram: its SVG text clears WCAG AA, its boxes have a 3:1 boundary and its body a 3:1 focus ring, in every theme', async ({
   page,
 }) => {
   // The diagram's ink is SVG `fill`, which axe's color-contrast, Lighthouse's
@@ -2703,7 +2703,7 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
       localStorage.setItem('pix-theme', t);
     }, theme);
     let swept = 0;
-    for (const { route } of docs) {
+    for (const route of [...docs.map((d) => d.route), ...postIds().map(postRoute)]) {
       await page.goto(`./${route}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const diagrams = await page.evaluate(() =>

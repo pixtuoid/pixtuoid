@@ -540,5 +540,6 @@ builds the same code read 90 to 321.
 
 ## Try it
 
-The cutaway is on by default wherever your terminal can draw it, except over ssh and inside GNU screen. Everywhere else you get the classic look, with nothing to configure.
-[Install pixtuoid](/) and open a terminal next to your agents.
+The cutaway is on by default wherever pixtuoid can reach your terminal's image
+protocol. Over ssh, inside GNU screen and under tmux's default settings you
+get the classic look, and `pixtuoid doctor` says why.

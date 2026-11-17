@@ -34,8 +34,6 @@ function rows(kind, tableNode, columns) {
   );
 }
 
-const WINDOW_BAR = 'fig__bar';
-
 // What moves in a figure carries this class, and the figure the page's reveal-on-scroll class
 // (Base.astro): Wing.astro plays the motion once the figure is in view, for under the five
 // seconds past which WCAG 2.2's SC 2.2.2 asks for a way to stop it
@@ -53,7 +51,7 @@ function moves(body) {
 
 // A drawn figure's terminal window.
 const windowed = (title, body) => [
-  h(`div.${WINDOW_BAR}`, [h('span.fig__title', title)]),
+  h('div.fig__bar', [h('span.fig__title', title)]),
   h('div.fig__body', body),
 ];
 
@@ -273,20 +271,10 @@ const KINDS = {
 
 const FIGURE_KINDS = Object.keys(KINDS);
 
-// The shell every figure shares: its class names its kind, and one that opens with a window's bar
-// is a window, which Wing.astro frames.
+// The shell every figure shares: its class names its kind, and one with a moving part waits for
+// the reader.
 export const figure = (kind, children) =>
-  h(
-    'figure',
-    {
-      className: [
-        `fig--${kind}`,
-        ...(children[0]?.properties?.className?.includes(WINDOW_BAR) ? ['fig--window'] : []),
-        ...(moves(children) ? [REVEAL] : []),
-      ],
-    },
-    children
-  );
+  h('figure', { className: [`fig--${kind}`, ...(moves(children) ? [REVEAL] : [])] }, children);
 
 export default function rehypeFigures() {
   return (tree) => {

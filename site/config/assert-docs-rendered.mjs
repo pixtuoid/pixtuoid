@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { visit } from 'unist-util-visit';
-import { BLOG_DIR, postIds, postRoute } from './blog.mjs';
+import { postFile, postIds, postRoute } from './blog.mjs';
 import { DOC_DIR, docSlug } from './docs.mjs';
 
 // A generous floor: flags a collapsed render without coupling to any page's size.
@@ -35,7 +35,7 @@ export function mermaidFences(markdown) {
 
 /**
  * Given doc-page entries `[{ name, html }]` and `diagrams`, the count of
- * Mermaid blocks each page's doc declares by page name, return the failures +
+ * Mermaid blocks each page's source declares by page name, return the failures +
  * how many doc pages were seen.
  */
 export function checkDocPages(entries, diagrams) {
@@ -65,7 +65,7 @@ export function checkDocPages(entries, diagrams) {
     const declared = diagrams[name];
     if (drawn !== declared) {
       failures.push(
-        `/${name}: ${drawn} inline <svg> for the ${declared} mermaid blocks its doc declares`
+        `/${name}: ${drawn} inline <svg> for the ${declared} mermaid blocks its source declares`
       );
     }
   }
@@ -89,7 +89,7 @@ function main(dist) {
     ...docs.map((d) => [docSlug(d), declared(join(site, '..', DOC_DIR, d.file))]),
     ...postIds().map((id) => [
       postRoute(id).replace(/\/$/, ''),
-      declared(join(site, BLOG_DIR, `${id}.md`)),
+      declared(join(site, postFile(id))),
     ]),
   ]);
   const { failures, docPages } = checkDocPages(entries, diagrams);
@@ -98,7 +98,7 @@ function main(dist) {
     process.exit(1);
   }
   console.log(
-    `✓ doc-render check: ${docPages} doc pages have a body and every diagram their doc declares`
+    `✓ doc-render check: ${docPages} doc pages have a body and every diagram their source declares`
   );
 }
 

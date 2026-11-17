@@ -54,7 +54,7 @@ export interface Wing {
   bank: string; // the sidebar's elevator bank
   path: string; // the statusline's path
   pages: readonly WingPage[]; // the sidebar's list, and the sequence the pager turns through
-  turns: { back: string; on: string }; // what the pager calls a step up that list, and down it
+  turns: { prev: string; next: string }; // what the pager calls a step up that list, and down it
 }
 // The rendered docs, in reading order: the Nav dropdown's order too.
 export interface DocPage extends WingPage {
@@ -68,7 +68,7 @@ export const DOCS_WING: Wing = {
   bank: 'docs wing',
   path: 'docs',
   pages: DOCS,
-  turns: { back: 'previous', on: 'next' },
+  turns: { prev: 'previous', next: 'next' },
 };
 export const pageTitle = (name: string): string => `${name} — pixtuoid`;
 

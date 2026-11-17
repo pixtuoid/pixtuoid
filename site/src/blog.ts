@@ -13,7 +13,7 @@ export const blogWing = async (): Promise<Wing> => ({
   name: 'Blog',
   bank: 'newsroom',
   path: 'blog',
-  turns: { back: 'newer', on: 'older' },
+  turns: { prev: 'newer', next: 'older' },
   pages: (await posts()).map((post) => ({ route: postRoute(post.id), label: post.data.title })),
 });
 

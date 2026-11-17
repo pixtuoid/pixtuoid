@@ -72,7 +72,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
       {(prev || next) && <nav class="wing__pager" aria-label={`${wing.name} pagination`}>
         {prev ? (
           <a class="wing__pager-link" href={asset(prev.route)} rel="prev">
-            <span class="wing__pager-dir" aria-hidden="true"> ← {wing.turns.back} </span>
+            <span class="wing__pager-dir" aria-hidden="true"> ← {wing.turns.prev} </span>
             {prev.label}
           </a>
         ) : (
@@ -83,7 +83,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
           href={asset(next.route)}
           rel="next"
         >
-          <span class="wing__pager-dir" aria-hidden="true"> {wing.turns.on} → </span>
+          <span class="wing__pager-dir" aria-hidden="true"> {wing.turns.next} → </span>
           {next.label}
         </a>}
       </nav>}
@@ -247,9 +247,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: inherit;
   }
   /* rendered markdown carries no astro scope hash, hence :global throughout */
-  /* One terminal chrome for a callout and a figure in a window (config/rehype-figures.mjs's
-     `figure`). */
-  .wing :global(:is(.callout, .fig--window)) {
+  /* One terminal chrome for a callout and a figure that opens with a window's bar. */
+  .wing :global(.callout),
+  .wing :global(figure:has(> .fig__bar)) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
