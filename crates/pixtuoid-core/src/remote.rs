@@ -48,8 +48,8 @@ pub const VERSION: u32 = 1;
 pub const HEARTBEAT: Duration = Duration::from_secs(15);
 
 /// How long a device waits on a silent stream before taking it for dead: a
-/// [`HEARTBEAT`], and a margin for the server's pause after each line and the
-/// line's delivery.
+/// [`HEARTBEAT`], and a margin for a beat the server's work on it or the line's
+/// delivery makes late.
 pub const SILENCE_LIMIT: Duration = HEARTBEAT.saturating_add(Duration::from_secs(5));
 
 /// How far a line's clock may stray from the skew already held before it is

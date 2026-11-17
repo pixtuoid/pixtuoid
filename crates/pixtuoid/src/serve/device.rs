@@ -8,8 +8,7 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, ensure};
 use pixtuoid_core::remote::{
-    self, Answer, Ask, Changed, HEARTBEAT, Hello, Reply, SILENCE_LIMIT, SourceRow, VERSION,
-    WireError,
+    self, Answer, Ask, Changed, HEARTBEAT, Hello, Reply, SourceRow, VERSION, WireError,
 };
 use serde::Serialize;
 use tokio::io::{
@@ -39,11 +38,6 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A device renders a scene, not each event of a busy reducer.
 const MIN_FRAME_GAP: Duration = Duration::from_millis(250);
-
-// A device takes a stream silent for [`SILENCE_LIMIT`] for dead, so this loop's
-// pause after each line has to fit the margin past a beat.
-const _: () =
-    assert!(MIN_FRAME_GAP.as_millis() < SILENCE_LIMIT.saturating_sub(HEARTBEAT).as_millis());
 
 /// The least time between two writes' starts, across every device; a chosen
 /// value. A write can rewrite another CLI's config, racing that CLI's own unlocked

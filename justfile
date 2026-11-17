@@ -206,9 +206,10 @@ wire-frozen-selftest:
     expect "$seeds/ping" $'{\n  "v": 1,\n  "hello": "ping"\n}\n' 1
     expect "$seeds/hello-named" '{"v":1,"hello":"pair","code":"C","name":"studio"}' 0
     expect "$seeds/reply-busy" '{"v":1,"reply":"busy"}' 1
+    expect "$seeds/reply-pair" '{"v":1,"reply":"pair"}' 1
     expect "$seeds/reply-resumed-again" $'{\n  "v": 1,\n  "reply": "resumed"\n}\n' 0
     [[ "$fail" -eq 0 ]] || exit 1
-    echo "wire-frozen-selftest: OK (a new hello or reply kind reds, pretty-printed too; a held kind passes)"
+    echo "wire-frozen-selftest: OK (a new hello or reply kind reds, pretty-printed too, and so does a reply named like a held hello; a held kind passes)"
 
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link
