@@ -20,9 +20,10 @@ const VERBOSE: [LogLevel; 2] = [LogLevel::Debug, LogLevel::Trace];
 /// sees and the guard that flushes its sink. A `file_log` run (the TUI, and `floating`, a long-running GUI whose
 /// launching terminal would just collect noise) logs to a file — the alternate
 /// screen owns the terminal, so the log file is the only place a runtime error
-/// can surface — at [`FILE_FLOOR`], or at --log-level when that is stricter,
-/// [`VERBOSE`], or the file is $PIXTUOID_LOG's; $RUST_LOG's directives replace
-/// either. Every other mode goes to stderr.
+/// can surface — at [`FILE_FLOOR`] and above. A stricter --log-level records
+/// less; a [`VERBOSE`] one, or a $PIXTUOID_LOG file, records at --log-level; a
+/// set $RUST_LOG replaces the level in every case. Every other mode goes to
+/// stderr.
 pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<LogFlush>) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -258,16 +259,15 @@ mod tests {
     fn the_docs_state_the_log_files_levels() {
         let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
         let [verbose, more] = VERBOSE.map(LogLevel::as_str);
-        let says = format!(
-            "| Level | `{}` and above, or `--log-level`'s level when that is stricter, \
-             `{verbose}` or `{more}`, or the file is `$PIXTUOID_LOG`'s; `$RUST_LOG`'s \
-             directives replace either |",
-            FILE_FLOOR.as_str()
-        );
-        assert!(
-            doc.contains(&says),
-            "CONFIGURATION.md no longer says {says:?}"
-        );
+        for says in [
+            format!("| Level | `{}` and above.", FILE_FLOOR.as_str()),
+            format!("With `--log-level {verbose}` or `{more}`, or a `$PIXTUOID_LOG` file,"),
+        ] {
+            assert!(
+                doc.contains(&says),
+                "CONFIGURATION.md no longer says {says:?}"
+            );
+        }
     }
 
     #[test]
