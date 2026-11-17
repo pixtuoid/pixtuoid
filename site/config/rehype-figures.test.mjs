@@ -86,7 +86,7 @@ test('a budget cell that is not a time in ms fails the build', () => {
   for (const cell of ['fast', '1.2.3 ms', '. ms']) {
     assert.throws(
       () => run([marker('budget'), nl, table(['Frame', 'Takes', 'Budget'], ['x', cell, '33 ms'])]),
-      new RegExp(`figure "budget": "${cell.replace(/\./g, '\\.')}" is not a time in ms`)
+      (error) => error.message.includes(`figure "budget": "${cell}" is not a time in ms`)
     );
   }
 });
