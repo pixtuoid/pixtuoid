@@ -951,7 +951,8 @@ mod tests {
         end: u64,
     }
 
-    /// Read from a probe office's own composed phase, forward in time only.
+    /// The start is the sky's search; a probe office's own composed phase
+    /// confirms it, then finds the changes and the end, forward in time only.
     fn storm_strike() -> Strike {
         use pixtuoid_scene::anim::FULL_TICK_MS;
         const MINUTE_MS: u64 = 60_000;

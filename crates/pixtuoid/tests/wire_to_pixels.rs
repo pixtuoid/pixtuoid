@@ -64,8 +64,9 @@ fn settled_pixels(scene: &SceneState) -> Vec<(u8, u8, u8)> {
     );
     let (cols, rows) = (120, 44);
     let mut r = new_renderer(cols, rows);
-    // The window's first frame and its last: the entry walk is timed from the
-    // frame that first sees the agent, so the frames between only move it on.
+    // The window's first frame and its last: the entry walk runs from the
+    // agent's arrival (`pose::arriving`), which the fold stamps at `t0()`, so
+    // the frames between only move it on.
     for t in [t0(), t0() + PAINT_FRAME * (SETTLE_FRAMES - 1)] {
         r.render(scene, t).expect("render office");
     }

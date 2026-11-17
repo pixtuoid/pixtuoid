@@ -2401,7 +2401,8 @@ mod tests {
         let phase_ms = crate::sky::STRIKE_PHASE_MS;
         let mut walked = 0;
         // A warm cache draws what a fresh one does
-        // (`the_outside_cache_draws_what_a_fresh_frame_draws`, whose cache holds it).
+        // (`the_outside_cache_draws_what_a_fresh_frame_draws`, through the
+        // `CloudCache` its `OutsideCache` holds).
         let mut cache = CloudCache::default();
         for k in 0..60u32 {
             let then = crate::localclock::at_hour(12)

@@ -2715,8 +2715,8 @@ fn the_outside_reaches_only_the_glass() {
         let mut outside = crate::outside::OutsideCache::default();
         let frames = |weathered: &crate::outside::tests::Weathered| {
             let shown = moment(weathered, weathered.sky);
-            let mut bare = list(&shown, &mut outside);
-            let lit = painted(&bare);
+            let mut composed = list(&shown, &mut outside);
+            let shown_frame = painted(&composed);
             let plain = moment(weathered, weathered.bare);
             let mut views = Vec::new();
             push_windows(
@@ -2726,7 +2726,7 @@ fn the_outside_reaches_only_the_glass() {
                 &mut views,
                 &mut outside,
             );
-            for piece in bare.pieces_mut() {
+            for piece in composed.pieces_mut() {
                 if let PieceKind::Window { .. } = piece.kind {
                     let i = views
                         .iter()
@@ -2736,7 +2736,7 @@ fn the_outside_reaches_only_the_glass() {
                     piece.fingerprint = fingerprint(&piece.kind);
                 }
             }
-            [lit, painted(&bare)]
+            [shown_frame, painted(&composed)]
         };
         // What every piece but a window paints, a glass wall aside (it
         // shows what lies behind it).
@@ -2976,9 +2976,9 @@ fn every_piece_paints_only_inside_its_span() {
     // (`one_span_and_fingerprint_always_paint_the_same_pixels`), so a piece
     // checked once on one pack and canvas is checked for every frame.
     let mut checked = std::collections::HashSet::new();
-    // Keyed by grid and light, one cache serves every pack and canvas; one a
-    // scale, a frame reuses the views the last one at its scale drew.
-    let mut clouds: std::collections::HashMap<u16, crate::outside::OutsideCache> =
+    // One a pack and scale: a cache serves one pack (`OutsideCache`), and a
+    // frame reuses the views the last one at its scale drew.
+    let mut outsides: std::collections::HashMap<(String, u16), crate::outside::OutsideCache> =
         std::collections::HashMap::new();
     let mut check = |pack_label: &str,
                      pack: &OfficeArt,
@@ -3006,7 +3006,7 @@ fn every_piece_paints_only_inside_its_span() {
                 (quiet_board(), crate::look::WorldText::Baked),
                 (
                     &mut crate::display::compose::LightCache::default(),
-                    clouds.entry(s).or_default(),
+                    outsides.entry((pack_label.to_owned(), s)).or_default(),
                 ),
             );
             for &Piece { span, ref kind, .. } in list.pieces() {

@@ -467,8 +467,8 @@ where
         "the lifted agent hangs under the pointer"
     );
     send(r, &mut ui, MouseEventKind::Up(MouseButton::Left), away);
-    // A frame a second: the walk home is timed from the frame after the drop,
-    // so by 30 s it has ended at the desk whatever the frames' cadence.
+    // A frame a second: the walk home is timed from the first frame after the
+    // drop, so with that frame at 1 s the walk has ended at the desk by 30 s.
     for second in 1..=30 {
         r.render(&scene, now + Duration::from_secs(second)).unwrap();
     }
