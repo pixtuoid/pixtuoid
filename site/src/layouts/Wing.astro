@@ -322,14 +322,6 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-size: 0.92rem;
     line-height: 1.45;
   }
-  .wing :global(.fig__pause) {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    margin-left: auto;
-    color: var(--chip-ink);
-    cursor: pointer;
-  }
   .wing :global(:is(.fig__budgets, .fig__panes)) {
     display: grid;
     gap: 0.9rem;
@@ -369,7 +361,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   .wing :global(.fig-budget__now) {
     fill: var(--led);
-    animation: fig-now 4s linear infinite;
+  }
+  .wing :global(.reveal.in .fig-budget__now) {
+    animation: fig-now 4s linear;
   }
   @keyframes fig-now {
     to {
@@ -413,7 +407,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     opacity: 0.7;
     transform-box: fill-box;
     transform-origin: top;
-    animation: fig-wash 1.8s ease-in-out infinite;
+  }
+  .wing :global(.reveal.in .fig-pane__wash) {
+    animation: fig-wash 1.8s ease-in-out 2;
   }
   @keyframes fig-wash {
     from {
@@ -431,16 +427,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-family: var(--font-display);
     font-size: 1.5rem;
   }
-  .wing :global(figure:has(.fig__pause input:checked) .fig__moving) {
-    animation-play-state: paused;
-  }
-  /* global.css shortens every animation to an instant, which an endless one would repeat without
-     end: these stand still, as the timeline and the boxes they already are. */
-  @media (prefers-reduced-motion: reduce) {
-    .wing :global(.fig__moving) {
-      animation: none;
-    }
-    .wing :global(:is(.fig-budget__now, .fig__pause)) {
+  /* A playhead that will not run marks no instant. */
+  @media (prefers-reduced-motion: reduce), (scripting: none) {
+    .wing :global(.fig-budget__now) {
       display: none;
     }
   }

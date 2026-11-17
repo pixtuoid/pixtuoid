@@ -36,9 +36,12 @@ function rows(kind, tableNode, columns) {
 
 const WINDOW_BAR = 'fig__bar';
 
-// What moves in a figure carries this class: Wing.astro stops it by the class, under the switch
-// and for a reader who asked for less motion.
+// What moves in a figure carries this class, and the figure the page's reveal-on-scroll class
+// (Base.astro): Wing.astro plays the motion once the figure is in view, for under the five
+// seconds past which WCAG 2.2's SC 2.2.2 asks for a way to stop it
+// (www.w3.org/TR/WCAG22/#pause-stop-hide).
 const MOVING = 'fig__moving';
+const REVEAL = 'reveal';
 
 function moves(body) {
   let found = false;
@@ -48,14 +51,9 @@ function moves(body) {
   return found;
 }
 
-// A drawn figure's terminal window. One that moves carries the switch that stops it (WCAG 2.2's
-// SC 2.2.2 asks for one on motion that starts by itself and lasts:
-// www.w3.org/TR/WCAG22/#pause-stop-hide).
+// A drawn figure's terminal window.
 const windowed = (title, body) => [
-  h(`div.${WINDOW_BAR}`, [
-    h('span.fig__title', title),
-    ...(moves(body) ? [h('label.fig__pause', [h('input', { type: 'checkbox' }), ' pause'])] : []),
-  ]),
+  h(`div.${WINDOW_BAR}`, [h('span.fig__title', title)]),
   h('div.fig__body', body),
 ];
 
@@ -284,6 +282,7 @@ export const figure = (kind, children) =>
       className: [
         `fig--${kind}`,
         ...(children[0]?.properties?.className?.includes(WINDOW_BAR) ? ['fig--window'] : []),
+        ...(moves(children) ? [REVEAL] : []),
       ],
     },
     children

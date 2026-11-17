@@ -62,46 +62,57 @@ test('the footer links the blog', async ({ page }) => {
   );
 });
 
-// The switch is a checkbox the stylesheet reads, so it has to work with no script at all.
-test('each moving figure has a switch that stops it alone, from the keyboard, with no script', async ({
-  browser,
-}) => {
-  const context = await browser.newContext({ javaScriptEnabled: false });
-  const page = await context.newPage();
+// WCAG 2.2's SC 2.2.2 asks for a way to stop motion that "starts automatically" and "lasts more
+// than five seconds" (www.w3.org/TR/WCAG22/#pause-stop-hide): these start in view and end sooner.
+const MOTION_LIMIT_S = 5;
+
+test('a moving figure plays once the reader reaches it, and ends by itself', async ({ page }) => {
   const [id] = postIds();
   await page.goto(`./${postRoute(id)}`);
   const figures = await page.locator('figure:has(.fig__moving)').all();
   expect(figures.length).toBeGreaterThan(1);
-  const states = () =>
-    Promise.all(
-      figures.map((figure) =>
-        figure
-          .locator('.fig__moving')
-          .first()
-          .evaluate((el) => getComputedStyle(el).animationPlayState)
-      )
-    );
-  for (const [at, figure] of figures.entries()) {
-    const others = figures.map((_, i) => (i === at ? 'paused' : 'running'));
-    await figure.locator('.fig__pause input').focus();
-    await page.keyboard.press('Space');
-    expect(await states()).toEqual(others);
-    await page.keyboard.press('Space');
-    expect(await states()).toEqual(figures.map(() => 'running'));
+  for (const figure of figures) {
+    const motion = () =>
+      figure.locator('.fig__moving').evaluateAll((els) =>
+        els.map((el) => {
+          const { animationName, animationDuration, animationIterationCount } =
+            getComputedStyle(el);
+          return {
+            name: animationName,
+            seconds: parseFloat(animationDuration) * Number(animationIterationCount),
+          };
+        })
+      );
+    expect(new Set((await motion()).map(({ name }) => name))).toEqual(new Set(['none']));
+    await figure.scrollIntoViewIfNeeded();
+    await expect(figure).toHaveClass(/\bin\b/);
+    for (const { name, seconds } of await motion()) {
+      expect(name).not.toBe('none');
+      expect(seconds).toBeLessThanOrEqual(MOTION_LIMIT_S);
+    }
   }
-  await context.close();
 });
 
-test('a reader who asked for less motion gets still figures and no switch', async ({ browser }) => {
-  const context = await browser.newContext({ reducedMotion: 'reduce' });
-  const page = await context.newPage();
-  const [id] = postIds();
-  await page.goto(`./${postRoute(id)}`);
-  await expect(page.locator('.fig__pause').first()).toBeHidden();
-  await expect(page.locator('.fig-budget__now').first()).toBeHidden();
-  const names = await page
-    .locator('.fig__moving')
-    .evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));
-  expect(new Set(names)).toEqual(new Set(['none']));
-  await context.close();
-});
+for (const [why, options] of [
+  ['who asked for less motion', { reducedMotion: 'reduce' }],
+  ['with no script', { javaScriptEnabled: false }],
+] as const) {
+  test(`a reader ${why} gets figures that stand still and show`, async ({ browser }) => {
+    const context = await browser.newContext(options);
+    const page = await context.newPage();
+    const [id] = postIds();
+    await page.goto(`./${postRoute(id)}`);
+    const figure = page.locator('figure:has(.fig__moving)').first();
+    await figure.scrollIntoViewIfNeeded();
+    await expect(figure).toHaveCSS('opacity', '1');
+    await expect(page.locator('.fig-budget__now').first()).toBeHidden();
+    const seconds = await page.locator('.fig__moving').evaluateAll((els) =>
+      els.map((el) => {
+        const style = getComputedStyle(el);
+        return style.animationName === 'none' ? 0 : parseFloat(style.animationDuration);
+      })
+    );
+    expect(Math.max(...seconds)).toBeLessThan(0.01);
+    await context.close();
+  });
+}
