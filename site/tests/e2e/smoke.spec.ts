@@ -9,6 +9,7 @@ import { DISCORD } from '../../config/discord.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { JOURNEY_STOPS } from '../../config/rehype-figures.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
+import { MOTION_LIMIT_MS } from './wcag';
 
 // WCAG 2.2's AA floors: text (SC 1.4.3) and non-text (SC 1.4.11).
 const AA_TEXT = 4.5;
@@ -1612,7 +1613,7 @@ test('how it works: every recorded hook fills each stop through the real decoder
             `${theme} ${selector}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
           ).toBeGreaterThanOrEqual(AA_TEXT);
         }
-        // Each new tab stop's focus ring.
+        // The journey's tab stops (a hook, a why's summary, an output): each ring clears WCAG 1.4.11.
         for (const selector of [
           '.fig-journey__hook:not(:disabled)',
           '.fig-journey__why summary',
@@ -1632,6 +1633,7 @@ test('how it works: the office moves for MOVING_MS after a hook, then holds stil
   test.setTimeout(60_000);
   // Past journey.js's MOVING_MS, by enough for a slow runner's last frame.
   const MARGIN_MS = 1_000;
+  const STILL_MS = 400; // >10 would-be frames at the 33ms cap
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./how-it-works/');
   const hooks = page.locator('.fig-journey__hook');
@@ -1641,11 +1643,14 @@ test('how it works: the office moves for MOVING_MS after a hook, then holds stil
     const url = document.querySelector<HTMLElement>('[data-journey-url]')!.dataset.journeyUrl!;
     return (await import(url)).MOVING_MS;
   });
+  expect(moving, 'its self-started motion ends within WCAG 2.2.2').toBeLessThanOrEqual(
+    MOTION_LIMIT_MS
+  );
   await office.scrollIntoViewIfNeeded();
   const shot = async () => (await office.screenshot()).toString('base64');
   const holdsStill = async () => {
     const held = await shot();
-    await page.waitForTimeout(MARGIN_MS);
+    await page.waitForTimeout(STILL_MS);
     expect(await shot()).toBe(held);
   };
   // The boot's own window passes first, so what moves next is the hook's.

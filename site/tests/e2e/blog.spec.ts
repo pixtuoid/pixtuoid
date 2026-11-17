@@ -9,6 +9,7 @@ import {
 } from '../../config/blog.mjs';
 import { floorById } from '../../config/floors.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
+import { MOTION_LIMIT_MS } from './wcag';
 
 // Runs against the PRODUCTION build (see playwright.config.ts).
 
@@ -83,10 +84,6 @@ test("a post ends on a link to the site's install floor", async ({ page }) => {
   }
 });
 
-// WCAG 2.2's SC 2.2.2 asks for a way to stop motion that "starts automatically" and "lasts more
-// than five seconds" (www.w3.org/TR/WCAG22/#pause-stop-hide): these start in view and end sooner.
-const MOTION_LIMIT_S = 5;
-
 test('a moving figure plays once the reader reaches it, and ends by itself', async ({ page }) => {
   let moving = 0;
   for (const id of postIds()) {
@@ -111,7 +108,7 @@ test('a moving figure plays once the reader reaches it, and ends by itself', asy
       await expect(figure).toHaveClass(/\bin\b/);
       for (const { name, seconds } of await motion()) {
         expect(name).not.toBe('none');
-        expect(seconds).toBeLessThanOrEqual(MOTION_LIMIT_S);
+        expect(seconds * 1000).toBeLessThanOrEqual(MOTION_LIMIT_MS);
         moving += 1;
       }
       const playheads = await figure.locator('.fig-budget__now').all();

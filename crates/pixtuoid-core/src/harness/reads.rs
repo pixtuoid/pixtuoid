@@ -667,6 +667,18 @@ mod tests {
             ("grok", "model-error-hermetic"), // its agent_error line decodes to nothing
         ] {
             let (_d, hooks) = stripped_copy(source, scenario, HOOK_PAYLOADS);
+            // A stamp these captures lack (`_pixtuoid_event`) is planted, so no slot passes as
+            // absent on both sides.
+            let (_, mut lines) = parsed_lines(&hooks).expect("read").expect("json");
+            for line in &mut lines {
+                for key in crate::source::decoder::SHIM_STAMPS {
+                    if line.get(key).is_none() {
+                        line[key] = "planted".into();
+                    }
+                }
+            }
+            let text: Vec<String> = lines.iter().map(Value::to_string).collect();
+            std::fs::write(&hooks, text.join("\n") + "\n").expect("write");
             let stamps = |p: &Path| -> Vec<[serde_json::Value; 4]> {
                 parsed_lines(p)
                     .expect("read")
@@ -677,9 +689,12 @@ mod tests {
                     .collect()
             };
             let before = stamps(&hooks);
-            assert!(before.iter().all(|[at, source, ..]| {
-                at.as_i64().is_some_and(|ms| ms > 0) && source.is_string()
-            }));
+            assert!(
+                before
+                    .iter()
+                    .all(|[at, ..]| at.as_i64().is_some_and(|ms| ms > 0))
+            );
+            assert!(before.iter().flatten().all(|v| !v.is_null()));
             strip_unread(source, std::slice::from_ref(&hooks)).expect("strip");
             assert_eq!(stamps(&hooks), before, "{source}/{scenario}");
         }
