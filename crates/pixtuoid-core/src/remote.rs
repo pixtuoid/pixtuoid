@@ -1880,10 +1880,13 @@ mod tests {
     fn wire_frozen_freezes_these_samples_and_reads_every_closed_kind() {
         let gate = recipe("wire-frozen");
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let freeze = (gate.lines().map(str::trim_start))
+            .find(|line| line.starts_with("git diff --exit-code"))
+            .expect("wire-frozen's freeze");
         let names = |path: &str| {
             let path = Path::new(path).canonicalize().expect(path);
             let named = |word: &str| root.join(word).canonicalize().is_ok_and(|p| p == path);
-            gate.split_whitespace().any(named)
+            freeze.split_whitespace().any(named)
         };
         assert!(names(golden_path!()), "wire-frozen doesn't freeze GOLDEN");
         assert!(names(SAMPLES), "wire-frozen doesn't freeze SAMPLES");
