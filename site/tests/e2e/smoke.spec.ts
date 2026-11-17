@@ -1588,6 +1588,18 @@ test('how it works: every recorded hook fills each stop through the real decoder
   expect(errors()).toEqual([]);
 });
 
+test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./how-it-works/');
+  const hooks = page.locator('.fig-journey__hook');
+  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+  await hooks.first().focus();
+  await page.keyboard.press('Enter');
+  await expect(hooks.nth(1)).toBeFocused();
+});
+
 test('how it works without script: its stops read as prose, each why folded, and no player', async ({
   browser,
 }) => {

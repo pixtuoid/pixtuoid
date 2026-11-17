@@ -147,7 +147,7 @@ export async function start(figure) {
       button.type = 'button';
       button.append(el('span', 'fig-journey__n', String(i + 1)), ' ', hookName(payload));
       button.addEventListener('click', function () {
-        land(i);
+        land(i, document.activeElement === button);
       });
       return button;
     });
@@ -166,7 +166,9 @@ export async function start(figure) {
         setTimeout(resolve, reduced.matches ? 0 : ms);
       });
     };
-    async function land(i) {
+    // `focused`: the send came from the focused button, whose disabling drops focus to the body, so focus
+    // goes on to the button that sends next (the same one, to retry a failure) unless the reader moved it.
+    async function land(i, focused) {
       landing = true;
       syncButtons();
       try {
@@ -175,6 +177,7 @@ export async function start(figure) {
       } finally {
         landing = false;
         syncButtons();
+        if (focused && document.activeElement === document.body) buttons[next].focus();
       }
     }
     async function show(i) {
