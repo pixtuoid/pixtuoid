@@ -291,9 +291,8 @@ struct Last {
 /// Each of a wall's bays, and what its glass shows.
 pub(crate) type Views = Vec<(WindowBay, Arc<WindowView>)>;
 
-/// All [`Outside::of`] reads but the pack and the theme, which are the
-/// cache's own: it takes this and nothing else, so nothing it reads can
-/// miss the key.
+/// All [`Outside::of`] reads but the pack, the theme and the clouds' masses,
+/// which are the cache's own, so nothing it reads can miss the key.
 #[derive(Debug, PartialEq)]
 pub(crate) struct OutsideKey {
     sky: crate::sky::Sky,
