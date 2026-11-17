@@ -2699,14 +2699,11 @@ test('every doc and post diagram: its SVG text clears WCAG AA, its boxes have a 
   // version), and its plate is the last <rect> before the <text> in its own <g>
   // (node fill, subgraph header, edge-label backing) — never a CSS background.
   // A <path> shape (diamond, stadium) would fall back to the frame and grade vacuously.
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of VALID_THEMES) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
     let swept = 0;
     for (const { route } of markdownPages()) {
-      await page.goto(`./${route}`);
+      await page.goto(`./${route}?theme=${theme}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const diagrams = await page.evaluate(() =>
         [...document.querySelectorAll('.fig--diagram')].map((figure) => {
@@ -2968,12 +2965,9 @@ test('hero badge hues clear WCAG AA against their theme-aware chip surface (day 
 }) => {
   // Same-hue text on same-hue ground is exactly where contrast silently dies: the cell is TINTED with the badge's own hue
   // per theme, so sweep every rendered hue in both themes, and the code text.
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of ['day', 'night'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
-    await page.goto('./');
+    await page.goto(`./?theme=${theme}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
     const chips = await page.evaluate(() =>
@@ -3001,12 +2995,9 @@ test('tenant board text (badges, legend, planned rows, soon marks, star plaque) 
 }) => {
   // The board's --screen ground is a THEME-INDEPENDENT literal, so sweeping
   // both themes is defense-in-depth, not an expected-to-move ratio.
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of ['day', 'night'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
-    await page.goto('./');
+    await page.goto(`./?theme=${theme}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await page.evaluate(() =>
       document.getElementById('tools')!.scrollIntoView({ block: 'center', behavior: 'instant' })
@@ -3090,12 +3081,9 @@ test('pantry chitchat bubble text clears WCAG AA against its own dark ground (da
 }) => {
   // .pantry__bubble paints its OWN opaque --screen background, so read fg/bg
   // off the bubble element directly rather than off a panel ancestor.
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of ['day', 'night'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
-    await page.goto('./');
+    await page.goto(`./?theme=${theme}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await page.evaluate(() =>
       document.querySelector('.pantry')!.scrollIntoView({ block: 'center', behavior: 'instant' })
@@ -3126,10 +3114,9 @@ test('every doc and post callout: its body copy clears WCAG AA against the callo
   // .callout__body hands DOWN — hence the sibling `a`/`code` overrides, and hence sweeping every tag.
   const TEXT_TAGS = 'p, li, strong, em, a, code';
   for (const theme of VALID_THEMES) {
-    await page.addInitScript((t) => localStorage.setItem('pix-theme', t), theme);
     let swept = 0;
     for (const { route } of markdownPages()) {
-      await page.goto(`./${route}`);
+      await page.goto(`./${route}?theme=${theme}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const rows = await page.evaluate((tags) => {
         const transparent = (c: string) => /,\s*0\)\s*$/.test(c);
@@ -3778,24 +3765,21 @@ for (const device of ['Galaxy Z Flip 6 Cover', 'Pixel 5 landscape']) {
 // overscroll, and under Safari 26's top bar: bugs.webkit.org/show_bug.cgi?id=301756, comment 2)
 // is the page's own ground.
 test("past the viewport's edge the landing page shows the theme's ground", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of VALID_THEMES) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
-    await page.goto('./');
+    await page.goto(`./?theme=${theme}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     const { canvasBackground, ground } = await page.evaluate(() => {
       const probe = document.createElement('span');
       probe.style.background = 'var(--bg)';
       document.body.appendChild(probe);
-      const ground = getComputedStyle(probe).backgroundColor;
+      const ground = `none ${getComputedStyle(probe).backgroundColor}`;
       probe.remove();
       const painted = (el: Element) => {
         const { backgroundColor, backgroundImage } = getComputedStyle(el);
         return backgroundImage === 'none' && /,\s*0\)$/.test(backgroundColor)
           ? null
-          : backgroundColor;
+          : `${backgroundImage} ${backgroundColor}`;
       };
       // The canvas takes the root's background, or the body's where the root has none (CSS
       // Backgrounds 3, 2.11.1-2, www.w3.org/TR/css-backgrounds-3/#special-backgrounds).
