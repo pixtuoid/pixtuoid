@@ -1640,7 +1640,7 @@ test('how it works: the office moves for MOVING_MS after a hook, then holds stil
   test.setTimeout(60_000);
   // Past journey.js's MOVING_MS, by enough for a slow runner's last frame.
   const MARGIN_MS = 1_000;
-  const STILL_MS = 400; // >10 would-be frames at the 33ms cap
+  const STILL_MS = 400; // dozens of journey.js's draws, one per animation frame the host is free
   const hooks = await gotoJourney(page);
   const office = page.locator('.fig-journey__office');
   const moving: number = await page.evaluate(async () => {
