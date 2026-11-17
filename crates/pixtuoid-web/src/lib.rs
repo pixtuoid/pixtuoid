@@ -956,6 +956,13 @@ mod tests {
         use pixtuoid_scene::anim::FULL_TICK_MS;
         const MINUTE_MS: u64 = 60_000;
         let (mut probe, _) = storm_on_screen();
+        let start = pixtuoid_scene::sky::first_strike_after(
+            pixtuoid_scene::anim::from_epoch_ms(T0_MS),
+            probe.conditions().motion,
+        )
+        .and_then(|at| at.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .and_then(|since| u64::try_from(since.as_millis()).ok())
+        .expect("the page's sky strikes");
         let mut phase = |ms: u64| {
             probe.step(ms as f64, 160, 96);
             probe
@@ -964,13 +971,15 @@ mod tests {
                 .map(|picture| picture.flashes)
                 .unwrap_or_default()
         };
-        let t0 = T0_MS as u64;
-        let start = (t0..t0 + MINUTE_MS)
-            .step_by(FULL_TICK_MS as usize)
-            .find(|&ms| phase(ms) != Flashes::default())
-            .expect("a storm strikes within a minute");
+        let dark = phase(start - FULL_TICK_MS);
         let (mut was, mut changes) = (phase(start), vec![start]);
-        let end = (start + 1..start + MINUTE_MS)
+        assert!(
+            dark == Flashes::default() && was != Flashes::default(),
+            "the painted strike opens where the sky's search places it"
+        );
+        // The flash reads only the floor's beat (`both_painters_paint_one_frame_per_beat`).
+        let end = (1..MINUTE_MS / FULL_TICK_MS)
+            .map(|n| start + n * FULL_TICK_MS)
             .find(|&ms| {
                 let now = phase(ms);
                 if now != was {

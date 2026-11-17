@@ -408,15 +408,17 @@ pub(crate) mod test_flash {
         // A fresh floor each instant: a room never left to dim, so only the sky flashes.
         let phase = |at| rendered_flash(&mut FloorSession::new(pack_arc()), conditions, at);
         let noon = pixtuoid_scene::localclock::at_hour_min(12, 0);
-        let start = (0..MINUTE_MS)
-            .step_by(FULL_TICK_MS as usize)
-            .map(|n| noon + ms(n))
-            .find(|&at| phase(at) != Flashes::default())
-            .expect("a storm strikes within a minute");
-        let mut changes = vec![start];
-        let mut was = phase(start);
-        let end = (1..MINUTE_MS)
-            .map(|n| start + ms(n))
+        let start = pixtuoid_scene::sky::first_strike_after(noon, conditions.motion)
+            .expect("a Full sky strikes");
+        let dark = phase(start - ms(FULL_TICK_MS));
+        let (mut was, mut changes) = (phase(start), vec![start]);
+        assert!(
+            dark == Flashes::default() && was != Flashes::default(),
+            "the painted strike opens where the sky's search places it"
+        );
+        // The flash reads only the floor's beat (`both_painters_paint_one_frame_per_beat`).
+        let end = (1..MINUTE_MS / FULL_TICK_MS)
+            .map(|n| start + ms(n * FULL_TICK_MS))
             .find(|&at| {
                 let now = phase(at);
                 if now != was {
