@@ -8,7 +8,8 @@ use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result, ensure};
 use pixtuoid_core::remote::{
-    self, Answer, Ask, Changed, HEARTBEAT, Hello, Reply, SourceRow, VERSION, WireError,
+    self, Answer, Ask, Changed, HEARTBEAT, Hello, MAX_LINE_BYTES, Reply, SourceRow, VERSION,
+    WireError,
 };
 use serde::Serialize;
 use tokio::io::{
@@ -28,10 +29,6 @@ use crate::runtime::SceneRx;
 /// proved anything and while it holds a [`super::MAX_CONNS`] slot and its
 /// address's [`Unanswered`].
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// The longest line a device may write, its newline included: a hello is a token
-/// and a little JSON, an ask less.
-const MAX_LINE_BYTES: usize = 256;
 
 /// A device whose socket takes longer than this to drain has stalled.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -164,7 +161,7 @@ impl Devices {
         let store = self.store.clone();
         let verdict = tokio::task::spawn_blocking(move || -> Result<_> {
             Ok(match hello {
-                Hello::Pair { code } => store.redeem(&code, SystemTime::now())?.map_or(
+                Hello::Pair { code, .. } => store.redeem(&code, SystemTime::now())?.map_or(
                     (Reply::Refused, None),
                     |token| {
                         let device = Hashed::of(&token);
@@ -215,7 +212,6 @@ impl Devices {
                         Ask::Change { source, on } => {
                             asked.spawn(self.change(device.clone(), source, on));
                         }
-                        Ask::Unknown => write_line(stream, &json_line(&Answer::Unsupported)?).await?,
                     }
                     continue;
                 }
@@ -461,6 +457,12 @@ mod tests {
         SourceRow::new("codex", "Codex", SourceState::Connected, false)
     }
 
+    /// An ask of a kind this build doesn't name, which ends a stream once read.
+    const UNNAMED_ASK: &str = r#"{"ask":"from_the_future","x":1}"#;
+
+    /// What the fixture's devices call themselves.
+    const DEVICE: &str = "iPhone";
+
     /// The device's end of a connection `fixture` is serving.
     struct Peer {
         lines: BufReader<ReadHalf<DuplexStream>>,
@@ -580,7 +582,7 @@ mod tests {
             .expect("a code")
             .code;
         let mut peer = Peer::connect(&fixture.devices);
-        peer.hello(&Hello::Pair { code }).await;
+        peer.hello(&Hello::pair(&code, DEVICE)).await;
 
         let Reply::Paired { token } = peer.reply().await else {
             panic!("a good code pairs");
@@ -596,12 +598,7 @@ mod tests {
     async fn a_spent_code_and_a_stranger_are_refused_and_closed() {
         let fixture = fixture();
         let token = "not-a-token".to_owned();
-        for hello in [
-            Hello::Pair {
-                code: "spent".into(),
-            },
-            Hello::Resume { token },
-        ] {
+        for hello in [Hello::pair("spent", DEVICE), Hello::Resume { token }] {
             let mut peer = Peer::connect(&fixture.devices);
             peer.hello(&hello).await;
             assert_eq!(peer.reply().await, Reply::Refused, "{hello:?}");
@@ -653,7 +650,7 @@ mod tests {
 
         runtime.block_on(async {
             let mut peer = Peer::connect(&fixture.devices);
-            peer.hello(&Hello::Pair { code }).await;
+            peer.hello(&Hello::pair(&code, DEVICE)).await;
             assert!(matches!(peer.reply().await, Reply::Paired { .. }));
         });
     }
@@ -667,11 +664,8 @@ mod tests {
             token: "t".repeat(MAX_LINE_BYTES),
         };
         let past_the_cap = past_the_cap.line().expect("it encodes");
-        for hello in [
-            r#"{"v":1,"hello":"from_the_future"}"#,
-            "junk",
-            past_the_cap.trim_end(),
-        ] {
+        let unnamed = format!(r#"{{"v":{VERSION},"hello":"from_the_future"}}"#);
+        for hello in [unnamed.as_str(), "junk", past_the_cap.trim_end()] {
             let mut peer = Peer::connect(&fixture.devices);
             peer.say(hello).await;
             assert_eq!(peer.line().await, "", "{hello}");
@@ -913,22 +907,12 @@ mod tests {
         assert!(matches!(peer.answer().await, Answer::Sources { .. }));
     }
 
-    /// A newer device's ask costs it nothing here.
-    #[tokio::test]
-    async fn an_ask_this_build_doesnt_know_is_unsupported_and_keeps_the_stream() {
-        let fixture = fixture();
-        let mut peer = streaming(&fixture).await;
-
-        peer.say(r#"{"ask":"from_the_future","x":1}"#).await;
-        assert_eq!(peer.answer().await, Answer::Unsupported);
-
-        peer.sees_a_change(&fixture).await;
-    }
-
+    /// An ask of a kind this build doesn't name is as unreadable as junk: a new
+    /// kind bumps the wire version, which the hello already answered.
     #[tokio::test]
     async fn an_unreadable_line_ends_the_stream() {
         let fixture = fixture();
-        for line in ["junk", "", "{}"] {
+        for line in ["junk", "", "{}", UNNAMED_ASK] {
             let mut peer = streaming(&fixture).await;
             peer.say(line).await;
             assert!(peer.ended().await.is_err(), "{line}");
@@ -1006,8 +990,8 @@ mod tests {
         assert!(matches!(peer.answer().await, Answer::Sources { .. }));
     }
 
-    /// The first, a read, waits on the shut gate; the second is one answered at
-    /// once, which the gate can't hold back.
+    /// The first, a read, waits on the shut gate; the second ends the stream
+    /// once read, which the gate can't hold back.
     #[tokio::test(start_paused = true)]
     async fn a_second_ask_waits_for_the_first() {
         let read = Arc::new(AtomicBool::new(false));
@@ -1021,24 +1005,23 @@ mod tests {
             .try_acquire_owned()
             .expect("an idle gate");
         let ask = serde_json::to_string(&Ask::Sources).expect("it encodes");
-        let unknown = r#"{"ask":"from_the_future"}"#;
 
-        peer.say(&format!("{ask}\n{unknown}")).await;
+        peer.say(&format!("{ask}\n{UNNAMED_ASK}")).await;
         // The first waits on the shut gate, not on blocking work, so the paused
         // clock moves only once no task can run
         // (https://docs.rs/tokio/latest/tokio/time/fn.pause.html): past the
-        // stream's frame gap, a stream that read on has answered the second.
+        // stream's frame gap, a stream that read on has ended.
         sleep(MIN_FRAME_GAP * 2).await;
         let past = read.load(Ordering::Relaxed);
         assert!(!past, "the read ran past the shut gate");
         drop(shut);
         let first = peer.answer().await;
         assert!(matches!(first, Answer::Sources { .. }), "{first:?}");
-        assert_eq!(peer.answer().await, Answer::Unsupported);
+        assert!(peer.ended().await.is_err(), "the second is read after it");
     }
 
-    /// An answer names no ask, so a device matches it by order: an ask the
-    /// server could answer at once still waits its turn, and asks past a line's
+    /// An answer names no ask, so a device matches it by order: a line the
+    /// server would act on at once still waits its turn, and asks past a line's
     /// cap wait in the socket.
     #[tokio::test]
     async fn answers_come_back_in_the_order_asked() {
@@ -1050,8 +1033,7 @@ mod tests {
 
         peer.ask(&Ask::Sources).await;
         held.started.recv().await.expect("it starts");
-        let unknown = r#"{"ask":"from_the_future"}"#;
-        peer.say(&(format!("{ask}\n").repeat(behind) + unknown))
+        peer.say(&(format!("{ask}\n").repeat(behind) + UNNAMED_ASK))
             .await;
         peer.sees_a_change(&fixture).await;
 
@@ -1059,7 +1041,7 @@ mod tests {
             held.release.send(()).expect("it waits");
             assert!(matches!(peer.answer().await, Answer::Sources { .. }));
         }
-        assert_eq!(peer.answer().await, Answer::Unsupported);
+        assert!(peer.ended().await.is_err(), "the last is read last");
     }
 
     /// An ask holds the gate until its blocking work returns, though the

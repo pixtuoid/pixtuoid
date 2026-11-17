@@ -37,6 +37,9 @@ const PAIR_LINK: &str = "https://pixtuoid.dev/pair/";
 
 const PATIENCE: Duration = Duration::from_secs(30);
 
+/// What the devices here call themselves.
+const DEVICE: &str = "iPhone";
+
 /// What a device checks in place of a CA.
 #[derive(Debug)]
 struct PinnedTo {
@@ -384,8 +387,7 @@ async fn a_device_pairs_and_reads_an_office_that_names_only_the_repo() {
     let link = world.pair(port);
 
     let mut device = Device::connect(&link).await;
-    let code = link.code.clone();
-    let Reply::Paired { token } = device.hello(&Hello::Pair { code }).await else {
+    let Reply::Paired { token } = device.hello(&Hello::pair(&link.code, DEVICE)).await else {
         panic!("a fresh code pairs");
     };
     world
@@ -406,9 +408,7 @@ async fn a_device_pairs_and_reads_an_office_that_names_only_the_repo() {
         );
     }
 
-    let spent = Hello::Pair {
-        code: link.code.clone(),
-    };
+    let spent = Hello::pair(&link.code, DEVICE);
     assert_eq!(
         Device::connect(&link).await.hello(&spent).await,
         Reply::Refused
@@ -443,8 +443,7 @@ async fn a_device_connects_a_cli_over_pinned_tls() {
     let (_server, port) = world.serve();
     let link = world.pair(port);
     let mut device = Device::connect(&link).await;
-    let code = link.code.clone();
-    let reply = device.hello(&Hello::Pair { code }).await;
+    let reply = device.hello(&Hello::pair(&link.code, DEVICE)).await;
     assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
 
     let connect = Ask::Change {
@@ -479,8 +478,7 @@ async fn a_device_lists_the_agent_clis_with_no_path_and_keeps_its_stream() {
     let (_server, port) = world.serve();
     let link = world.pair(port);
     let mut device = Device::connect(&link).await;
-    let code = link.code.clone();
-    let reply = device.hello(&Hello::Pair { code }).await;
+    let reply = device.hello(&Hello::pair(&link.code, DEVICE)).await;
     assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
 
     let Answer::Sources { rows } = device.ask(&Ask::Sources).await else {
@@ -504,8 +502,7 @@ async fn a_server_shares_the_hook_plane_in_either_order_and_survives_either_exit
     let (server, port) = world.serve();
     let link = world.pair(port);
     let mut device = Device::connect(&link).await;
-    let code = link.code.clone();
-    let Reply::Paired { token } = device.hello(&Hello::Pair { code }).await else {
+    let Reply::Paired { token } = device.hello(&Hello::pair(&link.code, DEVICE)).await else {
         panic!("a fresh code pairs");
     };
     world.start_session("alone", device.sees("alone")).await;
@@ -550,9 +547,7 @@ async fn an_address_says_one_hello_at_a_time() {
     );
 
     silent.leave().await;
-    let hello = Hello::Pair {
-        code: link.code.clone(),
-    };
+    let hello = Hello::pair(&link.code, DEVICE);
     let reply = Device::connect(&link).await.hello(&hello).await;
     assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
 }
@@ -568,9 +563,7 @@ async fn another_address_pairs_beside_a_silent_one() {
     let link = world.pair(port);
 
     let _silent = Device::connect(&link).await;
-    let hello = Hello::Pair {
-        code: link.code.clone(),
-    };
+    let hello = Hello::pair(&link.code, DEVICE);
     let device = Device::connect_from(&link, Ipv4Addr::new(127, 0, 0, 2));
     let reply = device.await.hello(&hello).await;
     assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
@@ -700,10 +693,9 @@ async fn a_host_that_cant_go_in_a_link_leaves_the_printed_code_good() {
     let refused = world.run(&["pair", "--host", "evil.example/path"]);
     assert!(!refused.status.success());
 
-    let code = link.code.clone();
     let reply = Device::connect(&link)
         .await
-        .hello(&Hello::Pair { code })
+        .hello(&Hello::pair(&link.code, DEVICE))
         .await;
     assert!(matches!(reply, Reply::Paired { .. }), "{reply:?}");
 }

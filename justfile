@@ -149,27 +149,37 @@ ci-observability:
 # An App or CLI reads what a released build wrote, so a change never edits a
 # sample its base holds. CI's base is HEAD^1: a PR merge commit's first parent
 # (path-changed's rule), or the commit a push follows.
-[doc("Fail when a change edits or deletes a v1 wire sample its base holds, or adds a sample of a hello or reply kind its base's samples lack")]
+[doc("Fail when a change that keeps remote::VERSION edits or deletes a v2 wire sample its base holds, or adds a sample of a hello, reply, ask or answer kind its base's samples lack")]
 [group('rust')]
 wire-frozen:
     #!/usr/bin/env bash
     set -euo pipefail
     if [[ -n "${GITHUB_ACTIONS:-}" ]]; then base=HEAD^1; else base="$(git merge-base HEAD origin/main)"; fi
-    git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.v1.golden.json fuzz/seeds/remote ||
-        { echo "a v1 break: bump remote::VERSION and start a v2 golden" >&2; exit 1; }
-    # A v1 server answers a hello kind it doesn't name with silence, and a v1
-    # device can't stream behind a reply kind it doesn't name, so a sample of a
-    # new one would hide the break `remote`'s v1 sample test reports.
+    remote=crates/pixtuoid-core/src/remote.rs
+    version() { sed -n 's/^pub const VERSION: u32 = \([0-9][0-9]*\);$/\1/p'; }
+    was="$(git show "$base:$remote" | version)"
+    now="$(version <"$remote")"
+    [[ -n "$was" && -n "$now" ]] ||
+        { echo "no \`pub const VERSION: u32 = N;\` line in $remote at $base or in the tree" >&2; exit 1; }
+    # A bump is the sanctioned break, new kinds included: the version gate
+    # answers every peer across it.
+    [[ "$was" == "$now" ]] || exit 0
+    git diff --exit-code --diff-filter=a "$base" -- crates/pixtuoid-core/src/remote.v2.golden.json fuzz/seeds/remote ||
+        { echo "a v2 break: bump remote::VERSION, which lets the golden and every sample change" >&2; exit 1; }
+    # A v2 server ends the connection on a hello or ask kind it doesn't name, and
+    # a v2 device can't stream behind a reply kind or match an answer kind it
+    # doesn't name, so a sample of a new one would hide the break `remote`'s v2
+    # sample test reports.
     export LC_ALL=C
-    kind() { jq -rRs 'fromjson? | objects | if .hello then "hello \(.hello)" elif .reply then "reply \(.reply)" else empty end'; }
+    kind() { jq -rRs 'fromjson? | objects | first(("hello", "reply", "ask", "answer") as $tag | select(.[$tag]) | "\($tag) \(.[$tag])")'; }
     held="$(git ls-tree --name-only "$base" -- fuzz/seeds/remote/ |
         while IFS= read -r f; do git show "$base:$f" | kind; done | sort -u)"
     added="$(git diff --name-only --diff-filter=A "$base" -- fuzz/seeds/remote |
         while IFS= read -r f; do kind <"$f"; done | sort -u)"
     new="$(comm -23 <(printf '%s\n' "$added") <(printf '%s\n' "$held"))"
-    [[ -z "$new" ]] || { echo "a new hello or reply kind bumps remote::VERSION: $new" >&2; exit 1; }
+    [[ -z "$new" ]] || { echo "a new hello, reply, ask or answer kind bumps remote::VERSION: $new" >&2; exit 1; }
 
-[doc('Prove wire-frozen reds on an added sample of a hello or reply kind its base lacks, pretty-printed too, and passes one of a kind it holds')]
+[doc('Prove wire-frozen reds on an edited sample or an added one of a hello, reply, ask or answer kind its base lacks, pretty-printed too, passes one of a kind it holds and both under a VERSION bump, and reds on a VERSION it cannot read')]
 [group('meta')]
 wire-frozen-selftest:
     #!/usr/bin/env bash
@@ -178,38 +188,52 @@ wire-frozen-selftest:
     # A developer's signing or hooks would fail its commits for reasons not the gate's.
     export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
     seeds=fuzz/seeds/remote
+    remote=crates/pixtuoid-core/src/remote.rs
+    bumped='pub const VERSION: u32 = 3;'
     mkdir -p "$d/$seeds" "$d/crates/pixtuoid-core/src"
-    printf '{}' >"$d/crates/pixtuoid-core/src/remote.v1.golden.json"
-    printf '{"v":1,"hello":"pair","code":"C"}' >"$d/$seeds/hello"
-    printf '{"v":1,"reply":"resumed"}' >"$d/$seeds/reply-resumed"
+    printf '{}' >"$d/crates/pixtuoid-core/src/remote.v2.golden.json"
+    printf 'pub const VERSION: u32 = 2;\n' >"$d/$remote"
+    printf '{"v":2,"hello":"pair","code":"C","name":"N"}' >"$d/$seeds/hello"
+    printf '{"v":2,"reply":"resumed"}' >"$d/$seeds/reply-resumed"
     g() { git -C "$d" -c user.name=selftest -c user.email=selftest@example.invalid "$@"; }
     g init -q
     g add -- crates "$seeds"
     g commit -qm base
     g tag base
     fail=0
-    # Each case commits one file onto the base, as CI's HEAD^1 reads a PR.
+    # Each case commits its path and text pairs onto the base, as CI's HEAD^1 reads a PR.
     expect() {
-        local path=$1 text=$2 want=$3 got=0
+        local want=$1 got=0 paths=()
+        shift
         g reset -q --hard base
-        printf '%s' "$text" >"$d/$path"
-        g add -- "$path"
+        while (($#)); do
+            printf '%s' "$2" >"$d/$1"
+            paths+=("$1")
+            shift 2
+        done
+        g add -- "${paths[@]}"
         g commit -qm case
         (cd "$d" && GITHUB_ACTIONS=1 just -f "{{ justfile() }}" -d "$d" wire-frozen) >/dev/null 2>&1 || got=1
         if [[ "$got" != "$want" ]]; then
-            echo "wire-frozen-selftest: FAIL — adding $path exited $got, want $want" >&2
+            echo "wire-frozen-selftest: FAIL — committing ${paths[*]} exited $got, want $want" >&2
             fail=1
         fi
     }
-    expect README 'no sample' 0
-    expect "$seeds/ping" '{"v":1,"hello":"ping"}' 1
-    expect "$seeds/ping" $'{\n  "v": 1,\n  "hello": "ping"\n}\n' 1
-    expect "$seeds/hello-named" '{"v":1,"hello":"pair","code":"C","name":"studio"}' 0
-    expect "$seeds/reply-busy" '{"v":1,"reply":"busy"}' 1
-    expect "$seeds/reply-pair" '{"v":1,"reply":"pair"}' 1
-    expect "$seeds/reply-resumed-again" $'{\n  "v": 1,\n  "reply": "resumed"\n}\n' 0
+    expect 0 README 'no sample'
+    expect 1 "$seeds/ping" '{"v":2,"hello":"ping"}'
+    expect 1 "$seeds/ping" $'{\n  "v": 2,\n  "hello": "ping"\n}\n'
+    expect 0 "$seeds/hello-field" '{"v":2,"hello":"pair","code":"C","name":"N","field":1}'
+    expect 1 "$seeds/reply-busy" '{"v":2,"reply":"busy"}'
+    expect 1 "$seeds/reply-pair" '{"v":2,"reply":"pair"}'
+    expect 0 "$seeds/reply-resumed-again" $'{\n  "v": 2,\n  "reply": "resumed"\n}\n'
+    expect 1 "$seeds/ask-ping" '{"ask":"ping"}'
+    expect 1 "$seeds/answer-busy" '{"answer":"busy"}'
+    expect 1 "$seeds/hello" '{"v":3,"hello":"pair","code":"C","name":"N"}'
+    expect 0 "$seeds/hello" '{"v":3,"hello":"pair","code":"C","name":"N"}' "$remote" "$bumped"
+    expect 0 "$seeds/ping" '{"v":3,"hello":"ping"}' "$remote" "$bumped"
+    expect 1 "$seeds/hello" '{"v":3,"hello":"pair","code":"C","name":"N"}' "$remote" "$bumped // reshaped"
     [[ "$fail" -eq 0 ]] || exit 1
-    echo "wire-frozen-selftest: OK (a new hello or reply kind reds, pretty-printed too, and so does a reply named like a held hello; a held kind passes)"
+    echo "wire-frozen-selftest: OK (a new hello, reply, ask or answer kind reds, pretty-printed too, and so does a reply named like a held hello or an edited sample; a held kind passes; a VERSION bump passes an edit and a new kind; an unreadable VERSION reds)"
 
 # Link + anchor check (lychee) over the tree's markdown, hidden dirs included
 # (lychee skips them by default) and .gitignore respected: every relative link

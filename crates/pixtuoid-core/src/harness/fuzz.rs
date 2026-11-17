@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn a_stream_seats_its_agents_past_a_foreign_line() {
         let golden: Value =
-            serde_json::from_str(include_str!("../remote.v1.golden.json")).expect("the golden");
+            serde_json::from_str(include_str!("../remote.v2.golden.json")).expect("the golden");
         let office = remote(format!("garbage\n{golden}").as_bytes());
         assert!(!office.scene().agents.is_empty());
         assert!(remote(b"garbage").scene().agents.is_empty());
@@ -360,7 +360,7 @@ mod tests {
     #[test]
     fn an_answer_among_the_lines_is_not_taken_for_the_office() {
         let golden: Value =
-            serde_json::from_str(include_str!("../remote.v1.golden.json")).expect("the golden");
+            serde_json::from_str(include_str!("../remote.v2.golden.json")).expect("the golden");
         let answer = serde_json::to_string(&Answer::Unsupported).expect("it encodes");
         let office = remote(format!("{golden}\n{answer}").as_bytes());
         assert!(!office.scene().agents.is_empty());
