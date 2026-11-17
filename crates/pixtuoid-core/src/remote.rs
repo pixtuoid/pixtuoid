@@ -36,11 +36,12 @@ pub use change::{Changed, Outcome, not_detected, nothing_to_do};
 /// reshape, since a reader takes it before the rest. Within a version a line
 /// only gains fields and tags, each held to a sample `just wire-frozen` never
 /// lets a change edit; a reader ignores what it doesn't know and maps an
-/// unknown tag to its nearest state. A server drops a hello kind it can't
-/// name, so a new one, like any break in a line, a pairing link or the stream's
-/// timing ([`HEARTBEAT`], [`SILENCE_LIMIT`]), bumps it, and every pairing or
-/// reconnect across it ends in a precise "update" on the side that can act
-/// ([`PairLinkError::Incompatible`], [`WireError::Incompatible`]).
+/// unknown tag to its nearest state. A server drops a hello kind it can't name
+/// and a device a reply kind, so a new one of either, like any break in a line,
+/// a pairing link or the stream's timing ([`HEARTBEAT`], [`SILENCE_LIMIT`]),
+/// bumps it, and every pairing or reconnect across it ends in a precise
+/// "update" on the side that can act ([`PairLinkError::Incompatible`],
+/// [`WireError::Incompatible`]).
 pub const VERSION: u32 = 1;
 
 /// How often a server writes its line however quiet the office.
@@ -629,9 +630,6 @@ pub enum Reply {
     Resumed,
     /// Pair again: the code was spent or stale, or the token forgotten.
     Refused,
-    /// A reply from a newer server, which says nothing against the pairing.
-    #[serde(other, skip_serializing)]
-    Unknown,
 }
 
 impl Reply {
@@ -1797,14 +1795,19 @@ mod tests {
             holds.extend(sample.holds);
             writes.extend(sample.writes);
         }
-        let hellos = &written::<Versioned<'static, Hello>>()["title"];
-        let (kinds, rest): (Vec<_>, Vec<_>) =
-            (writes.difference(&holds)).partition(|key| *hellos == key.owner && key.tag.is_some());
+        let handshake = [
+            &written::<Versioned<'static, Hello>>()["title"],
+            &written::<Versioned<'static, Reply>>()["title"],
+        ];
+        let (kinds, rest): (Vec<_>, Vec<_>) = (writes.difference(&holds)).partition(|key| {
+            handshake.iter().any(|title| **title == key.owner) && key.tag.is_some()
+        });
         // A v1 server answers a hello it can't read with silence (`serve::device`'s
-        // `greet`); only `version_reply` tells a device to update.
+        // `greet`), and a v1 device can't stream behind a reply it can't read; only
+        // `version_reply` tells either side to update.
         assert!(
             kinds.is_empty(),
-            "{kinds:?}: a new hello kind bumps remote::VERSION"
+            "{kinds:?}: a new hello or reply kind bumps remote::VERSION"
         );
         assert!(
             rest.is_empty(),
@@ -2362,11 +2365,16 @@ mod tests {
         );
     }
 
-    /// A new tag must not send every older device back to a QR.
+    /// A v1 server writes no reply kind a v1 device can't name, since a new one
+    /// bumps VERSION: one is a broken line, which a device retries, never a
+    /// refusal that sends it back to a QR.
     #[test]
-    fn a_reply_this_build_does_not_know_is_no_refusal() {
+    fn a_reply_kind_this_build_does_not_name_is_a_broken_line() {
         let line = br#"{"v":1,"reply":"from_the_future","extra":1}"#;
-        assert_eq!(Reply::from_line(line).expect("it decodes"), Reply::Unknown);
+        assert!(matches!(
+            Reply::from_line(line),
+            Err(WireError::Malformed(_))
+        ));
     }
 
     #[test]

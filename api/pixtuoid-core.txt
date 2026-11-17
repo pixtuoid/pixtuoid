@@ -192,7 +192,6 @@ pub pixtuoid_core::remote::Reply::Paired
 pub pixtuoid_core::remote::Reply::Paired::token: alloc::string::String
 pub pixtuoid_core::remote::Reply::Refused
 pub pixtuoid_core::remote::Reply::Resumed
-pub pixtuoid_core::remote::Reply::Unknown
 impl pixtuoid_core::remote::Reply
 pub fn pixtuoid_core::remote::Reply::from_line(&[u8]) -> core::result::Result<Self, pixtuoid_core::remote::WireError>
 pub fn pixtuoid_core::remote::Reply::line(&self) -> serde_json::error::Result<alloc::string::String>
