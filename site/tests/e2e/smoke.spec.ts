@@ -3767,7 +3767,7 @@ for (const device of ['Galaxy Z Flip 6 Cover', 'Pixel 5 landscape']) {
         controls: boxes('.office-ctl').map((box) => box.left),
       };
     });
-    // teeth: with neither set on the page there would be nothing to compare.
+    // teeth: with either set empty, the comparison below would pass vacuously.
     expect(nav.length).toBeGreaterThan(0);
     expect(controls.length).toBeGreaterThan(0);
     expect(Math.max(...nav)).toBeLessThanOrEqual(Math.min(...controls));
