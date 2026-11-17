@@ -1,7 +1,8 @@
 # Configuration
 
-pixtuoid keeps its settings in `~/.config/pixtuoid/config.toml`, or under
-`$XDG_CONFIG_HOME` when that is set, and creates the file on first launch.
+pixtuoid keeps its settings in `~/.config/pixtuoid/config.toml`, or in
+`$XDG_CONFIG_HOME/pixtuoid/config.toml` when that is an absolute path, and
+creates the file on first launch.
 Every setting is optional: leave a key out and pixtuoid uses its default. A
 command-line flag overrides the file for that run, for example
 `pixtuoid run --theme dracula`.
@@ -41,15 +42,16 @@ graphics, or the classic office in half-block text cells.
 - **`auto`** draws the cutaway where the terminal supports terminal graphics,
   else the classic office. It doesn't ask the terminal over ssh, where every
   repaint would cross the network, or inside GNU screen, which shows the
-  question in its status line.
+  question as its
+  [hardstatus](https://www.gnu.org/software/screen/manual/html_node/Control-Sequences.html).
 - **`cutaway`** always asks.
 - **`classic`** starts in the classic office, and asks where `auto` does, for
   the cutaway `t` can switch to.
 
-`run --look <value>` overrides the setting for one run. `run --protocol
-<value>` draws the cutaway in that protocol whatever the terminal reports;
-`pixtuoid run --help` lists the protocols. An unknown value is ignored with a
-warning. Terminal graphics need macOS or Linux, so on Windows `run` and
+An unknown `look` value is ignored with a warning. `run --look <value>`
+overrides the setting for one run. `run --protocol <value>` draws the cutaway
+in that protocol whatever the terminal reports; `pixtuoid run --help` lists
+the protocols. Terminal graphics need macOS or Linux, so on Windows `run` and
 `doctor` stay classic. `pixtuoid doctor` shows what your terminal supports.
 
 ### Motion
@@ -106,8 +108,8 @@ the window closes.
 - `x` and `y` are dropped when the OS can't report the window's position; the
   next launch lets the OS place it.
 - `zoom` is how many density steps the office is zoomed from its automatic
-  scale: Cmd/Ctrl `+` and `-` change it, and `0` resets it. With no zoom there
-  is no key. The zoom holds where the office still lays out.
+  scale: Cmd/Ctrl `+` and `-` change it, and Cmd/Ctrl `0` resets it. With no
+  zoom there is no key. The zoom holds where the office still lays out.
 - An `opacity` key from an older release is ignored and left in the file.
 
 ### Sound
@@ -116,16 +118,16 @@ The office starts muted (`muted = true`): a terminal app never speaks
 uninvited.
 
 - **Turning it on.** Press `m` in the TUI or the floating window. The toggle
-  is saved here, so the office starts as you left it, and the sound system
+  is saved in `[audio]`, so the office starts as you left it, and the sound system
   only starts on the first unmute, so muted costs nothing. A ♩ in the TUI's
   footer means you'd hear sound right now.
 - **Volume.** `volume` runs from 0.0 to 1.0, clamped, and defaults to 1.0. It
   scales everything on a perceptual curve, so low percents are really quiet,
-  and the whole mix sits under your work audio by design. `+` and `-` nudge it
-  by 0.05 and save it; a `♩ N%` readout flashes in the TUI's footer, or in the
-  floating window's bottom-right corner. `+` while muted also unmutes.
+  and the whole mix sits under your work audio by design. `+`/`-` nudge it live
+  and save it; a `♩ N%` readout flashes in the TUI's footer, or in the floating
+  window's bottom-right corner. `+` from muted also unmutes.
 - **What plays.** An endless run of lofi songs, night songs once the office's
-  night is half in, at the sundown the lights follow. Each song darkens in rain
+  night, which follows the same sundown as its lights, is half in. Each song darkens in rain
   and plays as busy as **the floor you're viewing**: running agents fill the
   band, and typing density tracks them; other floors are silent until you ride to
   them. Gentle rain plays when the office's weather rains (the weather is the
@@ -136,9 +138,13 @@ uninvited.
   with sound needs `libasound.so.2` when it loads, which neither can bring,
   and cpal can't load it later yet
   ([cpal#1421](https://github.com/RustAudio/cpal/issues/1421)). Homebrew's
-  Linux bottle brings `alsa-lib`. `cargo install` needs `pkg-config` and the
-  ALSA headers (`libasound2-dev` on Debian and Ubuntu, `alsa-lib-devel` on
-  Fedora), or `--no-default-features --features portable` for a build without
+  Linux bottle brings `alsa-lib`
+  ([formula](https://github.com/Homebrew/homebrew-core/blob/main/Formula/p/pixtuoid.rb)).
+  `cargo install` needs `pkg-config` and the ALSA headers
+  ([`libasound2-dev`](https://packages.debian.org/stable/libasound2-dev) on
+  Debian and Ubuntu,
+  [`alsa-lib-devel`](https://packages.fedoraproject.org/pkgs/alsa-lib/alsa-lib-devel/)
+  on Fedora), or `--no-default-features --features portable` for a build without
   sound.
 
 ## Themes
@@ -158,9 +164,9 @@ the terminal:
 | Where | `~/.local/state/pixtuoid/logs/`, or `$XDG_STATE_HOME/pixtuoid/logs/` when that is an absolute path: one file per run, named for its start |
 | Your own file | `$PIXTUOID_LOG=/path/to/file` logs every run to that one file. On Unix a run opens it only if it isn't a symlink and is yours with one link, a character device such as `/dev/null` aside |
 | Level | `warn` and above; `--log-level debug` or `trace`, or `$RUST_LOG`, raises it |
-| How long | a run's file is removed a week after its last write, unless the run is still open. `doctor`, `sources` and the Sources panel read the newest 10 MB, across the runs or of a `$PIXTUOID_LOG` file, which rotates to `<name>.old` past 5 MB when a run starts |
+| How long | a run's file is removed a week after its last write, unless the run is still open. A `$PIXTUOID_LOG` file instead rotates to `<name>.old` when a run starts and finds it past its size cap |
 
-A crash writes `crash.log` in the default path's parent, whatever
+A crash writes `crash.log` beside that `logs/` directory, whatever
 `$PIXTUOID_LOG` says. Every other command, such as `--headless` or `doctor`,
 logs to stderr.
 
@@ -170,7 +176,7 @@ screen: scroll back after quitting to read them. If a data source dies while
 the office runs, such as the hook listener, the footer keeps a ⚠ warning up
 and the full error is in the log file.
 
-### `pixtuoid connect` can't find `pixtuoid-hook`
+### `pixtuoid connect` says it can't locate `pixtuoid-hook`
 
 Connecting a source installs a hook that runs the small `pixtuoid-hook` shim,
 so `connect` has to find it: first on `$PATH`, then next to the `pixtuoid`
@@ -194,11 +200,9 @@ the query. `pixtuoid doctor` shows the verdict.
 
 A terminal that is truecolor but doesn't answer the query, which is rare, can
 still get the warning. Silence it with `$PIXTUOID_NO_TRUECOLOR_WARN=1` (any of
-`1`, `true`, `yes` or `on`). tmux doesn't answer the query, so a truecolor
-tmux session can trip the warning, though tmux usually sets `$COLORTERM`,
-which skips it.
+`1`, `true`, `yes` or `on`).
 
-### When color is off (`$NO_COLOR`, `$TERM=dumb`)
+### When color is disabled (`$NO_COLOR`, `$TERM=dumb`)
 
 The office has no legible black-and-white form, so rather than draw blocks
 you can't read, `pixtuoid run` refuses to start the office and says why:

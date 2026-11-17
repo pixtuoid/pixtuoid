@@ -54,7 +54,7 @@ office over local IPC, never a network.
 - **On Windows** it writes to a named pipe, `\\.\pipe\pixtuoid-<user>`,
   with an owner-only DACL. The shim checks that the pipe server's token user
   SID matches its own (`GetNamedPipeServerProcessId`, then a token compare)
-  before writing, which closes the same squat-and-read path in Windows'
+  before writing, which closes the same squat-and-read attack in Windows'
   machine-wide pipe namespace (#495).
 - **It never blocks the agent.** It exits `0` on any error, and a watchdog
   bounds its send (pixtuoid-hook's `transport::WRITE_TIMEOUT`). It never runs
@@ -68,6 +68,9 @@ office over local IPC, never a network.
   after checking that the owner is this user. Another process of this user
   could subscribe too, which crosses no boundary: it already runs with this
   user's access.
+
+### What reaches your terminal
+
 - The CLI's plain-text output (the `--headless` summary, the `doctor` report,
   the Sources and install output) **strips control characters** from untrusted
   wire values (`strip_control_chars`), so a crafted transcript can't smuggle
@@ -78,38 +81,40 @@ office over local IPC, never a network.
 
 ### Hook installation
 
-It happens only when you *connect* a source.
+It runs when you explicitly *connect* or *disconnect* a source, here or from a
+device paired with `pixtuoid serve`. Past that, a launch only rewrites the
+plugin files pixtuoid owns, and loads them through a connected CLI's own
+subcommand where it has one (`converge_owned`).
 
-- Where the agent CLI has a plugin system, pixtuoid installs through it:
-  Claude Code, Codex, Hermes, Reasonix and Antigravity get a local plugin
-  managed through their own plugin subcommands, so each CLI writes its own
-  settings.
+- Where the agent CLI has a plugin system (Claude Code, Codex, Hermes,
+  Reasonix and Antigravity), pixtuoid installs a local plugin through the
+  CLI's own plugin subcommands, so the CLI writes its own settings. For those
+  five, connect and disconnect also remove every hook in the CLI's own config
+  that runs pixtuoid's shim, hand-written ones included. A hook running a shim
+  renamed through `PIXTUOID_HOOK` is removed only when it carries the
+  `PIXTUOID_SOURCE` stamp.
 - Otherwise pixtuoid edits the CLI's config through one writer, advisory-locked
   and `fsync`ed with an atomic rename, that **keeps the file's permissions,
   follows stow symlinks, and changes only pixtuoid's own entries**. Every other
   setting survives: a YAML or TOML file is edited in place, comments and
   formatting included, and a JSON file is written out again.
 - Installs are idempotent and reversible: *disconnect* removes the plugin or
-  the hook entries. Connect and disconnect remove from Claude Code's, Codex's,
-  Reasonix's, Hermes's and Antigravity's own config every hook whose command
-  runs pixtuoid's shim, hand-written ones included, and a shim renamed through
-  `PIXTUOID_HOOK` only where the hook carries the `PIXTUOID_SOURCE` stamp.
-- Past an explicit connect or disconnect, a launch only rewrites the plugin
-  files pixtuoid owns, and loads them through a connected CLI's own subcommand
-  where it has one (`converge_owned`).
+  the hook entries.
 
 ### `pixtuoid serve`
 
 The only network listener.
 
 - **Who may connect.** It binds IPv4 on every interface and, before any TLS,
-  drops a peer that isn't private, link-local or loopback, a Tailscale
-  tailnet's [`100.64.0.0/10`](https://tailscale.com/kb/1015/100.x-addresses)
-  included. It speaks TLS 1.3 only.
+  drops a peer that isn't private, link-local or loopback. That drops a
+  Tailscale tailnet's
+  [`100.64.0.0/10`](https://tailscale.com/kb/1015/100.x-addresses) too. It
+  speaks TLS 1.3 only.
 - **Pairing.** Its key is made on first use. A device pins that key's SPKI hash
   from the QR code `pixtuoid pair` prints, beside a one-time code that expires
   (`CODE_LIFETIME`) and is redeemed for a device token. The QR is a link on
-  pixtuoid.dev whose fields ride the fragment, which a browser keeps to itself:
+  pixtuoid.dev whose fields ride the fragment, which a browser keeps to itself
+  ([RFC 3986 §3.5](https://www.rfc-editor.org/rfc/rfc3986#section-3.5)):
   a phone without the app opens a `/pair/` page there that runs no script.
 - **What it stores.** The key, the hashes of the code and tokens, and each
   device's name and pairing time sit in one owner-only file in the state

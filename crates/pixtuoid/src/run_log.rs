@@ -363,6 +363,20 @@ fn read_runs(dir: &std::path::Path, budget: u64) -> (String, Option<String>) {
 mod tests {
     use super::*;
 
+    /// docs/CONFIGURATION.md tells a user how long a run's log stays, as text
+    /// no build reaches.
+    #[test]
+    fn the_docs_say_how_long_a_run_log_stays() {
+        const WEEK: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+        let doc = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/CONFIGURATION.md");
+        // crates.io-packaged test runs don't ship the repo's docs/.
+        let Ok(doc) = std::fs::read_to_string(doc) else {
+            return;
+        };
+        assert_eq!(RUN_LOG_RETAIN, WEEK);
+        assert!(doc.contains("removed a week after its last write"));
+    }
+
     #[cfg(unix)]
     fn mode_of(p: &Path) -> u32 {
         use std::os::unix::fs::PermissionsExt;
