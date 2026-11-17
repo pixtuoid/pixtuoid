@@ -3119,7 +3119,7 @@ test('every doc and post callout: its body copy clears WCAG AA against the callo
       await page.goto(`./${route}?theme=${theme}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const rows = await page.evaluate((tags) => {
-        const transparent = (c: string) => /,\s*0\)\s*$/.test(c);
+        const transparent = (c: string) => /^rgba\(.*,\s*0\)$/.test(c);
         return [...document.querySelectorAll('.callout__body')].flatMap((body) => {
           const screen = getComputedStyle(body.closest('.callout')!).backgroundColor;
           return [...body.querySelectorAll(tags)].map((el) => {
@@ -3777,7 +3777,7 @@ test("past the viewport's edge the landing page shows the theme's ground", async
       probe.remove();
       const painted = (el: Element) => {
         const { backgroundColor, backgroundImage } = getComputedStyle(el);
-        return backgroundImage === 'none' && /,\s*0\)$/.test(backgroundColor)
+        return backgroundImage === 'none' && /^rgba\(.*,\s*0\)$/.test(backgroundColor)
           ? null
           : `${backgroundImage} ${backgroundColor}`;
       };
