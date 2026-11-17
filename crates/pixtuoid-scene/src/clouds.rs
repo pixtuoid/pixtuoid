@@ -1875,12 +1875,15 @@ mod tests {
         let lead = AHEAD_FRAMES;
         let pack = crate::pack::test_office();
         let d = test_density(4);
-        let wall = crate::outside::Wall {
+        // No bays: a frame's masses are planned over the glass, which reads
+        // only the span and the band (`Wall::glass`); a bay adds only a
+        // view's paint and a strike's panes, which draw no mass.
+        let wall = || crate::outside::Wall {
             span: 0..crate::layout::WINDOW_W * 3,
             band_h: 32,
-            bays: crate::layout::window_slots(0..crate::layout::WINDOW_W * 3).collect(),
+            bays: Vec::new(),
         };
-        let (run, glass_h) = wall.glass();
+        let (run, glass_h) = wall().glass();
         for motion in [Motion::Full, Motion::Calm] {
             for (start, policy, length) in windows {
                 let timing = |n: u32| motion.timing(start - AHEAD + PAINT_FRAME * n);
@@ -1918,11 +1921,7 @@ mod tests {
                             &moment,
                             &pack,
                             theme,
-                            crate::outside::Wall {
-                                span: wall.span.clone(),
-                                band_h: wall.band_h,
-                                bays: wall.bays.clone(),
-                            },
+                            wall(),
                             d,
                             crate::glass_weather::GlassWeather::of(&moment),
                         );
@@ -2401,12 +2400,16 @@ mod tests {
     fn a_strike_lights_the_deck_only_by_its_phase() {
         let phase_ms = crate::sky::STRIKE_PHASE_MS;
         let mut walked = 0;
+        // A warm cache draws what a fresh one does
+        // (`the_outside_cache_draws_what_a_fresh_frame_draws`, through the
+        // `CloudCache` its `OutsideCache` holds).
+        let mut cache = CloudCache::default();
         for k in 0..60u32 {
             let then = crate::localclock::at_hour(12)
                 + Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS) * k;
             let beat = Motion::Full.timing(then).beat;
             let start = then + Duration::from_millis(crate::sky::strike_start_ms(beat) - beat.ms());
-            let at = |ms: u64| {
+            let mut at = |ms: u64| {
                 let now = start + Duration::from_millis(ms);
                 let sky = Sky::at_with(now, Weather::Storm);
                 let moment =
@@ -2416,7 +2419,7 @@ mod tests {
                     (SPAN, GLASS_H),
                     test_density(1),
                     RUN,
-                    &mut CloudCache::default(),
+                    &mut cache,
                 );
                 let lifts: Vec<Option<u32>> = (0..SPAN * 4)
                     .flat_map(|x| (0..GLASS_H * 4).map(move |y| (x, y)))

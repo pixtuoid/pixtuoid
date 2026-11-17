@@ -1565,6 +1565,9 @@ mod tests {
             })
             .expect("a lunation has days");
         let mut digests = String::new();
+        // A cache serves one theme, and a warm one draws what a fresh one does
+        // (`the_outside_cache_draws_what_a_fresh_frame_draws`).
+        let mut outsides: HashMap<(&str, u16), crate::outside::OutsideCache> = HashMap::new();
         for (scene, layout, frame) in scenes {
             for (theme_name, weather, hour) in moments {
                 let theme = crate::theme::theme_by_name(theme_name).expect("theme");
@@ -1588,7 +1591,7 @@ mod tests {
                         ),
                         (
                             &mut crate::cutaway::paint::CutawayCache::default(),
-                            &mut crate::outside::OutsideCache::default(),
+                            outsides.entry((theme_name, d)).or_default(),
                         ),
                     );
                     let buf = canvas.buf();

@@ -1684,28 +1684,21 @@ fn every_meeting_slot_sits_in_its_room(w: u16, h: u16, seed: u64, l: &SceneLayou
     v
 }
 
-/// Variant internals are private, so the shapes are compared observationally.
-/// The signature needs `cubicle_band.x`: Senior differs from Standard, and
-/// Lounge from OpenPlan, ONLY by the left-column percent — room presence alone
-/// collapses the 5 variants to 3 shapes.
+/// `compute` lays a seed out as `FloorVariant::from_seed` picks.
 #[test]
 fn the_sweep_reaches_every_floor_variant() {
-    use std::collections::BTreeSet;
-    let mut shapes: BTreeSet<(bool, bool, bool, u16)> = BTreeSet::new();
-    for seed in SWEEP_SEEDS {
-        let l = SceneLayout::compute(Viewport::full(240, 160), None, seed).expect("fits");
-        shapes.insert((
-            !l.meeting_rooms.is_empty(),
-            l.pantry.is_some(),
-            l.meeting_rooms.len() > 1,
-            l.cubicle_band.x,
-        ));
-    }
+    use super::compute::FloorVariant;
+    let missed: Vec<FloorVariant> = FloorVariant::ALL
+        .into_iter()
+        .filter(|&variant| {
+            !SWEEP_SEEDS
+                .map(FloorVariant::from_seed)
+                .any(|v| v == variant)
+        })
+        .collect();
     assert!(
-        shapes.len() >= super::compute::FloorVariant::ALL.len(),
-        "sweep seeds reach only {} of {} floor shapes: {shapes:?} — widen SWEEP_SEEDS",
-        shapes.len(),
-        super::compute::FloorVariant::ALL.len()
+        missed.is_empty(),
+        "SWEEP_SEEDS lay out no {missed:?} floor — widen SWEEP_SEEDS"
     );
 }
 
