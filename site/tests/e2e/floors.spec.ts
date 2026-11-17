@@ -129,26 +129,22 @@ test('the floating-window still gap is retired (wb-4 owns the slot)', async ({ p
   await expect(page.locator('.office-gap')).toHaveCount(2);
 });
 
-test('every floor is reachable from the statusline list, and its digit reads that floor', async ({
+test('every floor is reachable from the floor popover, and the statusline digit reads that floor', async ({
   page,
 }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
   await expect(page.locator('[data-lift-digit]')).toHaveText(TOP);
-  // A floor whose section is too short to ever own the floor-spy center band
-  // settles on a DIFFERENT floor here instead of its own.
-  for (const { fl } of FLOORS) {
+  const ride = async (fl: string) => {
     await page.locator('[data-floor-toggle]').click();
     await page.locator(`#sl-floors [data-floor-btn="${fl}"]`).click();
     await expect(page.locator('[data-lift-digit]')).toHaveText(fl, { timeout: 10_000 });
-    await expect
-      .poll(() =>
-        page.evaluate((f) => {
-          const r = document.querySelector(`[data-floor="${f}"]`)!.getBoundingClientRect();
-          return r.top < window.innerHeight * 0.55 && r.bottom > window.innerHeight * 0.45;
-        }, fl)
-      )
-      .toBe(true);
+  };
+  // A floor whose section is too short to ever own the floor-spy band
+  // settles on a DIFFERENT floor here instead of its own.
+  for (const { fl } of FLOORS) {
+    await ride(fl);
+    await expect(page.locator(`[data-floor="${fl}"]`)).toBeInViewport();
     await expect(page.locator('#sl-floors [data-floor-btn][aria-current]')).toHaveCount(1);
     await expect(page.locator(`#sl-floors [data-floor-btn="${fl}"]`)).toHaveAttribute(
       'aria-current',
@@ -156,10 +152,16 @@ test('every floor is reachable from the statusline list, and its digit reads tha
     );
   }
 
-  // 1F + the footer rarely fill the center band the observer keys off, so at the
-  // TRUE scroll max the readout must clamp to 1F whatever the observer reported.
-  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 10_000 });
+  // 1F + the footer rarely fill the band the observer keys off. From the top floor, a jump
+  // straight to the TRUE scroll max sweeps no floor through that band, so only the clamp names 1F.
+  await ride(TOP);
+  // Retried: the ride up may still be scrolling when the jump lands.
+  await expect(async () => {
+    await page.evaluate(() =>
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' })
+    );
+    await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 500 });
+  }).toPass({ timeout: 10_000 });
 });
 
 test('scroll budget: the page fits its roster-aware viewport-height budget at 1440×900', async ({

@@ -673,8 +673,11 @@ test('scrolled to the true page bottom, the statusline clamps to the last floor'
   page,
 }) => {
   await gotoLive(page);
+  // An instant jump sweeps no floor through the observer's band, so only the clamp can name 1F.
   await expect(async () => {
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.evaluate(() =>
+      window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'instant' })
+    );
     await expect(page.locator('[data-lift-digit]')).toHaveText('1F', { timeout: 500 });
   }).toPass({ timeout: 10_000 });
 });
@@ -3717,15 +3720,21 @@ test('a printed page shows what waits to be revealed', async ({ page }) => {
   expect(hidden).toBe(0);
 });
 
-// The office controls' gutter is for copy that scrolls past them; the bar sits at the page's top.
-test("the phone bar's buttons end where the page's column does", async ({ page }) => {
+test("at phone width the floating nav's buttons end as far from the right edge as its logo starts from the left, and the footer keeps its own padding", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
-  const { left, right, width } = await page.evaluate(() => ({
-    left: document.querySelector('.nav__logo')!.getBoundingClientRect().left,
-    right: document.querySelector('.nav__toggle')!.getBoundingClientRect().right,
-    width: document.documentElement.clientWidth,
-  }));
+  const { left, right, width, footer } = await page.evaluate(() => {
+    const line = getComputedStyle(document.querySelector('.footer__line')!);
+    return {
+      left: document.querySelector('.nav__logo')!.getBoundingClientRect().left,
+      right: document.querySelector('.nav__toggle')!.getBoundingClientRect().right,
+      width: document.documentElement.clientWidth,
+      footer: [line.paddingInlineStart, line.paddingInlineEnd],
+    };
+  });
   expect(Math.abs(width - right - left)).toBeLessThanOrEqual(1);
+  expect(footer[1]).toBe(footer[0]);
 });

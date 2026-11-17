@@ -55,7 +55,8 @@ someone else's publish would short-circuit every check below it). npm 12 is requ
   stays on the still). Scrolling is the light switch — the `#dimmer` sheet
   darkens toward statements and releases in office gaps. Each section is a
   floor (top floor → 1F); fixed chrome is `Statusline.astro` (floor readout +
-  scrollspy + PR feed + install chip) and the `#office-pause` switch. Floor digits ride to their floors
+  scrollspy + PR feed + install chip) and the `#office-pause` and ♩ `#office-audio`
+  switches. Floor digits ride to their floors
   document-global (typing surfaces, modifiers, the boot splash, and focused
   `[data-keys-scope]` regions claim them locally); the appearance key retints,
   focus-gated (WCAG 2.1.4); the statusline popover carries the persisted keys
