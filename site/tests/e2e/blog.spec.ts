@@ -61,3 +61,38 @@ test('the footer links the blog', async ({ page }) => {
     `/${BLOG_ROUTE}`
   );
 });
+
+// The switch is a checkbox the stylesheet reads, so it has to work with no script at all.
+test("a moving figure's switch stops it from the keyboard, with no script", async ({ browser }) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  const [id] = postIds();
+  await page.goto(`./${postRoute(id)}`);
+  for (const figure of await page.locator('figure:has(.fig__pause)').all()) {
+    const moving = figure.locator('.fig-budget__now, .fig-pane__wash').first();
+    const state = () => moving.evaluate((el) => getComputedStyle(el).animationPlayState);
+    expect(await state()).toBe('running');
+    await figure.locator('.fig__pause input').focus();
+    await page.keyboard.press('Space');
+    expect(await state()).toBe('paused');
+    await page.keyboard.press('Space');
+    expect(await state()).toBe('running');
+  }
+  await context.close();
+});
+
+test('a reader who asked for less motion gets still figures and no switch', async ({ browser }) => {
+  const context = await browser.newContext({ reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  const [id] = postIds();
+  await page.goto(`./${postRoute(id)}`);
+  await expect(page.locator('.fig__pause').first()).toBeHidden();
+  await expect(page.locator('.fig-budget__now').first()).toBeHidden();
+  expect(
+    await page
+      .locator('.fig-pane__wash')
+      .first()
+      .evaluate((el) => getComputedStyle(el).animationName)
+  ).toBe('none');
+  await context.close();
+});
