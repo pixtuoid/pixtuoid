@@ -2648,7 +2648,7 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
     './architecture/': [
       '.prose :not(pre) > code',
       '.prose a > code',
-      '.docs__pager-dir',
+      '.wing__pager-dir',
       '.nav__install',
       '.nav__soon',
     ],
@@ -3641,7 +3641,7 @@ test('audit C1 (docs): the /config pager link is not coral in night', async ({ p
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
   const coral = await resolvedCoral(page);
   const color = await page
-    .locator('.docs__pager-link')
+    .locator('.wing__pager-link')
     .first()
     .evaluate((e) => getComputedStyle(e).color);
   expect(color).not.toBe(coral);

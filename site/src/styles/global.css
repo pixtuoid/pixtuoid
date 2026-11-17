@@ -103,7 +103,7 @@
      this much top padding so the bottom-anchored hero copy can never rise
      underneath the index's floating (absolute) nav when the copy outgrows the
      viewport (the mobile eyebrow-under-logo overlap; headless cleared it by
-     only ~10px, real iOS text metrics crossed the line); and Docs.astro
+     only ~10px, real iOS text metrics crossed the line); and Wing.astro
      derives its rail top + heading scroll-margin from it (clearing the sticky
      nav variant). */
   --nav-h: 60px;

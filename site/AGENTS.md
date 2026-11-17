@@ -24,7 +24,7 @@ build:
   a fresh tag shows after the next `main` commit or a `workflow_dispatch`.
 - the `docs/*.md` files `src/docs.json` names → rendered routes. **Adding,
   renaming, or REMOVING a rendered doc is a multi-point edit**: its
-  `docs.json` entry (the collection, the route, `Nav.astro`, `Docs.astro`'s
+  `docs.json` entry (the collection, the route, `Nav.astro`, `Wing.astro`'s
   sidebar/pager, the in-site doc links and Lighthouse's URLs derive from it;
   `assert-docs-rendered` globs every rendered `article.prose` and needs no
   edit), `site.yml`'s `scope` paths, and the e2e rows that name a route (smoke's
@@ -46,12 +46,12 @@ gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
 the mechanism; `pages.yml`'s pins carry their own.
 
 **Docs shell**: the doc routes (`src/docs.json` is the roster) mount the
-Statusline doc variant (no PR feed fetch); `Docs.astro`'s sidebar reads the
+Statusline wing variant (no PR feed fetch); `Wing.astro`'s sidebar reads the
 one `FLOORS` manifest.
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
 unit-tested). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its
-theme-prefixed tie are on the rule itself in `Docs.astro`, and the smoke
+theme-prefixed tie are on the rule itself in `Wing.astro`, and the smoke
 suite's callout AA sweep grades it.
 
 ## Single-sourced content

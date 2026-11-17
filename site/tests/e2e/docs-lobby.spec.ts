@@ -32,7 +32,7 @@ test("every doc page's source link names its own file in this repo", async ({ pa
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const { route, file } of docs) {
     await page.goto(`./${route}`);
-    await expect(page.locator('.docs__source a'), route).toHaveAttribute(
+    await expect(page.locator('.wing__source a'), route).toHaveAttribute(
       'href',
       `${REPO_BLOB}/${DOC_DIR}/${file}`
     );
@@ -80,12 +80,12 @@ test('the docs sidebar is an elevator panel: current-doc LED + a building bank f
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); // rails hide below 1000px
   await page.goto('./config/');
-  const panel = page.locator('.docs__sidebar');
+  const panel = page.locator('.wing__sidebar');
   await expect(panel).toHaveClass(/hw-panel/);
   await expect(panel.locator('a[aria-current="page"] .led-dot')).toHaveClass(/led-selected/);
   expect(await panel.locator('.led-dot.led-selected').count()).toBe(1);
   // the building bank lists every floor the landing page stamps from FLOORS
-  const building = panel.locator('.docs__list--building a');
+  const building = panel.locator('.wing__list--building a');
   await expect(building.first()).toHaveAttribute('href', /^\/#/);
   const listed = await building.count();
   await page.goto('./');

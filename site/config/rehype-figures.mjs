@@ -1,7 +1,7 @@
 // `<!-- figure: <kind> -->` above a GFM table marks a figure: GitHub hides the comment
 // (docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#hiding-content-with-comments)
 // and shows the table, and this build turns the same table into the figure, so a
-// doc holds one copy of its data. Docs.astro styles the markup.
+// doc holds one copy of its data. Wing.astro styles the markup.
 import { toText } from 'hast-util-to-text';
 import { visit } from 'unist-util-visit';
 import { h } from 'hastscript';
@@ -47,7 +47,7 @@ const KINDS = {
 
 const FIGURE_KINDS = Object.keys(KINDS);
 
-// The shell every figure shares: its class names its kind (Docs.astro frames
+// The shell every figure shares: its class names its kind (Wing.astro frames
 // `fig--diagram`; cards are styled through `.fig__cards`).
 export const figure = (kind, children) => h('figure', { className: [`fig--${kind}`] }, children);
 

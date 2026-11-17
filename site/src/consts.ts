@@ -44,16 +44,25 @@ export const BOTTOM_CLAMP_EPSILON_PX = 2;
 // 'lights N%' readout from it (100·(1 − DIM_RESTING)).
 export const DIM_RESTING = 0.55;
 
-// The rendered docs, in reading order: the prev/next sequence AND the Nav
-// dropdown order.
-export interface DocPage {
+// A page of a wing: one of the reading rooms Wing.astro's shell frames.
+export interface WingPage {
   route: string; // base-path-relative, slashed as its page's canonical URL (asset(route))
   label: string;
+}
+export interface Wing {
+  name: string; // its landmarks' accessible name
+  bank: string; // the sidebar's elevator bank
+  path: string; // the statusline's path
+  pages: readonly WingPage[]; // in reading order: the sidebar's list and the prev/next sequence
+}
+// The rendered docs, in reading order: the Nav dropdown's order too.
+export interface DocPage extends WingPage {
   file: string; // under the repo's DOC_DIR (config/docs.mjs), the page's single source
   description: string;
   sourceNote?: string; // what the page's source line adds about how it renders the file
 }
 export const DOCS: readonly DocPage[] = docsData;
+export const DOCS_WING: Wing = { name: 'Docs', bank: 'docs wing', path: 'docs', pages: DOCS };
 export const pageTitle = (name: string): string => `${name} — pixtuoid`;
 
 export interface ThemeShot {
