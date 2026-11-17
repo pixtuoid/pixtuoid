@@ -148,7 +148,7 @@ Press `t` in the TUI for a picker that previews every theme live (`j`/`k` or
 `←`/`→`). Your choice is written to `config.toml`. `--theme <name>` overrides
 it for one run; `pixtuoid run --help` lists the built-in themes.
 
-## Logs and troubleshooting
+## Logging & troubleshooting
 
 The TUI and the floating window write their diagnostics to a log file, not to
 the terminal:
