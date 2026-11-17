@@ -3748,3 +3748,30 @@ test("at phone width the floating nav's buttons end as far from the right edge a
   expect(Math.abs(width - right - left)).toBeLessThanOrEqual(1);
   expect(footer[1]).toBe(footer[0]);
 });
+
+// Viewports from Playwright's device registry (playwright-core, at package-lock's version,
+// lib/coreBundle.js): the Galaxy Z Flip 6 Cover and the Pixel 5 held in landscape.
+for (const viewport of [
+  { width: 360, height: 298 },
+  { width: 802, height: 293 },
+]) {
+  test(`in a ${viewport.width}×${viewport.height} viewport the nav bar's controls clear the office controls`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(viewport);
+    await gotoLive(page);
+    const overlaps = await page.evaluate(() => {
+      const boxes = (sel: string) =>
+        [...document.querySelectorAll<HTMLElement>(sel)]
+          .filter((el) => !el.hidden && el.getClientRects().length > 0)
+          .map((el) => el.getBoundingClientRect());
+      const controls = boxes('.office-ctl');
+      return boxes('.nav__inner > *, .nav__links > *').filter((n) =>
+        controls.some(
+          (c) => !(n.right <= c.left || n.left >= c.right || n.bottom <= c.top || n.top >= c.bottom)
+        )
+      ).length;
+    });
+    expect(overlaps).toBe(0);
+  });
+}
