@@ -1,5 +1,6 @@
 ---
 import { asset, DOCS, floorHref } from '../consts';
+import { BLOG_ROUTE } from '../../config/blog.mjs';
 import { REPO } from '../../config/github.mjs';
 const home = asset('');
 // `floating` = the index treatment: corner chrome over the live office that
@@ -36,6 +37,7 @@ const { floating = false } = Astro.props;
           {DOCS.map((d) => <a href={asset(d.route)}>{d.label}</a>)}
         </div>
       </div>
+      <a href={asset(BLOG_ROUTE)}>Blog</a>
       <a href={floorHref('app')}>App <span class="nav__soon">soon</span></a>
       <a href={REPO} target="_blank" rel="noreferrer">GitHub ↗</a>
       <a class="nav__install" href={floorHref('install')}>Install</a>
@@ -272,7 +274,7 @@ const { floating = false } = Astro.props;
   .nav__docs-btn {
     display: none;
   }
-  @media (min-width: 760px) {
+  @media (min-width: 800px) {
     .nav__links {
       display: flex;
       position: static;
@@ -371,7 +373,7 @@ const { floating = false } = Astro.props;
       --focus-ring: var(--office-ink);
     }
   }
-  @media (min-width: 760px) and (scripting: enabled) {
+  @media (min-width: 800px) and (scripting: enabled) {
     .nav--floating :is(.nav__links > a, .nav__docs-btn) {
       --nav-ink: var(--office-ink);
       --nav-ink-accent: var(--office-ink-accent);

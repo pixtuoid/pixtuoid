@@ -1480,7 +1480,7 @@ test('reduced motion: an install copy writes the clipboard but hires nobody', as
   await context.close();
 });
 
-test('the nav links the docs, the App floor, GitHub and the install floor, from any page', async ({
+test('the nav links the docs, the blog, the App floor, GitHub and the install floor, from any page', async ({
   page,
 }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
@@ -1491,6 +1491,7 @@ test('the nav links the docs, the App floor, GitHub and the install floor, from 
       .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
     expect(links, path).toEqual([
       ...docs.map((d) => `/${d.route}`),
+      `/${BLOG_ROUTE}`,
       `/#${floorById('app').id}`,
       REPO,
       `/#${floorById('install').id}`,
@@ -1513,6 +1514,54 @@ test('docs pages keep the sticky nav with its links', async ({ page }) => {
     .toBe('sticky');
   await expect(page.locator('#nav-links .nav__install')).toBeVisible();
   expect(errors()).toEqual([]);
+});
+
+test('at every width that lays the nav out as a bar, its items sit on one line, in order, inside the bar', async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  for (const path of ['./', './config/']) {
+    await page.goto(path);
+    let bars = 0;
+    // 340px: OfficeBackdrop's shortest viewports, where the office controls take a gutter from the bar's row.
+    for (const height of [340, 600])
+      for (let width = 600; width <= 1440; width += 10) {
+        await page.setViewportSize({ width, height });
+        const row = await page.evaluate(() => {
+          if (getComputedStyle(document.getElementById('nav-burger')!).display !== 'none')
+            return null;
+          const inner = document.querySelector('.nav__inner')!.getBoundingClientRect();
+          const items = [
+            ...document.querySelectorAll<HTMLElement>(
+              '.nav__logo, .nav__version, .nav__links > *, #theme-toggle'
+            ),
+          ].map((el) => {
+            const box = el.getBoundingClientRect();
+            // A wrapped link's text breaks into line boxes whose tops differ by a line.
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const tops = [...range.getClientRects()].map((r) => r.top);
+            const lines = tops.length ? Math.max(...tops) - Math.min(...tops) : 0;
+            return { name: el.textContent!.trim(), left: box.left, right: box.right, lines };
+          });
+          return { left: inner.left, right: inner.right, items };
+        });
+        if (!row) continue;
+        bars += 1;
+        const where = `${path} at ${width}×${height}px`;
+        expect(row.items[0].left, where).toBeGreaterThanOrEqual(row.left);
+        expect(row.items.at(-1)!.right, where).toBeLessThanOrEqual(row.right);
+        for (const [i, item] of row.items.entries()) {
+          expect(item.lines, `${where}: "${item.name}" wraps`).toBeLessThan(10);
+          if (i > 0)
+            expect(item.left, `${where}: "${item.name}" overlaps`).toBeGreaterThanOrEqual(
+              row.items[i - 1].right
+            );
+        }
+      }
+    // teeth: a breakpoint past the last width would leave nothing to check.
+    expect(bars, path).toBeGreaterThan(0);
+  }
 });
 
 test('reduced motion stays on the still poster without errors', async ({ browser }) => {
@@ -2513,6 +2562,7 @@ test.describe('the office moments still span the light range', () => {
 
 // The floating nav's text controls, which lie bare over the office.
 const NAV_OVER_OFFICE = [
+  `#nav-links > a[href$="/${BLOG_ROUTE}"]`,
   `#nav-links > a[href$="#${floorById('app').id}"]`,
   '#nav-links > a[target="_blank"]',
   '.nav__docs-btn',
