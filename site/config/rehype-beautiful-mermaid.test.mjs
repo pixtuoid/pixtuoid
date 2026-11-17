@@ -97,7 +97,10 @@ for (const { path } of markdownPages()) {
         (source.match(/^\s*subgraph\s/gm) ?? []).length
       );
       assert.equal(all(svg, withClass('node')).length, new Set(source.match(/\b\w+(?=\[)/g)).size);
-      assert.equal(all(svg, tagged('polyline')).length, (source.match(/->/g) ?? []).length);
+      // `->` is the one edge operator counted here: a diagram drawn with another fails, not passes.
+      const edges = source.match(/->/g);
+      assert.ok(edges, 'the diagram declares no `->` edge');
+      assert.equal(all(svg, tagged('polyline')).length, edges.length);
     });
   }
 }
