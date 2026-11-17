@@ -1244,21 +1244,14 @@ mod tests {
         })
     }
 
-    #[test]
-    fn floating_appliance_cues_fire_from_the_sessions_occupancy() {
-        // A BUDGET, not part of the assertion: the wait rides random wander over live desk positions.
-        assert!(
-            first_appliance_cue(9_000, None).is_some(),
-            "a wander through the appliance strip must fire a printer/vending cue"
-        );
-    }
-
     /// The frame drawn after the office was heard undrawn, as a window no
     /// longer occluded draws, fires no cue for an appliance reached
     /// meanwhile.
     #[test]
     fn a_frame_drawn_after_hearing_fires_no_stale_appliance_cue() {
-        let cue = first_appliance_cue(9_000, None).expect("a wander fires a cue");
+        // A BUDGET, not part of the assertion: the wait rides random wander over live desk positions.
+        let cue = first_appliance_cue(9_000, None)
+            .expect("a wander through the appliance strip must fire a printer/vending cue");
         assert_eq!(first_appliance_cue(cue + 1, Some(cue)), None);
     }
 
