@@ -331,6 +331,31 @@ async function expectSectionReveal(page: Page, sectionId: string): Promise<void>
   }).toPass({ timeout: 10_000 });
 }
 
+/**
+ * The narrowest viewport width, from 320px to 1440px at `height`, at which `holds` holds, the page
+ * left at it: `holds` is false at 320px, true at 1440px, and turns true once as the width grows.
+ */
+async function firstWidthWhere(
+  page: Page,
+  height: number,
+  holds: () => Promise<boolean>
+): Promise<number> {
+  const at = async (width: number) => {
+    await page.setViewportSize({ width, height });
+    return holds();
+  };
+  let [no, yes] = [320, 1440];
+  expect(await at(no)).toBe(false);
+  expect(await at(yes)).toBe(true);
+  while (yes - no > 1) {
+    const mid = Math.floor((no + yes) / 2);
+    if (await at(mid)) yes = mid;
+    else no = mid;
+  }
+  await page.setViewportSize({ width: yes, height });
+  return yes;
+}
+
 async function gotoLive(page: Page): Promise<void> {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./');
@@ -1480,7 +1505,7 @@ test('reduced motion: an install copy writes the clipboard but hires nobody', as
   await context.close();
 });
 
-test('the nav links the docs, the App floor, GitHub and the install floor, from any page', async ({
+test('the nav links the docs, the blog, the App floor, GitHub and the install floor, from any page', async ({
   page,
 }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
@@ -1491,6 +1516,7 @@ test('the nav links the docs, the App floor, GitHub and the install floor, from 
       .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
     expect(links, path).toEqual([
       ...docs.map((d) => `/${d.route}`),
+      `/${BLOG_ROUTE}`,
       `/#${floorById('app').id}`,
       REPO,
       `/#${floorById('install').id}`,
@@ -1513,6 +1539,79 @@ test('docs pages keep the sticky nav with its links', async ({ page }) => {
     .toBe('sticky');
   await expect(page.locator('#nav-links .nav__install')).toBeVisible();
   expect(errors()).toEqual([]);
+});
+
+test('at the narrowest width that lays the nav out as a wide bar, its items sit on one line, in order, inside the bar', async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  const isWideBar = () =>
+    page.locator('#nav-burger').evaluate((el) => getComputedStyle(el).display === 'none');
+  const cdp = await page.context().newCDPSession(page);
+  let gutters = 0;
+  for (const [path, height] of [
+    // Short enough that OfficeBackdrop's office controls take a gutter from the home page's bar row,
+    // in the viewports narrow enough for them: a 20px default's wide bar starts past those.
+    ['./', 340],
+    ['./', 600],
+    ['./config/', 600],
+  ] as const) {
+    await page.goto(path);
+    // Nav.astro's breakpoint comment says why a default font size (CDP's "Set default font sizes")
+    // moves only part of the bar: 12px and 20px sit either side of 16px, where its px and em halves
+    // meet.
+    for (const fontSize of [12, 16, 20]) {
+      await cdp.send('Page.setFontSizes', { fontSizes: { standard: fontSize } });
+      // A wider viewport only gives the bar more room, so the narrowest width that lays it out
+      // decides.
+      const width = await firstWidthWhere(page, height, isWideBar);
+      const row = await page.evaluate(() => {
+        const inner = document.querySelector<HTMLElement>('.nav__inner')!;
+        const pad = getComputedStyle(inner);
+        const items = [...inner.children]
+          .flatMap((el) => (el.id === 'nav-links' ? [...el.children] : [el]))
+          .filter((el) => el.getClientRects().length > 0)
+          .map((el) => {
+            const box = el.getBoundingClientRect();
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const tops = [...range.getClientRects()].map((r) => r.top);
+            return {
+              name: (el as HTMLElement).innerText.trim(),
+              left: box.left,
+              right: box.right,
+              // A wrapped line starts at least a font size below the one above it.
+              wraps:
+                Math.max(...tops) - Math.min(...tops) >= parseFloat(getComputedStyle(el).fontSize),
+            };
+          });
+        // The content box: the gutter is padding, which the bar's items stay out of.
+        const box = inner.getBoundingClientRect();
+        return {
+          rootPx: parseFloat(getComputedStyle(document.documentElement).fontSize),
+          left: box.left + parseFloat(pad.paddingLeft),
+          right: box.right - parseFloat(pad.paddingRight),
+          gutter: parseFloat(pad.paddingInlineEnd) > parseFloat(pad.paddingInlineStart),
+          items,
+        };
+      });
+      const where = `${path} at ${width}×${height}px, a ${fontSize}px default`;
+      expect(row.rootPx, `${where}: the default reached the page`).toBe(fontSize);
+      if (row.gutter) gutters += 1;
+      expect(row.items[0].left, where).toBeGreaterThanOrEqual(row.left);
+      expect(row.items.at(-1)!.right, where).toBeLessThanOrEqual(row.right);
+      for (const [i, item] of row.items.entries()) {
+        expect(item.wraps, `${where}: "${item.name}" wraps`).toBe(false);
+        if (i > 0) {
+          expect(item.left, `${where}: "${item.name}" overlaps`).toBeGreaterThanOrEqual(
+            row.items[i - 1].right
+          );
+        }
+      }
+    }
+  }
+  // teeth: with no bar in the gutter, the office controls' case would go unchecked.
+  expect(gutters, "bars that take the office controls' gutter").toBeGreaterThan(0);
 });
 
 test('reduced motion stays on the still poster without errors', async ({ browser }) => {
@@ -2513,6 +2612,7 @@ test.describe('the office moments still span the light range', () => {
 
 // The floating nav's text controls, which lie bare over the office.
 const NAV_OVER_OFFICE = [
+  `#nav-links > a[href$="/${BLOG_ROUTE}"]`,
   `#nav-links > a[href$="#${floorById('app').id}"]`,
   '#nav-links > a[target="_blank"]',
   '.nav__docs-btn',
@@ -3263,23 +3363,13 @@ test("the footer's row fits on one line at the first width that shows its dots",
   // The row at its longest: the night clock's words show.
   await page.evaluate(() => document.documentElement.setAttribute('data-clock-night', '1'));
   await expect(page.locator('.footer__clock')).toBeVisible();
-  const dotsShow = async (width: number) => {
-    await page.setViewportSize({ width, height: 900 });
-    return page
+  // A wider viewport only gives the row more room, so the narrowest width that shows the dots decides.
+  const shown = await firstWidthWhere(page, 900, () =>
+    page
       .locator('.footer__sep')
       .first()
-      .evaluate((el) => getComputedStyle(el).display !== 'none');
-  };
-  let [hidden, shown] = [320, 1440];
-  expect(await dotsShow(hidden)).toBe(false);
-  expect(await dotsShow(shown)).toBe(true);
-  // A wider viewport only gives the row more room, so the narrowest width that shows the dots decides.
-  while (shown - hidden > 1) {
-    const mid = Math.floor((hidden + shown) / 2);
-    if (await dotsShow(mid)) shown = mid;
-    else hidden = mid;
-  }
-  await page.setViewportSize({ width: shown, height: 900 });
+      .evaluate((el) => getComputedStyle(el).display !== 'none')
+  );
   // The row centres items of unequal height, so one line is every item starting above the highest bottom.
   const wrapped = await page.evaluate(() => {
     const boxes = Array.from(document.querySelector('.footer__line')!.children)
