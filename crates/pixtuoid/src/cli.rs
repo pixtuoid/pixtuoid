@@ -523,6 +523,24 @@ mod tests {
         assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
     }
 
+    /// `LogLevel`'s order is tracing's, which ranks ERROR lowest: the log
+    /// file's floor compares by it.
+    #[test]
+    fn log_levels_are_ordered_as_tracings() {
+        let level = |l: LogLevel| {
+            l.as_str()
+                .parse::<tracing::Level>()
+                .expect("a tracing level")
+        };
+        for pair in LogLevel::value_variants().windows(2) {
+            assert!(pair[0] < pair[1], "{pair:?} declared out of order");
+            assert!(
+                level(pair[0]) < level(pair[1]),
+                "{pair:?} out of tracing's order"
+            );
+        }
+    }
+
     #[test]
     fn max_desks_zero_is_a_hard_parse_error() {
         let err = Cli::try_parse_from(["pixtuoid", "run", "--max-desks", "0"]).unwrap_err();

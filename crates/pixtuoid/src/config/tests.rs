@@ -1219,7 +1219,7 @@ fn the_docs_state_each_settings_values_and_default() {
         assert_eq!(
             text.matches("- **`").count(),
             values.len(),
-            "{heading} lists a value its parser doesn't take"
+            "{heading} lists one bullet per value its parser takes: {values:?}"
         );
         for v in values {
             let says = format!("- **`{v}`**");
