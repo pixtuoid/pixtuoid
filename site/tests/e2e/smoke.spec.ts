@@ -3367,7 +3367,7 @@ test('the pause control never occludes in-page copy, from a phone to a centred c
   // A phone, a tablet, the widest the (max-width: 960px) block reaches, the studio's two tracks at
   // their narrowest, a column that fills the page, and a centred column whose margin alone left
   // its copy under the controls.
-  for (const width of [390, 768, 960, 990, 1024, 1128]) {
+  for (const width of [390, 768, 960, 980, 1024, 1128]) {
     await page.setViewportSize({ width, height: 844 });
     await assertClearOfPause('.hero__ghost[href="#showcase-vibing"]');
     await assertClearOfPause('.office-gap:not(.office-gap--closer) .gap-caption');
@@ -3377,7 +3377,7 @@ test('the pause control never occludes in-page copy, from a phone to a centred c
     for (let i = 0; i < (await page.locator('.roster__row').count()); i++) {
       await assertClearOfPause('.roster__row', i);
     }
-    // Every dial channel: the dial's last column ends at its panel's edge.
+    // Every dial channel: a dial wider than its panel runs past its edge.
     for (let i = 0; i < (await page.locator('.dial__ch').count()); i++) {
       await assertClearOfPause('.dial__ch', i);
     }
