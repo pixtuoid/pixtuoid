@@ -161,7 +161,7 @@ the terminal:
 |-----|-----|
 | Where | `~/.local/state/pixtuoid/logs/`, or `$XDG_STATE_HOME/pixtuoid/logs/` when that is an absolute path: one file per run, named for its start |
 | Your own file | `$PIXTUOID_LOG=/path/to/file` logs every run to that one file. On Unix a run opens it only if it isn't a symlink and is yours with one link, a character device such as `/dev/null` aside |
-| Level | `warn` and above by default, or `--log-level`'s level in a `$PIXTUOID_LOG` file; `--log-level debug` or `trace`, or `$RUST_LOG`, raises it |
+| Level | `warn` and above, or `--log-level`'s level when that is stricter, `debug` or `trace`, or the file is `$PIXTUOID_LOG`'s; `$RUST_LOG`'s directives replace either |
 | How long | a run's file is removed a week after its last write, unless the run is still open. A `$PIXTUOID_LOG` file instead rotates to `<name>.old` when a run starts and finds it past its size cap |
 
 A crash writes `crash.log` beside that `logs/` directory, whatever

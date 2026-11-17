@@ -13,21 +13,16 @@ use tracing_appender::non_blocking::{NonBlocking, WorkerGuard};
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 
-/// The least severe level a `file_log` run's file records by default: a
-/// stricter `--log-level` records less, and a [`VERBOSE`] one, `$RUST_LOG` or
-/// `$PIXTUOID_LOG` more.
 const FILE_FLOOR: LogLevel = LogLevel::Warn;
-
-/// The `--log-level`s that raise a `file_log` run's file past [`FILE_FLOOR`].
 const VERBOSE: [LogLevel; 2] = [LogLevel::Debug, LogLevel::Trace];
 
 /// Install the global tracing subscriber, and return what its drift layer
 /// sees and the guard that flushes its sink. A `file_log` run (the TUI, and `floating`, a long-running GUI whose
 /// launching terminal would just collect noise) logs to a file — the alternate
 /// screen owns the terminal, so the log file is the only place a runtime error
-/// can surface — at [`FILE_FLOOR`], or a stricter --log-level, unless
-/// $RUST_LOG, $PIXTUOID_LOG or a [`VERBOSE`] --log-level records more. Every
-/// other mode goes to stderr.
+/// can surface — at [`FILE_FLOOR`], or at --log-level when that is stricter,
+/// [`VERBOSE`], or the file is $PIXTUOID_LOG's; $RUST_LOG's directives replace
+/// either. Every other mode goes to stderr.
 pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<LogFlush>) {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -263,10 +258,12 @@ mod tests {
     fn the_docs_state_the_log_files_levels() {
         let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
         let [verbose, more] = VERBOSE.map(LogLevel::as_str);
-        for says in [
-            format!("| Level | `{}` and above by default", FILE_FLOOR.as_str()),
-            format!("`--log-level {verbose}` or `{more}`, or `$RUST_LOG`, raises it"),
-        ] {
+        for says in [format!(
+            "| Level | `{}` and above, or `--log-level`'s level when that is stricter, \
+             `{verbose}` or `{more}`, or the file is `$PIXTUOID_LOG`'s; `$RUST_LOG`'s \
+             directives replace either |",
+            FILE_FLOOR.as_str()
+        )] {
             assert!(
                 doc.contains(&says),
                 "CONFIGURATION.md no longer says {says:?}"

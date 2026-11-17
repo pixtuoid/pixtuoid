@@ -49,8 +49,9 @@ office over local IPC, never a network.
   created `0600`, owner-only. In the `/tmp` fallback, the directory is made
   with a TOCTOU-safe `mkdir` and its owner and mode are checked, and the shim
   writes only to a peer whose uid (`getpeereid`/`SO_PEERCRED`) is its own. So
-  another user can't squat the path to turn the hooks off, or race a listener
-  onto it to read the payload. `$XDG_RUNTIME_DIR` is already yours alone
+  another user can't race a listener onto the path to read the payload, and
+  one who makes the directory first breaks the hooks loudly: the office refuses
+  the directory and warns. `$XDG_RUNTIME_DIR` is already yours alone
   ([XDG Base Directory](https://specifications.freedesktop.org/basedir-spec/latest/):
   "Its Unix access mode MUST be 0700"), and a `PIXTUOID_SOCKET` endpoint is
   yours to trust, so neither gets the peer check.
