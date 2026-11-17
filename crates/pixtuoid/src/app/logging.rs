@@ -28,31 +28,16 @@ pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<Lo
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     let rust_log = pixtuoid_core::platform::text_env("RUST_LOG");
-    let level = log_level.as_str();
-    let floor = FILE_FLOOR.as_str();
-    let make_filter = || {
-        EnvFilter::try_new(filter_directives(rust_log.as_deref(), level))
-            .unwrap_or_else(|_| EnvFilter::new(level))
-    };
-
-    let wants_verbose = VERBOSE.contains(&log_level);
     let log_at = LogLocation::from_env();
     let explicit_log_file = matches!(log_at, LogLocation::File(_));
     let drift = DriftSeen::default();
     let registry = tracing_subscriber::registry().with(drift.layer());
 
     if file_log {
-        let rust_log_set = rust_log.as_deref().is_some_and(|v| !v.is_empty());
-        let filter = if wants_verbose || explicit_log_file {
-            make_filter()
-        } else if rust_log_set {
-            // Honor RUST_LOG, but floor the parse-failure fallback at FILE_FLOOR
-            // (not log_level) so the always-on file stays quiet by default.
-            EnvFilter::try_new(filter_directives(rust_log.as_deref(), floor))
-                .unwrap_or_else(|_| EnvFilter::new(floor))
-        } else {
-            EnvFilter::new(log_level.min(FILE_FLOOR).as_str())
-        };
+        let filter = filter_at(
+            rust_log.as_deref(),
+            file_level(log_level, explicit_log_file),
+        );
         match log_at.open_sink(SystemTime::now()) {
             Ok(f) => {
                 let (sink, flush) = queued(f);
@@ -81,11 +66,26 @@ pub(crate) fn init(file_log: bool, log_level: LogLevel) -> (DriftSeen, Option<Lo
                 fmt_layer()
                     .with_ansi(crate::term::stderr_color())
                     .with_writer(sink)
-                    .with_filter(make_filter()),
+                    .with_filter(filter_at(rust_log.as_deref(), log_level)),
             )
             .init();
         (drift, Some(flush))
     }
+}
+
+/// The level a `file_log` run's file records at where `$RUST_LOG` sets none.
+fn file_level(log_level: LogLevel, explicit_log_file: bool) -> LogLevel {
+    if VERBOSE.contains(&log_level) || explicit_log_file {
+        log_level
+    } else {
+        log_level.min(FILE_FLOOR)
+    }
+}
+
+/// `$RUST_LOG`'s directives, or `level` where it sets none or doesn't parse.
+fn filter_at(rust_log: Option<&str>, level: LogLevel) -> EnvFilter {
+    EnvFilter::try_new(filter_directives(rust_log, level.as_str()))
+        .unwrap_or_else(|_| EnvFilter::new(level.as_str()))
 }
 
 /// `writer` behind a queue only its worker thread writes from, so a stalled
@@ -252,6 +252,28 @@ fn log_open_failure(path: &Path, e: &std::io::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_logs_at_its_floor_or_a_stricter_level_unless_verbose_or_named() {
+        assert_eq!(file_level(LogLevel::Info, false), FILE_FLOOR);
+        assert_eq!(file_level(LogLevel::Error, false), LogLevel::Error);
+        for verbose in VERBOSE {
+            assert_eq!(file_level(verbose, false), verbose);
+        }
+        assert_eq!(file_level(LogLevel::Info, true), LogLevel::Info);
+    }
+
+    #[test]
+    fn a_rust_log_that_does_not_parse_leaves_the_level_its_run_asked() {
+        assert_eq!(
+            filter_at(Some("pixtuoid=verbose"), LogLevel::Error).to_string(),
+            "error"
+        );
+        assert_eq!(
+            filter_at(Some("pixtuoid=debug"), LogLevel::Error).to_string(),
+            "pixtuoid=debug"
+        );
+    }
 
     /// docs/CONFIGURATION.md states the file's floor, and the levels that
     /// raise it, as text no build reaches.

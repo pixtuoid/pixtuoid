@@ -108,8 +108,9 @@ the window closes.
 - `x` and `y` are dropped when the OS can't report the window's position; the
   next launch lets the OS place it.
 - `zoom` is how many density steps the office is zoomed from its automatic
-  scale: Cmd/Ctrl `+` and `-` change it, and Cmd/Ctrl `0` resets it. With no
-  zoom there is no key. The zoom holds where the office still lays out.
+  scale: Cmd/Ctrl `+` and `-` change it, and Cmd/Ctrl `0` resets it. At zero
+  zoom pixtuoid leaves the `zoom` key out of the file. The zoom holds where the
+  office still lays out.
 - An `opacity` key from an older release is ignored and left in the file.
 
 ### Sound
@@ -126,14 +127,14 @@ uninvited.
   and the whole mix sits under your work audio by design. `+`/`-` nudge it live
   and save it; a `♩ N%` readout flashes in the TUI's footer, or in the floating
   window's bottom-right corner. `+` from muted also unmutes.
-- **What plays.** An endless run of lofi songs, night songs once the office's
-  night, which follows the same sundown as its lights, is half in. Each song darkens in rain
-  and plays as busy as **the floor you're viewing**: running agents fill the
-  band, and typing density tracks them; other floors are silent until you ride to
-  them. Gentle rain plays when the office's weather rains (the weather is the
-  same on every floor, outside the windows), and one-shots: a door chime when
-  someone walks in, and printer and vending-machine moments. Every
-  sound is made in code, with no audio files.
+- **What plays.** An endless run of lofi songs. Once the office's night is half
+  in (it follows the same sundown as the lights), they turn to night songs. Each
+  song darkens in rain and plays as busy as **the floor you're viewing**:
+  running agents fill the band, and typing density tracks them; other floors are
+  silent until you ride to them. Gentle rain plays when the office's weather
+  rains (the weather is the same on every floor, outside the windows), and
+  one-shots: a door chime when someone walks in, and printer and vending-machine
+  moments. Every sound is made in code, with no audio files.
 - **Linux.** There is no release archive or npm package for Linux: a binary
   with sound needs `libasound.so.2` when it loads, which neither can bring,
   and cpal can't load it later yet
