@@ -5,8 +5,8 @@
 # binary's harness may kill a core/scene survivor: re-run it with
 # `--test-workspace=true` before acting on it. A
 # `--timeout-multiplier` passed through keeps cargo-mutants' timeout above
-# the longest `slow-timeout` in `.config/nextest.toml`, overrides included, or a
-# real hang files as `timeout`, not `caught`.
+# nextest's `[profile.default] slow-timeout`, or a real hang files as `timeout`,
+# not `caught`.
 test_tool = "nextest"
 # The binary's tests run the real shim, which only its own package builds.
 additional_cargo_args = ["--package=pixtuoid-hook"]
