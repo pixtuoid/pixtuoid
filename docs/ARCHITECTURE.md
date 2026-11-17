@@ -1,49 +1,29 @@
-# Architecture
+# How it works
 
 How a running coding-agent session becomes a moving sprite in the office.
 
 > This file is the **single source** for pixtuoid's architecture overview. It
-> renders on the website at [`/architecture`](https://pixtuoid.dev/architecture/)
-> and on GitHub (the diagram below is native Mermaid). Contributor-level
+> renders on the website at [`/how-it-works`](https://pixtuoid.dev/how-it-works/),
+> where the stops below run a recorded Claude Code session through pixtuoid's
+> own decoder, reducer and engine, built to WebAssembly. Contributor-level
 > detail lives in `AGENTS.md` and the code's own doc comments.
 
-## The shape of it
+## One event, five stops
 
-pixtuoid is a Cargo workspace of **six crates** wired as a strict
-**producer → reducer → renderer** pipeline:
+When Claude Code reads a file, this is the path from its hook to the sprite at
+its desk.
 
-- **`pixtuoid-core`** — the headless library: sources and decoders, the
-  reducer + scene state. No terminal dependencies.
-- **`pixtuoid-scene`** — the backend-agnostic render + simulation **engine**:
-  the office world itself (`look::render`, the sprite format, the grid/walkable
-  vocabulary, layout, pose, walk physics and pathfinding, themes, pets).
-  Terminal- AND window-free **by crate boundary** — compiler-enforced, not
-  just a lint.
-- **`pixtuoid`** — the binary: the CLI, the runtime wiring, and two thin
-  painters over the engine — the TUI renderer and the floating desktop
-  window.
-- **`pixtuoid-web`** — the third painter: a publish-excluded wasm crate
-  rendering the same engine into a browser `<canvas>` (the site's live hero),
-  with `native` (core's async runtime) off so core compiles to wasm32.
-- **`pixtuoid-web-music`** — the site's ♩ lofi stream, in a publish-excluded
-  wasm of its own that only the site's music worker loads.
-- **`pixtuoid-hook`** — a tiny shim your coding agent invokes per hook event:
-  stdin JSON → a local IPC endpoint (Unix socket / named pipe), and it
-  **always exits 0** so it can never block your agent.
+<!-- figure: journey -->
 
-Dependency direction is one-way: `pixtuoid-core ← pixtuoid-scene ←
-{pixtuoid, pixtuoid-web, pixtuoid-web-music}`. The engine's frame entry (`look::render`) is the
-inversion point that keeps the core terminal-free — the same entry drives the
-terminal, the desktop window, and the browser canvas, in either look.
+| Stop | In the code | What happens | Why |
+| --- | --- | --- | --- |
+| The agent | Claude Code's hooks | At each step of its work, Claude Code runs the hook command pixtuoid installed and writes one JSON object to its stdin. | A hook fires as the agent acts, so the sprite moves with it. pixtuoid also reads the transcript the agent writes, for what no hook reports, such as token use. |
+| The shim | `pixtuoid-hook` | A small program stamps the line with the agent's name, its process id and the time, writes it to pixtuoid's local socket (a named pipe on Windows), and exits 0. | The agent waits for its hook. The shim gives up on a closed or slow pixtuoid within a fixed bound and still exits 0, so the office never holds your agent up. |
+| The decoder | `decode_hook_payload` | The stamped name picks the decoder for that agent, which turns the line into events every agent shares. | Each agent words its hooks its own way. What one agent's format means lives in its decoder, so nothing past this stop asks which agent it is. |
+| The office | `Reducer::apply` | The reducer folds the events into one picture of the office: who is here, at which desk, doing what. | Hooks and transcripts feed one channel into one reducer, so a step both report counts once, and every painter reads the same picture. |
+| The frame | `look::render` | The engine draws that picture. The same call paints the terminal, the desktop window and the website. | The engine knows no terminal or window. Each painter only copies its pixels out, so the office looks the same wherever it runs. |
 
-A **`Source`** is an **Agent** — a transcript- or hook-bearing coding CLI
-whose events become a **desk sprite** — or a **Daemon** — a long-running
-gateway with no transcript and no desk, shown as one wandering mascot per
-running instance. The OpenClaw gateway is the first daemon: it ambles when
-idle, shuttles when a turn is in flight, sickens red when its backend
-degrades, and walks out when it goes down.
-
-## Data flow
+## Every way in
 
 ```mermaid
 flowchart TB
@@ -71,39 +51,55 @@ flowchart TB
   ST -.-> SV["pixtuoid serve<br/>to a paired device"]
 ```
 
-**Walking the pipeline:**
+- **The transcript.** `JsonlWatcher` tails each agent's transcript and decodes
+  its lines with that agent's own decoder. A first-sight gate keeps a session
+  that ended before pixtuoid started from walking back in. Every source tags
+  its events with how they arrived (`Transport`), and a hook wins over its
+  transcript echo.
+- **A second instance.** Its `HookRouter` subscribes to the socket's owner for
+  the same lines, so each instance keeps its own reducer and viewport, and it
+  takes the socket when that owner exits.
+- **Time.** `Reducer::tick` sweeps stale slots on the driver's
+  `SWEEP_TICK_INTERVAL_SECS` tick, and `SceneSink::publish` sends each changed
+  scene as a fresh `Arc<SceneState>` on a `watch` channel, which the renderer
+  borrows without a lock.
+- **A gateway.** A daemon creates no agent slot and writes no transcript: the
+  `HookRouter` decodes its payloads with the source's own `presence_decoder`
+  and pushes `PresenceMsg { key: DaemonInstanceKey, delta }` onto a sibling
+  channel, never the agent channel, which `apply_presence` merges into
+  `SceneState::daemons`. A daemon has no per-session pid, so silence (a
+  decayed TTL) is how it goes down abruptly.
+- **Off the machine.** `pixtuoid serve` is this pipeline with no painter, the
+  one listener on a network: paired devices on the LAN read the scene over
+  pinned TLS as `pixtuoid_core::remote` lines, and may list the agent CLIs here
+  and connect or disconnect them. A line carries no desk: a device seats
+  everyone itself and renders with the same engine.
 
-1. **Ingest.** A hook event rides the shim (enriched, watchdog-bounded, exit
-   0) to `HookSocketListener`, where `decode_hook_object` turns it into
-   `AgentEvent`s. A second instance's `HookRouter` subscribes to the socket's
-   owner for the same lines, so each instance keeps its own reducer and
-   viewport, and takes the socket when that owner exits. In parallel,
-   `JsonlWatcher` tails each agent's transcript (a first-sight gate keeps
-   historical sessions from resurrecting) and decodes lines via that source's
-   own decoder.
-2. **One channel.** Every source multiplexes onto a single
-   `mpsc::Sender<(Transport, AgentEvent)>`; the `Transport` tag drives
-   **hook-wins dedup**, so a hook and its transcript echo don't double-count.
-3. **Reduce.** `Reducer::apply` folds events into a `SceneState`, and `Reducer::tick` sweeps
-   its stale slots on the driver's `SWEEP_TICK_INTERVAL_SECS` tick; `SceneSink::publish`
-   sends each changed scene as a fresh `Arc<SceneState>` on a `watch` channel.
-4. **Render.** The renderer borrows the latest scene (O(1), no lock), paints
-   it through the engine's terminal-agnostic pixel pass, then flushes it as
-   terminal images where the terminal draws them, else half-block (`▀`) cells.
+## The crates
 
-**The daemon lane.** A daemon creates no agent slot and writes no transcript:
-the `HookRouter` decodes its payloads via the source's own `presence_decoder`
-and pushes `PresenceMsg { key: DaemonInstanceKey, delta }` onto a **sibling
-channel** — never the agent channel — merged by the `AgentId`-free
-`apply_presence` into `SceneState::daemons`. N concurrent instances of one
-gateway route to distinct mascots; a daemon has no per-session pid, so
-*silence* (a decayed TTL) is its abrupt-down signal.
+pixtuoid is a Cargo workspace of six crates, and its dependency direction is
+one-way: `pixtuoid-core ← pixtuoid-scene ← {pixtuoid, pixtuoid-web,
+pixtuoid-web-music}`, with `pixtuoid-hook` standalone.
 
-**Off the machine.** `pixtuoid serve` is this pipeline with no painter, the one
-listener on a network: paired devices on the LAN read the scene over pinned TLS
-as `pixtuoid_core::remote` lines, and may list the agent CLIs here and connect or
-disconnect them. A line carries no desk: a device seats everyone itself and
-renders with the same engine.
+- **`pixtuoid-core`**: sources and decoders, the reducer and its scene state.
+  No terminal dependencies.
+- **`pixtuoid-scene`**: the engine, the office world itself (`look::render`,
+  the sprite format, layout, pose, walking and pathfinding, themes, pets).
+  Terminal- and window-free by crate boundary, so the compiler enforces it.
+- **`pixtuoid`**: the binary: the CLI, the runtime wiring, and two thin
+  painters over the engine: the terminal, as terminal images where the
+  terminal draws them, else half-block (`▀`) cells, and the floating desktop
+  window.
+- **`pixtuoid-web`**: the painter behind the website's live office and the
+  stops above, a wasm crate never published, with core's async runtime
+  (`native`) off so core compiles to wasm32.
+- **`pixtuoid-web-music`**: the website's ♩ lofi, in a wasm of its own that
+  only the site's music worker loads.
+- **`pixtuoid-hook`**: the shim, which always exits 0.
+
+A **`Source`** is an **Agent**, a transcript- or hook-bearing coding CLI whose
+events become a desk sprite, or a **Daemon**, a long-running gateway with no
+transcript and no desk, shown as one wandering mascot per running instance.
 
 ## Beyond this workspace
 

@@ -104,7 +104,7 @@ test('markdown callouts render as terminal windows (note + warning)', async ({ p
   await expect(warn).toBeVisible();
   await expect(warn.locator('.callout__title')).toHaveText('~ warning');
   await expect(warn.locator('.terminal__dot--r')).toBeAttached();
-  await page.goto('./architecture/');
+  await page.goto('./how-it-works/');
   const note = page.locator('.callout--note').first();
   await expect(note).toBeVisible();
   await expect(note.locator('.callout__title')).toHaveText('~ note');

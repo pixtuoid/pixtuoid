@@ -10,14 +10,9 @@ use serde_json::Value;
 use super::reads::{Spelling, WRITE_STAMPS};
 use super::{BreadcrumbSink, CASCADE_TICK, Decode, Delivered, Drive, Driven, Fold};
 use crate::source::DEFAULT_POLL_INTERVAL;
-use crate::source::decoder::rfc3339_to_epoch;
+use crate::source::decoder::{SHIM_STAMP, rfc3339_to_epoch};
 use crate::state::ActivityState;
 use crate::{AgentEvent, Transport};
-
-/// What the shim stamps on every envelope: when it forwarded it, in
-/// milliseconds since the epoch. Pinned by
-/// `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
-pub const SHIM_STAMP: &str = "_shim_ts_ms";
 
 /// One event a merge applied.
 #[derive(Debug, Clone)]

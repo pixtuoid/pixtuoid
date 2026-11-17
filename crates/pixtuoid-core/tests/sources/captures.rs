@@ -9,10 +9,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use pixtuoid_core::harness::HOOK_PAYLOADS;
-use pixtuoid_core::harness::merge::SHIM_STAMP;
 use pixtuoid_core::harness::provenance::{Deidentified, NonEmpty, Provenance, Recorded};
 pub(crate) use pixtuoid_core::harness::sources_root;
-use pixtuoid_core::source::decoder::SOURCE_STAMP;
+use pixtuoid_core::source::decoder::{SHIM_STAMP, SOURCE_STAMP};
 use pixtuoid_core::source::registry;
 
 /// A committed capture: the bytes, the record of where they came from, and the

@@ -215,9 +215,28 @@ function pair(kind, table, columns) {
   return found;
 }
 
-// `cards` and `budget` draw their content from the table they mark; the two-pane kinds draw a
-// fixed picture and take only their captions from it.
+// A journey's stops, by the role the How it works page's script fills each with (public/journey.js).
+export const JOURNEY_STOPS = ['agent', 'shim', 'decoder', 'office', 'frame'];
+
+// `cards`, `budget` and `journey` draw their content from the table they mark; the two-pane kinds
+// draw a fixed picture and take only their captions from it.
 const KINDS = {
+  journey: (table) => {
+    const found = rows('journey', table, ['stop', 'in the code', 'what happens', 'why']);
+    if (found.length !== JOURNEY_STOPS.length) {
+      throw new Error(`figure "journey" has ${JOURNEY_STOPS.length} stops, found ${found.length}`);
+    }
+    return h(
+      'ol.fig-journey__stops',
+      found.map(([name, code, what, why], i) =>
+        h('li.fig-journey__stop', { dataStop: JOURNEY_STOPS[i] }, [
+          h('p.fig-journey__head', [h('span.fig-journey__name', name), ' ', ...code]),
+          h('p.fig-journey__what', what),
+          h('details.fig-journey__why', [h('summary', 'Why'), h('p', why)]),
+        ])
+      )
+    );
+  },
   budget: (table) =>
     windowed('frames against their budget: a tick is when one is due', [
       h(

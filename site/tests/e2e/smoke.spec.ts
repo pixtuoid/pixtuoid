@@ -7,6 +7,7 @@ import { E2E_STAR_COUNT, REPO } from '../../config/github.mjs';
 import { FLOORS, floorById } from '../../config/floors.mjs';
 import { DISCORD } from '../../config/discord.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
+import { JOURNEY_STOPS } from '../../config/rehype-figures.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
 // WCAG 2.2's AA floors: text (SC 1.4.3) and non-text (SC 1.4.11).
@@ -1515,6 +1516,85 @@ test('docs pages keep the sticky nav with its links', async ({ page }) => {
   expect(errors()).toEqual([]);
 });
 
+test('how it works: every recorded hook fills each stop through the real decoder and reducer, legible in every theme', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors = watchErrors(page);
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  const out = (stop: string) => page.locator(`[data-stop="${stop}"] .fig-journey__out`);
+  for (const theme of VALID_THEMES) {
+    await page.goto(`./how-it-works/?theme=${theme}`);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const hooks = page.locator('.fig-journey__hook');
+    await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+    const count = await hooks.count();
+    expect(count, 'a journey of more than one hook').toBeGreaterThan(1);
+    for (let i = 0; i < count; i++) {
+      await hooks.nth(i).click();
+      // The next hook opens once every stop has shown this one.
+      await expect(hooks.nth((i + 1) % count)).toBeEnabled();
+      const stamps = await out('shim').locator('.fig-journey__stamp').allTextContents();
+      expect(stamps.length, `hook ${i}: the shim's stamps are marked`).toBeGreaterThan(0);
+      const agent = (await out('agent').textContent())!;
+      for (const stamp of stamps) {
+        expect(agent, `hook ${i}: the agent's own line`).not.toContain(stamp.split(':')[0].trim());
+      }
+      expect(JSON.parse((await out('decoder').textContent())!).length).toBeGreaterThan(0);
+      const slots = JSON.parse((await out('office').textContent())!);
+      expect(slots.length, `hook ${i}: the one session in the office`).toBe(1);
+      if (i === count - 1) expect(slots[0].exiting_at, 'the last hook ends it').not.toBeNull();
+      if (i === 0) {
+        expect(await canvasPainted(page, '.fig-journey__office')).toBe(true);
+        for (const selector of [
+          '.fig-journey__hook:not(:disabled)',
+          '.fig-journey__hook:not(:disabled) .fig-journey__n',
+          '.fig-journey__name',
+          '.fig-journey__what',
+          '.fig-journey__why summary',
+          '.fig-journey__out',
+          '.fig-journey__stamp',
+        ]) {
+          const ratio = await paintedContrast(page, selector);
+          expect(
+            ratio,
+            `${theme} ${selector}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(AA_TEXT);
+        }
+      }
+    }
+  }
+  expect(errors()).toEqual([]);
+});
+
+test('how it works without script: its stops read as prose, each why folded, and no player', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto('./how-it-works/');
+  await expect(page.locator('.fig-journey__stop')).toHaveCount(JOURNEY_STOPS.length);
+  await expect(page.locator('.fig-journey__what').first()).toBeVisible();
+  await expect(page.locator('.fig-journey__why').first()).not.toHaveAttribute('open');
+  await expect(page.locator('.fig-journey__player')).toHaveCount(0);
+  await context.close();
+});
+
+test('how it works under reduced motion: a hook still lands, and the office draws a still of it', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./how-it-works/');
+  const hooks = page.locator('.fig-journey__hook');
+  await hooks.first().click({ timeout: 15_000 });
+  await expect(hooks.nth(1)).toBeEnabled();
+  await expect(page.locator('[data-stop="office"] .fig-journey__out')).toContainText('"label"');
+  await expect.poll(() => canvasPainted(page, '.fig-journey__office')).toBe(true);
+  await context.close();
+});
+
 test('reduced motion stays on the still poster without errors', async ({ browser }) => {
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await context.newPage();
@@ -1928,7 +2008,7 @@ test('first visit on an office-less page lifts the splash promptly (no engine-ga
 }) => {
   // window.__pixEngineReady is set ONLY by OfficeBackdrop (index-only), so an office-less page's Level-2 gate must fall back to the flat delay.
   const errors = watchErrors(page);
-  await page.goto('./architecture/'); // real first visit (no pix-booted), no OfficeBackdrop
+  await page.goto('./how-it-works/'); // real first visit (no pix-booted), no OfficeBackdrop
   await expect(page.locator('#boot')).toBeVisible();
   await expect(page.locator('#office-live')).toHaveCount(0);
   await expect(
@@ -2345,9 +2425,9 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./', 768],
     ['./config/', 390],
     ['./config/', 768],
-    ['./architecture/', 375],
+    ['./how-it-works/', 375],
     ['./contributing/', 375],
-    ['./architecture/', 768],
+    ['./how-it-works/', 768],
     // Every reading page (the blog's lobby, each doc and post) at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
     ...readingRoutes().map((route) => [`./${route}`, 320] as const),
   ] as const) {
@@ -2649,7 +2729,7 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
       '.app__note',
     ],
     './404.html': ['.terminal__title'],
-    './architecture/': [
+    './how-it-works/': [
       '.prose :not(pre) > code',
       '.prose a > code',
       '.wing__pager-dir',

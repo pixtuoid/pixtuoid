@@ -113,6 +113,39 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   <Statusline wingPath={wing.path} pageSlug={page && pageName(page).split('/').pop()} />
 </Base>
 
+<script
+  is:inline
+  data-journey-url={asset('journey.js')}
+  data-office-driver-url={asset('office-driver.js')}
+  data-office-host-url={asset('office-host.js')}
+  data-wasm-js-url={asset('wasm/pixtuoid_web.js')}
+>
+  // A page with a journey figure (rehype-figures.mjs) runs it in the office wasm, fetched once the page has
+  // loaded and gone idle so it never competes with the first paint; without the wasm its stops stay prose.
+  (function () {
+    const figure = document.querySelector('.fig--journey');
+    if (!figure || typeof WebAssembly === 'undefined') return;
+    const urls = document.currentScript.dataset;
+    function boot() {
+      import(urls.journeyUrl)
+        .then(function (m) {
+          return m.start(figure, {
+            driver: urls.officeDriverUrl,
+            host: urls.officeHostUrl,
+            wasm: urls.wasmJsUrl,
+          });
+        })
+        .catch(function () {});
+    }
+    const idle = window.requestIdleCallback || setTimeout;
+    if (document.readyState === 'complete') idle(boot);
+    else
+      window.addEventListener('load', function () {
+        idle(boot);
+      });
+  })();
+</script>
+
 <script is:inline>
   // Scrollspy: light the TOC entry whose heading crosses the upper reading band.
   (function () {
@@ -433,6 +466,149 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   .wing :global(p.fig-pane__count) {
     font-family: var(--font-display);
     font-size: 1.5rem;
+  }
+  .wing :global(.fig--journey) {
+    margin: 1.8rem 0;
+  }
+  /* The office and the send buttons stay in view while the stops below them fill. */
+  .wing :global(.fig-journey__player) {
+    position: sticky;
+    top: var(--nav-h);
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.7rem;
+    align-items: center;
+    padding-block: 0.7rem;
+    margin-bottom: 1.2rem;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+  }
+  @media (min-width: 40rem) {
+    .wing :global(.fig-journey__player) {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+  }
+  .wing :global(.fig-journey__send) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .wing :global(.fig-journey__hook) {
+    font-family: var(--font-mono);
+    font-size: 0.84rem;
+    padding: 0.45rem 0.85rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--fg);
+    cursor: pointer;
+  }
+  .wing :global(.fig-journey__hook:disabled) {
+    cursor: default;
+    opacity: 0.5;
+  }
+  .wing :global(.fig-journey__hook:not(:disabled)) {
+    border-color: var(--coral-deep);
+    box-shadow: 0 0 0 1px var(--coral-deep) inset;
+  }
+  .wing :global(.fig-journey__hook.is-sent) {
+    text-decoration: line-through;
+  }
+  .wing :global(.fig-journey__n) {
+    font-weight: 700;
+    color: var(--coral-deep);
+  }
+  .wing :global(.fig-journey__stops) {
+    position: relative;
+    display: grid;
+    gap: 1.4rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  /* The rail the stops hang on, and each stop's dot, which lights as a line reaches it. */
+  .wing :global(.fig-journey__stops)::before {
+    content: '';
+    position: absolute;
+    left: 0.55rem;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    width: 2px;
+    background: var(--border-strong);
+  }
+  .wing :global(.fig-journey__stop) {
+    position: relative;
+    min-width: 0;
+    margin: 0;
+    padding-left: 2.2rem;
+  }
+  .wing :global(.fig-journey__stop)::before {
+    content: '';
+    position: absolute;
+    left: 0.1rem;
+    top: 0.35rem;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 4px;
+    background: var(--bg);
+    border: 2px solid var(--border-strong);
+    transition:
+      background 0.2s ease,
+      border-color 0.2s ease;
+  }
+  .wing :global(.fig-journey__stop.is-lit)::before {
+    background: var(--coral);
+    border-color: var(--coral-deep);
+  }
+  .wing :global(p.fig-journey__head) {
+    margin: 0;
+  }
+  .wing :global(.fig-journey__name) {
+    margin-right: 0.4rem;
+    font-family: var(--font-display);
+    font-size: 1.45rem;
+    line-height: 1.1;
+    color: var(--fg);
+  }
+  .wing :global(p.fig-journey__what) {
+    margin: 0.35rem 0 0.6rem;
+  }
+  .wing :global(pre.fig-journey__out) {
+    max-height: 16rem;
+    margin: 0 0 0.6rem;
+    font-size: 0.78rem;
+    line-height: 1.5;
+    background: var(--screen);
+    color: var(--chip-ink);
+  }
+  .wing :global(.fig-journey__stamp) {
+    background: color-mix(in srgb, var(--coral) 30%, transparent);
+    color: inherit;
+  }
+  /* As tall as a short viewport can spare under the nav, never wider than the column. */
+  .wing :global(.fig-journey__office) {
+    display: block;
+    width: min(100%, 2 * clamp(7rem, 22vh, 12rem));
+    aspect-ratio: 2 / 1;
+    border-radius: var(--radius-sm);
+    background: var(--screen);
+    image-rendering: pixelated;
+  }
+  .wing :global(.fig-journey__why summary) {
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: 0.84rem;
+    color: var(--coral-deep);
+  }
+  .wing :global(.fig-journey__why p) {
+    margin: 0.4rem 0 0;
+    font-size: 0.95rem;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wing :global(.fig-journey__stop)::before {
+      transition: none;
+    }
   }
   .wing :global(.callout__body) {
     margin: 0;

@@ -18,9 +18,12 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use pixtuoid_core::state::SceneState;
+use pixtuoid_core::source::decoder::{
+    EVENT_STAMP, PID_STAMP, SHIM_STAMP, SOURCE_STAMP, decode_hook_payload,
+};
 use pixtuoid_core::state::reducer::Reducer;
-use pixtuoid_core::{AgentEvent, AgentId};
+use pixtuoid_core::state::{AgentSlot, SceneState};
+use pixtuoid_core::{AgentEvent, AgentId, Transport};
 
 use pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS;
 use pixtuoid_scene::audio::OneShotPool;
@@ -149,8 +152,7 @@ pub struct Office {
     /// The cutaway at the pack's densest art, which the browser upscales.
     fit: PixelFit,
     reducer: Reducer,
-    /// The hero's cast, its loop anchored at the first `step`.
-    cast: Option<Playhead>,
+    cast: Cast,
     /// Visitor hires — outside the loop machinery, so one never replays on wrap.
     hires: VisitorHires,
     /// The clock of the most recent `step` — `hire()` has no clock parameter, so
@@ -169,6 +171,35 @@ pub struct Office {
     audio: Option<audio::WebAudioDriver>,
 }
 
+/// What an office plays on its own.
+#[derive(Debug)]
+enum Cast {
+    /// The hero's script, its loop anchored at the first `step`.
+    Hero(Option<Playhead>),
+    /// Nothing: only the hook lines [`Office::send_hook`] lands.
+    Journey,
+}
+
+impl Cast {
+    /// Who draws the office's words: the hero's page lays them over the canvas
+    /// ([`Office::overlay_json`]), and the journey's frame carries its own.
+    const fn world_text(&self) -> WorldText {
+        match self {
+            Cast::Hero(_) => WorldText::Host,
+            Cast::Journey => WorldText::Baked,
+        }
+    }
+}
+
+/// The lines [`Office::journey_lines`] hands the page: Claude Code reading one
+/// file, recorded as its shim forwarded them.
+const JOURNEY: &str = include_str!(
+    "../../pixtuoid-core/tests/sources/claude_code/fixtures/tool-run-hermetic/hook-payloads.jsonl"
+);
+
+/// Every key the shim can stamp on a hook line.
+const SHIM_STAMPS: [&str; 4] = [SHIM_STAMP, SOURCE_STAMP, EVENT_STAMP, PID_STAMP];
+
 /// How many units tall [`Office::fit`] aims the site's office: a closer camera
 /// than the app's, since its sprites are fixed-size.
 pub const FRAMING_UNITS_H: u32 = 130;
@@ -186,7 +217,38 @@ impl Office {
     /// If the bundled sprite pack fails to parse.
     #[wasm_bindgen(constructor)]
     pub fn new(seed: u32) -> Result<Office, JsError> {
-        Self::on_screen(seed, page_clock()).map_err(|e| JsError::new(&format!("{e:#}")))
+        Self::on_screen(seed, page_clock(), Cast::Hero(None))
+            .map_err(|e| JsError::new(&format!("{e:#}")))
+    }
+
+    /// Build an office seeded with `seed` that plays nothing on its own: the
+    /// How it works page sends it [`Office::journey_lines`] one by one.
+    ///
+    /// # Errors
+    ///
+    /// If the bundled sprite pack fails to parse.
+    pub fn journey(seed: u32) -> Result<Office, JsError> {
+        Self::on_screen(seed, page_clock(), Cast::Journey)
+            .map_err(|e| JsError::new(&format!("{e:#}")))
+    }
+
+    /// The recorded hook lines the How it works page sends, in order.
+    pub fn journey_lines() -> Vec<String> {
+        JOURNEY.lines().map(str::to_owned).collect()
+    }
+
+    /// Land one hook line, as the shim forwarded it, through the real decoder
+    /// and reducer at `now_ms` (UNIX-epoch milliseconds, as `step` takes), and
+    /// return what each stop made of it as JSON:
+    /// `{"stamps":[key…],"events":[AgentEvent…],"agents":[AgentSlot…]}`,
+    /// `stamps` being the line's keys the shim stamps.
+    ///
+    /// # Errors
+    ///
+    /// If the line is not JSON, or no decoder takes it.
+    pub fn send_hook(&mut self, line: &str, now_ms: f64) -> Result<String, JsError> {
+        self.land_hook(line, pixtuoid_scene::anim::from_epoch_ms(now_ms))
+            .map_err(|e| JsError::new(&e.to_string()))
     }
 
     /// Advance to `now_ms` and render an office `w`×`h` layout units big into
@@ -503,7 +565,7 @@ const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
 
 impl Office {
     /// [`Office::new`]'s office, its flash hold on `clock`.
-    fn on_screen(seed: u32, clock: ScreenClock) -> Result<Office, PackError> {
+    fn on_screen(seed: u32, clock: ScreenClock, cast: Cast) -> Result<Office, PackError> {
         let pack = std::sync::Arc::new(load_bundled_pack()?);
         let density = pack.max_density_variant();
         // The browser upscales the frame, so it renders at the art's own
@@ -519,7 +581,7 @@ impl Office {
             theme: &NORMAL,
             fit,
             reducer: Reducer::new().counting(pixtuoid_scene::tally::local_day),
-            cast: None,
+            cast,
             hires: VisitorHires::default(),
             last_now: None,
             caps_units: None,
@@ -546,7 +608,7 @@ impl Office {
         h: u32,
     ) -> Result<Office, PackError> {
         let screen = ManualClock::default();
-        let mut office = Self::on_screen(seed, screen.clock())?;
+        let mut office = Self::on_screen(seed, screen.clock(), Cast::Hero(None))?;
         office.set_weather(weather);
         office.step(t0_ms, w, h);
         // No one sees the anchor frame, so its flash hold lapses before the
@@ -602,9 +664,36 @@ impl Office {
     fn advance_script(&mut self, now: SystemTime) {
         self.hires
             .drain_due(now, &mut self.reducer, &mut self.scene);
-        self.cast
-            .get_or_insert_with(|| Playhead::new(script::hero(), now))
-            .advance(now, &mut self.reducer, &mut self.scene);
+        match &mut self.cast {
+            Cast::Hero(cast) => cast
+                .get_or_insert_with(|| Playhead::new(script::hero(), now))
+                .advance(now, &mut self.reducer, &mut self.scene),
+            // The sweep a playhead's advance ends on, which walks an ended session out.
+            Cast::Journey => self.reducer.tick(&mut self.scene, now),
+        }
+    }
+
+    /// [`Office::send_hook`], its error left to the caller.
+    fn land_hook(
+        &mut self,
+        line: &str,
+        now: SystemTime,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        let payload: serde_json::Value = serde_json::from_str(line)?;
+        let stamps = SHIM_STAMPS
+            .into_iter()
+            .filter(|key| payload.get(key).is_some())
+            .collect();
+        let events = decode_hook_payload(payload)?;
+        for event in &events {
+            self.reducer
+                .apply(&mut self.scene, event.clone(), now, Transport::Hook);
+        }
+        Ok(serde_json::to_string(&Landed {
+            stamps,
+            events,
+            agents: self.scene.agents.values().collect(),
+        })?)
     }
 
     /// The hero's conditions: this office's own weather.
@@ -619,8 +708,10 @@ impl Office {
         // Too small to lay out: draws nothing, and `step` fills the frame; never panics.
         let conditions = self.conditions();
         self.session.render(
-            self.fit
-                .look(pixtuoid_scene::look::LookKind::Cutaway, WorldText::Host),
+            self.fit.look(
+                pixtuoid_scene::look::LookKind::Cutaway,
+                self.cast.world_text(),
+            ),
             RenderInputs {
                 world: FloorInputs {
                     scene: &self.scene,
@@ -651,6 +742,14 @@ fn expand_rgba(rgba: &mut Vec<u8>, buf: &pixtuoid_scene::sprite::RgbBuffer) {
 
 fn hex(c: pixtuoid_scene::sprite::Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b)
+}
+
+/// What [`Office::send_hook`] reports of one line.
+#[derive(Serialize)]
+struct Landed<'a> {
+    stamps: Vec<&'static str>,
+    events: Vec<AgentEvent>,
+    agents: Vec<&'a AgentSlot>,
 }
 
 /// One frame's DOM overlay as the site lays it out ([`Office::overlay_json`]).
@@ -1392,6 +1491,61 @@ mod tests {
             !o.session.office.coffee.map().contains_key(&cast_id(5)),
             "agent 5's coffee state was evicted with its slot"
         );
+    }
+
+    #[test]
+    fn the_journey_walks_one_agent_in_through_its_read_and_out() {
+        let mut o = match Office::journey(SEED) {
+            Ok(o) => o,
+            Err(_) => panic!("bundled pack must parse"),
+        };
+        let mut t = T0_MS;
+        o.step(t, 160, 96);
+        o.step(t + 60_000.0, 160, 96);
+        assert!(o.scene.agents.is_empty(), "it plays nothing on its own");
+
+        let lines = Office::journey_lines();
+        let mut landed = Vec::new();
+        for line in &lines {
+            t += 1_000.0;
+            o.step(t, 160, 96);
+            let json = o
+                .land_hook(line, pixtuoid_scene::anim::from_epoch_ms(t))
+                .expect("a recorded line lands");
+            landed.push(serde_json::from_str::<serde_json::Value>(&json).expect("JSON"));
+        }
+        let kinds = |l: &serde_json::Value| {
+            l["events"]
+                .as_array()
+                .expect("events")
+                .iter()
+                .filter_map(|e| e.as_object()?.keys().next().cloned())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(landed.len(), 4, "the recording's four hooks");
+        assert!(kinds(&landed[0]).contains(&"SessionStart".to_owned()));
+        assert!(kinds(&landed[1]).contains(&"ToolUseStart".to_owned()));
+        assert!(kinds(&landed[2]).contains(&"ToolUseEnd".to_owned()));
+        assert!(kinds(&landed[3]).contains(&"SessionEnd".to_owned()));
+        for l in &landed {
+            assert_eq!(
+                l["stamps"],
+                serde_json::json!([SHIM_STAMP, SOURCE_STAMP, PID_STAMP]),
+                "the keys the shim added to Claude Code's line"
+            );
+        }
+        let state = |l: &serde_json::Value| l["agents"][0]["state"].clone();
+        assert_eq!(state(&landed[0]), serde_json::json!("Idle"));
+        assert_eq!(
+            state(&landed[1])["Running"]["item"]["kind"],
+            serde_json::json!("Read")
+        );
+        assert!(
+            landed[3]["agents"][0]["exiting_at"].is_object(),
+            "an ended session walks out"
+        );
+        o.step(t + 60_000.0, 160, 96);
+        assert!(o.scene.agents.is_empty(), "and its slot is swept");
     }
 
     #[test]

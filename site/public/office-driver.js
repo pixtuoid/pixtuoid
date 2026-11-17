@@ -1,18 +1,19 @@
-// The shared live-office driver for OfficeBackdrop and Showcase's VIBING channel, and OfficeBackdrop's audio bus and
-// music. Both are `is:inline` scripts (CSP-hashed), which the bundler doesn't process, so they can't static-import a
-// shared `src/` module — they dynamic-`import()` this public ES module at boot instead. office-host.js and
-// music-worker.js static-import `loadWasm` into module workers, which have no `window`: module scope touches no page
-// global.
+// The shared live-office driver for OfficeBackdrop, Showcase's VIBING channel and the How it works page's journey
+// (journey.js), and OfficeBackdrop's audio bus and music. Each boots from an `is:inline` script (CSP-hashed), which the
+// bundler doesn't process, so none can static-import a shared `src/` module — they dynamic-`import()` this public ES
+// module at boot instead. office-host.js and music-worker.js static-import `loadWasm` into module workers, which have
+// no `window`: module scope touches no page global.
 'use strict';
 
 const WASM_INIT_RETRIES = 2; // extra attempts after the first
 const WASM_INIT_BACKOFF_MS = 400;
 
-// The page's ONE office host (office-host.js), which both live-office consumers open their `Office` on, so one wasm
+// The page's ONE office host (office-host.js), which every live-office consumer opens its `Office` on, so one wasm
 // instance serves the page. A module worker runs it wherever a canvas can hand its drawing to one, so the wasm's boot
 // and frames never block the page's thread (Lighthouse's TBT); else the page's thread does. A host whose wasm never
-// loaded clears the memo, so a later consumer starts a fresh one (#671). Resolves to `{ offThread, open(seed, canvas) }`;
-// `open` resolves to the office's handle, whose `frame`, `call` and `warmAudio` are office-host.js's ops of those names.
+// loaded clears the memo, so a later consumer starts a fresh one (#671). Resolves to
+// `{ offThread, open(seed, canvas, journey) }`; `open` resolves to the office's handle, whose `frame`, `call` and
+// `warmAudio` are office-host.js's ops of those names, and whose `journeyLines` a journey office carries.
 export function officeHost(hostUrl, wasmJsUrl) {
   if (!window.__pixOfficeHost) {
     const host = startHost(hostUrl, wasmJsUrl);
@@ -67,33 +68,36 @@ async function startHost(hostUrl, wasmJsUrl) {
   }
   return {
     offThread: !!worker,
-    open(seed, canvas) {
+    open(seed, canvas, journey) {
       const id = ++ids;
       const target = worker ? canvas.transferControlToOffscreen() : canvas;
-      return rpc('open', { id, seed, canvas: target }, worker ? [target] : []).then(
-        function (info) {
-          let busy = false;
-          return {
-            audio: info.audio,
-            // A frame is in the host: its caller holds the next one rather than queue frames behind it.
-            get busy() {
-              return busy;
-            },
-            frame(req) {
-              busy = true;
-              return rpc('frame', Object.assign({ id }, req)).finally(function () {
-                busy = false;
-              });
-            },
-            call(method, ...args) {
-              return rpc('call', { id, method, args });
-            },
-            warmAudio(take) {
-              return rpc('warmAudio', { id, take });
-            },
-          };
-        }
-      );
+      return rpc(
+        'open',
+        { id, seed, canvas: target, journey: !!journey },
+        worker ? [target] : []
+      ).then(function (info) {
+        let busy = false;
+        return {
+          audio: info.audio,
+          journeyLines: info.journeyLines,
+          // A frame is in the host: its caller holds the next one rather than queue frames behind it.
+          get busy() {
+            return busy;
+          },
+          frame(req) {
+            busy = true;
+            return rpc('frame', Object.assign({ id }, req)).finally(function () {
+              busy = false;
+            });
+          },
+          call(method, ...args) {
+            return rpc('call', { id, method, args });
+          },
+          warmAudio(take) {
+            return rpc('warmAudio', { id, take });
+          },
+        };
+      });
     },
   };
 }
