@@ -1626,26 +1626,39 @@ test('how it works: every recorded hook fills each stop through the real decoder
   expect(errors()).toEqual([]);
 });
 
-test('how it works: the office moves a few seconds after a hook, then holds still', async ({
+test('how it works: the office moves for MOVING_MS after a hook, then holds still', async ({
   page,
 }) => {
   test.setTimeout(60_000);
+  // Past journey.js's MOVING_MS, by enough for a slow runner's last frame.
+  const MARGIN_MS = 1_000;
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./how-it-works/');
   const hooks = page.locator('.fig-journey__hook');
   const office = page.locator('.fig-journey__office');
   await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+  const moving: number = await page.evaluate(async () => {
+    const url = document.querySelector<HTMLElement>('[data-journey-url]')!.dataset.journeyUrl!;
+    return (await import(url)).MOVING_MS;
+  });
   await office.scrollIntoViewIfNeeded();
   const shot = async () => (await office.screenshot()).toString('base64');
+  const holdsStill = async () => {
+    const held = await shot();
+    await page.waitForTimeout(MARGIN_MS);
+    expect(await shot()).toBe(held);
+  };
+  // The boot's own window passes first, so what moves next is the hook's.
+  await page.waitForTimeout(moving + MARGIN_MS);
+  await holdsStill();
   await hooks.first().click();
+  await expect(page.locator('[data-stop="frame"]')).toHaveClass(/is-lit/);
+  const lit = Date.now();
   // The session walks in to its desk.
   const walking = await shot();
   await expect.poll(shot, { timeout: 3_000 }).not.toBe(walking);
-  // Past journey.js's MOVING_MS, which WCAG 2.2.2's five seconds bound, nothing moves until the next hook.
-  await page.waitForTimeout(6_000);
-  const held = await shot();
-  await page.waitForTimeout(1_000);
-  expect(await shot()).toBe(held);
+  await page.waitForTimeout(lit + moving + MARGIN_MS - Date.now());
+  await holdsStill();
 });
 
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({

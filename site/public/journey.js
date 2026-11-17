@@ -12,7 +12,7 @@ const STEP_MS = 280;
 // How long the office moves after it boots, resizes or takes a line, then holds still: within WCAG 2.2.2's five
 // seconds, past which motion that starts by itself needs a pause control
 // (w3.org/WAI/WCAG22/Understanding/pause-stop-hide).
-const MOVING_MS = 5000;
+export const MOVING_MS = 5000;
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 

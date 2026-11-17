@@ -667,17 +667,19 @@ mod tests {
             ("grok", "model-error-hermetic"), // its agent_error line decodes to nothing
         ] {
             let (_d, hooks) = stripped_copy(source, scenario, HOOK_PAYLOADS);
-            let stamps = |p: &Path| -> Vec<serde_json::Value> {
+            let stamps = |p: &Path| -> Vec<[serde_json::Value; 4]> {
                 parsed_lines(p)
                     .expect("read")
                     .expect("json")
                     .1
                     .iter()
-                    .map(|l| l[crate::source::decoder::FORWARDED_AT_STAMP].clone())
+                    .map(|l| crate::source::decoder::SHIM_STAMPS.map(|key| l[key].clone()))
                     .collect()
             };
             let before = stamps(&hooks);
-            assert!(before.iter().all(|v| v.as_i64().is_some_and(|ms| ms > 0)));
+            assert!(before.iter().all(|[at, source, ..]| {
+                at.as_i64().is_some_and(|ms| ms > 0) && source.is_string()
+            }));
             strip_unread(source, std::slice::from_ref(&hooks)).expect("strip");
             assert_eq!(stamps(&hooks), before, "{source}/{scenario}");
         }

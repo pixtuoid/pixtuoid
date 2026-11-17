@@ -1,5 +1,7 @@
 //! One session's two streams folded in every order they can reach the reducer
-//! in: a hook at its shim stamp, and a transcript line no sooner than its write
+//! in: a hook at its forwarded-at stamp
+//! ([`FORWARDED_AT_STAMP`](crate::source::decoder::FORWARDED_AT_STAMP)), and a
+//! transcript line no sooner than its write
 //! stamp and at most the watcher's `DEFAULT_POLL_INTERVAL` after it, behind
 //! every line above it, since the watcher reads a file in order.
 
@@ -589,7 +591,7 @@ mod tests {
     /// The shim (`pixtuoid-hook`) is the key's one writer, a crate this one
     /// cannot import from, so its own recorded output pins the spelling.
     #[test]
-    fn a_recorded_envelope_carries_the_shim_stamp_by_this_key() {
+    fn a_recorded_envelope_carries_the_forwarded_at_stamp_by_this_key() {
         let hooks = crate::harness::sources_root()
             .join("codex/fixtures/tool-run-hermetic")
             .join(crate::harness::HOOK_PAYLOADS);
