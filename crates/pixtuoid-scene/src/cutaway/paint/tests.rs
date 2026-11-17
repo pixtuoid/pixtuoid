@@ -2701,21 +2701,22 @@ fn the_outside_reaches_only_the_glass() {
         let moment = |weathered: &crate::outside::tests::Weathered, sky| {
             Moment::resolve(sky, theme, 0.0, Motion::Full.timing(weathered.now))
         };
-        let list = |shown: &Moment| {
+        let list = |shown: &Moment, outside: &mut crate::outside::OutsideCache| {
             crate::display::compose::compose_at(
                 &office.frame,
                 at,
                 shown,
                 (quiet_board(), crate::look::WorldText::Baked),
-                (
-                    &mut crate::display::compose::LightCache::default(),
-                    &mut crate::outside::OutsideCache::default(),
-                ),
+                (&mut crate::display::compose::LightCache::default(), outside),
             )
         };
+        // One for every sky: a warm cache draws what a fresh one does
+        // (`the_outside_cache_draws_what_a_fresh_frame_draws`).
+        let mut outside = crate::outside::OutsideCache::default();
         let frames = |weathered: &crate::outside::tests::Weathered| {
             let shown = moment(weathered, weathered.sky);
-            let mut bare = list(&shown);
+            let mut bare = list(&shown, &mut outside);
+            let lit = painted(&bare);
             let plain = moment(weathered, weathered.bare);
             let mut views = Vec::new();
             push_windows(
@@ -2723,7 +2724,7 @@ fn the_outside_reaches_only_the_glass() {
                 &plain,
                 &GlassWeather::of(&plain),
                 &mut views,
-                &mut crate::outside::OutsideCache::default(),
+                &mut outside,
             );
             for piece in bare.pieces_mut() {
                 if let PieceKind::Window { .. } = piece.kind {
@@ -2735,12 +2736,15 @@ fn the_outside_reaches_only_the_glass() {
                     piece.fingerprint = fingerprint(&piece.kind);
                 }
             }
-            [painted(&list(&shown)), painted(&bare)]
+            [lit, painted(&bare)]
         };
         // What every piece but a window paints, a glass wall aside (it
         // shows what lies behind it).
         let covered = |weathered: &crate::outside::tests::Weathered| {
-            let list = list(&moment(weathered, weathered.sky));
+            let list = list(
+                &moment(weathered, weathered.sky),
+                &mut crate::outside::OutsideCache::default(),
+            );
             let mut cache = CutawayCache::default();
             painted_alone(
                 (w, h),
@@ -2957,8 +2961,10 @@ fn every_piece_paints_only_inside_its_span() {
     // (`one_span_and_fingerprint_always_paint_the_same_pixels`), so a piece
     // checked once on one pack and canvas is checked for every frame.
     let mut checked = std::collections::HashSet::new();
-    // keyed by grid and light, so one cache serves every pack and canvas
-    let mut clouds = crate::outside::OutsideCache::default();
+    // Keyed by grid and light, one cache serves every pack and canvas; one a
+    // scale, a frame reuses the views the last one at its scale drew.
+    let mut clouds: std::collections::HashMap<u16, crate::outside::OutsideCache> =
+        std::collections::HashMap::new();
     let mut check = |pack_label: &str,
                      pack: &OfficeArt,
                      frame: &SimFrame,
@@ -2985,7 +2991,7 @@ fn every_piece_paints_only_inside_its_span() {
                 (quiet_board(), crate::look::WorldText::Baked),
                 (
                     &mut crate::display::compose::LightCache::default(),
-                    &mut clouds,
+                    clouds.entry(s).or_default(),
                 ),
             );
             for &Piece { span, ref kind, .. } in list.pieces() {
@@ -3782,6 +3788,9 @@ fn one_span_and_fingerprint_always_paint_the_same_pixels() {
         for s in [1, pack.max_density_variant().get()] {
             let scale = RenderScale::new(s).expect("nonzero");
             let mut last: Option<(u64, u64)> = None;
+            // A warm cache draws what a fresh one does
+            // (`the_outside_cache_draws_what_a_fresh_frame_draws`).
+            let mut outside = crate::outside::OutsideCache::default();
             for frame in &frames {
                 let list = compose_at(
                     frame,
@@ -3800,7 +3809,7 @@ fn one_span_and_fingerprint_always_paint_the_same_pixels() {
                     (quiet_board(), crate::look::WorldText::Baked),
                     (
                         &mut crate::display::compose::LightCache::default(),
-                        &mut crate::outside::OutsideCache::default(),
+                        &mut outside,
                     ),
                 );
                 repeats += same_fingerprint_same_pixels(&mut painted, &list, &layout, |p| {
