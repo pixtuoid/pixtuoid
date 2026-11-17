@@ -2699,14 +2699,11 @@ test('every doc and post diagram: its SVG text clears WCAG AA, its boxes have a 
   // version), and its plate is the last <rect> before the <text> in its own <g>
   // (node fill, subgraph header, edge-label backing) — never a CSS background.
   // A <path> shape (diamond, stadium) would fall back to the frame and grade vacuously.
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of VALID_THEMES) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
     let swept = 0;
     for (const { route } of markdownPages()) {
-      await page.goto(`./${route}`);
+      await page.goto(`./${route}?theme=${theme}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const diagrams = await page.evaluate(() =>
         [...document.querySelectorAll('.fig--diagram')].map((figure) => {
@@ -2968,12 +2965,9 @@ test('hero badge hues clear WCAG AA against their theme-aware chip surface (day 
 }) => {
   // Same-hue text on same-hue ground is exactly where contrast silently dies: the cell is TINTED with the badge's own hue
   // per theme, so sweep every rendered hue in both themes, and the code text.
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of ['day', 'night'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
-    await page.goto('./');
+    await page.goto(`./?theme=${theme}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
 
     const chips = await page.evaluate(() =>
@@ -3001,12 +2995,9 @@ test('tenant board text (badges, legend, planned rows, soon marks, star plaque) 
 }) => {
   // The board's --screen ground is a THEME-INDEPENDENT literal, so sweeping
   // both themes is defense-in-depth, not an expected-to-move ratio.
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of ['day', 'night'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
-    await page.goto('./');
+    await page.goto(`./?theme=${theme}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await page.evaluate(() =>
       document.getElementById('tools')!.scrollIntoView({ block: 'center', behavior: 'instant' })
@@ -3090,12 +3081,9 @@ test('pantry chitchat bubble text clears WCAG AA against its own dark ground (da
 }) => {
   // .pantry__bubble paints its OWN opaque --screen background, so read fg/bg
   // off the bubble element directly rather than off a panel ancestor.
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const theme of ['day', 'night'] as const) {
-    await page.addInitScript((t) => {
-      sessionStorage.setItem('pix-booted', '1');
-      localStorage.setItem('pix-theme', t);
-    }, theme);
-    await page.goto('./');
+    await page.goto(`./?theme=${theme}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     await page.evaluate(() =>
       document.querySelector('.pantry')!.scrollIntoView({ block: 'center', behavior: 'instant' })
@@ -3126,13 +3114,11 @@ test('every doc and post callout: its body copy clears WCAG AA against the callo
   // .callout__body hands DOWN — hence the sibling `a`/`code` overrides, and hence sweeping every tag.
   const TEXT_TAGS = 'p, li, strong, em, a, code';
   for (const theme of VALID_THEMES) {
-    await page.addInitScript((t) => localStorage.setItem('pix-theme', t), theme);
     let swept = 0;
     for (const { route } of markdownPages()) {
-      await page.goto(`./${route}`);
+      await page.goto(`./${route}?theme=${theme}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const rows = await page.evaluate((tags) => {
-        const transparent = (c: string) => /,\s*0\)\s*$/.test(c);
         return [...document.querySelectorAll('.callout__body')].flatMap((body) => {
           const screen = getComputedStyle(body.closest('.callout')!).backgroundColor;
           return [...body.querySelectorAll(tags)].map((el) => {
@@ -3140,13 +3126,15 @@ test('every doc and post callout: its body copy clears WCAG AA against the callo
             return {
               tag: el.tagName.toLowerCase(),
               color: cs.color,
-              bg: transparent(cs.backgroundColor) ? screen : cs.backgroundColor,
+              bg: cs.backgroundColor,
+              screen,
               text: (el.textContent || '').trim().slice(0, 48),
             };
           });
         });
       }, TEXT_TAGS);
-      for (const { tag, color, bg, text } of rows) {
+      for (const { tag, color, screen, text, ...row } of rows) {
+        const bg = parseRgb(row.bg)[3] === 0 ? screen : row.bg;
         const ratio = contrastRatio(
           parseRgb(color).slice(0, 3) as [number, number, number],
           parseRgb(bg).slice(0, 3) as [number, number, number]
@@ -3606,15 +3594,22 @@ test('proof split: narrow + reduced motion shows the tall poster, not a blank bo
   await context.close();
 });
 
-async function resolvedCoral(page: Page): Promise<string> {
-  return page.evaluate(() => {
-    const probe = document.createElement('span');
-    probe.style.color = 'var(--coral)';
-    document.body.appendChild(probe);
-    const c = getComputedStyle(probe).color;
-    probe.remove();
-    return c;
-  });
+async function resolvedColor(
+  page: Page,
+  prop: 'color' | 'backgroundColor',
+  cssVar: string
+): Promise<string> {
+  return page.evaluate(
+    ([prop, cssVar]) => {
+      const probe = document.createElement('span');
+      probe.style[prop] = `var(${cssVar})`;
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe)[prop];
+      probe.remove();
+      return c;
+    },
+    [prop, cssVar] as const
+  );
 }
 
 test('audit C1: night theme does not repaint chrome anchors coral (a:not(.btn) is :where()-scoped)', async ({
@@ -3628,7 +3623,7 @@ test('audit C1: night theme does not repaint chrome anchors coral (a:not(.btn) i
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
   // The night `a:not(.btn)` repaint (global.css) must not reach these anchors'
   // own colours; `.pantry__cite a` holds its cite ink by `color: inherit`.
-  const coral = await resolvedCoral(page);
+  const coral = await resolvedColor(page, 'color', '--coral');
   for (const sel of ['.hero__ghost', '.nav__logo', '.tools__plaque-link', '.pantry__cite a']) {
     const color = await page
       .locator(sel)
@@ -3642,7 +3637,7 @@ test('audit C1 (docs): the /config pager link is not coral in night', async ({ p
   await page.addInitScript(() => localStorage.setItem('pix-theme', 'night'));
   await page.goto('/config/');
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
-  const coral = await resolvedCoral(page);
+  const coral = await resolvedColor(page, 'color', '--coral');
   const color = await page
     .locator('.wing__pager-link')
     .first()
@@ -3773,3 +3768,29 @@ for (const device of ['Galaxy Z Flip 6 Cover', 'Pixel 5 landscape']) {
     expect(Math.max(...nav)).toBeLessThanOrEqual(Math.min(...controls));
   });
 }
+
+// The office is a fixed layer over the viewport alone, so what shows past the viewport's edge (an
+// overscroll, and under Safari 26's top bar: bugs.webkit.org/show_bug.cgi?id=301756, comment 2)
+// is the page's own ground.
+test("past the viewport's edge the landing page shows the theme's ground", async ({ page }) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  for (const theme of VALID_THEMES) {
+    await page.goto(`./?theme=${theme}`);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const [root, body] = await page.evaluate(() =>
+      [document.documentElement, document.body].map((el) => {
+        const { backgroundColor, backgroundImage } = getComputedStyle(el);
+        return { backgroundColor, backgroundImage };
+      })
+    );
+    const painted = ({ backgroundColor, backgroundImage }: typeof root) =>
+      backgroundImage === 'none' && parseRgb(backgroundColor)[3] === 0
+        ? null
+        : `${backgroundImage} ${backgroundColor}`;
+    // The canvas takes the root's background, or the body's where the root has none (CSS
+    // Backgrounds 3, 2.11.1-2, www.w3.org/TR/css-backgrounds-3/#special-backgrounds).
+    const canvasBackground = painted(root) ?? painted(body);
+    const ground = `none ${await resolvedColor(page, 'backgroundColor', '--bg')}`;
+    expect(canvasBackground, theme).toBe(ground);
+  }
+});
