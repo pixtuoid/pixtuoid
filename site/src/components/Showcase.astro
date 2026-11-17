@@ -510,19 +510,14 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
 <style>
   .dial {
     display: grid;
-    grid-template-columns: repeat(3, max-content);
-    gap: 0.4rem 1.6rem;
+    /* Two columns that share the panel: three max-content columns are wider than a phone's panel
+       and the studio's right track at desktop widths, and run past it, under the office controls
+       or out of the section's overflow-x:clip, untappable. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.4rem 1rem;
     margin-top: 1.2rem;
     font-family: var(--font-mono);
     font-size: 0.92rem;
-  }
-  @media (max-width: 480px) {
-    /* 3× max-content overflows a phone viewport, and the studio's overflow-x:clip
-       would hide the right dial column outright — untappable. */
-    .dial {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 0.4rem 1rem;
-    }
   }
   .dial__ch {
     text-align: left;
@@ -604,9 +599,9 @@ const countWord = COUNT_WORDS[channels.length] ?? String(channels.length);
   }
   .studio {
     display: grid;
-    /* the single mobile column must shrink below its content's min-width (the dial's
-       tracks), or a child drags the grid past the viewport and the section's
-       overflow-x:clip cuts off the overflow with no scroll */
+    /* the single mobile column must shrink below its content's min-width, or a child
+       drags the grid past the viewport and the section's overflow-x:clip cuts off the
+       overflow with no scroll */
     grid-template-columns: minmax(0, 1fr);
     gap: 1.4rem;
   }

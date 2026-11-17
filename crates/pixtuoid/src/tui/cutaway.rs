@@ -109,8 +109,8 @@ pub(crate) struct TileCutaway {
     sent_at: Option<SystemTime>,
     /// What the last frame's transmits did, for its jank report.
     last: FrameSend,
-    /// The cores a frame's encode splits across: the platform's, or a test's
-    /// (`split_across`).
+    /// The cores a frame's encode splits across: [`pixtuoid_scene::par::cores`],
+    /// or a test's (`split_across`).
     cores: usize,
 }
 
