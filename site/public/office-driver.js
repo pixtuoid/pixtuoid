@@ -5,9 +5,13 @@
 // static-import `loadWasm` into module workers, which have no `window`: module scope touches no page global.
 'use strict';
 
-// The office host and the office wasm's glue, beside this module wherever the site is served from.
+// The office host and the office wasm's glue, and the music's worker, worklet and wasm glue, beside this module
+// wherever the site is served from.
 const HOST_URL = new URL('office-host.js', import.meta.url).href;
 const WASM_JS_URL = new URL('wasm/pixtuoid_web.js', import.meta.url).href;
+const MUSIC_WORKER_URL = new URL('music-worker.js', import.meta.url).href;
+const MUSIC_WORKLET_URL = new URL('music-worklet.js', import.meta.url).href;
+const MUSIC_WASM_JS_URL = new URL('wasm/pixtuoid_web_music.js', import.meta.url).href;
 
 const WASM_INIT_RETRIES = 2; // extra attempts after the first
 const WASM_INIT_BACKOFF_MS = 400;
@@ -191,20 +195,18 @@ export function audioBus(ctx, audio) {
   return limiter;
 }
 
-// The ♩ music: the office's lofi stream, rendered in the music worker (`urls.worker`, loading the music's own wasm
-// glue, `urls.musicWasm`) and played
-// by the worklet (`urls.worklet`) `aheadS` ahead, the two joined by their own MessageChannel so the main thread stays
-// off the audio path. `controls`, a tick's `music.controls`, pick the first song. Resolves, once the worklet loads, to
+// The ♩ music: the office's lofi stream, rendered in the music worker (loading the music's own wasm glue) and played by
+// the worklet `aheadS` ahead, the two joined by their own MessageChannel so the main thread stays off the audio path. `controls`, a tick's `music.controls`, pick the first song. Resolves, once the worklet loads, to
 // `{ node, primed, failed, setControls, stop }`: `node` to connect, `primed` on the worklet's first chunk, `failed` on
 // the worker's death; rejects where there is no AudioWorklet.
-export async function startMusic(ctx, urls, aheadS, nowMs, controls) {
-  await ctx.audioWorklet.addModule(urls.worklet);
+export async function startMusic(ctx, aheadS, nowMs, controls) {
+  await ctx.audioWorklet.addModule(MUSIC_WORKLET_URL);
   const node = new AudioWorkletNode(ctx, 'pix-music', {
     numberOfInputs: 0,
     outputChannelCount: [2],
     processorOptions: { aheadS },
   });
-  const worker = new Worker(urls.worker, { type: 'module' });
+  const worker = new Worker(MUSIC_WORKER_URL, { type: 'module' });
   const failed = new Promise(function (resolve) {
     worker.onerror = resolve;
     worker.onmessage = resolve;
@@ -215,7 +217,7 @@ export async function startMusic(ctx, urls, aheadS, nowMs, controls) {
     };
   });
   const channel = new MessageChannel();
-  worker.postMessage({ musicWasmJsUrl: urls.musicWasm, port: channel.port1, nowMs, controls }, [
+  worker.postMessage({ musicWasmJsUrl: MUSIC_WASM_JS_URL, port: channel.port1, nowMs, controls }, [
     channel.port1,
   ]);
   node.port.postMessage({ source: channel.port2 }, [channel.port2]);

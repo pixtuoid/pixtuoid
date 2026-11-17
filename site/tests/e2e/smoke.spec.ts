@@ -882,7 +882,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
   const errors = watchErrors(page);
   await gotoLive(page);
   const { peaks, sidesDiffer } = await page.evaluate(async () => {
-    const { officeDriverUrl, musicWorkerUrl, musicWasmJsUrl, musicWorkletUrl } = (
+    const { officeDriverUrl } = (
       document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
     ).dataset;
     const drv = await import(officeDriverUrl!);
@@ -895,8 +895,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
     const { controls } = JSON.parse((await office.frame({ ...tick, audio: true })).audio).music;
     const rate = office.audio.sampleRate;
     const ctx = new OfflineAudioContext(2, rate, rate);
-    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, musicWasm: musicWasmJsUrl };
-    const music = await drv.startMusic(ctx, urls, office.audio.musicAheadS, Date.now(), controls);
+    const music = await drv.startMusic(ctx, office.audio.musicAheadS, Date.now(), controls);
     music.node.connect(ctx.destination);
     // The first chunk crossed worklet → worker ("need") → worklet before a quantum renders.
     await music.primed;
