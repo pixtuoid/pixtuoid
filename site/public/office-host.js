@@ -31,7 +31,9 @@ export function serve(port) {
       offices.set(id, { office, canvas, ctx: canvas.getContext('2d'), img: null });
       return [
         {
-          journeyLines: journey ? mod.Office.journey_lines() : null,
+          journey: journey
+            ? { lines: mod.Office.journey_lines(), settleMs: mod.Office.journey_settle_ms() }
+            : null,
           audio: {
             sampleRate: office.audio_sample_rate(),
             ceilingDbfs: office.audio_ceiling_dbfs(),

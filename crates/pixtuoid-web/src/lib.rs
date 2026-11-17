@@ -19,7 +19,7 @@ use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
 use pixtuoid_core::source::decoder::{SHIM_STAMPS, decode_hook_payload};
-use pixtuoid_core::state::reducer::Reducer;
+use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, Reducer};
 use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, SceneState};
 use pixtuoid_core::{AgentEvent, AgentId, Transport};
 
@@ -231,6 +231,14 @@ impl Office {
     /// The recorded hook lines the How it works page sends, in order.
     pub fn journey_lines() -> Vec<String> {
         JOURNEY.lines().map(str::to_owned).collect()
+    }
+
+    /// How long after a line the office takes to settle, which the page's
+    /// clock jumps under reduced motion: a millisecond past
+    /// [`EXIT_GRACE_WINDOW`], the time an ended session has to walk out, which
+    /// its slot's sweep needs strictly elapsed.
+    pub fn journey_settle_ms() -> f64 {
+        (EXIT_GRACE_WINDOW + std::time::Duration::from_millis(1)).as_secs_f64() * 1000.0
     }
 
     /// Land one hook line, as the shim forwarded it, through the real decoder
@@ -1569,9 +1577,12 @@ mod tests {
             landed[3]["agents"][0]["exiting_at"].is_object(),
             "an ended session walks out"
         );
-        t += 60_000.0;
+        t += Office::journey_settle_ms();
         o.step(t, 160, 96);
-        assert!(o.scene.agents.is_empty(), "and its slot is swept");
+        assert!(
+            o.scene.agents.is_empty(),
+            "and its slot is swept within the settle the page's still clock jumps"
+        );
 
         // The page's buttons wrap back to the first hook, so the recording plays again.
         let mut again = Vec::new();

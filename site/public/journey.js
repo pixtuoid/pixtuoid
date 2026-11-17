@@ -9,9 +9,6 @@ import { officeHost, wholeBox } from './office-driver.js';
 const SEED = 7;
 // How long a stop stays the newest lit before the next one lights.
 const STEP_MS = 280;
-// Under reduced motion the office's clock stands still but for this jump per line: about the average
-// walk, which pixtuoid-scene's physics.rs sets through V_CRUISE_COMMUTE.
-const SETTLED_MS = 4000;
 // How long the office moves after it boots, resizes or takes a line, then holds still: within WCAG 2.2.2's five
 // seconds, past which motion that starts by itself needs a pause control
 // (w3.org/WAI/WCAG22/Understanding/pause-stop-hide).
@@ -74,7 +71,7 @@ export async function start(figure) {
   async function run() {
     const host = await officeHost();
     const office = await host.open(SEED, canvas, true);
-    const lines = office.journeyLines;
+    const lines = office.journey.lines;
     const payloads = lines.map(function (line) {
       return JSON.parse(line);
     });
@@ -88,7 +85,8 @@ export async function start(figure) {
     });
 
     // The office's clock: under reduced motion it stands where it stood when motion was last reduced,
-    // else it is the wall clock; each adds every jump a line took, so it never runs backward.
+    // else it is the wall clock; each adds every jump a line took (the office's settle, under reduced
+    // motion), so it never runs backward.
     let ahead = 0;
     let stood = Date.now();
     reduced.addEventListener('change', function () {
@@ -216,7 +214,7 @@ export async function start(figure) {
         [
           'frame',
           () => {
-            if (reduced.matches) ahead += SETTLED_MS;
+            if (reduced.matches) ahead += office.journey.settleMs;
             move();
           },
         ],
