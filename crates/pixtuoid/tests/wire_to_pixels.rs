@@ -52,7 +52,7 @@ fn new_renderer(cols: u16, rows: u16) -> TuiRenderer<TestBackend> {
 /// the final frame's subpixels. The empty baseline and the occupied frame go
 /// through the IDENTICAL sequence, so a later pixel-diff cancels the
 /// (timezone-dependent) sky and isolates the agent's footprint.
-fn settled_pixels(scene: &SceneState, now: SystemTime) -> Vec<(u8, u8, u8)> {
+fn settled_pixels(scene: &SceneState) -> Vec<(u8, u8, u8)> {
     // Bounded on BOTH sides: long enough for the entry walk to finish, and
     // shorter than the vacancy debounce, past which the empty office's floor dim
     // would start easing while the occupied office holds its lights, and the
@@ -64,7 +64,7 @@ fn settled_pixels(scene: &SceneState, now: SystemTime) -> Vec<(u8, u8, u8)> {
     );
     let (cols, rows) = (120, 44);
     let mut r = new_renderer(cols, rows);
-    let mut t = now;
+    let mut t = t0();
     for _ in 0..SETTLE_FRAMES {
         r.render(scene, t).expect("render office");
         t += PAINT_FRAME;
@@ -169,8 +169,8 @@ fn assert_renders_a_sprite(case: &WireCase) {
     // The empty baseline, every case's, must be shaped like the driven scene (same
     // desk capacity), or the diff would carry a layout difference as well as the agent.
     static EMPTY: LazyLock<Vec<(u8, u8, u8)>> =
-        LazyLock::new(|| settled_pixels(&SceneState::uniform(DRIVEN_DESKS), t0()));
-    let occupied = settled_pixels(&driven.scene, t0());
+        LazyLock::new(|| settled_pixels(&SceneState::uniform(DRIVEN_DESKS)));
+    let occupied = settled_pixels(&driven.scene);
     let changed = EMPTY.iter().zip(&occupied).filter(|(a, b)| a != b).count();
     assert!(
         changed >= MIN_SPRITE_PIXELS,

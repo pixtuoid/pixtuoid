@@ -247,7 +247,7 @@ fn tofu<'a>(
 }
 
 /// One test, so the trees are parsed once for both checks: nextest runs each
-/// test in its own process.
+/// test in its own process (<https://nexte.st/docs/design/why-process-per-test/>).
 #[test]
 fn the_window_and_the_office_draw_every_character_written_for_them() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));

@@ -829,12 +829,13 @@ mod tests {
             let label = crate::harness::slashed_under(&root, scenario).expect("under root");
             let record = Provenance::read_if_any(&capture.provenance_path())
                 .expect("a committed record parses");
+            let Some(record) = record else {
+                unstripped.push(format!("{label}: no record to judge its reads against"));
+                continue;
+            };
             let jsonl = capture.jsonl_files();
             if jsonl.is_empty() {
-                unstripped.push(match record {
-                    Some(_) => format!("{label}: a provenance with no bytes under it"),
-                    None => format!("{label}: no record to judge its reads against"),
-                });
+                unstripped.push(format!("{label}: a provenance with no bytes under it"));
                 continue;
             }
             let d = tempfile::tempdir().expect("tempdir");
@@ -867,19 +868,13 @@ mod tests {
                     "{label}: the strip changed its events from {before:?} to {after:?}"
                 ));
             }
-            match &record {
-                Some(record) => {
-                    if strip.blanked > 0 {
-                        unstripped.push(format!(
-                            "{label}: {} subtrees no decoder reads any more; \
-                             `just restrip-fixtures`",
-                            strip.blanked
-                        ));
-                    }
-                    stale.extend(unrecorded(&label, d.path(), record, &strip.sentinel_reads));
-                }
-                None => stale.push(format!("{label}: no record to judge its reads against")),
+            if strip.blanked > 0 {
+                unstripped.push(format!(
+                    "{label}: {} subtrees no decoder reads any more; `just restrip-fixtures`",
+                    strip.blanked
+                ));
             }
+            stale.extend(unrecorded(&label, d.path(), &record, &strip.sentinel_reads));
             walked.insert(label);
         }
         for sentinel in [

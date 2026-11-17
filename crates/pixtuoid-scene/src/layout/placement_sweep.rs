@@ -141,14 +141,29 @@ fn inset_offices() -> impl Iterator<Item = (Viewport, u64)> {
     })
 }
 
+/// Records a check's violations under the check's own name, the one its doc and
+/// the guides call it by. The call runs before the record, so it may borrow
+/// `found`; `check => violations` records a sweep-wide verdict on that check.
+macro_rules! check {
+    ($found:expr, $check:ident($($arg:expr),* $(,)?)) => {{
+        let violations = $check($($arg),*);
+        $found.record(stringify!($check), violations)
+    }};
+    ($found:expr, $check:ident => $violations:expr) => {{
+        let _ = $check;
+        $found.record(stringify!($check), $violations)
+    }};
+}
+
 /// Every office the sweep reaches holds each invariant checked on it, and the
 /// failure names every one that breaks. Its offices are each [`SWEEP_SIZES`]
 /// size bare at [`SWEEP_SEEDS`] and at the seeds a running app lays out
 /// (`floor::floor_seed(0..MAX_FLOORS)`), which `SWEEP_SEEDS` meets at seed 0
-/// alone, so a check swept on `SWEEP_SEEDS` alone never visits a floor a user
-/// sees; and each size at `SWEEP_SEEDS` inside each of [`SWEEP_INSETS`]. One
-/// test lays each out once for every check: nextest runs each test in its own
-/// process, where a check of its own would lay every office out again.
+/// alone, so a check swept on `SWEEP_SEEDS` alone visits only the first floor
+/// a user sees; and each size at `SWEEP_SEEDS` inside each of [`SWEEP_INSETS`].
+/// One test lays each out once for every check: nextest runs each test in its
+/// own process (<https://nexte.st/docs/design/why-process-per-test/>), where a
+/// check of its own would lay every office out again.
 #[test]
 fn every_swept_office_holds_its_placement_invariants() {
     let seeds: BTreeSet<u64> = SWEEP_SEEDS
@@ -165,19 +180,23 @@ fn every_swept_office_holds_its_placement_invariants() {
     })
     .into_iter()
     .fold(Found::default(), Found::absorb);
-    let unplaced = every_kind_is_placed_somewhere_in_the_sweep(&found.kinds);
-    found.record("kind-never-placed", unplaced);
+    check!(
+        found,
+        every_kind_is_placed_somewhere_in_the_sweep(&found.kinds)
+    );
     let probed = found.sprites_probed;
-    if probed <= MIN_PROBED_SPRITES {
-        found.record(
-            "visual-clearance",
-            [format!("the sweep must reach pieces, saw {probed}")],
+    if probed < MIN_PROBED_SPRITES {
+        check!(
+            found,
+            every_placed_sprite_is_opaque_to_the_visual_clearance_predicate =>
+                [format!("the sweep must reach pieces, saw {probed}")]
         );
     }
     if found.floors_compared == 0 {
-        found.record(
-            "canvas-floor",
-            ["no inset office was compared floor for floor".to_owned()],
+        check!(
+            found,
+            an_office_inside_insets_lays_out_the_canvas_floor =>
+                ["no inset office was compared floor for floor".to_owned()]
         );
     }
     found.assert_none();
@@ -230,29 +249,26 @@ fn check_offices_of(w: u16, h: u16, seed: u64) -> Found {
     let mut found = Found::default();
     let bare = swept_layout(Viewport::full(w, h), seed);
     check_every_office(&mut found, w, h, seed, &bare);
-    found.record(
-        "route-through-wall",
-        no_route_around_a_wall_corner_cuts_through_it(w, h, seed, &bare),
+    check!(
+        found,
+        no_route_around_a_wall_corner_cuts_through_it(w, h, seed, &bare)
     );
-    found.record(
-        "spawn-on-apron",
-        the_spawn_threshold_stands_on_the_floor_not_the_wall_apron(w, h, seed, &bare),
+    check!(
+        found,
+        the_spawn_threshold_stands_on_the_floor_not_the_wall_apron(w, h, seed, &bare)
     );
-    found.record(
-        "desk-approach",
-        every_home_desk_approach_is_routable_from_the_door(w, h, seed, &bare),
+    check!(
+        found,
+        every_home_desk_approach_is_routable_from_the_door(w, h, seed, &bare)
     );
     if !SWEEP_SEEDS.contains(&seed) {
         return found;
     }
     check_the_swept_seeds(&mut found, w, h, seed, &bare);
-    found.record(
-        "sealed-pocket",
-        walkable_is_one_connected_region(w, h, seed, &bare),
-    );
-    found.record(
-        "wander-leg",
-        every_wander_destination_is_routable_from_its_desk(w, h, seed, &bare),
+    check!(found, walkable_is_one_connected_region(w, h, seed, &bare));
+    check!(
+        found,
+        every_wander_destination_is_routable_from_its_desk(w, h, seed, &bare)
     );
     found.kinds.extend(placed_kinds(&bare));
     let mut canvases = HashMap::from([(Viewport::full(w, h), bare)]);
@@ -262,98 +278,90 @@ fn check_offices_of(w: u16, h: u16, seed: u64) -> Found {
         let Size { w, h } = viewport.size;
         check_every_office(&mut found, w, h, seed, &l);
         check_the_swept_seeds(&mut found, w, h, seed, &l);
-        found.record(
-            "inset",
-            nothing_is_placed_under_an_inset(viewport, seed, &l),
+        check!(found, nothing_is_placed_under_an_inset(viewport, seed, &l));
+        check!(
+            found,
+            an_office_inside_insets_lays_out_the_canvas_floor(
+                viewport,
+                seed,
+                &l,
+                &mut canvases,
+                &mut found.floors_compared,
+            )
         );
-        let moved = an_office_inside_insets_lays_out_the_canvas_floor(
-            viewport,
-            seed,
-            &l,
-            &mut canvases,
-            &mut found.floors_compared,
-        );
-        found.record("canvas-floor", moved);
     }
     found
 }
 
 /// The checks every swept office holds, the production floors' included.
 fn check_every_office(found: &mut Found, w: u16, h: u16, seed: u64, l: &SceneLayout) {
-    found.record("holiday", every_office_shows_each_holiday(w, h, seed, l));
-    found.record(
-        "back-turned-desk",
-        back_turned_desks_face_a_partner_across_the_pod_gap(w, h, seed, l),
+    check!(found, every_office_shows_each_holiday(w, h, seed, l));
+    check!(
+        found,
+        back_turned_desks_face_a_partner_across_the_pod_gap(w, h, seed, l)
     );
-    found.record(
-        "inside-a-pod",
-        free_standing_furniture_never_stands_inside_a_pod(w, h, seed, l),
+    check!(
+        found,
+        free_standing_furniture_never_stands_inside_a_pod(w, h, seed, l)
     );
-    found.record(
-        "whiteboard-dropped",
-        the_whiteboard_lands_whenever_an_inter_pod_aisle_exists(w, h, seed, l),
+    check!(
+        found,
+        the_whiteboard_lands_whenever_an_inter_pod_aisle_exists(w, h, seed, l)
     );
-    found.record(
-        "whiteboard-hides",
-        the_whiteboard_hides_no_desk_and_stands_clear_of_the_walls_and_its_twin(w, h, seed, l),
+    check!(
+        found,
+        the_whiteboard_hides_no_desk_and_stands_clear_of_the_walls_and_its_twin(w, h, seed, l)
     );
-    found.record(
-        "appliance",
-        each_appliance_lands_wherever_its_aisle_fits(w, h, seed, l),
+    check!(
+        found,
+        each_appliance_lands_wherever_its_aisle_fits(w, h, seed, l)
     );
 }
 
 /// The checks the offices at a [`SWEEP_SEEDS`] seed hold, bare and inset.
 fn check_the_swept_seeds(found: &mut Found, w: u16, h: u16, seed: u64, l: &SceneLayout) {
     let pieces = pieces(l);
-    found.record(
-        "buffer-containment",
-        every_piece_stays_inside_the_buffer(w, h, seed, l, &pieces),
+    check!(
+        found,
+        every_piece_stays_inside_the_buffer(w, h, seed, l, &pieces)
     );
-    found.record(
-        "container",
-        every_piece_ground_stays_in_its_container(w, h, seed, l, &pieces),
+    check!(
+        found,
+        every_piece_ground_stays_in_its_container(w, h, seed, l, &pieces)
     );
-    found.record(
-        "mask-parity",
-        every_piece_ground_is_blocked_in_the_mask(w, h, seed, l, &pieces),
+    check!(
+        found,
+        every_piece_ground_is_blocked_in_the_mask(w, h, seed, l, &pieces)
     );
-    found.record(
-        "rug-on-floor",
-        every_rug_lies_whole_on_the_floor(w, h, seed, l),
+    check!(found, every_rug_lies_whole_on_the_floor(w, h, seed, l));
+    check!(found, no_two_furniture_grounds_overlap(w, h, seed, &pieces));
+    check!(
+        found,
+        no_furniture_ground_overlaps_a_wall(w, h, seed, l, &pieces)
     );
-    found.record(
-        "furniture-overlap",
-        no_two_furniture_grounds_overlap(w, h, seed, &pieces),
+    check!(
+        found,
+        no_walkable_hole_where_a_vertical_wall_meets_a_horizontal_one(w, h, seed, l)
     );
-    found.record(
-        "wall-overlap",
-        no_furniture_ground_overlaps_a_wall(w, h, seed, l, &pieces),
+    check!(found, every_meeting_slot_sits_in_its_room(w, h, seed, l));
+    check!(
+        found,
+        scatter_plants_keep_obstacle_clearance_and_survive_by_sliding(w, h, seed, l)
     );
-    found.record(
-        "divider-hole",
-        no_walkable_hole_where_a_vertical_wall_meets_a_horizontal_one(w, h, seed, l),
+    check!(
+        found,
+        every_placed_sprite_is_opaque_to_the_visual_clearance_predicate(
+            w,
+            h,
+            seed,
+            l,
+            &pieces,
+            &mut found.sprites_probed,
+        )
     );
-    found.record(
-        "meeting-slot",
-        every_meeting_slot_sits_in_its_room(w, h, seed, l),
-    );
-    found.record(
-        "plant-clearance",
-        scatter_plants_keep_obstacle_clearance_and_survive_by_sliding(w, h, seed, l),
-    );
-    let opaque = every_placed_sprite_is_opaque_to_the_visual_clearance_predicate(
-        w,
-        h,
-        seed,
-        l,
-        &pieces,
-        &mut found.sprites_probed,
-    );
-    found.record("visual-clearance", opaque);
-    found.record(
-        "walkable-wall-band",
-        no_cell_of_the_north_wall_band_is_walkable(w, h, seed, l),
+    check!(
+        found,
+        no_cell_of_the_north_wall_band_is_walkable(w, h, seed, l)
     );
 }
 

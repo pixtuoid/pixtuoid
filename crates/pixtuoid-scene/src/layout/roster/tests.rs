@@ -668,8 +668,9 @@ fn fixtures_overlap_only_by_design_and_appliance_art_spares_every_workstation() 
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
-/// Each overlap of two of `l`'s fixtures' art that `listed` lacks, or that
-/// covers more than its bound, described; each other one goes into `met`.
+/// Each overlap of two of `l`'s fixtures' art, but one standing on the corridor's
+/// runner, that `listed` lacks, or that covers more than its bound, described;
+/// each other one goes into `met`.
 fn unlisted_overlaps(
     l: &SceneLayout,
     listed: &BTreeSet<(&str, &str)>,
