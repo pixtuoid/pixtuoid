@@ -363,16 +363,19 @@ fn read_runs(dir: &std::path::Path, budget: u64) -> (String, Option<String>) {
 mod tests {
     use super::*;
 
-    /// docs/CONFIGURATION.md tells a user how long a run's log stays, as text
-    /// no build reaches.
+    /// The tidy-up test ages its runs off [`RUN_LOG_RETAIN`] itself, so this
+    /// pins the week its doc cites, which docs/CONFIGURATION.md tells a user as
+    /// text no build reaches.
     #[test]
-    fn the_docs_say_how_long_a_run_log_stays() {
-        const WEEK: Duration = Duration::from_secs(7 * 24 * 60 * 60);
-        let doc = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/CONFIGURATION.md");
-        // crates.io-packaged test runs don't ship the repo's docs/.
-        let Ok(doc) = std::fs::read_to_string(doc) else {
+    fn a_run_log_stays_the_week_the_docs_say() {
+        const WEEK: Duration = Duration::from_hours(7 * 24);
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        // crates.io-packaged test runs don't ship the repo's site/ or docs/.
+        if !Path::new(&format!("{root}/site")).is_dir() {
             return;
-        };
+        }
+        let doc = std::fs::read_to_string(format!("{root}/docs/CONFIGURATION.md"))
+            .expect("docs/CONFIGURATION.md moved or was renamed");
         assert_eq!(RUN_LOG_RETAIN, WEEK);
         assert!(doc.contains("removed a week after its last write"));
     }
@@ -688,21 +691,6 @@ mod tests {
         assert_eq!(warning, None);
         let order: Vec<&str> = text.lines().collect();
         assert_eq!(order, ["x", "x"], "runs read oldest first");
-    }
-
-    /// The tidy-up test ages its runs off [`RUN_LOG_RETAIN`] itself, so only an
-    /// absolute age pins the week its doc cites.
-    #[test]
-    fn a_run_is_kept_for_a_week() {
-        const DAY: Duration = Duration::from_hours(24);
-        let dir = tempfile::tempdir().unwrap();
-        let now = SystemTime::now();
-        let aged = |name: &str, age: Duration| aged(dir.path(), name, now, age);
-        let six_days = aged(&run_file_name(now - DAY * 6, 1), DAY * 6);
-        let eight_days = aged(&run_file_name(now - DAY * 8, 2), DAY * 8);
-        prune_runs(dir.path(), now);
-        assert!(six_days.exists(), "a run inside the week stays");
-        assert!(!eight_days.exists(), "a run past the week goes");
     }
 
     /// No runs directory yet is a fresh install, read as an empty log.

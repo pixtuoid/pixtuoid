@@ -81,15 +81,15 @@ office over local IPC, never a network.
 
 ### Hook installation
 
-It runs when you explicitly *connect* or *disconnect* a source, here or from a
-device paired with `pixtuoid serve`. Past that, a launch only rewrites the
+It runs when you explicitly *connect* or *disconnect* a source, on this machine
+or from a device paired with `pixtuoid serve`. Past that, a launch only rewrites the
 plugin files pixtuoid owns, and loads them through a connected CLI's own
 subcommand where it has one (`converge_owned`).
 
-- Where the agent CLI has a plugin system (Claude Code, Codex, Hermes,
-  Reasonix and Antigravity), pixtuoid installs a local plugin through the
+- Where the agent CLI has a plugin system (Claude Code, Codex CLI, Hermes
+  Agent, Reasonix and Antigravity CLI), pixtuoid installs a local plugin through the
   CLI's own plugin subcommands, so the CLI writes its own settings. For those
-  five, connect and disconnect also remove every hook in the CLI's own config
+  CLIs, connect and disconnect also remove every hook in the CLI's own config
   that runs pixtuoid's shim, hand-written ones included. A hook running a shim
   renamed through `PIXTUOID_HOOK` is removed only when it carries the
   `PIXTUOID_SOURCE` stamp.

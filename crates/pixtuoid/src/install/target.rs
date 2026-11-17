@@ -772,6 +772,32 @@ mod tests {
         }
     }
 
+    /// SECURITY.md names the CLIs pixtuoid installs as a plugin, in whose own
+    /// config connect and disconnect sweep every hook running the shim, as text
+    /// no build reaches.
+    #[test]
+    fn the_security_policy_names_each_plugin_cli() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        // crates.io-packaged test runs don't ship the repo's site/ or SECURITY.md.
+        if !std::path::Path::new(&format!("{root}/site")).is_dir() {
+            return;
+        }
+        let policy = std::fs::read_to_string(format!("{root}/SECURITY.md"))
+            .expect("SECURITY.md moved or was renamed");
+        let section = policy
+            .split_once("### Hook installation")
+            .and_then(|(_, rest)| rest.split("\n### ").next())
+            .expect("SECURITY.md's Hook installation section was renamed");
+        let section = section.split_whitespace().collect::<Vec<_>>().join(" ");
+        for t in TARGETS.iter().filter(|t| t.host().is_some()) {
+            assert!(
+                section.contains(t.display_name()),
+                "SECURITY.md's Hook installation no longer names {}",
+                t.display_name()
+            );
+        }
+    }
+
     // Transcript-bearing sources may legitimately have no target, so the rule is
     // derived from `line_decoder().is_none()` — no exemption list to drift.
     #[test]

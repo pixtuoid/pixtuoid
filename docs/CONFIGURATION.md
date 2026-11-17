@@ -60,8 +60,8 @@ How much of the office moves: flickers, twinkles, a pet's roam, lightning,
 New Year's fireworks.
 
 - **`full`** moves all of it.
-- **`calm`** plays it at a quarter of the pace, with a quarter of the
-  repaints, but walks as `full` does.
+- **`calm`** plays it slower, with fewer repaints, but walks as `full`
+  does.
 - **`still`** holds it still, for reduced motion: a walk ends where it's going
   at once, and the elevator stays shut.
 - **`auto`** is `full`, except `calm` over SIXEL or iTerm2 graphics, inside
@@ -140,12 +140,10 @@ uninvited.
   ([cpal#1421](https://github.com/RustAudio/cpal/issues/1421)). Homebrew's
   Linux bottle brings `alsa-lib`
   ([formula](https://github.com/Homebrew/homebrew-core/blob/main/Formula/p/pixtuoid.rb)).
-  `cargo install` needs `pkg-config` and the ALSA headers
-  ([`libasound2-dev`](https://packages.debian.org/stable/libasound2-dev) on
-  Debian and Ubuntu,
-  [`alsa-lib-devel`](https://packages.fedoraproject.org/pkgs/alsa-lib/alsa-lib-devel/)
-  on Fedora), or `--no-default-features --features portable` for a build without
-  sound.
+  `cargo install` needs `pkg-config` and the ALSA headers, `libasound2-dev`
+  on Debian and Ubuntu or `alsa-lib-devel` on Fedora
+  ([alsa-sys](https://github.com/diwic/alsa-sys/blob/v0.4.0/build.rs#L7-L11)),
+  or `--no-default-features --features portable` for a build without sound.
 
 ## Themes
 
@@ -167,8 +165,8 @@ the terminal:
 | How long | a run's file is removed a week after its last write, unless the run is still open. A `$PIXTUOID_LOG` file instead rotates to `<name>.old` when a run starts and finds it past its size cap |
 
 A crash writes `crash.log` beside that `logs/` directory, whatever
-`$PIXTUOID_LOG` says. Every other command, such as `--headless` or `doctor`,
-logs to stderr.
+`$PIXTUOID_LOG` says. Every other command, such as `run --headless` or
+`doctor`, logs to stderr.
 
 Warnings about `config.toml`, such as an unknown theme, a bad `[[pets]]` kind
 or malformed TOML, print to stderr **before** the office takes over the
@@ -198,9 +196,11 @@ warning to stderr. It only warns, never blocks, and the warning scrolls away
 once the office takes over. `$COLORTERM=truecolor` counts as a yes and skips
 the query. `pixtuoid doctor` shows the verdict.
 
-A terminal that is truecolor but doesn't answer the query, which is rare, can
-still get the warning. Silence it with `$PIXTUOID_NO_TRUECOLOR_WARN=1` (any of
-`1`, `true`, `yes` or `on`).
+A terminal that is truecolor but doesn't answer the query can still get the
+warning. tmux sets `$COLORTERM` in its panes only from 3.6
+([environ.c](https://github.com/tmux/tmux/blob/3.6/environ.c#L265)), so an
+older tmux can get it too. Silence it with `$PIXTUOID_NO_TRUECOLOR_WARN=1` (any
+of `1`, `true`, `yes` or `on`).
 
 ### When color is disabled (`$NO_COLOR`, `$TERM=dumb`)
 
@@ -213,7 +213,8 @@ you can't read, `pixtuoid run` refuses to start the office and says why:
   color only when it's unset ([bixense](https://bixense.com/clicolors/)). An
   *empty* `$NO_COLOR` doesn't turn color off, and is ignored.
 - **`$TERM=dumb`** means the terminal can't show escape sequences or color at
-  all.
+  all: ncurses' `dumb` entry has no such capability
+  ([terminfo.src](https://invisible-island.net/ncurses/terminfo.src.html)).
 
 Use a graphical terminal, or `pixtuoid run --headless` for a plain-text
 summary, which works without color. `pixtuoid doctor` shows the color status.
