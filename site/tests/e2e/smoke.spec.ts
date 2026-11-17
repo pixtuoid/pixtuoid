@@ -332,9 +332,8 @@ async function expectSectionReveal(page: Page, sectionId: string): Promise<void>
 }
 
 /**
- * The narrowest viewport width, from 320px to 1440px at `height`, at which `holds` holds, and the
- * page left at it. A wider viewport only gives a row more room, so a row that fits there fits at
- * every width past it.
+ * The narrowest viewport width, from 320px to 1440px at `height`, at which `holds` holds, the page
+ * left at it: `holds` is false at 320px, true at 1440px, and turns true once as the width grows.
  */
 async function firstWidthWhere(
   page: Page,
@@ -1542,17 +1541,17 @@ test('docs pages keep the sticky nav with its links', async ({ page }) => {
   expect(errors()).toEqual([]);
 });
 
-test('at the narrowest width that lays the nav out as a bar, its items sit on one line, in order, inside the bar', async ({
+test('at the narrowest width that lays the nav out as a wide bar, its items sit on one line, in order, inside the bar', async ({
   page,
 }) => {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  const isBar = () =>
+  const isWideBar = () =>
     page.locator('#nav-burger').evaluate((el) => getComputedStyle(el).display === 'none');
   const cdp = await page.context().newCDPSession(page);
   let gutters = 0;
   for (const [path, height] of [
-    // Short enough that OfficeBackdrop's office controls take a gutter from the home page's bar, in
-    // the viewports narrow enough for them: a 20px default's bar lays out past those.
+    // Short enough that OfficeBackdrop's office controls take a gutter from the home page's bar row,
+    // in the viewports narrow enough for them: a 20px default's wide bar starts past those.
     ['./', 340],
     ['./', 600],
     ['./config/', 600],
@@ -1563,7 +1562,9 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
     // meet.
     for (const fontSize of [12, 16, 20]) {
       await cdp.send('Page.setFontSizes', { fontSizes: { standard: fontSize } });
-      const width = await firstWidthWhere(page, height, isBar);
+      // A wider viewport only gives the bar more room, so the narrowest width that lays it out
+      // decides.
+      const width = await firstWidthWhere(page, height, isWideBar);
       const row = await page.evaluate(() => {
         const inner = document.querySelector<HTMLElement>('.nav__inner')!;
         const pad = getComputedStyle(inner);
@@ -3362,6 +3363,7 @@ test("the footer's row fits on one line at the first width that shows its dots",
   // The row at its longest: the night clock's words show.
   await page.evaluate(() => document.documentElement.setAttribute('data-clock-night', '1'));
   await expect(page.locator('.footer__clock')).toBeVisible();
+  // A wider viewport only gives the row more room, so the narrowest width that shows the dots decides.
   const shown = await firstWidthWhere(page, 900, () =>
     page
       .locator('.footer__sep')
