@@ -387,7 +387,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     fill: var(--led);
     visibility: hidden;
   }
-  /* Plays once the figure is in view, and ends inside blog.spec.ts's MOTION_LIMIT_S. */
+  /* Plays once the figure is in view, and ends inside MOTION_LIMIT_MS (tests/e2e/wcag.ts). */
   .wing :global(.reveal.in .fig-budget__now) {
     animation: fig-now 4s linear;
   }
@@ -444,7 +444,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     transform-box: fill-box;
     transform-origin: top;
   }
-  /* Ends inside MOTION_LIMIT_S too. */
+  /* Ends inside MOTION_LIMIT_MS too. */
   .wing :global(.reveal.in .fig-pane__wash) {
     animation: fig-wash 1.8s ease-in-out 2;
   }

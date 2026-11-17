@@ -1,4 +1,4 @@
-import { devices, expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Locator, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
@@ -380,6 +380,16 @@ async function gotoLive(page: Page): Promise<void> {
   await page.goto('./');
   // A timeout here is the ABI-mismatch / loader-regression signal.
   await expect(page.locator('.backdrop.is-live')).toBeAttached({ timeout: 15_000 });
+}
+
+/** How it works at `query`, once its journey's hooks are ready, which it returns. */
+async function gotoJourney(page: Page, query = ''): Promise<Locator> {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto(`./how-it-works/${query}`);
+  const hooks = page.locator('.fig-journey__hook');
+  // The first hook enables once the office wasm opens: a timeout here is gotoLive's signal.
+  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+  return hooks;
 }
 
 test('the office goes live and the statusline truth-light agrees', async ({ page }) => {
@@ -1559,13 +1569,10 @@ test('how it works: every recorded hook fills each stop through the real decoder
 }) => {
   test.setTimeout(120_000);
   const errors = watchErrors(page);
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   const out = (stop: string) => page.locator(`[data-stop="${stop}"] .fig-journey__out`);
   for (const theme of VALID_THEMES) {
-    await page.goto(`./how-it-works/?theme=${theme}`);
+    const hooks = await gotoJourney(page, `?theme=${theme}`);
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
-    const hooks = page.locator('.fig-journey__hook');
-    await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
     const count = await hooks.count();
     expect(count, 'a journey of more than one hook').toBeGreaterThan(1);
     for (let i = 0; i < count; i++) {
@@ -1634,11 +1641,8 @@ test('how it works: the office moves for MOVING_MS after a hook, then holds stil
   // Past journey.js's MOVING_MS, by enough for a slow runner's last frame.
   const MARGIN_MS = 1_000;
   const STILL_MS = 400; // >10 would-be frames at the 33ms cap
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./how-it-works/');
-  const hooks = page.locator('.fig-journey__hook');
+  const hooks = await gotoJourney(page);
   const office = page.locator('.fig-journey__office');
-  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
   const moving: number = await page.evaluate(async () => {
     const url = document.querySelector<HTMLElement>('[data-journey-url]')!.dataset.journeyUrl!;
     return (await import(url)).MOVING_MS;
@@ -1669,10 +1673,7 @@ test('how it works: the office moves for MOVING_MS after a hook, then holds stil
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
   page,
 }) => {
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./how-it-works/');
-  const hooks = page.locator('.fig-journey__hook');
-  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+  const hooks = await gotoJourney(page);
   await hooks.first().focus();
   await page.keyboard.press('Enter');
   await expect(hooks.nth(1)).toBeFocused();
@@ -1710,11 +1711,8 @@ test('how it works under reduced motion: the last hook walks its session out, so
 }) => {
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await context.newPage();
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./how-it-works/');
-  const hooks = page.locator('.fig-journey__hook');
+  const hooks = await gotoJourney(page);
   const office = page.locator('[data-stop="office"] .fig-journey__out');
-  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
   const count = await hooks.count();
   for (let i = 0; i < count; i++) {
     await hooks.nth(i).click();
@@ -1734,11 +1732,8 @@ test('how it works under reduced motion: a hook still lands, and the office draw
 }) => {
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   const page = await context.newPage();
-  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
-  await page.goto('./how-it-works/');
-  const hooks = page.locator('.fig-journey__hook');
+  const hooks = await gotoJourney(page);
   const office = page.locator('.fig-journey__office');
-  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
   // Its frames run while it is in view.
   await office.scrollIntoViewIfNeeded();
   const shot = async () => (await office.screenshot()).toString('base64');
