@@ -48,9 +48,9 @@ function moves(body) {
 }
 
 // A drawn figure's terminal window.
-const windowed = (title, body) => [
-  h('div.fig__bar', [h('span.fig__title', title)]),
-  h('div.fig__body', body),
+export const windowed = (title, body, { bar = {}, scroller = {} } = {}) => [
+  h('div.fig__bar', bar, [h('span.fig__title', title)]),
+  h('div.fig__body', scroller, body),
 ];
 
 function milliseconds(kind, cell) {

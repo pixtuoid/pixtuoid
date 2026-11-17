@@ -8,7 +8,7 @@ import { renderMermaidSVG } from 'beautiful-mermaid';
 import { fromHtml } from 'hast-util-from-html';
 import { SKIP, visit } from 'unist-util-visit';
 import { h } from 'hastscript';
-import { figure } from './rehype-figures.mjs';
+import { figure, windowed } from './rehype-figures.mjs';
 
 // Mermaid's accessibility directives are not part of beautiful-mermaid's grammar
 // (its src/parser.ts has no rule for them, at package.json's version, so it
@@ -102,10 +102,13 @@ function markEnds(svg) {
 // wider than it, so that body is a tab stop as rehype-scroll-focus.mjs's header
 // says a scroller is.
 const framed = (svg) =>
-  figure('diagram', [
-    h('div.fig__bar', { ariaHidden: 'true' }, [h('span.fig__title', '~ diagram')]),
-    h('div.fig__body', { tabIndex: 0 }, [atDrawnSize(markEnds(svg))]),
-  ]);
+  figure(
+    'diagram',
+    windowed('~ diagram', [atDrawnSize(markEnds(svg))], {
+      bar: { ariaHidden: 'true' },
+      scroller: { tabIndex: 0 },
+    })
+  );
 
 function render(raw, index) {
   const { source, title, descr } = splitAccessibility(raw);

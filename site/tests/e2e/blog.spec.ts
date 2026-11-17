@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
-import { BLOG_DIR, BLOG_ROUTE, FEED_ROUTE, postIds, postRoute } from '../../config/blog.mjs';
+import {
+  BLOG_ROUTE,
+  FEED_ROUTE,
+  SITE_DIR,
+  postFile,
+  postIds,
+  postRoute,
+} from '../../config/blog.mjs';
 import { floorById } from '../../config/floors.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
 
@@ -40,7 +47,7 @@ test('a post mounts the wing shell: its title, its day, its lit sidebar entry an
     await expect(page.locator('.wing__sidebar a[aria-current="page"]'), id).toHaveText(title);
     await expect(page.locator('.wing__source a'), id).toHaveAttribute(
       'href',
-      `${REPO_BLOB}/site/${BLOG_DIR}/${id}.md`
+      `${REPO_BLOB}/${SITE_DIR}/${postFile(id)}`
     );
     await expect(page.locator('#statusline'), id).toContainText(`~ pixtuoid blog · /${id}`);
     // A lone post has no neighbour to turn to, so no pager.
@@ -97,7 +104,8 @@ test('a moving figure plays once the reader reaches it, and ends by itself', asy
           })
         );
       expect(new Set((await motion()).map(({ name }) => name))).toEqual(new Set(['none']));
-      // Not yet reached, it already shows: a reader who prints the page gets the figure.
+      // Not yet reached, it already shows: the figure takes the reveal class for its observer
+      // alone (Wing.astro).
       await expect(figure).toHaveCSS('opacity', '1');
       await figure.scrollIntoViewIfNeeded();
       await expect(figure).toHaveClass(/\bin\b/);
@@ -126,7 +134,7 @@ test('a moving figure plays once the reader reaches it, and ends by itself', asy
       for (const playhead of playheads) await expect(playhead).toBeHidden();
     }
   }
-  // No post with a moving figure would pass the loop having checked nothing.
+  // teeth: with no moving figure in any post, the loop would check nothing and pass.
   expect(moving).toBeGreaterThan(0);
 });
 

@@ -1,4 +1,4 @@
-// The rendered docs' two shared facts, in a module the build, the unit tests
+// Two facts the rendered pages share, the docs' directory and a page's name in dist/, in a module the build, the unit tests
 // and the Playwright specs can all import (src/consts.ts reads `import.meta.env`).
 
 // The repository directory that holds the rendered docs.

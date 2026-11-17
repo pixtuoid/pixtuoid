@@ -2345,7 +2345,7 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./architecture/', 375],
     ['./contributing/', 375],
     ['./architecture/', 768],
-    // Every doc and post at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
+    // Every reading page (the blog's lobby, each doc and post) at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
     ...readingRoutes().map((route) => [`./${route}`, 320] as const),
   ] as const) {
     const context = await browser.newContext({

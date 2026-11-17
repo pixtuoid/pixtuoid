@@ -5,6 +5,7 @@ import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
 import { asset, floorHref, pageTitle, type Wing, type WingPage } from '../consts';
+import { pageName } from '../../config/docs.mjs';
 import { FLOORS } from '../../config/floors.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
 
@@ -109,7 +110,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     </nav>}
   </main>
   <Footer />
-  <Statusline wingPath={wing.path} pageSlug={page?.route.replace(/\/$/, '').split('/').pop()} />
+  <Statusline wingPath={wing.path} pageSlug={page && pageName(page).split('/').pop()} />
 </Base>
 
 <script is:inline>
