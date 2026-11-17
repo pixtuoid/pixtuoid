@@ -293,13 +293,16 @@ a {
   border-radius: 3px;
 }
 
-/* skip-to-content: off-screen until focused (WCAG 2.4.1 Bypass Blocks) */
+/* skip-to-content: unseen until focused (WCAG 2.4.1 Bypass Blocks). Hidden where it stands and
+   not fixed: Safari 26 shows the page under its top bar, and treats a fixed element at that edge
+   apart (bugs.webkit.org/show_bug.cgi?id=301756, comment 2). */
 .skip-link {
-  position: fixed;
+  position: absolute;
   top: 0.6rem;
   left: 0.6rem;
   z-index: 10000;
-  transform: translateY(-150%);
+  opacity: 0;
+  pointer-events: none;
   padding: 0.6rem 1rem;
   border-radius: var(--radius-sm);
   background: var(--surface);
@@ -308,10 +311,11 @@ a {
   font-family: var(--font-mono);
   font-size: 0.9rem;
   text-decoration: none;
-  transition: transform 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 .skip-link:focus {
-  transform: none;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 /* ---------- type ---------- */
