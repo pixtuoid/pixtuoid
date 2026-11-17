@@ -57,17 +57,17 @@ fn settled_pixels(scene: &SceneState) -> Vec<(u8, u8, u8)> {
     // shorter than the vacancy debounce, past which the empty office's floor dim
     // would start easing while the occupied office holds its lights, and the
     // diff would stop being the agent's paint alone.
-    const SETTLE_FRAMES: usize = 30;
+    const SETTLE_FRAMES: u32 = 30;
     const _: () = assert!(
         PAINT_FRAME.as_nanos() * (SETTLE_FRAMES as u128)
             < Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS).as_nanos()
     );
     let (cols, rows) = (120, 44);
     let mut r = new_renderer(cols, rows);
-    let mut t = t0();
-    for _ in 0..SETTLE_FRAMES {
+    // The window's first frame and its last: the entry walk is timed from the
+    // frame that first sees the agent, so the frames between only move it on.
+    for t in [t0(), t0() + PAINT_FRAME * (SETTLE_FRAMES - 1)] {
         r.render(scene, t).expect("render office");
-        t += PAINT_FRAME;
     }
     r.buf()
         .expect("a frame")
