@@ -2400,12 +2400,15 @@ mod tests {
     fn a_strike_lights_the_deck_only_by_its_phase() {
         let phase_ms = crate::sky::STRIKE_PHASE_MS;
         let mut walked = 0;
+        // A warm cache draws what a fresh one does
+        // (`the_outside_cache_draws_what_a_fresh_frame_draws`, whose cache holds it).
+        let mut cache = CloudCache::default();
         for k in 0..60u32 {
             let then = crate::localclock::at_hour(12)
                 + Duration::from_millis(crate::sky::LIGHTNING_PERIOD_MS) * k;
             let beat = Motion::Full.timing(then).beat;
             let start = then + Duration::from_millis(crate::sky::strike_start_ms(beat) - beat.ms());
-            let at = |ms: u64| {
+            let mut at = |ms: u64| {
                 let now = start + Duration::from_millis(ms);
                 let sky = Sky::at_with(now, Weather::Storm);
                 let moment =
@@ -2415,7 +2418,7 @@ mod tests {
                     (SPAN, GLASS_H),
                     test_density(1),
                     RUN,
-                    &mut CloudCache::default(),
+                    &mut cache,
                 );
                 let lifts: Vec<Option<u32>> = (0..SPAN * 4)
                     .flat_map(|x| (0..GLASS_H * 4).map(move |y| (x, y)))
