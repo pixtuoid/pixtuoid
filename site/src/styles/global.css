@@ -103,7 +103,7 @@
      this much top padding so the bottom-anchored hero copy can never rise
      underneath the index's floating (absolute) nav when the copy outgrows the
      viewport (the mobile eyebrow-under-logo overlap; headless cleared it by
-     only ~10px, real iOS text metrics crossed the line); and Docs.astro
+     only ~10px, real iOS text metrics crossed the line); and Wing.astro
      derives its rail top + heading scroll-margin from it (clearing the sticky
      nav variant). */
   --nav-h: 60px;
@@ -724,8 +724,8 @@ code {
   opacity: 1;
   transform: none;
 }
-/* Scripting off: nothing ever adds `.in`. */
-@media (scripting: none) {
+/* Nothing adds `.in` without script, nor on paper to a reveal the reader never scrolled to. */
+@media (scripting: none), print {
   .reveal {
     opacity: 1;
     transform: none;
@@ -918,7 +918,7 @@ code {
   }
 }
 
-/* ---------- prose: rendered markdown (the /config page) ---------- */
+/* ---------- prose: the body of every page Wing.astro frames (its rendered markdown, and a wing's lobby) ---------- */
 .prose {
   line-height: 1.7;
 }
@@ -938,6 +938,14 @@ code {
 .prose p,
 .prose li {
   color: var(--fg);
+}
+.prose p + p {
+  margin-top: 1rem;
+}
+/* A Markdown image carries its file's width and height: the height follows the width it is given. */
+.prose img {
+  height: auto;
+  margin: 1.4rem 0;
 }
 .prose a {
   color: var(--coral-deep);

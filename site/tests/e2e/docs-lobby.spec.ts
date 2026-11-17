@@ -1,4 +1,6 @@
+import { floorById } from '../../config/floors.mjs';
 import { expect, test, type Page } from '@playwright/test';
+import { readingRoutes } from '../../config/blog.mjs';
 import { DOC_DIR } from '../../config/docs.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
 import docs from '../../src/docs.json' with { type: 'json' };
@@ -14,7 +16,7 @@ function watchErrors(page: Page): () => string[] {
   return () => errors;
 }
 
-test('docs mount the statusline: route path left, install chip right, no landing organs', async ({
+test('docs mount the statusline: route path left, install chip right, no index-only organs', async ({
   page,
 }) => {
   const errors = watchErrors(page);
@@ -25,6 +27,7 @@ test('docs mount the statusline: route path left, install chip right, no landing
   await expect(bar.locator('#sl-install')).toBeAttached();
   await expect(bar.locator('[data-floor-toggle]')).toHaveCount(0);
   await expect(bar.locator('.sl__feed')).toHaveCount(0);
+  await expect(bar.locator('.sl__keys')).toHaveCount(0);
   expect(errors()).toEqual([]);
 });
 
@@ -32,7 +35,7 @@ test("every doc page's source link names its own file in this repo", async ({ pa
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   for (const { route, file } of docs) {
     await page.goto(`./${route}`);
-    await expect(page.locator('.docs__source a'), route).toHaveAttribute(
+    await expect(page.locator('.wing__source a'), route).toHaveAttribute(
       'href',
       `${REPO_BLOB}/${DOC_DIR}/${file}`
     );
@@ -41,7 +44,8 @@ test("every doc page's source link names its own file in this repo", async ({ pa
 
 test('404 mounts the statusline too', async ({ page }) => {
   await page.goto('./no-such-desk/');
-  await expect(page.locator('#statusline')).toContainText('~ pixtuoid docs · /404');
+  // The 404 page is in no wing.
+  await expect(page.locator('#statusline .sl__path')).toHaveText('~ pixtuoid · /404');
 });
 
 // GitHub Pages redirects a page's unslashed URL to its slashed one
@@ -54,7 +58,7 @@ test("every link to one of the site's pages names that page's canonical URL", as
   const canonicalPath = (html: string) =>
     new URL(/<link rel="canonical" href="([^"]+)"/.exec(html)![1]).pathname;
   const targets = new Set<string>();
-  for (const from of ['./', ...docs.map((d) => `./${d.route}`)]) {
+  for (const from of ['./', ...readingRoutes().map((r) => `./${r}`)]) {
     await page.goto(from);
     const canonical = await page.locator('link[rel="canonical"]').getAttribute('href');
     const site = new URL(canonical!).origin;
@@ -80,12 +84,12 @@ test('the docs sidebar is an elevator panel: current-doc LED + a building bank f
 }) => {
   await page.setViewportSize({ width: 1280, height: 900 }); // rails hide below 1000px
   await page.goto('./config/');
-  const panel = page.locator('.docs__sidebar');
+  const panel = page.locator('.wing__sidebar');
   await expect(panel).toHaveClass(/hw-panel/);
   await expect(panel.locator('a[aria-current="page"] .led-dot')).toHaveClass(/led-selected/);
   expect(await panel.locator('.led-dot.led-selected').count()).toBe(1);
   // the building bank lists every floor the landing page stamps from FLOORS
-  const building = panel.locator('.docs__list--building a');
+  const building = panel.locator('.wing__list--building a');
   await expect(building.first()).toHaveAttribute('href', /^\/#/);
   const listed = await building.count();
   await page.goto('./');
@@ -223,4 +227,20 @@ test('pantry FAQ: bubbles pop in sequence, join pix:paused, reduced-motion is st
   expect(await mb.evaluate((el) => getComputedStyle(el).animationName)).toBe('none');
   expect(await mb.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
   await ctx.close();
+});
+
+test("off the index, the install chip leaves for the install floor, whatever the page's own ids", async ({
+  page,
+}) => {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./config/');
+  // A heading that slugs to the floor's id must not catch the chip.
+  await page.evaluate((id) => {
+    const heading = document.createElement('h2');
+    heading.id = id;
+    document.querySelector('article')!.append(heading);
+  }, floorById('install').id);
+  await page.locator('#sl-install [data-sl-install-link]').click();
+  await expect(page).toHaveURL(new RegExp(`/#${floorById('install').id}$`));
+  expect(new URL(page.url()).pathname).toBe('/');
 });

@@ -13,8 +13,8 @@ docs, demo media all flow in from outside `site/`. Parent guide: the workspace
 ## Cross-boundary build inputs (the coupling that bites)
 
 `astro build` reads **these files from OUTSIDE `site/`** (workspace
-`Cargo.toml` + the `docs/` pages below); a rename/move of any FAILS the
-build:
+`Cargo.toml`, the `docs/` pages below and the images the posts show); a
+rename/move of any FAILS the build:
 
 - workspace `Cargo.toml` → the origin (`homepage`), the default title
   (`description`) and the displayed-version
@@ -24,11 +24,12 @@ build:
   a fresh tag shows after the next `main` commit or a `workflow_dispatch`.
 - the `docs/*.md` files `src/docs.json` names → rendered routes. **Adding,
   renaming, or REMOVING a rendered doc is a multi-point edit**: its
-  `docs.json` entry (the collection, the route, `Nav.astro`, `Docs.astro`'s
+  `docs.json` entry (the collection, the route, `Nav.astro`, `Wing.astro`'s
   sidebar/pager, the in-site doc links and Lighthouse's URLs derive from it;
   `assert-docs-rendered` globs every rendered `article.prose` and needs no
   edit), `site.yml`'s `scope` paths, and the e2e rows that name a route (smoke's
   pan and `PLATE_SURFACES` tables, `docs-lobby.spec.ts`).
+- the `docs/` images the posts show.
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:
@@ -45,13 +46,18 @@ installed only for `site.yml`'s e2e step. The empty-render class is
 gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
 the mechanism; `pages.yml`'s pins carry their own.
 
-**Docs shell**: the doc routes (`src/docs.json` is the roster) mount the
-Statusline doc variant (no PR feed fetch); `Docs.astro`'s sidebar reads the
-one `FLOORS` manifest.
+**Wing shell**: the doc routes (`src/docs.json` is the roster) and the blog
+mount the Statusline without its index-only organs (no PR feed fetch); `Wing.astro`'s sidebar
+reads the one `FLOORS` manifest. A post is one file in `src/content/blog/`:
+its route, the lobby, the feed, Lighthouse's URLs and `check:docs`'s roster
+derive from that directory (`config/blog.mjs`). Edited by hand: the e2e rows
+that name its route (smoke's `PLATE_SURFACES` table), and `site.yml`'s `scope`
+paths for each `docs/` image it shows, which `rendered-docs-scope.test.mjs`
+holds to the posts.
 Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
 unit-tested). Adding a `.prose` colour rule
 needs a twin under `.callout__body` — the specificity arithmetic and its
-theme-prefixed tie are on the rule itself in `Docs.astro`, and the smoke
+theme-prefixed tie are on the rule itself in `Wing.astro`, and the smoke
 suite's callout AA sweep grades it.
 
 ## Single-sourced content
@@ -89,8 +95,8 @@ PRODUCTION build — the runtime-contract tier (`__pixLights`/`pix:onair`/
 watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 
 - **Lighthouse** (`npm run lighthouse`: `lhci autorun` over `lighthouserc.mjs`,
-  which serves `dist/` itself and audits the home page and every route
-  `src/docs.json` renders; `config/lighthouse-budget.test.mjs` holds the
+  which serves `dist/` itself and audits the home page, every route
+  `src/docs.json` renders, the blog's lobby and every post; `config/lighthouse-budget.test.mjs` holds the
   assertion policy).
   **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
   doubled collect list. The office's wasm is fetched by its worker, which

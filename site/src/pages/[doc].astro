@@ -1,9 +1,9 @@
 ---
 import type { InferGetStaticPropsType } from 'astro';
 import { getEntry, render } from 'astro:content';
-import Docs from '../layouts/Docs.astro';
-import { DOCS } from '../consts';
-import { docSlug } from '../../config/docs.mjs';
+import Wing from '../layouts/Wing.astro';
+import { DOCS, DOCS_WING } from '../consts';
+import { DOC_DIR, pageName } from '../../config/docs.mjs';
 
 export async function getStaticPaths() {
   return Promise.all(
@@ -14,7 +14,7 @@ export async function getStaticPaths() {
           `[doc].astro: no rendered entry for ${page.file}: is the file present? src/docs.json names it, and feeds the glob loader in content.config.ts.`
         );
       }
-      return { params: { doc: docSlug(page) }, props: { page, entry } };
+      return { params: { doc: pageName(page) }, props: { page, entry } };
     })
   );
 }
@@ -24,6 +24,13 @@ const { page, entry } = Astro.props as Props;
 const { Content, headings } = await render(entry);
 ---
 
-<Docs page={page} headings={headings}>
+<Wing
+  wing={DOCS_WING}
+  page={page}
+  title={page.label}
+  description={page.description}
+  headings={headings}
+  source={{ path: `${DOC_DIR}/${page.file}`, note: page.sourceNote }}
+>
   <Content />
-</Docs>
+</Wing>

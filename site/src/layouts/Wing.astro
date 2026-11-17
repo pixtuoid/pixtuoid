@@ -4,22 +4,30 @@ import Base from './Base.astro';
 import Nav from '../components/Nav.astro';
 import Footer from '../components/Footer.astro';
 import Statusline from '../components/Statusline.astro';
-import { asset, DOCS, floorHref, pageTitle, type DocPage } from '../consts';
+import { asset, floorHref, pageTitle, type Wing, type WingPage } from '../consts';
+import { pageName } from '../../config/docs.mjs';
 import { FLOORS } from '../../config/floors.mjs';
-import { DOC_DIR, docSlug } from '../../config/docs.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
 
 interface Props {
-  page: DocPage;
-  headings: MarkdownHeading[];
+  wing: Wing;
+  // The wing's page this is; its lobby, which lists them, is none of them.
+  page?: WingPage;
+  title: string;
+  description: string;
+  headings?: MarkdownHeading[];
+  // The repository file the page renders verbatim, and what its source line adds about how.
+  source?: { path: string; note?: string };
 }
 
-const { page, headings } = Astro.props;
-const sourcePath = `${DOC_DIR}/${page.file}`;
+const { wing, page, title, description, headings = [], source } = Astro.props;
 
-const idx = DOCS.indexOf(page);
-const prev = idx > 0 ? DOCS[idx - 1] : undefined;
-const next = idx < DOCS.length - 1 ? DOCS[idx + 1] : undefined;
+// The lobby lists the wing's pages; it is no article of its own.
+const Body = page ? 'article' : 'div';
+
+const idx = page ? wing.pages.indexOf(page) : -1;
+const prev = idx > 0 ? wing.pages[idx - 1] : undefined;
+const next = idx >= 0 && idx < wing.pages.length - 1 ? wing.pages[idx + 1] : undefined;
 
 // h2 sections, folding in h3s when a doc has few. Trailing parentheticals are
 // stripped so a long heading doesn't wrap to three lines in the rail.
@@ -28,13 +36,13 @@ const raw = h2s.length < 3 ? headings.filter((h) => h.depth === 2 || h.depth ===
 const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '') }));
 ---
 
-<Base title={pageTitle(page.label)} description={page.description}>
+<Base title={pageTitle(title)} description={description}>
   <Nav />
-  <main id="main" tabindex="-1" class="docs">
-    <nav class="docs__rail docs__sidebar hw-panel" aria-label="Docs">
-      <p class="docs__bank">elevator — docs wing</p>
-      <ul class="docs__list">
-        {DOCS.map((d) => <li>
+  <main id="main" tabindex="-1" class="wing">
+    <nav class="wing__rail wing__sidebar hw-panel" aria-label={wing.name}>
+      <p class="wing__bank">elevator — {wing.bank}</p>
+      <ul class="wing__list">
+        {wing.pages.map((d) => <li>
           <a href={asset(d.route)} aria-current={d === page ? 'page' : undefined}>
             <span
               class:list={['led-dot', { 'led-selected': d === page, 'is-on': d === page }]}
@@ -44,11 +52,11 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
           </a>
         </li>)}
       </ul>
-      <p class="docs__bank">the building</p>
-      <ul class="docs__list docs__list--building">
+      <p class="wing__bank">the building</p>
+      <ul class="wing__list wing__list--building">
         {FLOORS.map((f) => <li>
           <a href={floorHref(f.id)}>
-            <span class="docs__fl" aria-hidden="true">
+            <span class="wing__fl" aria-hidden="true">
               {f.fl}
             </span>
             {f.label}
@@ -57,43 +65,43 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
       </ul>
     </nav>
 
-    <div class="docs__body">
-      <article class="prose">
+    <div class="wing__body">
+      <Body class="prose">
         <slot />
-      </article>
+      </Body>
 
-      <nav class="docs__pager" aria-label="Docs pagination">
+      {(prev || next) && <nav class="wing__pager" aria-label={`${wing.name} pagination`}>
         {prev ? (
-          <a class="docs__pager-link" href={asset(prev.route)} rel="prev">
-            <span class="docs__pager-dir" aria-hidden="true"> ← previous </span>
+          <a class="wing__pager-link" href={asset(prev.route)} rel="prev">
+            <span class="wing__pager-dir" aria-hidden="true"> ← {wing.turns.prev} </span>
             {prev.label}
           </a>
         ) : (
           <span />
         )}
         {next && <a
-          class="docs__pager-link docs__pager-link--next"
+          class="wing__pager-link wing__pager-link--next"
           href={asset(next.route)}
           rel="next"
         >
-          <span class="docs__pager-dir" aria-hidden="true"> next → </span>
+          <span class="wing__pager-dir" aria-hidden="true"> {wing.turns.next} → </span>
           {next.label}
         </a>}
-      </nav>
+      </nav>}
 
-      <p class="docs__source">
+      {source && <p class="wing__source">
         Source of truth:
-        <a href={`${REPO_BLOB}/${sourcePath}`} target="_blank" rel="noreferrer">
-          {sourcePath}
+        <a href={`${REPO_BLOB}/${source.path}`} target="_blank" rel="noreferrer">
+          {source.path}
         </a>
-        — this page renders it verbatim{page.sourceNote && ` (${page.sourceNote})`}.
-      </p>
+        — this page renders it verbatim{source.note && ` (${source.note})`}.
+      </p>}
     </div>
 
-    {toc.length > 0 && <nav class="docs__rail docs__toc" aria-label="On this page">
-      <p class="docs__toc-label">on this page</p>
-      <ul class="docs__list">
-        {toc.map((h) => <li class={h.depth === 3 ? 'docs__toc-sub' : undefined}>
+    {toc.length > 0 && <nav class="wing__rail wing__toc" aria-label="On this page">
+      <p class="wing__toc-label">on this page</p>
+      <ul class="wing__list">
+        {toc.map((h) => <li class={h.depth === 3 ? 'wing__toc-sub' : undefined}>
           <a href={`#${h.slug}`} data-toc-link={h.slug}>
             {h.text}
           </a>
@@ -102,7 +110,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     </nav>}
   </main>
   <Footer />
-  <Statusline doc={docSlug(page)} />
+  <Statusline wingPath={wing.path} pageSlug={page && pageName(page).split('/').pop()} />
 </Base>
 
 <script is:inline>
@@ -145,7 +153,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
 </script>
 
 <style>
-  .docs {
+  .wing {
     width: 100%;
     max-width: 1280px;
     margin-inline: auto;
@@ -157,17 +165,17 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     align-items: start;
   }
   /* anchored headings clear the sticky nav, and park nearer the scrollspy band */
-  .docs :global(.prose h2),
-  .docs :global(.prose h3) {
+  .wing :global(.prose h2),
+  .wing :global(.prose h3) {
     scroll-margin-top: calc(var(--nav-h) + 1.5rem);
   }
-  .docs__rail {
+  .wing__rail {
     position: sticky;
     top: calc(var(--nav-h) + 1.5rem);
     font-family: var(--font-mono);
     font-size: 0.84rem;
   }
-  .docs__toc-label {
+  .wing__toc-label {
     font-weight: 700;
     font-size: 0.76rem;
     letter-spacing: 0.12em;
@@ -175,7 +183,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: var(--fg-muted);
     margin-bottom: 0.8rem;
   }
-  .docs__list {
+  .wing__list {
     list-style: none;
     margin: 0;
     padding: 0;
@@ -183,7 +191,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     flex-direction: column;
     gap: 0.15rem;
   }
-  .docs__list a {
+  .wing__list a {
     display: block;
     padding: 0.35rem 0.6rem;
     border-radius: var(--radius-sm);
@@ -191,17 +199,17 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     text-decoration: none;
     border-left: 2px solid transparent;
   }
-  .docs__list a:hover {
+  .wing__list a:hover {
     color: var(--fg);
     background: color-mix(in srgb, var(--fg) 5%, transparent);
   }
   /* the sidebar is HARDWARE (.hw-panel): chip-palette ink, and the current doc
      reads as a lit LED rather than the paper-coral current-page tint */
-  .docs__sidebar {
+  .wing__sidebar {
     padding: 0.8rem 0.55rem;
     color: var(--chip-ink);
   }
-  .docs__bank {
+  .wing__bank {
     font-size: 0.68rem;
     font-weight: 700;
     letter-spacing: 0.12em;
@@ -209,45 +217,44 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: var(--chip-dim);
     margin: 0 0 0.5rem 0.6rem;
   }
-  .docs__list--building {
+  .wing__list--building {
     margin-top: 1.3rem;
   }
-  .docs__sidebar a {
+  .wing__sidebar a {
     display: flex;
     align-items: center;
     gap: 0.55rem;
     color: var(--chip-ink);
   }
-  .docs__sidebar a:hover {
+  .wing__sidebar a:hover {
     color: var(--chip-bright);
     background: var(--hw-hover);
   }
-  .docs__sidebar a[aria-current='page'] {
+  .wing__sidebar a[aria-current='page'] {
     color: var(--led);
     background: var(--hw-hover);
     border-left-color: var(--led);
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
   }
-  .docs__fl {
+  .wing__fl {
     font-family: var(--font-display);
     font-size: 0.95rem;
     color: var(--chip-dim);
     min-width: 1.5rem;
   }
-  .docs__sidebar a:hover .docs__fl,
-  .docs__sidebar a[aria-current='page'] .docs__fl {
+  .wing__sidebar a:hover .wing__fl,
+  .wing__sidebar a[aria-current='page'] .wing__fl {
     color: inherit;
   }
   /* rendered markdown carries no astro scope hash, hence :global throughout */
-  /* One terminal chrome for a callout and a diagram's figure
-     (config/rehype-beautiful-mermaid.mjs). */
-  .docs :global(:is(.callout, .fig--diagram)) {
+  /* One terminal chrome for a callout and a figure that opens with a window's bar. */
+  .wing :global(:is(.callout, figure:has(> .fig__bar))) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
   }
-  .docs :global(:is(.callout__bar, .fig__bar)) {
+  .wing :global(:is(.callout__bar, .fig__bar)) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -258,14 +265,14 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: var(--chip-dim);
   }
   /* The padding is the body's, so the svg's min-width bounds exactly what beautiful-mermaid drew. */
-  .docs :global(.fig__body) {
+  .wing :global(.fig__body) {
     overflow-x: auto;
     padding: 1.1rem;
   }
   /* The library's hooks read the cascade: the diagram's ground is the screen,
      and its text, fills and strokes take the chip tones that clear AA and a
      box's 3:1 on it (smoke.spec.ts's diagram tests grade both). */
-  .docs :global(.fig--diagram svg) {
+  .wing :global(.fig--diagram svg) {
     --bg: var(--screen);
     --fg: var(--chip-bright);
     --surface: var(--hw-hover);
@@ -276,11 +283,11 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     height: auto;
     background: var(--bg);
   }
-  .docs :global(.fig__end > :is(rect, polygon, path, circle, ellipse)) {
+  .wing :global(.fig__end > :is(rect, polygon, path, circle, ellipse)) {
     stroke: var(--amber);
     stroke-width: 1.5;
   }
-  .docs :global(.fig__cards) {
+  .wing :global(.fig__cards) {
     display: grid;
     /* min(): at an enlarged font size a card is no wider than the column it sits in. */
     grid-template-columns: repeat(auto-fill, minmax(min(15.5rem, 100%), 1fr));
@@ -289,7 +296,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     padding: 0;
     list-style: none;
   }
-  .docs :global(.fig-card) {
+  .wing :global(.fig-card) {
     margin: 0;
     padding: 1rem 1.1rem 1.1rem;
     background: var(--surface);
@@ -297,7 +304,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow);
   }
-  .docs :global(.fig-card__role) {
+  .wing :global(.fig-card__role) {
     margin: 0 0 0.6rem;
     font-family: var(--font-display);
     font-size: 1.45rem;
@@ -306,16 +313,128 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   /* (0,4,1), past global.css's theme-prefixed `.prose a` (0,3,1), which tints
      night's and dracula's links: a role's name reads as the card's title. */
-  .docs :global(.fig-card .fig-card__role a) {
+  .wing :global(.fig-card .fig-card__role a) {
     color: inherit;
     font-weight: inherit;
   }
-  .docs :global(.fig-card__acts) {
+  .wing :global(.fig-card__acts) {
     margin: 0;
     font-size: 0.92rem;
     line-height: 1.45;
   }
-  .docs :global(.callout__body) {
+  .wing :global(:is(.fig__budgets, .fig__panes)) {
+    display: grid;
+    gap: 0.9rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .wing :global(:is(.fig-budget, .fig-pane) p) {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.35;
+    color: var(--chip-bright);
+  }
+  .wing :global(.fig-budget) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.35rem 0.8rem;
+    margin: 0;
+  }
+  .wing :global(.fig-budget__line) {
+    grid-column: 1 / -1;
+    display: block;
+    width: 100%;
+    height: 2rem;
+  }
+  .wing :global(.fig-budget__run) {
+    fill: var(--chip-ink);
+  }
+  .wing :global(.fig-budget__run--late) {
+    fill: var(--chip-accent);
+  }
+  .wing :global(.fig-budget__beat) {
+    stroke: var(--chip-bright);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+  /* Shown only while it runs: a playhead that stands still marks no instant. */
+  .wing :global(.fig-budget__now) {
+    fill: var(--led);
+    visibility: hidden;
+  }
+  /* Plays once the figure is in view, and ends inside blog.spec.ts's MOTION_LIMIT_S. */
+  .wing :global(.reveal.in .fig-budget__now) {
+    animation: fig-now 4s linear;
+  }
+  /* The figure takes the reveal class for its observer alone, not for the landing page's fade. */
+  .wing :global(figure.reveal) {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  @keyframes fig-now {
+    from {
+      visibility: visible;
+    }
+    to {
+      visibility: visible;
+      transform: translateX(100%);
+    }
+  }
+  .wing :global(.fig__panes) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wing :global(.fig-pane svg) {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-bottom: 0.6rem;
+  }
+  .wing :global(.fig-pane__frame) {
+    fill: var(--hw-hover);
+    stroke: var(--chip-dim);
+    stroke-width: 0.5;
+  }
+  .wing :global(.fig-pane__desk) {
+    fill: var(--chip-line);
+  }
+  .wing :global(.fig-pane__change) {
+    fill: var(--chip-accent);
+  }
+  .wing :global(.fig-pane__box) {
+    fill: none;
+    stroke: var(--led);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+  .wing :global(.fig-pane__cuts) {
+    fill: none;
+    stroke: var(--chip-accent);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  .wing :global(.fig-pane__wash) {
+    fill: var(--chip-accent);
+    opacity: 0.7;
+    transform-box: fill-box;
+    transform-origin: top;
+  }
+  /* Ends inside MOTION_LIMIT_S too. */
+  .wing :global(.reveal.in .fig-pane__wash) {
+    animation: fig-wash 1.8s ease-in-out 2;
+  }
+  @keyframes fig-wash {
+    from {
+      transform: scaleY(0);
+    }
+  }
+  .wing :global(p.fig-pane__count) {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+  }
+  .wing :global(.callout__body) {
     margin: 0;
     padding: 0.9rem 1.1rem;
     border: 0;
@@ -323,18 +442,18 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   /* global.css's `.prose p, .prose li` matches these DIRECTLY, which beats the
      --chip-ink their .callout__body ancestor hands down — dark ink on the dark
-     --screen. Astro compiles `.docs :global(…)` to (0,3,1), which beats
+     --screen. Astro compiles `.wing :global(…)` to (0,3,1), which beats
      `.prose p` (0,1,1) by WEIGHT. CAVEAT: a THEME-prefixed global rule
      (`:root[data-theme='night'] .prose a`) is ALSO (0,3,1), an exact tie the
      twins below win only on source order — see the `a > code` rule. */
-  .docs :global(.callout__body p),
-  .docs :global(.callout__body li) {
+  .wing :global(.callout__body p),
+  .wing :global(.callout__body li) {
     color: inherit;
   }
-  .docs :global(.callout__body a) {
+  .wing :global(.callout__body a) {
     color: var(--chip-bright);
   }
-  .docs :global(.callout__body code) {
+  .wing :global(.callout__body code) {
     color: var(--chip-bright);
     background: var(--hw-hover);
   }
@@ -342,20 +461,20 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
      OUTWEIGHS the rule above — a link-wrapped chip in a callout wore --surface
      next to its --hw-hover siblings. The extra `.callout` takes this to (0,4,2)
      so it wins on WEIGHT: a plain twin would only tie. */
-  .docs :global(.callout .callout__body a > code) {
+  .wing :global(.callout .callout__body a > code) {
     background: var(--hw-hover);
   }
   /* --coral-deep is theme-retuned, so this needs no per-theme override */
-  .docs__toc a[aria-current='location'] {
+  .wing__toc a[aria-current='location'] {
     color: var(--coral-deep);
     border-left-color: var(--coral-deep);
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
   }
-  .docs__toc-sub a {
+  .wing__toc-sub a {
     padding-left: 1.4rem;
   }
-  .docs__pager {
+  .wing__pager {
     display: flex;
     /* At 320px the longest neighbour pair outgrows one row. */
     flex-wrap: wrap;
@@ -367,7 +486,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-family: var(--font-mono);
     font-size: 0.92rem;
   }
-  .docs__pager-link {
+  .wing__pager-link {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
@@ -378,21 +497,21 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     color: var(--fg);
     text-decoration: none;
   }
-  .docs__pager-link--next {
+  .wing__pager-link--next {
     text-align: right;
     margin-left: auto;
   }
-  .docs__pager-link:hover {
+  .wing__pager-link:hover {
     border-color: var(--border-strong);
     color: var(--coral-deep);
   }
-  .docs__pager-dir {
+  .wing__pager-dir {
     font-size: 0.76rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--fg-muted);
   }
-  .docs__source {
+  .wing__source {
     margin-top: 2.6rem;
     padding-top: 1.3rem;
     border-top: 1px solid var(--border);
@@ -400,13 +519,14 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     font-size: 0.84rem;
     color: var(--fg-muted);
   }
-  /* rails hidden — Nav's Docs dropdown covers them */
+  /* No room for the rails: Nav's Docs dropdown lists the docs, and a post's meta line links
+     the blog. */
   @media (max-width: 1000px) {
-    .docs {
+    .wing {
       display: block;
       max-width: 820px;
     }
-    .docs__rail {
+    .wing__rail {
       display: none;
     }
   }

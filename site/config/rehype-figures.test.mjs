@@ -40,6 +40,138 @@ test('cards turn each row into a role card that keeps its links, and the marker 
   assert.equal(toText(acts), 'Posting a verdict');
 });
 
+const all = (node, test, out = []) => {
+  if (test(node)) out.push(node);
+  for (const child of node.children ?? []) all(child, test, out);
+  return out;
+};
+const withClass = (name) => (n) => n.properties?.className?.includes(name);
+const said = (node) => toText(node).replace(/\s+/g, ' ').trim();
+
+test('a budget timeline starts a frame on its beat, or late when the one before overran', () => {
+  const tree = run([
+    marker('budget'),
+    nl,
+    table(
+      ['Frame', 'Takes', 'Budget'],
+      ['Before', '43.4 ms', '33 ms'],
+      ['After', '9.9 ms', '33 ms']
+    ),
+  ]);
+  const fig = figure(tree);
+  // Its playhead moves, so the figure is one the reveal observer watches.
+  assert.deepEqual(fig.properties.className, ['fig--budget', 'reveal']);
+  const [before, after] = all(fig, withClass('fig-budget')).map((row) =>
+    all(row, withClass('fig-budget__run')).map((r) => ({
+      x: r.properties.x,
+      late: r.properties.className.includes('fig-budget__run--late'),
+    }))
+  );
+  // 43.4 ms against 33: every frame after the first starts where the last one ended.
+  assert.deepEqual(before, [
+    { x: 0, late: false },
+    { x: 131.5, late: true },
+    { x: 263, late: true },
+    { x: 394.5, late: true },
+  ]);
+  // 9.9 ms against 33: one on every beat.
+  assert.deepEqual(
+    after,
+    [0, 100, 200, 300].map((x) => ({ x, late: false }))
+  );
+  assert.match(said(fig), /Before 43\.4 ms/);
+});
+
+test('a budget cell that is not a time in ms fails the build', () => {
+  for (const cell of ['fast', '1.2.3 ms', '. ms']) {
+    assert.throws(
+      () => run([marker('budget'), nl, table(['Frame', 'Takes', 'Budget'], ['x', cell, '33 ms'])]),
+      (error) => error.message.includes(`figure "budget": "${cell}" is not a time in ms`)
+    );
+  }
+});
+
+test('a frame shorter than the gap between frames is drawn with no width, never a negative one', () => {
+  const tree = run([
+    marker('budget'),
+    nl,
+    table(['Frame', 'Takes', 'Budget'], ['Quick', '0.1 ms', '33 ms']),
+  ]);
+  for (const frame of all(figure(tree), withClass('fig-budget__run'))) {
+    assert.equal(frame.properties.width, 0);
+  }
+});
+
+test('repaint shows its two passes side by side, each with what it repaints', () => {
+  const tree = run([
+    marker('repaint'),
+    nl,
+    table(['Pass', 'Pixels'], ['The whole frame', '6.8 million'], ['Only what changed', '7,936']),
+  ]);
+  const fig = figure(tree);
+  assert.deepEqual(fig.properties.className, ['fig--repaint', 'reveal']);
+  const panes = all(fig, withClass('fig-pane'));
+  assert.deepEqual(panes.map(said), ['The whole frame 6.8 million', 'Only what changed 7,936']);
+  // The first pass washes the frame; the second washes only the areas that changed (`CHANGES`).
+  const washes = panes.map((pane) => all(pane, withClass('fig-pane__wash')).length);
+  assert.equal(washes[0], 1);
+  assert.ok(washes[1] > 1);
+});
+
+test('tiles cut the same frame fine and coarse, and nothing in it moves', () => {
+  const tree = run([
+    marker('tiles'),
+    nl,
+    table(
+      ['Tiles', 'Images'],
+      ['Small tiles', 'more than the terminal keeps up with'],
+      ['Big tiles', '400 at most']
+    ),
+  ]);
+  const fig = figure(tree);
+  const [fine, coarse] = all(fig, withClass('fig-pane__cuts')).map(
+    (path) => path.properties.d.split('M').length - 1
+  );
+  assert.ok(fine > coarse);
+  assert.deepEqual(fig.properties.className, ['fig--tiles']);
+  assert.deepEqual(all(fig, withClass('fig-pane')).map(said), [
+    'Small tiles more than the terminal keeps up with',
+    'Big tiles 400 at most',
+  ]);
+});
+
+test('boxes draw every change twice, and around the second set one box a group', () => {
+  const tree = run([
+    marker('boxes'),
+    nl,
+    table(
+      ['Step', 'Count'],
+      ['What changed', 'two dozen rectangles'],
+      ['What is repainted', '8 boxes']
+    ),
+  ]);
+  const [changes, merged] = all(figure(tree), withClass('fig-pane'));
+  const count = (pane, name) => all(pane, withClass(name)).length;
+  assert.equal(count(changes, 'fig-pane__box'), 0);
+  assert.equal(count(merged, 'fig-pane__change'), count(changes, 'fig-pane__change'));
+  assert.equal(count(merged, 'fig-pane__box'), 8);
+  // Every change lies inside one of the boxes drawn around it.
+  const at = (rect) => ['x', 'y', 'width', 'height'].map((key) => rect.properties[key]);
+  const boxes = all(merged, withClass('fig-pane__box')).map(at);
+  for (const [x, y, w, hgt] of all(merged, withClass('fig-pane__change')).map(at)) {
+    assert.ok(
+      boxes.some(([bx, by, bw, bh]) => bx <= x && by <= y && x + w <= bx + bw && y + hgt <= by + bh)
+    );
+  }
+});
+
+test('a two-pane figure needs exactly its two rows', () => {
+  assert.throws(
+    () => run([marker('repaint'), nl, table(['Pass', 'Pixels'], ['Only one', '1'])]),
+    /figure "repaint" compares two, found 1/
+  );
+});
+
 test('an unknown kind fails the build', () => {
   assert.throws(() => run([marker('chart'), nl, table(CARDS)]), /unknown figure kind "chart"/);
 });

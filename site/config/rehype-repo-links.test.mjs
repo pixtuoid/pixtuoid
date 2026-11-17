@@ -1,17 +1,26 @@
 import { test } from 'node:test';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import rehypeRepoLinks from './rehype-repo-links.mjs';
 import { h } from 'hastscript';
+import { BLOG_DIR, SITE_DIR } from './blog.mjs';
 import { DOC_DIR } from './docs.mjs';
 import { REPO_BLOB } from './github.mjs';
 
-const DOCS = [
-  { file: 'ARCHITECTURE.md', route: 'architecture/' },
-  { file: 'HOW-WE-BUILD.md', route: 'how-we-build/' },
+const BLOG_DIR_FROM_ROOT = `${SITE_DIR}/${BLOG_DIR}`;
+const PAGES = [
+  { path: `${DOC_DIR}/ARCHITECTURE.md`, route: 'architecture/' },
+  { path: `${DOC_DIR}/HOW-WE-BUILD.md`, route: 'how-we-build/' },
+  { path: `${BLOG_DIR_FROM_ROOT}/other-post.md`, route: 'blog/other-post/' },
 ];
-const rewritten = (href, base = '/') => {
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
+const rewritten = (href, base = '/', from = `${DOC_DIR}/CONFIGURATION.md`) => {
   const a = h('a', { href });
-  rehypeRepoLinks({ docs: DOCS, base })({ type: 'root', children: [a] });
+  rehypeRepoLinks({ pages: PAGES, base })(
+    { type: 'root', children: [a] },
+    { path: join(REPO_ROOT, from) }
+  );
   return a.properties.href;
 };
 
@@ -35,10 +44,22 @@ test("any other repo-relative link goes to the file on GitHub, resolved from the
 test('a root-relative link resolves from the repo root, and a climb above it is clamped', () => {
   assert.equal(rewritten('/AGENTS.md'), `${REPO_BLOB}/AGENTS.md`);
   assert.equal(rewritten('../../x.md'), `${REPO_BLOB}/x.md`);
+  assert.equal(rewritten('../..'), `${REPO_BLOB}/`);
 });
 
 test('an in-page anchor and an absolute URL are left alone', () => {
   assert.equal(rewritten('#the-arc-loop'), '#the-arc-loop');
   assert.equal(rewritten('https://pixtuoid.dev/'), 'https://pixtuoid.dev/');
   assert.equal(rewritten('//pixtuoid.dev/x'), '//pixtuoid.dev/x');
+});
+
+test("a post's links resolve from the post's own directory, and one to a sibling stays on the site", () => {
+  const post = `${BLOG_DIR_FROM_ROOT}/a-post.md`;
+  assert.equal(rewritten('./other-post.md', '/', post), '/blog/other-post/');
+  assert.equal(rewritten('./notes.txt', '/', post), `${REPO_BLOB}/${BLOG_DIR_FROM_ROOT}/notes.txt`);
+  assert.equal(rewritten('../../../../docs/ARCHITECTURE.md', '/', post), '/architecture/');
+});
+
+test('a fragment keeps every character after its first #', () => {
+  assert.equal(rewritten('ARCHITECTURE.md#a#b'), '/architecture/#a#b');
 });

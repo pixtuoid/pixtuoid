@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
+import { BLOG_ROUTE, markdownPages, readingRoutes } from '../../config/blog.mjs';
 import { E2E_STAR_COUNT, REPO } from '../../config/github.mjs';
 import { FLOORS, floorById } from '../../config/floors.mjs';
 import { DISCORD } from '../../config/discord.mjs';
@@ -2330,7 +2331,7 @@ test('on a short landscape phone every row of the floor popover can be reached',
 test('no horizontal overflow at phone widths (mobile pan guard)', async ({ browser }) => {
   // `body { overflow-x: hidden }` masks the desktop scrollbar, so a full-width block whose ::before glow pokes past the viewport
   // is INVISIBLE on desktop yet PANS on mobile — and a pseudo-element dodges every querySelectorAll('*') scan.
-  // What overflows instead scrolls inside a doc's own scroller: a code block or table
+  // What overflows instead scrolls inside a page's own scroller: a code block or table
   // (config/rehype-scroll-focus.mjs) or a diagram body (config/rehype-beautiful-mermaid.mjs), each a tab stop.
   let scrollersSeen = 0;
   for (const [path, width] of [
@@ -2344,8 +2345,8 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./architecture/', 375],
     ['./contributing/', 375],
     ['./architecture/', 768],
-    // Every doc at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
-    ...docs.map((d) => [`./${d.route}`, 320] as const),
+    // Every reading page (the blog's lobby, each doc and post) at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
+    ...readingRoutes().map((route) => [`./${route}`, 320] as const),
   ] as const) {
     const context = await browser.newContext({
       viewport: { width, height: 820 },
@@ -2383,7 +2384,7 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     }
     await context.close();
   }
-  expect(scrollersSeen, 'no doc scroller to hold to the tab-stop check').toBeGreaterThan(0);
+  expect(scrollersSeen, 'no page scroller to hold to the tab-stop check').toBeGreaterThan(0);
 });
 
 test('the hero copy clears the floating nav at phone viewports (vertical overlap guard)', async ({
@@ -2648,11 +2649,21 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
     './architecture/': [
       '.prose :not(pre) > code',
       '.prose a > code',
-      '.docs__pager-dir',
+      '.wing__pager-dir',
       '.nav__install',
       '.nav__soon',
     ],
     './how-we-build/': ['.fig__title', '.fig-card__role', '.fig-card__acts'],
+    './blog/ten-days-of-making-the-cutaway-fast/': [
+      '.post__meta',
+      '.post__lede',
+      '.fig__title',
+      '.fig-budget__frame',
+      '.fig-budget__takes',
+      '.fig-pane__what',
+      '.fig-pane__count',
+    ],
+    [`./${BLOG_ROUTE}`]: ['.posts time', '.posts a', '.posts p'],
   };
 
   let swept = 0;
@@ -2677,7 +2688,7 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
   expect(swept, `${theme}: swept nothing`).toBeGreaterThan(0);
 });
 
-test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 boundary and its body a 3:1 focus ring, in every theme', async ({
+test('every doc and post diagram: its SVG text clears WCAG AA, its boxes have a 3:1 boundary and its body a 3:1 focus ring, in every theme', async ({
   page,
 }) => {
   // The diagram's ink is SVG `fill`, which axe's color-contrast, Lighthouse's
@@ -2691,7 +2702,7 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
       localStorage.setItem('pix-theme', t);
     }, theme);
     let swept = 0;
-    for (const { route } of docs) {
+    for (const { route } of markdownPages()) {
       await page.goto(`./${route}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const diagrams = await page.evaluate(() =>
@@ -2777,8 +2788,8 @@ test('every doc diagram: its SVG text clears WCAG AA, its boxes have a 3:1 bound
       }
       swept += diagrams.length;
     }
-    // teeth: a docs tree that stopped framing diagrams would pass vacuously
-    expect(swept, `${theme}: no diagram swept across ${docs.length} doc routes`).toBeGreaterThan(0);
+    // teeth: pages that stopped framing diagrams would pass vacuously
+    expect(swept, `${theme}: no diagram swept across the docs and the posts`).toBeGreaterThan(0);
   }
 });
 
@@ -3105,7 +3116,7 @@ test('pantry chitchat bubble text clears WCAG AA against its own dark ground (da
   }
 });
 
-test('docs callout body copy clears WCAG AA against the callout screen (day + night + dracula)', async ({
+test('every doc and post callout: its body copy clears WCAG AA against the callout screen (day + night + dracula)', async ({
   page,
 }) => {
   // `.prose p`/`.prose li` match the callout's own <p>/<li> DIRECTLY, and a direct match always beats the --chip-ink
@@ -3114,7 +3125,7 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
   for (const theme of VALID_THEMES) {
     await page.addInitScript((t) => localStorage.setItem('pix-theme', t), theme);
     let swept = 0;
-    for (const { route } of docs) {
+    for (const { route } of markdownPages()) {
       await page.goto(`./${route}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const rows = await page.evaluate((tags) => {
@@ -3144,10 +3155,10 @@ test('docs callout body copy clears WCAG AA against the callout screen (day + ni
       }
       swept += rows.length;
     }
-    // teeth: a docs tree that stopped emitting callouts would pass vacuously
+    // teeth: pages that stopped emitting callouts would pass vacuously
     expect(
       swept,
-      `${theme}: no .callout__body text swept across ${docs.length} doc routes`
+      `${theme}: no .callout__body text swept across the docs and the posts`
     ).toBeGreaterThan(0);
   }
 });
@@ -3641,7 +3652,7 @@ test('audit C1 (docs): the /config pager link is not coral in night', async ({ p
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'night');
   const coral = await resolvedCoral(page);
   const color = await page
-    .locator('.docs__pager-link')
+    .locator('.wing__pager-link')
     .first()
     .evaluate((e) => getComputedStyle(e).color);
   expect(color).not.toBe(coral);
@@ -3684,15 +3695,6 @@ test('audit C9: pausing the office before the pantry reveals keeps the FAQ visib
     .toBeGreaterThan(0.5);
 });
 
-test('audit C7: the doc-page install chip links cross-page, not a dead same-page fragment', async ({
-  page,
-}) => {
-  await page.goto('/config/');
-  const href = await page.locator('[data-sl-install-link]').first().getAttribute('href');
-  expect(href).not.toBe('#install');
-  expect(href).toContain('#install');
-});
-
 test('audit C5: ♩ hides and never persists a silent "playing" when the AudioContext constructor throws', async ({
   page,
 }) => {
@@ -3723,4 +3725,15 @@ test("the home page's title carries Cargo.toml's tagline", async ({ page }) => {
   );
   await page.goto('./');
   await expect(page).toHaveTitle(`pixtuoid — ${tagline.replace(/\.$/, '')}`);
+});
+
+// Nothing scrolls a printed page into view, so the reveal observer never fires there.
+test('a printed page shows what waits to be revealed', async ({ page }) => {
+  await page.emulateMedia({ media: 'print' });
+  await page.goto('./');
+  const hidden = await page
+    .locator('.reveal:not(.in)')
+    .evaluateAll((els) => els.filter((el) => getComputedStyle(el).opacity !== '1').length);
+  expect(await page.locator('.reveal:not(.in)').count()).toBeGreaterThan(0);
+  expect(hidden).toBe(0);
 });

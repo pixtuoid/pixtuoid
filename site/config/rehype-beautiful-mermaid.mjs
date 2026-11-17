@@ -2,13 +2,13 @@
 // beautiful-mermaid lays the graph out in-process, so the site build needs no
 // browser to render a doc. The SVG's colors ride tokens — --bg/--fg by
 // inheritance, the library's --surface/--border/--muted hooks by name
-// (Docs.astro's `.fig--diagram svg` owns that pairing) — so one render follows
+// (Wing.astro's `.fig--diagram svg` owns that pairing) — so one render follows
 // every theme.
 import { renderMermaidSVG } from 'beautiful-mermaid';
 import { fromHtml } from 'hast-util-from-html';
 import { SKIP, visit } from 'unist-util-visit';
 import { h } from 'hastscript';
-import { figure } from './rehype-figures.mjs';
+import { figure, windowed } from './rehype-figures.mjs';
 
 // Mermaid's accessibility directives are not part of beautiful-mermaid's grammar
 // (its src/parser.ts has no rule for them, at package.json's version, so it
@@ -85,7 +85,7 @@ function atDrawnSize(svg) {
   return svg;
 }
 
-// A reader finds where the path starts and ends by the outline Docs.astro gives
+// A reader finds where the path starts and ends by the outline Wing.astro gives
 // `fig__end`: the nodes edges only leave, or only enter.
 function markEnds(svg) {
   const edges = svg.children.filter((c) => hasClass(c, 'edge'));
@@ -102,10 +102,13 @@ function markEnds(svg) {
 // wider than it, so that body is a tab stop as rehype-scroll-focus.mjs's header
 // says a scroller is.
 const framed = (svg) =>
-  figure('diagram', [
-    h('div.fig__bar', { ariaHidden: 'true' }, [h('span.fig__title', '~ diagram')]),
-    h('div.fig__body', { tabIndex: 0 }, [atDrawnSize(markEnds(svg))]),
-  ]);
+  figure(
+    'diagram',
+    windowed('~ diagram', [atDrawnSize(markEnds(svg))], {
+      bar: { ariaHidden: 'true' },
+      scroller: { tabIndex: 0 },
+    })
+  );
 
 function render(raw, index) {
   const { source, title, descr } = splitAccessibility(raw);

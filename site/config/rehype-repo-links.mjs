@@ -1,35 +1,43 @@
-// A rendered doc's repo-relative links: one to another rendered doc becomes
-// that doc's route, so a reader stays on the site; any other resolves to the
-// file on GitHub, since the site serves none of the repository.
-import { posix } from 'node:path';
+// A rendered Markdown file's repo-relative links: one to a file the site renders
+// becomes that page's route, so a reader stays on the site; any other resolves to
+// the file on GitHub.
+import { posix, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { visit } from 'unist-util-visit';
 import { withBase } from './base-path.mjs';
-import { DOC_DIR } from './docs.mjs';
 import { REPO_BLOB } from './github.mjs';
+
+const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 
 // An absolute URL: one with a scheme, or protocol-relative.
 const ABSOLUTE = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
 
 /**
- * @param {{ docs: readonly { file: string, route: string }[], base: string }} options
- *   the rendered-doc roster and the site's base path
+ * @param {{ pages: readonly { path: string, route: string }[], base: string }} options
+ *   every rendered Markdown file (blog.mjs's `markdownPages`) and the site's base path
  */
-export default function rehypeRepoLinks({ docs, base }) {
-  const routes = new Map(docs.map((d) => [posix.join(DOC_DIR, d.file), withBase(base, d.route)]));
-  /** @param {any} node */
-  const rewrite = (node) => {
+export default function rehypeRepoLinks({ pages, base }) {
+  const routes = new Map(pages.map((p) => [p.path, withBase(base, p.route)]));
+  /** @param {string} dir the linking file's directory, from the repo root */
+  const rewrite = (dir) => (/** @type {any} */ node) => {
     if (node.tagName !== 'a' || typeof node.properties?.href !== 'string') return;
     const href = node.properties.href;
     if (href.startsWith('#') || ABSOLUTE.test(href)) return;
-    const [path, hash = ''] = href.split(/(?=#)/);
-    // A doc's links resolve from its own directory; a climb above the repo root is clamped.
-    const joined = path.startsWith('/') ? path : posix.join(DOC_DIR, path);
-    const rel = posix
-      .normalize(joined)
-      .replace(/^(?:\.\.\/)+/, '')
-      .replace(/^\/+/, '');
+    const at = href.indexOf('#');
+    const [path, hash] = at < 0 ? [href, ''] : [href.slice(0, at), href.slice(at)];
+    // GitHub resolves a Markdown link "relative to the current file", and one that starts with
+    // a `/` from the repository root ("Relative links and image paths in markdown files",
+    // docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes);
+    // rooted, `normalize` drops a climb above the root (Node's lib/path.js: posix `normalize`
+    // passes `normalizeString` `allowAboveRoot` false for an absolute path, at mise.toml's node),
+    // which this file's test of a climb holds.
+    const joined = path.startsWith('/') ? path : posix.join(dir, path);
+    const rel = posix.normalize(`/${joined}`).slice(1);
     node.properties.href = `${routes.get(rel) ?? `${REPO_BLOB}/${rel}`}${hash}`;
   };
-  /** @param {any} tree */
-  return (tree) => visit(tree, 'element', rewrite);
+  /** @param {any} tree @param {{ path: string }} file */
+  return (tree, file) => {
+    const dir = posix.dirname(relative(REPO_ROOT, file.path).split(sep).join(posix.sep));
+    visit(tree, 'element', rewrite(dir));
+  };
 }
