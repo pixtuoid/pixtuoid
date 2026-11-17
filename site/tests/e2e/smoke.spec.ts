@@ -1550,16 +1550,18 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
     page.locator('#nav-burger').evaluate((el) => getComputedStyle(el).display === 'none');
   const cdp = await page.context().newCDPSession(page);
   let gutters = 0;
-  // The bar holds rem- and px-sized parts, so the browser's default font size moves only some of them:
-  // one smaller and one larger than the 16px default, set as a reader's preference is. 340px is short
-  // enough that OfficeBackdrop's office controls, on the home page alone, take a gutter from its bar.
-  for (const fontSize of [12, 16, 20])
-    for (const [path, height] of [
-      ['./', 340],
-      ['./', 600],
-      ['./config/', 600],
-    ] as const) {
-      await page.goto(path);
+  for (const [path, height] of [
+    // Short enough that OfficeBackdrop's office controls take a gutter from the home page's bar, in
+    // the viewports narrow enough for them: a 20px default's bar lays out past those.
+    ['./', 340],
+    ['./', 600],
+    ['./config/', 600],
+  ] as const) {
+    await page.goto(path);
+    // The bar holds rem- and px-sized parts, so a default font size (CDP's "Set default font sizes")
+    // moves only some of them: 12px and 20px sit either side of 16px, where Nav.astro's 50em is its
+    // 800px.
+    for (const fontSize of [12, 16, 20]) {
       await cdp.send('Page.setFontSizes', { fontSizes: { standard: fontSize } });
       const width = await firstWidthWhere(page, height, isBar);
       const row = await page.evaluate(() => {
@@ -1585,6 +1587,7 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
         // The content box: the gutter is padding, which the bar's items stay out of.
         const box = inner.getBoundingClientRect();
         return {
+          root: parseFloat(getComputedStyle(document.documentElement).fontSize),
           left: box.left + parseFloat(pad.paddingLeft),
           right: box.right - parseFloat(pad.paddingRight),
           gutter: parseFloat(pad.paddingInlineEnd) > parseFloat(pad.paddingInlineStart),
@@ -1592,6 +1595,7 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
         };
       });
       const where = `${path} at ${width}×${height}px, a ${fontSize}px default`;
+      expect(row.root, `${where}: the default reached the page`).toBe(fontSize);
       if (row.gutter) gutters += 1;
       expect(row.items[0].left, where).toBeGreaterThanOrEqual(row.left);
       expect(row.items.at(-1)!.right, where).toBeLessThanOrEqual(row.right);
@@ -1604,6 +1608,7 @@ test('at the narrowest width that lays the nav out as a bar, its items sit on on
         }
       }
     }
+  }
   // teeth: with no bar in the gutter, the office controls' case would go unchecked.
   expect(gutters, "bars that take the office controls' gutter").toBeGreaterThan(0);
 });

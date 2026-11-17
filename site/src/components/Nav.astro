@@ -274,9 +274,9 @@ const { floating = false } = Astro.props;
   .nav__docs-btn {
     display: none;
   }
-  /* The bar's text and gaps are sized in rem, and its mark, toggle and the office controls' gutter
-     in px. A media query's em follows the user's default font size
-     (www.w3.org/TR/mediaqueries-4/#units), so the bar waits for the wider of the two. */
+  /* The bar waits for the wider of a px and an em width: its mark, toggle and the office controls'
+     gutter are px, and its text and gaps rem, which follow the user's default font size as a media
+     query's em does (www.w3.org/TR/mediaqueries-4/#units). */
   @media (min-width: 800px) and (min-width: 50em) {
     .nav__links {
       display: flex;
