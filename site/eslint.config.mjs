@@ -1,5 +1,5 @@
 // Accessibility is enforced at runtime against the built pages by the
-// Lighthouse runner (lighthouserc.json), not statically here —
+// Lighthouse run (lighthouserc.mjs), not statically here —
 // eslint-plugin-jsx-a11y caps at eslint 9 and blocked the eslint 10 upgrade.
 import js from '@eslint/js';
 import globals from 'globals';
