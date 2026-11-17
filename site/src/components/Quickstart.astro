@@ -4,7 +4,7 @@ import { floorById, floorName } from '../../config/floors.mjs';
 
 const floor = floorById('how');
 const underTheHood = DOCS.find((d) => d.file === 'ARCHITECTURE.md');
-if (!underTheHood) throw new Error('HowItWorks.astro: src/docs.json renders no ARCHITECTURE.md');
+if (!underTheHood) throw new Error('Quickstart.astro: src/docs.json renders no ARCHITECTURE.md');
 const steps = [
   {
     n: '01',

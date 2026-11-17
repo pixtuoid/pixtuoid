@@ -363,8 +363,8 @@ pub(crate) fn child_pointer(at: &str, key: &str) -> String {
 }
 
 /// Whether `key` under `at` is a shim stamp, a hook envelope's top-level `_`
-/// key, which the strip keeps: `_shim_ts_ms` is read by no decoder, only by
-/// the merge (`decoder::SHIM_STAMP`) and `tests/sources/captures.rs`.
+/// key, which the strip keeps: `_shim_ts_ms` (`decoder::SHIM_STAMP`) is read by
+/// no decoder, but the merge orders lines by it.
 pub(crate) fn is_shim_stamp(at: &str, key: &str) -> bool {
     at.is_empty() && key.starts_with('_')
 }

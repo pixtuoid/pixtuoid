@@ -144,7 +144,7 @@ Every other setting — desks per floor, pet names, cutaway or classic — lives
 
 pixtuoid learns what each agent is doing from a tiny hook it installs, which never holds up your agent, and from the agent's own session logs. It turns that into office life and draws it in your terminal.
 
-**[Follow one event from your agent to its sprite →](https://pixtuoid.dev/how-it-works/)**
+**[Follow one hook from your agent to its sprite →](https://pixtuoid.dev/how-it-works/)**
 
 ## Privacy & Security
 

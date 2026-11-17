@@ -18,11 +18,9 @@ use std::time::{Duration, SystemTime};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 
-use pixtuoid_core::source::decoder::{
-    EVENT_STAMP, PID_STAMP, SHIM_STAMP, SOURCE_STAMP, decode_hook_payload,
-};
+use pixtuoid_core::source::decoder::{SHIM_STAMPS, decode_hook_payload};
 use pixtuoid_core::state::reducer::Reducer;
-use pixtuoid_core::state::{AgentSlot, SceneState};
+use pixtuoid_core::state::{ActivityState, AgentSlot, FloorDesk, SceneState};
 use pixtuoid_core::{AgentEvent, AgentId, Transport};
 
 use pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS;
@@ -197,9 +195,6 @@ const JOURNEY: &str = include_str!(
     "../../pixtuoid-core/tests/sources/claude_code/fixtures/tool-run-hermetic/hook-payloads.jsonl"
 );
 
-/// Every key the shim can stamp on a hook line.
-const SHIM_STAMPS: [&str; 4] = [SHIM_STAMP, SOURCE_STAMP, EVENT_STAMP, PID_STAMP];
-
 /// How many units tall [`Office::fit`] aims the site's office: a closer camera
 /// than the app's, since its sprites are fixed-size.
 pub const FRAMING_UNITS_H: u32 = 130;
@@ -266,7 +261,7 @@ impl Office {
         // Capacity BEFORE the script advances: the SessionStarts due this
         // frame must allocate desks against the canvas this frame renders.
         self.sync_capacity(units_w, units_h, now);
-        self.advance_script(now);
+        self.advance_cast(now);
         // `render` evicts per-agent render state for the agents the sweep removed
         // — load-bearing: the looped script REUSES agent ids, and a returning cast
         // member with stale walk legs teleports in.
@@ -564,7 +559,7 @@ impl Office {
 const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
 
 impl Office {
-    /// [`Office::new`]'s office, its flash hold on `clock`.
+    /// An office playing `cast`, its flash hold on `clock`.
     fn on_screen(seed: u32, clock: ScreenClock, cast: Cast) -> Result<Office, PackError> {
         let pack = std::sync::Arc::new(load_bundled_pack()?);
         let density = pack.max_density_variant();
@@ -661,7 +656,7 @@ impl Office {
 
     /// Land the hires' and the cast's cues due by `now`. The cast's sweep at
     /// `now` comes last, so it covers the hires' too.
-    fn advance_script(&mut self, now: SystemTime) {
+    fn advance_cast(&mut self, now: SystemTime) {
         self.hires
             .drain_due(now, &mut self.reducer, &mut self.scene);
         match &mut self.cast {
@@ -692,11 +687,11 @@ impl Office {
         Ok(serde_json::to_string(&Landed {
             stamps,
             events,
-            agents: self.scene.agents.values().collect(),
+            agents: self.scene.agents.values().map(SlotView::of).collect(),
         })?)
     }
 
-    /// The hero's conditions: this office's own weather.
+    /// This office's conditions: its own weather.
     fn conditions(&self) -> Conditions {
         Conditions {
             weather: self.weather,
@@ -749,7 +744,30 @@ fn hex(c: pixtuoid_scene::sprite::Rgb) -> String {
 struct Landed<'a> {
     stamps: Vec<&'static str>,
     events: Vec<AgentEvent>,
-    agents: Vec<&'a AgentSlot>,
+    agents: Vec<SlotView<'a>>,
+}
+
+/// The fields of an agent's slot the How it works page shows, by the slot's
+/// own names.
+#[derive(Serialize)]
+struct SlotView<'a> {
+    label: String,
+    desk: Option<FloorDesk>,
+    state: &'a ActivityState,
+    tool_call_count: u32,
+    exiting_at: Option<SystemTime>,
+}
+
+impl<'a> SlotView<'a> {
+    fn of(slot: &'a AgentSlot) -> Self {
+        Self {
+            label: slot.label.text().to_string(),
+            desk: slot.desk,
+            state: &slot.state,
+            tool_call_count: slot.tool_call_count,
+            exiting_at: slot.exiting_at,
+        }
+    }
 }
 
 /// One frame's DOM overlay as the site lays it out ([`Office::overlay_json`]).
@@ -843,7 +861,7 @@ impl Segment {
 mod tests {
     use super::*;
     use crate::script::{CAST_LEN, HIRE_STAY, LOOP, cast_id, hero_gateway};
-    use pixtuoid_core::Transport;
+    use pixtuoid_core::source::decoder::{PID_STAMP, SHIM_STAMP, SOURCE_STAMP};
     use pixtuoid_scene::screen::Flashes;
 
     /// [`LOOP`] in the unit `step` takes.
@@ -1501,8 +1519,13 @@ mod tests {
         };
         let mut t = T0_MS;
         o.step(t, 160, 96);
-        o.step(t + 60_000.0, 160, 96);
+        t += 60_000.0;
+        o.step(t, 160, 96);
         assert!(o.scene.agents.is_empty(), "it plays nothing on its own");
+        assert!(
+            o.session.picture().is_some_and(|p| p.text.is_none()),
+            "its frame carries its own words, which the page lays no overlay over"
+        );
 
         let lines = Office::journey_lines();
         let mut landed = Vec::new();
@@ -1546,6 +1569,13 @@ mod tests {
         );
         o.step(t + 60_000.0, 160, 96);
         assert!(o.scene.agents.is_empty(), "and its slot is swept");
+    }
+
+    #[test]
+    fn the_heros_words_are_left_to_the_page() {
+        let mut o = office();
+        o.step(T0_MS, 160, 96);
+        assert!(o.session.picture().is_some_and(|p| p.text.is_some()));
     }
 
     #[test]

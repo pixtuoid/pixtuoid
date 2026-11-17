@@ -9,7 +9,7 @@
     "route": "how-it-works/",
     "label": "How it works",
     "file": "ARCHITECTURE.md",
-    "description": "Follow one Claude Code event from its hook to the sprite at its desk, through pixtuoid's own decoder, reducer and engine running in your browser.",
+    "description": "Follow one Claude Code hook to the sprite at its desk, through pixtuoid's own decoder, reducer and engine running in your browser.",
     "sourceNote": "each figure is drawn from the table or Mermaid block GitHub shows"
   },
   {

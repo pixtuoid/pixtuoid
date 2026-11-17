@@ -4,11 +4,12 @@ How a running coding-agent session becomes a moving sprite in the office.
 
 > This file is the **single source** for pixtuoid's architecture overview. It
 > renders on the website at [`/how-it-works`](https://pixtuoid.dev/how-it-works/),
-> where the stops below run a recorded Claude Code session through pixtuoid's
-> own decoder, reducer and engine, built to WebAssembly. Contributor-level
-> detail lives in `AGENTS.md` and the code's own doc comments.
+> where the stops below run a recorded Claude Code session, every field no
+> decoder reads blanked, through pixtuoid's own decoder, reducer and engine,
+> built to WebAssembly. Contributor-level detail lives in `AGENTS.md` and the
+> code's own doc comments.
 
-## One event, five stops
+## One hook, five stops
 
 When Claude Code reads a file, this is the path from its hook to the sprite at
 its desk.
@@ -23,7 +24,7 @@ its desk.
 | The office | `Reducer::apply` | The reducer folds the events into one picture of the office: who is here, at which desk, doing what. | Hooks and transcripts feed one channel into one reducer, so a step both report counts once, and every painter reads the same picture. |
 | The frame | `look::render` | The engine draws that picture. The same call paints the terminal, the desktop window and the website. | The engine knows no terminal or window. Each painter only copies its pixels out, so the office looks the same wherever it runs. |
 
-## Every way in
+## The whole pipeline
 
 ```mermaid
 flowchart TB

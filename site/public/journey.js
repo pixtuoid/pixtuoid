@@ -1,14 +1,16 @@
 // The How it works page's journey: each click sends the office wasm's next recorded hook line through
 // `Office.send_hook`, the real decoder and reducer, and shows what each of the figure's stops
-// (rehype-figures.mjs's JOURNEY_STOPS) made of it. The player above the stops draws the office, the stop
-// `frame`'s output, where it stays in view while the stops below are read.
+// (rehype-figures.mjs's JOURNEY_STOPS) made of it, the stop `frame`'s output being the player's office.
 'use strict';
+
+import { officeHost } from './office-driver.js';
 
 // Its own office's seed, apart from the home page's.
 const SEED = 7;
 // How long a stop stays the newest lit before the next one lights.
 const STEP_MS = 280;
-// Under reduced motion the canvas draws one still per line, this far on, where a walk has ended.
+// Under reduced motion the office's clock stands still but for this jump per line: about the average
+// walk, which pixtuoid-scene's physics.rs sets through V_CRUISE_COMMUTE.
 const SETTLED_MS = 4000;
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)');
@@ -39,18 +41,7 @@ function jsonInto(pre, payload, marked) {
   pre.append('}');
 }
 
-// The slot's fields the office shows, by the reducer's own names.
-function slotView(slot) {
-  return {
-    label: slot.label.text,
-    desk: slot.desk,
-    state: slot.state,
-    tool_call_count: slot.tool_call_count,
-    exiting_at: slot.exiting_at,
-  };
-}
-
-export async function start(figure, urls) {
+export async function start(figure) {
   const stops = {};
   figure.querySelectorAll('[data-stop]').forEach(function (li) {
     stops[li.dataset.stop] = li;
@@ -61,142 +52,159 @@ export async function start(figure, urls) {
   canvas.setAttribute('aria-label', 'The office, drawn by the engine');
   player.append(canvas);
   figure.prepend(player);
-  let office;
+  const outs = {};
   try {
-    const drv = await import(urls.driver);
-    const host = await drv.officeHost(urls.host, urls.wasm);
-    office = await host.open(SEED, canvas, true);
+    await run();
   } catch (err) {
-    // Without the office the stops stay the prose they were.
+    // Whatever the page added goes, so the stops stay the prose they were.
     player.remove();
+    Object.values(outs).forEach(function (pre) {
+      pre.remove();
+    });
     throw err;
   }
-  const outs = {};
-  ['agent', 'shim', 'decoder', 'office'].forEach(function (role) {
-    const pre = el('pre', 'fig-journey__out');
-    // A scroll container takes focus, so a keyboard can scroll it (WCAG 2.1.1).
-    pre.tabIndex = 0;
-    pre.hidden = true;
-    stops[role].querySelector('.fig-journey__what').after(pre);
-    outs[role] = pre;
-  });
-  const lines = office.journeyLines;
-  const payloads = lines.map(function (line) {
-    return JSON.parse(line);
-  });
 
-  let units = [0, 0];
-  async function fit() {
-    const dpr = window.devicePixelRatio || 1;
-    const [w, h] = await office.call(
-      'fit',
-      Math.round(canvas.clientWidth * dpr),
-      Math.round(canvas.clientHeight * dpr)
+  async function run() {
+    const host = await officeHost(
+      new URL('office-host.js', import.meta.url).href,
+      new URL('wasm/pixtuoid_web.js', import.meta.url).href
     );
-    units = [w, h];
-  }
-  function draw(now) {
-    if (office.busy) return Promise.resolve();
-    return office.frame({ now, w: units[0], h: units[1], draw: 1, overlay: false, audio: false });
-  }
+    const office = await host.open(SEED, canvas, true);
+    const lines = office.journeyLines;
+    const payloads = lines.map(function (line) {
+      return JSON.parse(line);
+    });
+    ['agent', 'shim', 'decoder', 'office'].forEach(function (role) {
+      const pre = el('pre', 'fig-journey__out');
+      // A scroll container takes focus, so a keyboard can scroll it (WCAG 2.1.1).
+      pre.tabIndex = 0;
+      pre.hidden = true;
+      stops[role].querySelector('.fig-journey__what').after(pre);
+      outs[role] = pre;
+    });
 
-  let raf = 0;
-  let inView = false;
-  function loop() {
-    raf = 0;
-    if (!inView || document.hidden || reduced.matches) return;
-    draw(Date.now()).catch(function () {
-      /* a host that died leaves the last frame up */
+    // The office's clock: under reduced motion it stands where it stood when motion was last reduced,
+    // else it is the wall clock; each adds every jump a line took, so it never runs backward.
+    let ahead = 0;
+    let stood = Date.now();
+    reduced.addEventListener('change', function () {
+      stood = Date.now();
     });
-    raf = requestAnimationFrame(loop);
-  }
-  function sync() {
-    if (!raf) loop();
-  }
-  new IntersectionObserver(function (entries) {
-    inView = entries[0].isIntersecting;
-    sync();
-  }).observe(canvas);
-  document.addEventListener('visibilitychange', sync);
-  reduced.addEventListener('change', sync);
-  new ResizeObserver(function () {
-    fit().then(function () {
-      if (reduced.matches) draw(Date.now() + SETTLED_MS);
-    });
-  }).observe(canvas);
-  await fit();
-  await draw(Date.now());
+    const clock = function () {
+      return (reduced.matches ? stood : Date.now()) + ahead;
+    };
+    let units = [0, 0];
+    async function fit() {
+      const dpr = window.devicePixelRatio || 1;
+      const [w, h] = await office.call(
+        'fit',
+        Math.round(canvas.clientWidth * dpr),
+        Math.round(canvas.clientHeight * dpr)
+      );
+      units = [w, h];
+    }
+    function draw() {
+      if (office.busy) return Promise.resolve();
+      return office.frame({
+        now: clock(),
+        w: units[0],
+        h: units[1],
+        draw: 1,
+        overlay: false,
+        audio: false,
+      });
+    }
+    let raf = 0;
+    let inView = false;
+    function loop() {
+      raf = 0;
+      // Under reduced motion the frames repeat one instant, which also lets the engine's flash hold
+      // pass the frame it held.
+      if (!inView || document.hidden) return;
+      draw().catch(function () {
+        /* a host that died leaves the last frame up */
+      });
+      raf = requestAnimationFrame(loop);
+    }
+    function sync() {
+      if (!raf) loop();
+    }
+    new IntersectionObserver(function (entries) {
+      inView = entries[0].isIntersecting;
+      sync();
+    }).observe(canvas);
+    document.addEventListener('visibilitychange', sync);
+    new ResizeObserver(fit).observe(canvas);
+    await fit();
+    await draw();
 
-  const send = el('div', 'fig-journey__send');
-  send.setAttribute('role', 'group');
-  send.setAttribute('aria-label', 'Send the recorded hooks, in order');
-  const status = el('p', 'sr-only');
-  status.setAttribute('aria-live', 'polite');
-  let next = 0;
-  let busy = false;
-  const buttons = payloads.map(function (payload, i) {
-    const button = el('button', 'fig-journey__hook');
-    button.type = 'button';
-    button.append(el('span', 'fig-journey__n', String(i + 1)), ' ', hookName(payload));
-    button.addEventListener('click', function () {
-      land(i);
+    const send = el('div', 'fig-journey__send');
+    send.setAttribute('role', 'group');
+    send.setAttribute('aria-label', 'Send the recorded hooks, in order');
+    const status = el('p', 'sr-only');
+    status.setAttribute('aria-live', 'polite');
+    let next = 0;
+    let landing = false;
+    const buttons = payloads.map(function (payload, i) {
+      const button = el('button', 'fig-journey__hook');
+      button.type = 'button';
+      button.append(el('span', 'fig-journey__n', String(i + 1)), ' ', hookName(payload));
+      button.addEventListener('click', function () {
+        land(i);
+      });
+      return button;
     });
-    return button;
-  });
-  function syncButtons() {
-    buttons.forEach(function (button, i) {
-      button.disabled = busy || i !== next;
-      button.classList.toggle('is-sent', i < next);
-    });
-  }
-  send.append(...buttons);
-  player.append(send, status);
-  syncButtons();
-
-  const wait = function (ms) {
-    return new Promise(function (resolve) {
-      setTimeout(resolve, reduced.matches ? 0 : ms);
-    });
-  };
-  async function land(i) {
-    busy = true;
+    function syncButtons() {
+      buttons.forEach(function (button, i) {
+        button.disabled = landing || i !== next;
+        button.classList.toggle('is-sent', i < next);
+      });
+    }
+    send.append(...buttons);
+    player.append(send, status);
     syncButtons();
-    try {
-      await show(i);
-      next = (i + 1) % lines.length;
-    } finally {
-      busy = false;
+
+    const wait = function (ms) {
+      return new Promise(function (resolve) {
+        setTimeout(resolve, reduced.matches ? 0 : ms);
+      });
+    };
+    async function land(i) {
+      landing = true;
       syncButtons();
+      try {
+        await show(i);
+        next = (i + 1) % lines.length;
+      } finally {
+        landing = false;
+        syncButtons();
+      }
     }
-  }
-  async function show(i) {
-    const now = Date.now();
-    const landed = JSON.parse(await office.call('send_hook', lines[i], now));
-    const agent = Object.fromEntries(
-      Object.entries(payloads[i]).filter(function ([key]) {
-        return !landed.stamps.includes(key);
-      })
-    );
-    const shown = [
-      ['agent', () => jsonInto(outs.agent, agent, [])],
-      ['shim', () => jsonInto(outs.shim, payloads[i], landed.stamps)],
-      ['decoder', () => (outs.decoder.textContent = JSON.stringify(landed.events, null, 2))],
-      [
-        'office',
-        () => (outs.office.textContent = JSON.stringify(landed.agents.map(slotView), null, 2)),
-      ],
-      ['frame', () => reduced.matches && draw(now + SETTLED_MS)],
-    ];
-    Object.values(stops).forEach(function (li) {
-      li.classList.remove('is-lit');
-    });
-    for (const [role, show] of shown) {
-      show();
-      if (outs[role]) outs[role].hidden = false;
-      stops[role].classList.add('is-lit');
-      await wait(STEP_MS);
+    async function show(i) {
+      const landed = JSON.parse(await office.call('send_hook', lines[i], clock()));
+      const agent = Object.fromEntries(
+        Object.entries(payloads[i]).filter(function ([key]) {
+          return !landed.stamps.includes(key);
+        })
+      );
+      const fills = [
+        ['agent', () => jsonInto(outs.agent, agent, [])],
+        ['shim', () => jsonInto(outs.shim, payloads[i], landed.stamps)],
+        ['decoder', () => (outs.decoder.textContent = JSON.stringify(landed.events, null, 2))],
+        ['office', () => (outs.office.textContent = JSON.stringify(landed.agents, null, 2))],
+        ['frame', () => reduced.matches && (ahead += SETTLED_MS)],
+      ];
+      Object.values(stops).forEach(function (li) {
+        li.classList.remove('is-lit');
+      });
+      for (const [role, fill] of fills) {
+        await fill();
+        if (outs[role]) outs[role].hidden = false;
+        stops[role].classList.add('is-lit');
+        await wait(STEP_MS);
+      }
+      const n = landed.events.length;
+      status.textContent = `${hookName(payloads[i])} sent: the decoder made ${n} ${n === 1 ? 'event' : 'events'}.`;
     }
-    const n = landed.events.length;
-    status.textContent = `${hookName(payloads[i])} sent: the decoder made ${n} ${n === 1 ? 'event' : 'events'}.`;
   }
 }

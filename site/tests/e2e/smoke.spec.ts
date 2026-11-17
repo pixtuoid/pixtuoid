@@ -1546,12 +1546,14 @@ test('how it works: every recorded hook fills each stop through the real decoder
       if (i === count - 1) expect(slots[0].exiting_at, 'the last hook ends it').not.toBeNull();
       if (i === 0) {
         expect(await canvasPainted(page, '.fig-journey__office')).toBe(true);
+        await page.locator('.fig-journey__why summary').first().click();
         for (const selector of [
           '.fig-journey__hook:not(:disabled)',
           '.fig-journey__hook:not(:disabled) .fig-journey__n',
           '.fig-journey__name',
           '.fig-journey__what',
           '.fig-journey__why summary',
+          '.fig-journey__why[open] p',
           '.fig-journey__out',
           '.fig-journey__stamp',
         ]) {
@@ -1560,6 +1562,26 @@ test('how it works: every recorded hook fills each stop through the real decoder
             ratio,
             `${theme} ${selector}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
           ).toBeGreaterThanOrEqual(AA_TEXT);
+        }
+        // Each new tab stop's focus ring.
+        for (const selector of [
+          '.fig-journey__hook:not(:disabled)',
+          '.fig-journey__why summary',
+          '.fig-journey__out',
+        ]) {
+          const shown = await page
+            .locator(selector)
+            .first()
+            .evaluate((el) => {
+              (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
+              return getComputedStyle(el).outlineStyle !== 'none';
+            });
+          expect(shown, `${theme} ${selector}: no focus ring`).toBe(true);
+          const ring = await paintedContrast(page, selector, 0, 'outlineColor');
+          expect(
+            ring,
+            `${theme} ${selector} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(AA_NON_TEXT);
         }
       }
     }
@@ -1588,10 +1610,17 @@ test('how it works under reduced motion: a hook still lands, and the office draw
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
   await page.goto('./how-it-works/');
   const hooks = page.locator('.fig-journey__hook');
-  await hooks.first().click({ timeout: 15_000 });
+  const office = page.locator('.fig-journey__office');
+  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+  // Its frames run while it is in view.
+  await office.scrollIntoViewIfNeeded();
+  const shot = async () => (await office.screenshot()).toString('base64');
+  const before = await settledShot(shot);
+  await hooks.first().click();
   await expect(hooks.nth(1)).toBeEnabled();
   await expect(page.locator('[data-stop="office"] .fig-journey__out')).toContainText('"label"');
-  await expect.poll(() => canvasPainted(page, '.fig-journey__office')).toBe(true);
+  // The empty office's frame gives way to the still of the session it seated.
+  expect(await settledShot(shot)).not.toBe(before);
   await context.close();
 });
 
@@ -2008,7 +2037,7 @@ test('first visit on an office-less page lifts the splash promptly (no engine-ga
 }) => {
   // window.__pixEngineReady is set ONLY by OfficeBackdrop (index-only), so an office-less page's Level-2 gate must fall back to the flat delay.
   const errors = watchErrors(page);
-  await page.goto('./how-it-works/'); // real first visit (no pix-booted), no OfficeBackdrop
+  await page.goto('./contributing/'); // real first visit (no pix-booted), no OfficeBackdrop
   await expect(page.locator('#boot')).toBeVisible();
   await expect(page.locator('#office-live')).toHaveCount(0);
   await expect(
