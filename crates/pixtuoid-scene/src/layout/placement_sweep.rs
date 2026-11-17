@@ -165,7 +165,7 @@ macro_rules! check {
 /// in its own process (<https://nexte.st/docs/design/why-process-per-test/>),
 /// where a check of its own would lay every office out again. The route checks
 /// inside insets lay theirs out in [`the_route_sweeps_hold_inside_insets`],
-/// which outlasts the instrumented budget.
+/// which outlasts its own budget instrumented.
 #[test]
 fn every_swept_office_holds_its_invariants() {
     let seeds: BTreeSet<u64> = SWEEP_SEEDS
@@ -175,8 +175,8 @@ fn every_swept_office_holds_its_invariants() {
         .iter()
         .flat_map(|&(w, h)| seeds.iter().map(move |&seed| (w, h, seed)))
         .collect();
-    // One thread: instrumented for coverage, threads sharing the counters run
-    // the sweep slower than one does.
+    // One thread: instrumented for coverage, the sweep ran slower split across
+    // threads than on one.
     let mut found = offices
         .iter()
         .map(|&(w, h, seed)| check_offices_of(w, h, seed))
