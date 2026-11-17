@@ -288,7 +288,7 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
     }
     findings.extend(literal_census(
         p,
-        &literals::population()?,
+        literals::population()?,
         &scenario_reads(p, ran.into_iter())?,
         &carried,
         &kept,
