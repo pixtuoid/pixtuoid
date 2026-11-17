@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { BLOG_DIR, BLOG_ROUTE, FEED_ROUTE, postIds, postRoute } from '../../config/blog.mjs';
+import { floorById } from '../../config/floors.mjs';
 import { REPO_BLOB } from '../../config/github.mjs';
 
 // Runs against the PRODUCTION build (see playwright.config.ts).
@@ -60,6 +61,15 @@ test('the footer links the blog', async ({ page }) => {
     'href',
     `/${BLOG_ROUTE}`
   );
+});
+
+test("a post ends on a link to the site's install floor", async ({ page }) => {
+  for (const id of postIds()) {
+    await page.goto(`./${postRoute(id)}`);
+    await expect(
+      page.locator('article.prose').getByRole('link', { name: 'Install pixtuoid' })
+    ).toHaveAttribute('href', `/#${floorById('install').id}`);
+  }
 });
 
 // WCAG 2.2's SC 2.2.2 asks for a way to stop motion that "starts automatically" and "lasts more

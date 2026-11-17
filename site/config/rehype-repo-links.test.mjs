@@ -4,20 +4,20 @@ import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import rehypeRepoLinks from './rehype-repo-links.mjs';
 import { h } from 'hastscript';
-import { BLOG_DIR } from './blog.mjs';
+import { BLOG_DIR, SITE_DIR } from './blog.mjs';
 import { DOC_DIR } from './docs.mjs';
 import { REPO_BLOB } from './github.mjs';
 
-const DOCS = [
-  { file: 'ARCHITECTURE.md', route: 'architecture/' },
-  { file: 'HOW-WE-BUILD.md', route: 'how-we-build/' },
+const BLOG_DIR_FROM_ROOT = `${SITE_DIR}/${BLOG_DIR}`;
+const PAGES = [
+  { file: `${DOC_DIR}/ARCHITECTURE.md`, route: 'architecture/' },
+  { file: `${DOC_DIR}/HOW-WE-BUILD.md`, route: 'how-we-build/' },
+  { file: `${BLOG_DIR_FROM_ROOT}/other-post.md`, route: 'blog/other-post/' },
 ];
-// config/blog.mjs's BLOG_DIR is under site/.
-const BLOG_DIR_FROM_ROOT = `site/${BLOG_DIR}`;
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const rewritten = (href, base = '/', from = `${DOC_DIR}/CONFIGURATION.md`) => {
   const a = h('a', { href });
-  rehypeRepoLinks({ docs: DOCS, base })(
+  rehypeRepoLinks({ pages: PAGES, base })(
     { type: 'root', children: [a] },
     { path: join(REPO_ROOT, from) }
   );
@@ -52,11 +52,9 @@ test('an in-page anchor and an absolute URL are left alone', () => {
   assert.equal(rewritten('//pixtuoid.dev/x'), '//pixtuoid.dev/x');
 });
 
-test("a post's links resolve from the post's own directory", () => {
+test("a post's links resolve from the post's own directory, and one to a sibling stays on the site", () => {
   const post = `${BLOG_DIR_FROM_ROOT}/a-post.md`;
-  assert.equal(
-    rewritten('./other-post.md', '/', post),
-    `${REPO_BLOB}/${BLOG_DIR_FROM_ROOT}/other-post.md`
-  );
+  assert.equal(rewritten('./other-post.md', '/', post), '/blog/other-post/');
+  assert.equal(rewritten('./notes.txt', '/', post), `${REPO_BLOB}/${BLOG_DIR_FROM_ROOT}/notes.txt`);
   assert.equal(rewritten('../../../../docs/ARCHITECTURE.md', '/', post), '/architecture/');
 });

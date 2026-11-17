@@ -34,10 +34,8 @@ function rows(kind, tableNode, columns) {
   );
 }
 
-// What moves in a figure carries this class, and the figure the page's reveal-on-scroll class
-// (Base.astro): Wing.astro plays the motion once the figure is in view, for under the five
-// seconds past which WCAG 2.2's SC 2.2.2 asks for a way to stop it
-// (www.w3.org/TR/WCAG22/#pause-stop-hide).
+// What moves in a figure carries the first class, and its figure the page's reveal-on-scroll
+// class, which Base.astro's observer completes: Wing.astro plays the motion from there.
 const MOVING = 'fig__moving';
 const REVEAL = 'reveal';
 
@@ -271,8 +269,7 @@ const KINDS = {
 
 const FIGURE_KINDS = Object.keys(KINDS);
 
-// The shell every figure shares: its class names its kind, and one with a moving part waits for
-// the reader.
+// The shell every figure shares: its class names its kind.
 export const figure = (kind, children) =>
   h('figure', { className: [`fig--${kind}`, ...(moves(children) ? [REVEAL] : [])] }, children);
 

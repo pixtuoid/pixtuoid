@@ -540,6 +540,6 @@ builds the same code read 90 to 321.
 
 ## Try it
 
-The cutaway is on by default wherever pixtuoid can reach your terminal's image
-protocol. Over ssh, inside GNU screen and under tmux's default settings you
-get the classic look, and `pixtuoid doctor` says why.
+The cutaway is on by default where pixtuoid can draw it. Over ssh, inside GNU
+screen, under tmux's default settings and in a few terminals you get the
+classic look, and `pixtuoid doctor` says why.

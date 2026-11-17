@@ -248,8 +248,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   /* rendered markdown carries no astro scope hash, hence :global throughout */
   /* One terminal chrome for a callout and a figure that opens with a window's bar. */
-  .wing :global(.callout),
-  .wing :global(figure:has(> .fig__bar)) {
+  .wing :global(:is(.callout, figure:has(> .fig__bar))) {
     margin: 1.4rem 0;
     background: var(--screen);
     border: 1px solid var(--chip-line);
@@ -359,14 +358,29 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     stroke-width: 2;
     vector-effect: non-scaling-stroke;
   }
+  /* Shown only while it runs: a playhead that stands still marks no instant. */
   .wing :global(.fig-budget__now) {
     fill: var(--led);
+    visibility: hidden;
   }
+  /* A figure's motion starts once the reader reaches it and ends inside five seconds, past which
+     WCAG 2.2's SC 2.2.2 asks for a way to stop it (www.w3.org/TR/WCAG22/#pause-stop-hide);
+     blog.spec.ts's MOTION_LIMIT_S holds it. */
   .wing :global(.reveal.in .fig-budget__now) {
     animation: fig-now 4s linear;
   }
+  /* The figure takes the reveal class for its observer alone, not for the landing page's fade. */
+  .wing :global(figure.reveal) {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
   @keyframes fig-now {
+    from {
+      visibility: visible;
+    }
     to {
+      visibility: visible;
       transform: translateX(100%);
     }
   }
@@ -415,23 +429,10 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     from {
       transform: scaleY(0);
     }
-    55% {
-      transform: none;
-      opacity: 0.7;
-    }
-    to {
-      opacity: 0;
-    }
   }
   .wing :global(p.fig-pane__count) {
     font-family: var(--font-display);
     font-size: 1.5rem;
-  }
-  /* A playhead that will not run marks no instant. */
-  @media (prefers-reduced-motion: reduce), (scripting: none) {
-    .wing :global(.fig-budget__now) {
-      display: none;
-    }
   }
   .wing :global(.callout__body) {
     margin: 0;

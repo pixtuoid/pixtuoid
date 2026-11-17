@@ -15,8 +15,8 @@ import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 import { fromMarkdown } from 'mdast-util-from-markdown';
 import { visit } from 'unist-util-visit';
-import { postFile, postIds, postRoute } from './blog.mjs';
-import { DOC_DIR, docSlug } from './docs.mjs';
+import { markdownPages } from './blog.mjs';
+import { docSlug } from './docs.mjs';
 
 // A generous floor: flags a collapsed render without coupling to any page's size.
 export const MIN_BODY_CHARS = 500;
@@ -85,13 +85,9 @@ function main(dist) {
   const site = fileURLToPath(new URL('../', import.meta.url));
   const docs = JSON.parse(readFileSync(join(site, 'src/docs.json'), 'utf8'));
   const declared = (file) => mermaidFences(readFileSync(file, 'utf8')).length;
-  const diagrams = Object.fromEntries([
-    ...docs.map((d) => [docSlug(d), declared(join(site, '..', DOC_DIR, d.file))]),
-    ...postIds().map((id) => [
-      postRoute(id).replace(/\/$/, ''),
-      declared(join(site, postFile(id))),
-    ]),
-  ]);
+  const diagrams = Object.fromEntries(
+    markdownPages(docs).map((page) => [docSlug(page), declared(join(site, '..', page.file))])
+  );
   const { failures, docPages } = checkDocPages(entries, diagrams);
   if (failures.length > 0) {
     console.error(`✗ doc-render check FAILED (${dist}):\n  ${failures.join('\n  ')}`);

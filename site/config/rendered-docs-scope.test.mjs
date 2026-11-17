@@ -12,12 +12,14 @@ import docs from '../src/docs.json' with { type: 'json' };
 // What a post shows from the repo's docs directory: an image whose path climbs out of site/ to it.
 const shown = (id) => {
   const climb = '../'.repeat(BLOG_DIR.split('/').length + 1);
+  const tree = fromMarkdown(readFileSync(new URL(`../${postFile(id)}`, import.meta.url), 'utf8'));
   const images = [];
-  visit(
-    fromMarkdown(readFileSync(new URL(`../${postFile(id)}`, import.meta.url), 'utf8')),
-    ['image', 'definition'],
-    (node) => images.push(node.url)
-  );
+  const referenced = new Set();
+  visit(tree, 'image', (image) => images.push(image.url));
+  visit(tree, 'imageReference', (reference) => referenced.add(reference.identifier));
+  visit(tree, 'definition', (definition) => {
+    if (referenced.has(definition.identifier)) images.push(definition.url);
+  });
   return images
     .filter((url) => url.startsWith(`${climb}${DOC_DIR}/`))
     .map((url) => url.slice(climb.length));

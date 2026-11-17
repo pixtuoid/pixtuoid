@@ -13,7 +13,7 @@ docs, demo media all flow in from outside `site/`. Parent guide: the workspace
 ## Cross-boundary build inputs (the coupling that bites)
 
 `astro build` reads **these files from OUTSIDE `site/`** (workspace
-`Cargo.toml`, the `docs/` pages below and the image a post shows); a
+`Cargo.toml`, the `docs/` pages below and the images the posts show); a
 rename/move of any FAILS the build:
 
 - workspace `Cargo.toml` → the origin (`homepage`), the default title
@@ -29,7 +29,7 @@ rename/move of any FAILS the build:
   `assert-docs-rendered` globs every rendered `article.prose` and needs no
   edit), `site.yml`'s `scope` paths, and the e2e rows that name a route (smoke's
   pan and `PLATE_SURFACES` tables, `docs-lobby.spec.ts`).
-- the `docs/` images the posts show, which `media-regen.yml` rewrites.
+- the `docs/` images the posts show.
 
 `public/wasm/` is gitignored `just gen-wasm` output; without it the office
 silently stays on its poster. `public/demos/` is gitignored too:

@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
-import { BLOG_ROUTE, postIds, postRoute } from '../../config/blog.mjs';
+import { BLOG_ROUTE, markdownPages } from '../../config/blog.mjs';
 import { E2E_STAR_COUNT, REPO } from '../../config/github.mjs';
 import { FLOORS, floorById } from '../../config/floors.mjs';
 import { DISCORD } from '../../config/discord.mjs';
@@ -2346,8 +2346,9 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./contributing/', 375],
     ['./architecture/', 768],
     // Every doc at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
-    ...docs.map((d) => [`./${d.route}`, 320] as const),
-    ...[BLOG_ROUTE, ...postIds().map(postRoute)].map((route) => [`./${route}`, 320] as const),
+    ...[BLOG_ROUTE, ...markdownPages(docs).map((page) => page.route)].map(
+      (route) => [`./${route}`, 320] as const
+    ),
   ] as const) {
     const context = await browser.newContext({
       viewport: { width, height: 820 },
@@ -2703,7 +2704,7 @@ test('every doc and post diagram: its SVG text clears WCAG AA, its boxes have a 
       localStorage.setItem('pix-theme', t);
     }, theme);
     let swept = 0;
-    for (const route of [...docs.map((d) => d.route), ...postIds().map(postRoute)]) {
+    for (const { route } of markdownPages(docs)) {
       await page.goto(`./${route}`);
       await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
       const diagrams = await page.evaluate(() =>
