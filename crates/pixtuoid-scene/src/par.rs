@@ -14,9 +14,15 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// The cores this process may run on; one where the platform can't say,
-/// as wasm32 can't, so the work stays on the calling thread there.
+/// as wasm32 can't, and one instrumented for coverage, where a frame's work
+/// ran slower split across threads than on one: the work stays on the calling
+/// thread there.
 pub fn cores() -> usize {
-    std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+    if cfg!(coverage) {
+        1
+    } else {
+        std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+    }
 }
 
 /// `f` of each of `items`, in order, on up to `threads` threads, this one
@@ -94,6 +100,13 @@ mod tests {
         .collect();
         assert_eq!(ids.len(), 4);
         assert!(ids.contains(&std::thread::current().id()));
+    }
+
+    /// Instrumented for coverage, a frame's work stays on this thread.
+    #[test]
+    #[cfg(coverage)]
+    fn an_instrumented_frame_splits_nothing() {
+        assert_eq!(cores(), 1);
     }
 
     /// A slow item holds back no other: the threads free take them all.
