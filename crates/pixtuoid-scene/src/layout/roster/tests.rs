@@ -367,10 +367,15 @@ pub(crate) const CENSUS_SIZES: &[(u16, u16)] = &[
 pub(crate) const CENSUS_SEEDS: std::ops::Range<u64> = 0..4;
 
 fn census() -> impl Iterator<Item = SceneLayout> {
+    census_with_seeds().map(|(_, l)| l)
+}
+
+fn census_with_seeds() -> impl Iterator<Item = (u64, SceneLayout)> {
     CENSUS_SIZES.iter().flat_map(|&(w, h)| {
         CENSUS_SEEDS.map(move |seed| {
-            SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
-                .expect("a census size lays out")
+            let l = SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
+                .expect("a census size lays out");
+            (seed, l)
         })
     })
 }
@@ -394,7 +399,7 @@ fn census_grid() -> impl Iterator<Item = (u64, SceneLayout)> {
         .map(|&(_, h)| h)
         .max()
         .unwrap_or_default();
-    let seeds: Vec<u64> = CENSUS_SEEDS
+    let seeds: BTreeSet<u64> = CENSUS_SEEDS
         .chain((0..crate::floor::MAX_FLOORS).map(crate::floor::floor_seed))
         .collect();
     (super::super::compute::MIN_LAYOUT_W..=widest)
@@ -622,14 +627,55 @@ const OVERLAP_BY_DESIGN: &[(&str, &str, Option<Size>)] = &[
 const OVERLAP_DEFECTS: &[(&str, &str)] = &[];
 
 /// Two fixtures' art overlaps only as a listed pair, and each listed pair still
-/// occurs.
+/// occurs; a corridor appliance's art never lands on a workstation. One test,
+/// so the census and its grid, which both checks read, are laid out once.
 #[test]
-fn no_two_fixtures_overlap_but_by_design() {
+fn fixtures_overlap_only_by_design_and_appliance_art_spares_every_workstation() {
     let listed: BTreeSet<(&str, &str)> = OVERLAP_BY_DESIGN
         .iter()
         .map(|&(a, b, _)| (a, b))
         .chain(OVERLAP_DEFECTS.iter().copied())
         .collect();
+    let (mut met, mut stray) = (BTreeSet::new(), Vec::new());
+    let (mut placed, mut on_workstations) = (0, Vec::new());
+    for (seed, l) in census_with_seeds().chain(census_grid()) {
+        stray.extend(unlisted_overlaps(&l, &listed, &mut met));
+        on_workstations.extend(appliance_art_on_workstations(&l, seed, &mut placed));
+    }
+    for l in offices() {
+        stray.extend(unlisted_overlaps(&l, &listed, &mut met));
+    }
+    on_workstations.extend(tall_aisles_keep_appliance_art_off_workstations(&mut placed));
+    let never_met: Vec<_> = listed.difference(&met).collect();
+    let mut failures = Vec::new();
+    if !stray.is_empty() {
+        failures.push(format!("art overlapping unlisted:\n{}", stray.join("\n")));
+    }
+    if !never_met.is_empty() {
+        failures.push(format!(
+            "listed but never met, so delete the entry: {never_met:?}"
+        ));
+    }
+    if placed == 0 {
+        failures.push("no appliance was placed, so this pins nothing".to_owned());
+    }
+    if !on_workstations.is_empty() {
+        failures.push(format!(
+            "appliance art on a workstation:\n{}",
+            on_workstations.join("\n")
+        ));
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n\n"));
+}
+
+/// Each overlap of two of `l`'s fixtures' art, but one standing on the corridor's
+/// runner, that `listed` lacks, or that covers more than its bound, described;
+/// each other one goes into `met`.
+fn unlisted_overlaps(
+    l: &SceneLayout,
+    listed: &BTreeSet<(&str, &str)>,
+    met: &mut BTreeSet<(&'static str, &'static str)>,
+) -> Vec<String> {
     let bound = |pair: (&str, &str)| {
         OVERLAP_BY_DESIGN
             .iter()
@@ -638,48 +684,37 @@ fn no_two_fixtures_overlap_but_by_design() {
     // The corridor's floor: whatever stands in the corridor stands on it.
     let on_runner =
         |f: &Fixture, g: &Fixture| f.kind == FixtureKind::Runner && g.contact().is_some();
-    let (mut met, mut stray) = (BTreeSet::new(), Vec::new());
-    for l in census()
-        .chain(offices())
-        .chain(census_grid().map(|(_, l)| l))
-    {
-        let fixtures: Vec<Fixture> = l.fixtures().collect();
-        for (i, a) in fixtures.iter().enumerate() {
-            for b in fixtures[i + 1..]
-                .iter()
-                .filter(|b| a.visual.overlaps(b.visual))
-            {
-                if on_runner(a, b) || on_runner(b, a) {
-                    continue;
-                }
-                let (x, y) = (overlap_key(a.kind), overlap_key(b.kind));
-                let pair = (x.min(y), x.max(y));
-                let end = |at: u16, len: u16| at + len;
-                let covered = Size {
-                    w: end(a.visual.x, a.visual.width).min(end(b.visual.x, b.visual.width))
-                        - a.visual.x.max(b.visual.x),
-                    h: end(a.visual.y, a.visual.height).min(end(b.visual.y, b.visual.height))
-                        - a.visual.y.max(b.visual.y),
-                };
-                let within =
-                    bound(pair).is_none_or(|most| covered.w <= most.w && covered.h <= most.h);
-                if listed.contains(&pair) && within {
-                    met.insert(pair);
-                } else {
-                    stray.push(format!(
-                        "{}x{}: {:?} {:?} over {:?} {:?}",
-                        l.buf_w, l.buf_h, a.kind, a.visual, b.kind, b.visual
-                    ));
-                }
+    let mut stray = Vec::new();
+    let fixtures: Vec<Fixture> = l.fixtures().collect();
+    for (i, a) in fixtures.iter().enumerate() {
+        for b in fixtures[i + 1..]
+            .iter()
+            .filter(|b| a.visual.overlaps(b.visual))
+        {
+            if on_runner(a, b) || on_runner(b, a) {
+                continue;
+            }
+            let (x, y) = (overlap_key(a.kind), overlap_key(b.kind));
+            let pair = (x.min(y), x.max(y));
+            let end = |at: u16, len: u16| at + len;
+            let covered = Size {
+                w: end(a.visual.x, a.visual.width).min(end(b.visual.x, b.visual.width))
+                    - a.visual.x.max(b.visual.x),
+                h: end(a.visual.y, a.visual.height).min(end(b.visual.y, b.visual.height))
+                    - a.visual.y.max(b.visual.y),
+            };
+            let within = bound(pair).is_none_or(|most| covered.w <= most.w && covered.h <= most.h);
+            if listed.contains(&pair) && within {
+                met.insert(pair);
+            } else {
+                stray.push(format!(
+                    "{}x{}: {:?} {:?} over {:?} {:?}",
+                    l.buf_w, l.buf_h, a.kind, a.visual, b.kind, b.visual
+                ));
             }
         }
     }
-    assert_eq!(stray, Vec::<String>::new());
-    assert_eq!(
-        listed.difference(&met).collect::<Vec<_>>(),
-        Vec::<&(&str, &str)>::new(),
-        "listed but never met: delete the entry"
-    );
+    stray
 }
 
 #[test]
@@ -729,18 +764,69 @@ fn no_meeting_furniture_or_plant_blocks_a_doorway() {
     assert!(met > 0, "the sweep met a doorway");
 }
 
-/// A corridor appliance's art overhangs north of its aisle (invariant #6), but
-/// never onto a workstation: a desk, its filing cabinet, its chair or its
-/// sitter. Art can only overlap a workstation it shares a row with, and the
-/// height alone fixes every row. So a tall-aisle height whose rows never meet
-/// is checked once per width; every other tall height sweeps all widths ×
-/// seeds.
-#[test]
-fn corridor_appliance_art_never_lands_on_a_workstation() {
+const APPLIANCES: [Station; 2] = [Station::VendingMachine, Station::Printer];
+
+/// `l`'s corridor appliances' art, and its workstations: each desk, its filing
+/// cabinet, its chair and its sitter.
+fn appliance_art_and_workstations(l: &SceneLayout) -> (Vec<(Station, Bounds)>, Vec<Bounds>) {
     use crate::layout::{CHARACTER_SPRITE_H, CHARACTER_SPRITE_W};
     use crate::sim::anchors::seated_top_left;
+    let fixtures: Vec<_> = l.fixtures().collect();
+    let art: Vec<(Station, Bounds)> = fixtures
+        .iter()
+        .filter_map(|f| match f.kind {
+            FixtureKind::Station { station, .. } if APPLIANCES.contains(&station) => {
+                Some((station, f.visual))
+            }
+            _ => None,
+        })
+        .collect();
+    let mut workstations: Vec<Bounds> = fixtures
+        .iter()
+        .filter(|f| {
+            matches!(
+                f.kind,
+                FixtureKind::Desk(_) | FixtureKind::FilingCabinet(_) | FixtureKind::DeskChair(_)
+            )
+        })
+        .map(|f| f.visual)
+        .collect();
+    workstations.extend(l.home_desks.iter().map(|desk| {
+        let at = seated_top_left(desk.at, CHARACTER_SPRITE_W, desk.facing, l.inner);
+        Bounds {
+            x: at.x,
+            y: at.y,
+            width: CHARACTER_SPRITE_W,
+            height: CHARACTER_SPRITE_H,
+        }
+    }));
+    (art, workstations)
+}
+
+/// A corridor appliance's art overhangs north of its aisle (invariant #6), but
+/// never onto a workstation: each of `l`'s that does, described, `placed`
+/// counting the appliances.
+fn appliance_art_on_workstations(l: &SceneLayout, seed: u64, placed: &mut usize) -> Vec<String> {
+    let (art, workstations) = appliance_art_and_workstations(l);
+    *placed += art.len();
+    let mut v = Vec::new();
+    for (station, a) in art {
+        v.extend(workstations.iter().filter(|&&ws| a.overlaps(ws)).map(|ws| {
+            format!(
+                "{}x{} seed {seed} aisle {:?}: {station:?} art {a:?} on {ws:?}",
+                l.buf_w, l.buf_h, l.cubicle_aisle
+            )
+        }));
+    }
+    v
+}
+
+/// [`appliance_art_on_workstations`] over the tall aisles. Art can only overlap
+/// a workstation it shares a row with, and the height alone fixes every row. So
+/// a tall-aisle height whose rows never meet is checked once per width; every
+/// other tall height sweeps all widths × seeds.
+fn tall_aisles_keep_appliance_art_off_workstations(placed: &mut usize) -> Vec<String> {
     const TALL_AISLES: std::ops::RangeInclusive<u16> = 10..=14;
-    const APPLIANCES: [Station; 2] = [Station::VendingMachine, Station::Printer];
     const SEEDS: std::ops::Range<u64> = 0..3;
     const NARROWEST: u16 = 96;
     const WIDEST: u16 = 320;
@@ -750,42 +836,8 @@ fn corridor_appliance_art_never_lands_on_a_workstation() {
         SceneLayout::compute(crate::layout::Viewport::full(w, h), None, seed)
             .unwrap_or_else(|| panic!("{w}x{h} seed {seed} lays out"))
     };
-    let pieces = |l: &SceneLayout| {
-        let fixtures: Vec<_> = l.fixtures().collect();
-        let art: Vec<(Station, Bounds)> = fixtures
-            .iter()
-            .filter_map(|f| match f.kind {
-                FixtureKind::Station { station, .. } if APPLIANCES.contains(&station) => {
-                    Some((station, f.visual))
-                }
-                _ => None,
-            })
-            .collect();
-        let mut workstations: Vec<Bounds> = fixtures
-            .iter()
-            .filter(|f| {
-                matches!(
-                    f.kind,
-                    FixtureKind::Desk(_)
-                        | FixtureKind::FilingCabinet(_)
-                        | FixtureKind::DeskChair(_)
-                )
-            })
-            .map(|f| f.visual)
-            .collect();
-        workstations.extend(l.home_desks.iter().map(|desk| {
-            let at = seated_top_left(desk.at, CHARACTER_SPRITE_W, desk.facing, l.inner);
-            Bounds {
-                x: at.x,
-                y: at.y,
-                width: CHARACTER_SPRITE_W,
-                height: CHARACTER_SPRITE_H,
-            }
-        }));
-        (art, workstations)
-    };
     let rows = |l: &SceneLayout| {
-        let (art, workstations) = pieces(l);
+        let (art, workstations) = appliance_art_and_workstations(l);
         (
             (l.cubicle_aisle.y, l.cubicle_aisle.height),
             art.iter()
@@ -797,42 +849,23 @@ fn corridor_appliance_art_never_lands_on_a_workstation() {
                 .collect::<BTreeSet<_>>(),
         )
     };
-    let mut placed = 0;
-    let mut violations = Vec::new();
-    let mut check = |l: &SceneLayout, w: u16, h: u16, seed: u64| {
-        let (art, workstations) = pieces(l);
-        placed += art.len();
-        for (station, a) in art {
-            violations.extend(workstations.iter().filter(|&&ws| a.overlaps(ws)).map(|ws| {
-                format!(
-                    "{w}x{h} seed {seed} aisle {:?}: {station:?} art {a:?} on {ws:?}",
-                    l.cubicle_aisle
-                )
-            }));
-        }
-    };
-    for &(w, h) in CENSUS_SIZES {
-        for seed in CENSUS_SEEDS {
-            check(&lay_out(w, h, seed), w, h, seed);
-        }
-    }
-    for (seed, l) in census_grid() {
-        check(&l, l.buf_w, l.buf_h, seed);
-    }
+    let mut v = Vec::new();
     let corners = [(NARROWEST, SEEDS.start), (WIDEST, SEEDS.end - 1)];
     let mut tall_seen = BTreeSet::new();
     for h in 90u16..=240 {
         let [probe, far] = corners.map(|(w, seed)| lay_out(w, h, seed));
         let (probe_rows, far_rows) = (rows(&probe), rows(&far));
-        assert_eq!(
-            probe_rows.0, far_rows.0,
-            "{h}: the aisle is the height's alone"
-        );
+        if probe_rows.0 != far_rows.0 {
+            v.push(format!(
+                "{h}: the aisle is the height's alone, but {:?} != {:?}",
+                probe_rows.0, far_rows.0
+            ));
+        }
         if !TALL_AISLES.contains(&probe.cubicle_aisle.height) {
             continue;
         }
         tall_seen.insert(probe.cubicle_aisle.height);
-        let (art, workstations) = pieces(&probe);
+        let (art, workstations) = appliance_art_and_workstations(&probe);
         // An appliance the probe didn't place has rows it can't vouch for.
         let apart = APPLIANCES
             .iter()
@@ -840,34 +873,35 @@ fn corridor_appliance_art_never_lands_on_a_workstation() {
             && art
                 .iter()
                 .all(|&(_, a)| workstations.iter().all(|&ws| !rows_meet(a, ws)));
-        if apart {
-            assert_eq!(probe_rows, far_rows, "{h}: rows are the height's alone");
+        if apart && probe_rows != far_rows {
+            v.push(format!(
+                "{h}: rows are the height's alone, but {probe_rows:?} != {far_rows:?}"
+            ));
         }
         let sampled =
             |w, seed| !apart || seed == SEEDS.start || (w, seed) == (MID_WIDTH, SEEDS.start + 1);
         for w in (NARROWEST..=WIDEST).step_by(8) {
             for seed in SEEDS.filter(|&seed| !corners.contains(&(w, seed)) && sampled(w, seed)) {
                 let l = lay_out(w, h, seed);
-                if apart {
-                    assert_eq!(
-                        rows(&l),
-                        probe_rows,
-                        "{w}x{h} seed {seed}: rows are the height's alone"
-                    );
+                if apart && rows(&l) != probe_rows {
+                    v.push(format!(
+                        "{w}x{h} seed {seed}: rows are the height's alone, but {:?} != {probe_rows:?}",
+                        rows(&l)
+                    ));
                 }
-                check(&l, w, h, seed);
+                v.extend(appliance_art_on_workstations(&l, seed, placed));
             }
         }
-        for (l, (w, seed)) in [probe, far].iter().zip(corners) {
-            check(l, w, h, seed);
+        for (l, (_, seed)) in [probe, far].iter().zip(corners) {
+            v.extend(appliance_art_on_workstations(l, seed, placed));
         }
     }
-    assert!(
-        TALL_AISLES.clone().all(|h| tall_seen.contains(&h)),
-        "the sweep must reach every tall aisle, saw {tall_seen:?}"
-    );
-    assert!(placed > 0, "no appliance was placed, so this pins nothing");
-    assert!(violations.is_empty(), "{}", violations.join("\n"));
+    if !TALL_AISLES.clone().all(|h| tall_seen.contains(&h)) {
+        v.push(format!(
+            "the sweep must reach every tall aisle, saw {tall_seen:?}"
+        ));
+    }
+    v
 }
 
 /// The pantry's entry mat lies inside the pantry's columns: a mat past them

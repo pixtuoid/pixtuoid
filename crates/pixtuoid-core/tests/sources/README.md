@@ -35,7 +35,8 @@ path a decoder DOES read, and a capture redacted by hand says so in its `note`:
 without it a reader cannot tell an edited capture from an untouched one, which is
 the distinction the whole mechanism exists to make. A field blanked today stays
 blank in that fixture: a decoder later extended to read it meets the neutral value
-there and its golden encodes "absent", so `no_capture_blanked_a_field_a_decoder_now_reads`
+there and its golden encodes "absent", so
+`a_committed_scenario_strips_to_its_events_and_bytes_and_blanked_no_field_a_decoder_reads`
 reds until the scenario is re-recorded. It probes each blank leaf with one value of
 its type, so re-record by hand for a read inside a container the strip collapsed
 whole, or of one value only. The other direction is cheap: `just restrip-fixtures` runs the same

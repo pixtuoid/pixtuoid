@@ -274,6 +274,9 @@ fn every_aimless_wander_destination_is_routable_from_its_home_desk() {
                 .map(|&desk| (desk, desk_leg_endpoint(desk, &l).0))
                 .map(|(_, origin)| origin)
                 .collect();
+            // Both desks draw the same destinations, the desk read only in the
+            // last resort skipped below: each pair is routed once.
+            let mut routed = std::collections::HashSet::new();
             for &desk in [l.home_desks.first(), l.home_desks.last()]
                 .into_iter()
                 .flatten()
@@ -288,7 +291,7 @@ fn every_aimless_wander_destination_is_routable_from_its_home_desk() {
                         {
                             continue; // `pick_aimless_dest`'s last resort: the agent's own seat
                         }
-                        for &origin in &origins {
+                        for &origin in origins.iter().filter(|&&o| routed.insert((o, dest))) {
                             assert!(
                                 find_path(&l.walkable, None, origin, dest, dest).is_some(),
                                 "{w}x{h} floor {floor}: aimless dest {dest:?} unroutable from \

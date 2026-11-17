@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use syn::visit::Visit;
 
@@ -145,20 +146,30 @@ fn source_root() -> PathBuf {
 /// If [`population`] fails.
 pub(crate) fn own_exact(source: &str) -> std::io::Result<BTreeSet<String>> {
     Ok(population()?
-        .into_iter()
+        .iter()
         .filter(|l| l.how == Match::Exact && matches!(l.owner(), Owner::Source(s) if s == source))
-        .map(|l| l.text)
+        .map(|l| l.text.clone())
         .collect())
 }
 
 /// Every literal the modules under `src/source` read, walked from `mod.rs`
 /// through each `mod` they declare, whatever its platform or feature cfg;
-/// test-only items skipped.
+/// test-only items skipped. Walked once per process, as a run judges each of
+/// its sources against it.
 ///
 /// # Errors
 ///
 /// If a module cannot be read or does not parse.
-pub(crate) fn population() -> std::io::Result<BTreeSet<Literal>> {
+pub(crate) fn population() -> std::io::Result<&'static BTreeSet<Literal>> {
+    static POPULATION: OnceLock<BTreeSet<Literal>> = OnceLock::new();
+    if let Some(population) = POPULATION.get() {
+        return Ok(population);
+    }
+    let walked = walk()?;
+    Ok(POPULATION.get_or_init(|| walked))
+}
+
+fn walk() -> std::io::Result<BTreeSet<Literal>> {
     let root = source_root();
     let mut out = BTreeSet::new();
     let mut pending = vec![root.join("mod.rs")];
@@ -930,7 +941,7 @@ mod tests {
         let absent = NOT_HERMETIC.iter().map(|u| u.source).collect();
         let owing: Vec<Owing<'_>> = PROFILES.iter().map(Owing::of).collect();
         let found = problems(
-            &population().expect("the decoders parse"),
+            population().expect("the decoders parse"),
             &held(),
             &owing,
             EXEMPT,
