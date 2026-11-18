@@ -1579,6 +1579,12 @@ test('how it works: every recorded hook fills each stop through the real decoder
       await hooks.nth(i).click();
       // The next hook opens once every stop has shown this one.
       await expect(hooks.nth((i + 1) % count)).toBeEnabled();
+      // journey.js fills the stops by role, a copy of JOURNEY_STOPS no build checks.
+      for (const stop of JOURNEY_STOPS) {
+        await expect(page.locator(`[data-stop="${stop}"]`), `hook ${i}: ${stop}`).toHaveClass(
+          /is-lit/
+        );
+      }
       const stamps = await out('shim').locator('.fig-journey__stamp').allTextContents();
       expect(stamps.length, `hook ${i}: the shim's stamps are marked`).toBeGreaterThan(0);
       const agent = (await out('agent').textContent())!;
