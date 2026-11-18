@@ -1722,7 +1722,7 @@ test('how it works: the hooks stay inside the article, beside the office or belo
   }
 });
 
-test('how it works: a stop focused under the stuck player scrolls clear of it', async ({
+test('how it works: a stop focused from the keyboard under the stuck player scrolls clear of it, and a clicked one stays put', async ({
   page,
 }) => {
   for (const [width, height] of [
@@ -1730,34 +1730,45 @@ test('how it works: a stop focused under the stuck player scrolls clear of it', 
     [390, 844],
   ]) {
     await page.setViewportSize({ width, height });
-    await gotoJourney(page);
+    const hooks = await gotoJourney(page);
+    await hooks.first().click();
+    await expect(hooks.nth(1)).toBeEnabled();
     const player = page.locator('.fig-journey__player');
-    const summary = page.locator('.fig-journey__why summary').nth(1);
-    // The shim stop's summary, scrolled up into the middle of the player stuck under the nav.
-    await page.evaluate(() => {
-      const nav = parseFloat(
-        getComputedStyle(document.documentElement).getPropertyValue('--nav-h')
-      );
-      const held = document.querySelector('.fig-journey__player')!.getBoundingClientRect().height;
-      const top = document
-        .querySelectorAll('.fig-journey__why summary')[1]
-        .getBoundingClientRect().top;
-      window.scrollBy({ top: top - (nav + held / 2), behavior: 'instant' });
-    });
     const bottom = async () => {
       const box = (await player.boundingBox())!;
       return box.y + box.height;
     };
-    expect((await summary.boundingBox())!.y, `${width}px: under the player`).toBeLessThan(
-      await bottom()
-    );
-    await summary.focus();
+    // `target`'s top, scrolled up into the middle of the player stuck under the nav.
+    const underPlayer = async (target: Locator) => {
+      const top = (await target.boundingBox())!.y;
+      await page.evaluate((top) => {
+        const nav = parseFloat(
+          getComputedStyle(document.documentElement).getPropertyValue('--nav-h')
+        );
+        const held = document.querySelector('.fig-journey__player')!.getBoundingClientRect().height;
+        window.scrollBy({ top: top - (nav + held / 2), behavior: 'instant' });
+      }, top);
+      expect((await target.boundingBox())!.y, `${width}px: under the player`).toBeLessThan(
+        await bottom()
+      );
+    };
+    const summary = page.locator('.fig-journey__why summary').nth(1);
+    await underPlayer(summary);
+    await summary.evaluate((el) => el.focus({ focusVisible: true } as FocusOptions));
     // The focus scroll runs as the page's scroll-behavior sets.
     await expect
       .poll(async () => (await summary.boundingBox())!.y - (await bottom()), {
         message: `${width}px`,
       })
       .toBeGreaterThanOrEqual(-1);
+    const output = page.locator('[data-stop="decoder"] .fig-journey__out');
+    await underPlayer(output);
+    const before = await page.evaluate(() => window.scrollY);
+    const box = (await output.boundingBox())!;
+    await output.click({ position: { x: box.width / 2, y: box.height - 4 } });
+    // Longer than a smooth scroll would take to start.
+    await page.waitForTimeout(500);
+    expect(await page.evaluate(() => window.scrollY), `${width}px: a click`).toBe(before);
   }
 });
 

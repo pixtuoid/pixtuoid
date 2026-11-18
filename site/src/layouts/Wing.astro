@@ -467,7 +467,6 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   .wing :global(.fig-journey__player) {
     --office-min: 12rem;
     --office-h: clamp(var(--office-min), 22vh, 14rem);
-    --office-w: calc(2 * var(--office-h));
     display: flex;
     flex-wrap: wrap;
     gap: 0.7rem;
@@ -593,8 +592,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   /* A column too narrow for 2:1 at the office's least height keeps that height. */
   .wing :global(.fig-journey__crop) {
     flex: none;
-    width: min(100%, var(--office-w));
-    aspect-ratio: 2 / 1; /* --office-w's 2 */
+    width: min(100%, calc(2 * var(--office-h)));
+    aspect-ratio: 2 / 1;
     min-height: var(--office-min);
     overflow: hidden;
     border-radius: var(--radius-sm);
