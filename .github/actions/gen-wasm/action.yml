@@ -22,7 +22,7 @@ runs:
     # cargo-binstall, which gets the job token and runs prebuilt third-party
     # binaries in a job whose artifact is deployed (install-action README, Security).
     - if: steps.versions.outputs.bindgen_restored != 'true'
-      uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+      uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
       with:
         tool: wasm-bindgen@${{ steps.versions.outputs.bindgen }}
         fallback: cargo-install
