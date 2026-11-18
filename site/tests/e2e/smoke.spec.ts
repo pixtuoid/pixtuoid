@@ -1670,6 +1670,32 @@ test('how it works: the office moves for MOVING_MS after a hook, then holds stil
   await holdsStill();
 });
 
+test('how it works on a 320px-wide 1x screen: the office still lays out', async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 320, height: 700 },
+    deviceScaleFactor: 1,
+  });
+  const page = await context.newPage();
+  await gotoJourney(page);
+  const office = page.locator('.fig-journey__office');
+  await office.scrollIntoViewIfNeeded();
+  // An office too small to lay out is one fill; a laid-out one has many colours.
+  const colours = () =>
+    office.evaluate((c: HTMLCanvasElement) => {
+      const copy = document.createElement('canvas');
+      copy.width = c.width;
+      copy.height = c.height;
+      const ctx = copy.getContext('2d')!;
+      ctx.drawImage(c, 0, 0);
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      const seen = new Set<number>();
+      for (let i = 0; i < d.length; i += 4) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
+      return seen.size;
+    });
+  await expect.poll(colours).toBeGreaterThan(1);
+  await context.close();
+});
+
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
   page,
 }) => {

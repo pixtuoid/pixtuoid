@@ -465,7 +465,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
      min_layout_size at the pack's art density, which a 1x screen needs 12rem for and a denser
      screen far less. */
   .wing :global(.fig-journey__player) {
-    --office-h: clamp(12rem, 22vh, 14rem);
+    --office-min: 12rem;
+    --office-h: clamp(var(--office-min), 22vh, 14rem);
     position: sticky;
     top: var(--nav-h);
     z-index: 1;
@@ -480,7 +481,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   @media (min-resolution: 2dppx) {
     .wing :global(.fig-journey__player) {
-      --office-h: clamp(7rem, 22vh, 12rem);
+      --office-min: 7rem;
+      --office-h: clamp(var(--office-min), 22vh, 12rem);
     }
   }
   @media (min-width: 40rem) {
@@ -585,9 +587,11 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     background: color-mix(in srgb, var(--coral) 30%, transparent);
     color: inherit;
   }
+  /* A column too narrow for 2:1 at the office's least height keeps that height. */
   .wing :global(.fig-journey__crop) {
     width: min(100%, 2 * var(--office-h));
     aspect-ratio: 2 / 1;
+    min-height: var(--office-min);
     overflow: hidden;
     border-radius: var(--radius-sm);
     background: var(--screen);
