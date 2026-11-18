@@ -1,7 +1,7 @@
 // The shared live-office driver for OfficeBackdrop, Showcase's VIBING channel and the How it works page's journey
 // (journey.js), and OfficeBackdrop's audio bus and music. The first two boot from `is:inline` scripts (CSP-hashed),
-// which the bundler doesn't process, so they can't static-import a shared `src/` module and dynamic-`import()` this
-// public ES module at boot instead; journey.js, a public module itself, imports it. office-host.js and music-worker.js
+// which the bundler doesn't process, so they can't static-import a shared `src/` module; they dynamic-`import()` this
+// public ES module at boot instead, and journey.js, a public module itself, static-imports it. office-host.js and music-worker.js
 // static-import `loadWasm` into module workers, which have no `window`: module scope touches no page global.
 'use strict';
 

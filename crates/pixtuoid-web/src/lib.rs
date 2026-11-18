@@ -1597,9 +1597,9 @@ mod tests {
             landed[3]["agents"][0]["exiting_at"].is_object(),
             "an ended session walks out"
         );
-        // The page's buttons wrap back to the first hook, sent a jump after the last with no
-        // frame between, so the line's own landing must sweep the ended session: it walks in
-        // afresh rather than revived where it stood.
+        // The page wraps back to the first hook a jump after the last, and its still there sweeps
+        // the ended session. Leave that still out: the line's own landing must sweep it, so it
+        // walks in afresh rather than revived where it stood.
         t += Office::journey_jump_ms();
         let mut again = Vec::new();
         for (i, line) in lines.iter().enumerate() {

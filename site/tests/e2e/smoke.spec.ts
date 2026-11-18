@@ -1685,13 +1685,53 @@ test('how it works: the hooks stay inside the article, beside the office or belo
   }
 });
 
+test('how it works: a change of device-pixel ratio refits the office to whole device pixels', async ({
+  page,
+}) => {
+  // Chromium's metrics emulation fires no `change` on a resolution query, so the test fires it on each
+  // the page asks for.
+  await page.addInitScript(() => {
+    const lists: MediaQueryList[] = [];
+    (window as unknown as { __ratios: MediaQueryList[] }).__ratios = lists;
+    const ask = window.matchMedia.bind(window);
+    window.matchMedia = (query: string) => {
+      const list = ask(query);
+      if (query.startsWith('(resolution:')) lists.push(list);
+      return list;
+    };
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await gotoJourney(page);
+  const whole = () =>
+    page.locator('.fig-journey__office').evaluate((c: HTMLCanvasElement) => {
+      const css = parseFloat(c.style.width);
+      return css * devicePixelRatio === c.width * Number(c.dataset.upscale);
+    });
+  await expect.poll(whole, { message: 'at 1x' }).toBe(true);
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
+    // Each change asks for the next ratio's query, so only the lists asked so far fire.
+    for (const list of [...(window as unknown as { __ratios: MediaQueryList[] }).__ratios]) {
+      list.dispatchEvent(new Event('change'));
+    }
+  });
+  await expect.poll(whole, { message: 'at 2x' }).toBe(true);
+});
+
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
   page,
 }) => {
+  // Short enough that the hooks leave view as the reader follows the stops.
+  await page.setViewportSize({ width: 1280, height: 480 });
   const hooks = await gotoJourney(page);
   await hooks.first().focus();
   await page.keyboard.press('Enter');
+  await page
+    .locator('[data-stop="office"]')
+    .evaluate((el) => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
   await expect(hooks.nth(1)).toBeFocused();
+  const box = (await hooks.nth(1).boundingBox())!;
+  expect(box.y + box.height, 'the hand-off left the hook out of view, above').toBeLessThan(0);
   // A reader who moves focus while the stops fill keeps it there.
   await page.keyboard.press('Enter');
   const why = page.locator('.fig-journey__why summary').first();
