@@ -1692,6 +1692,12 @@ test('how it works: a hook sent from the keyboard leaves focus on the next one',
   await hooks.first().focus();
   await page.keyboard.press('Enter');
   await expect(hooks.nth(1)).toBeFocused();
+  // A reader who moves focus while the stops fill keeps it there.
+  await page.keyboard.press('Enter');
+  const why = page.locator('.fig-journey__why summary').first();
+  await why.focus();
+  await expect(hooks.nth(2)).toBeEnabled();
+  await expect(why).toBeFocused();
 });
 
 test('how it works without script: its stops read as prose, each why folded, and no player', async ({

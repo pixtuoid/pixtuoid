@@ -1598,8 +1598,8 @@ mod tests {
             "an ended session walks out"
         );
         // The page's buttons wrap back to the first hook, sent a jump after the last with no
-        // frame between, as when the page is out of view: the ended session is swept first, so it
-        // walks in afresh rather than revived where it stood.
+        // frame between, so the line's own landing must sweep the ended session: it walks in
+        // afresh rather than revived where it stood.
         t += Office::journey_jump_ms();
         let mut again = Vec::new();
         for (i, line) in lines.iter().enumerate() {

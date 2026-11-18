@@ -939,6 +939,7 @@ const officeDriverUrl = asset('office-driver.js');
       import(officeDriverUrl)
         .then(function (drv) {
           officeDriver = drv;
+          drv.onRatioChange(refitNextFrame);
           return drv.officeHost();
         })
         .then(function (host) {
@@ -987,20 +988,6 @@ const officeDriverUrl = asset('office-driver.js');
       });
     }
     window.addEventListener('resize', refitNextFrame);
-    // A window moved to a screen of another ratio keeps its CSS size, so no `resize` says so: a query on the
-    // current ratio does, made anew for each ratio
-    // (https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio).
-    (function watchRatio() {
-      const ratio = window.matchMedia('(resolution: ' + devicePixelRatio + 'dppx)');
-      ratio.addEventListener(
-        'change',
-        function () {
-          refitNextFrame();
-          watchRatio();
-        },
-        { once: true }
-      );
-    })();
     let bgTimer = 0;
     function stopBgTicks() {
       if (bgTimer) clearInterval(bgTimer);

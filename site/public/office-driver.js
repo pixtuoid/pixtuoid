@@ -31,6 +31,22 @@ function wholeCss(units, pxPerUnit, dpr) {
   return [units, (units * pxPerUnit) / dpr];
 }
 
+// Calls `then` each time the window's device-pixel ratio changes. A window moved to a screen of another ratio keeps its
+// CSS size, so no `resize` says so: a query on the current ratio does, made anew for each ratio
+// (https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio).
+export function onRatioChange(then) {
+  (function watch() {
+    window.matchMedia('(resolution: ' + window.devicePixelRatio + 'dppx)').addEventListener(
+      'change',
+      function () {
+        then();
+        watch();
+      },
+      { once: true }
+    );
+  })();
+}
+
 // The office an `Office.fit` reply lays out at ratio `dpr`, as `{ units: [w, h], css: [w, h] }`: the units `step`
 // takes and the canvas box, in CSS px, that shows its frame at the fit's whole upscale.
 export function wholeBox(fit, dpr) {

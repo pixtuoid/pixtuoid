@@ -3,7 +3,7 @@
 // (rehype-figures.mjs's JOURNEY_STOPS) made of it, the stop `frame`'s output being the player's office.
 'use strict';
 
-import { officeHost, wholeBox } from './office-driver.js';
+import { officeHost, onRatioChange, wholeBox } from './office-driver.js';
 
 // Its own office's seed, apart from the home page's.
 const SEED = 7;
@@ -116,9 +116,11 @@ export async function start(figure) {
           }
         );
     }
-    new ResizeObserver(function () {
+    const refit = function () {
       fit().then(still);
-    }).observe(crop);
+    };
+    new ResizeObserver(refit).observe(crop);
+    onRatioChange(refit);
     await fit();
     still();
 
@@ -165,7 +167,9 @@ export async function start(figure) {
       } finally {
         landing = false;
         syncButtons();
-        if (focused && document.activeElement === document.body) buttons[next].focus();
+        // Without scrolling: the reader may be down among the stops it filled.
+        if (focused && document.activeElement === document.body)
+          buttons[next].focus({ preventScroll: true });
       }
     }
     async function show(i) {
