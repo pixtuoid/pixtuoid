@@ -9,7 +9,6 @@ import { DISCORD } from '../../config/discord.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
 import { JOURNEY_STOPS } from '../../config/rehype-figures.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
-import { MOTION_LIMIT_MS } from './wcag';
 
 // WCAG 2.2's AA floors: text (SC 1.4.3) and non-text (SC 1.4.11).
 const AA_TEXT = 4.5;
@@ -1640,42 +1639,6 @@ test('how it works: every recorded hook fills each stop through the real decoder
   expect(errors()).toEqual([]);
 });
 
-test('how it works: the office moves for MOVING_MS after a hook, then holds still', async ({
-  page,
-}) => {
-  test.setTimeout(60_000);
-  // Past journey.js's MOVING_MS, by enough for a slow runner's last frame.
-  const MARGIN_MS = 1_000;
-  const STILL_MS = 400; // dozens of journey.js's draws, one per animation frame the host is free
-  const hooks = await gotoJourney(page);
-  const office = page.locator('.fig-journey__office');
-  const moving: number = await page.evaluate(async () => {
-    const url = document.querySelector<HTMLElement>('[data-journey-url]')!.dataset.journeyUrl!;
-    return (await import(url)).MOVING_MS;
-  });
-  expect(moving, 'its self-started motion ends within WCAG 2.2.2').toBeLessThanOrEqual(
-    MOTION_LIMIT_MS
-  );
-  await office.scrollIntoViewIfNeeded();
-  const shot = async () => (await office.screenshot()).toString('base64');
-  const holdsStill = async () => {
-    const held = await shot();
-    await page.waitForTimeout(STILL_MS);
-    expect(await shot()).toBe(held);
-  };
-  // The boot's own window passes first, so what moves next is the hook's.
-  await page.waitForTimeout(moving + MARGIN_MS);
-  await holdsStill();
-  await hooks.first().click();
-  await expect(page.locator('[data-stop="frame"]')).toHaveClass(/is-lit/);
-  const lit = Date.now();
-  // The session walks in to its desk.
-  const walking = await shot();
-  await expect.poll(shot, { timeout: 3_000 }).not.toBe(walking);
-  await page.waitForTimeout(lit + moving + MARGIN_MS - Date.now());
-  await holdsStill();
-});
-
 test('how it works on a 320px-wide 1x screen: the office still lays out', async ({ browser }) => {
   const context = await browser.newContext({
     viewport: { width: 320, height: 700 },
@@ -1722,88 +1685,6 @@ test('how it works: the hooks stay inside the article, beside the office or belo
   }
 });
 
-test('how it works: a stop focused from the keyboard under the stuck player scrolls clear of it, and a clicked one stays put', async ({
-  page,
-}) => {
-  for (const [width, height] of [
-    [1280, 720],
-    [390, 844],
-  ]) {
-    await page.setViewportSize({ width, height });
-    const hooks = await gotoJourney(page);
-    await hooks.first().click();
-    await expect(hooks.nth(1)).toBeEnabled();
-    const player = page.locator('.fig-journey__player');
-    const bottom = async () => {
-      const box = (await player.boundingBox())!;
-      return box.y + box.height;
-    };
-    // `target`'s top, scrolled up into the middle of the player stuck under the nav.
-    const underPlayer = async (target: Locator) => {
-      const top = (await target.boundingBox())!.y;
-      await page.evaluate((top) => {
-        const nav = parseFloat(
-          getComputedStyle(document.documentElement).getPropertyValue('--nav-h')
-        );
-        const held = document.querySelector('.fig-journey__player')!.getBoundingClientRect().height;
-        window.scrollBy({ top: top - (nav + held / 2), behavior: 'instant' });
-      }, top);
-      expect((await target.boundingBox())!.y, `${width}px: under the player`).toBeLessThan(
-        await bottom()
-      );
-    };
-    const summary = page.locator('.fig-journey__why summary').nth(1);
-    await underPlayer(summary);
-    await summary.evaluate((el) => el.focus({ focusVisible: true } as FocusOptions));
-    await expect
-      .poll(async () => (await summary.boundingBox())!.y - (await bottom()), {
-        message: `${width}px`,
-      })
-      .toBeGreaterThanOrEqual(-1);
-    const output = page.locator('[data-stop="decoder"] .fig-journey__out');
-    await underPlayer(output);
-    const scrollY = () => page.evaluate(() => window.scrollY);
-    // Without the handler's guards, the page has moved by then.
-    const stays = async (act: () => Promise<void>, what: string) => {
-      const before = await scrollY();
-      await act();
-      await page.waitForTimeout(500);
-      expect(await scrollY(), `${width}px: ${what}`).toBe(before);
-    };
-    const box = (await output.boundingBox())!;
-    await stays(
-      () => output.click({ position: { x: box.width / 2, y: box.height - 4 } }),
-      'a click on an output'
-    );
-    // The stuck player's own hooks, which a keyboard send focuses, are never under it.
-    await stays(
-      () => hooks.nth(1).evaluate((el) => el.focus({ focusVisible: true } as FocusOptions)),
-      'a hook focused from the keyboard'
-    );
-  }
-});
-
-test('how it works: the player sticks only where it leaves the stops room', async ({ page }) => {
-  const player = page.locator('.fig-journey__player');
-  const sticky = async () =>
-    (await player.evaluate((el) => getComputedStyle(el).position)) === 'sticky';
-  for (const [width, height, sticks] of [
-    [1280, 720, true],
-    [390, 844, true],
-    [568, 320, false],
-  ] as const) {
-    await page.setViewportSize({ width, height });
-    await gotoJourney(page);
-    expect(await sticky(), `${width}×${height}`).toBe(sticks);
-  }
-  // A window shortened in place, its office the same height, unsticks it too.
-  await page.setViewportSize({ width: 1280, height: 720 });
-  await gotoJourney(page);
-  expect(await sticky(), '1280×720').toBe(true);
-  await page.setViewportSize({ width: 1280, height: 320 });
-  await expect.poll(sticky, { message: 'shortened to 1280×320' }).toBe(false);
-});
-
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
   page,
 }) => {
@@ -1840,11 +1721,9 @@ test('how it works without its wasm: the player it began is taken down, and the 
   await expect(page.locator('.fig-journey__what').first()).toBeVisible();
 });
 
-test('how it works under reduced motion: the last hook walks its session out, so the next seats a fresh one', async ({
-  browser,
+test('how it works: the last hook walks its session out, so the next seats a fresh one', async ({
+  page,
 }) => {
-  const context = await browser.newContext({ reducedMotion: 'reduce' });
-  const page = await context.newPage();
   const hooks = await gotoJourney(page);
   const office = page.locator('[data-stop="office"] .fig-journey__out');
   const count = await hooks.count();
@@ -1858,26 +1737,18 @@ test('how it works under reduced motion: the last hook walks its session out, so
   await hooks.first().click();
   await expect(hooks.nth(1)).toBeEnabled();
   await expect(office).toContainText('"tool_call_count": 0');
-  await context.close();
 });
 
-test('how it works under reduced motion: a hook still lands, and the office draws a still of it', async ({
-  browser,
-}) => {
-  const context = await browser.newContext({ reducedMotion: 'reduce' });
-  const page = await context.newPage();
+test('how it works: a hook lands, and the office draws a still of it', async ({ page }) => {
   const hooks = await gotoJourney(page);
   const office = page.locator('.fig-journey__office');
-  // Its frames run while it is in view.
-  await office.scrollIntoViewIfNeeded();
   const shot = async () => (await office.screenshot()).toString('base64');
   const before = await settledShot(shot);
   await hooks.first().click();
   await expect(hooks.nth(1)).toBeEnabled();
   await expect(page.locator('[data-stop="office"] .fig-journey__out')).toContainText('"label"');
-  // The empty office's frame gives way to the still of the session it seated.
+  // The empty office's still gives way to the still of the session it seated.
   expect(await settledShot(shot)).not.toBe(before);
-  await context.close();
 });
 
 test('at the narrowest width that lays the nav out as a wide bar, its items sit on one line, in order, inside the bar', async ({

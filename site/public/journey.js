@@ -9,12 +9,6 @@ import { officeHost, wholeBox } from './office-driver.js';
 const SEED = 7;
 // How long a stop stays the newest lit before the next one lights.
 const STEP_MS = 280;
-// How long the office moves after it boots, resizes or takes a line, then holds still: within WCAG 2.2.2's five
-// seconds, past which motion that starts by itself needs a pause control
-// (w3.org/WAI/WCAG22/Understanding/pause-stop-hide).
-export const MOVING_MS = 5000;
-
-const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -56,24 +50,6 @@ export async function start(figure) {
   crop.append(canvas);
   player.append(crop);
   figure.prepend(player);
-  // The player sticks under the nav only while it takes at most half the viewport below it, so a short
-  // screen keeps room for the stops it fills.
-  function stickiness() {
-    const nav = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'));
-    player.classList.toggle('is-sticky', player.offsetHeight <= (window.innerHeight - nav) / 2);
-  }
-  new ResizeObserver(stickiness).observe(player);
-  window.addEventListener('resize', stickiness);
-  // A stop focused from the keyboard where the stuck player covers it scrolls clear of it, as WCAG 2.4.11
-  // asks (w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum): the browser leaves an element
-  // already in the viewport where it is, which the focus e2e fails on without this. A click focuses what
-  // the reader sees and doesn't match :focus-visible ("via a pointing device … don't indicate focus",
-  // drafts.csswg.org/selectors-4/#the-focus-visible-pseudo), so the text stays under the pointer.
-  figure.addEventListener('focusin', function (e) {
-    if (player.contains(e.target) || !e.target.matches(':focus-visible')) return;
-    const under = player.getBoundingClientRect().bottom - e.target.getBoundingClientRect().top;
-    if (under > 0) window.scrollBy({ top: -under });
-  });
   const outs = {};
   try {
     await run();
@@ -103,17 +79,9 @@ export async function start(figure) {
       outs[role] = pre;
     });
 
-    // The office's clock: under reduced motion it stands where it stood when motion was last reduced,
-    // else it is the wall clock; each adds every jump a line took (the office's `jumpMs`, under reduced
-    // motion), so it never runs backward.
-    let ahead = 0;
-    let stood = Date.now();
-    reduced.addEventListener('change', function () {
-      stood = Date.now();
-    });
-    const clock = function () {
-      return (reduced.matches ? stood : Date.now()) + ahead;
-    };
+    // The office's clock, which only the hooks move: each lands at it, then it jumps the office's
+    // `jumpMs`, past the walk and the sweep the hook sets off, to the still the office shows.
+    let at = Date.now();
     let units = [0, 0];
     let fitSeq = 0;
     async function fit() {
@@ -129,49 +97,30 @@ export async function start(figure) {
       canvas.style.height = box.css[1] + 'px';
       canvas.dataset.upscale = String(reply[3]);
     }
-    // Nothing to draw until a fit has landed: the resize observer's first fit supersedes the boot's.
-    function draw() {
-      if (office.busy || !units[0]) return Promise.resolve();
-      return office.frame({
-        now: clock(),
-        w: units[0],
-        h: units[1],
-        draw: 1,
-        overlay: false,
-        audio: false,
-      });
+    // The office at `at`, once a fit has landed: the resize observer's first fit supersedes the boot's. A
+    // still the engine's flash hold keeps back (pixtuoid-scene's screen.rs) is drawn again next frame.
+    function still() {
+      if (!units[0]) return;
+      if (office.busy) {
+        requestAnimationFrame(still);
+        return;
+      }
+      office
+        .frame({ now: at, w: units[0], h: units[1], draw: 1, overlay: false, audio: false })
+        .then(
+          function (reply) {
+            if (!reply.written) requestAnimationFrame(still);
+          },
+          function () {
+            /* a host that died leaves the last still up */
+          }
+        );
     }
-    let raf = 0;
-    let inView = false;
-    let movingUntil = 0;
-    function loop() {
-      raf = 0;
-      // Under reduced motion the frames repeat one instant, which also lets the engine's flash hold
-      // pass the frame it held.
-      if (!inView || document.hidden || Date.now() > movingUntil) return;
-      draw().catch(function () {
-        /* a host that died leaves the last frame up */
-      });
-      raf = requestAnimationFrame(loop);
-    }
-    function sync() {
-      if (!raf) loop();
-    }
-    function move() {
-      movingUntil = Date.now() + MOVING_MS;
-      sync();
-    }
-    new IntersectionObserver(function (entries) {
-      inView = entries[0].isIntersecting;
-      sync();
-    }).observe(canvas);
-    document.addEventListener('visibilitychange', sync);
     new ResizeObserver(function () {
-      fit().then(move);
+      fit().then(still);
     }).observe(crop);
     await fit();
-    await draw();
-    move();
+    still();
 
     const send = el('div', 'fig-journey__send');
     send.setAttribute('role', 'group');
@@ -201,7 +150,7 @@ export async function start(figure) {
 
     const wait = function (ms) {
       return new Promise(function (resolve) {
-        setTimeout(resolve, reduced.matches ? 0 : ms);
+        setTimeout(resolve, ms);
       });
     };
     // `focused`: the send came from the focused button, whose disabling drops focus to the body, so focus
@@ -219,7 +168,7 @@ export async function start(figure) {
       }
     }
     async function show(i) {
-      const landed = JSON.parse(await office.call('send_hook', lines[i], clock()));
+      const landed = JSON.parse(await office.call('send_hook', lines[i], at));
       const agent = Object.fromEntries(
         Object.entries(payloads[i]).filter(function ([key]) {
           return !landed.stamps.includes(key);
@@ -233,8 +182,8 @@ export async function start(figure) {
         [
           'frame',
           () => {
-            if (reduced.matches) ahead += office.journey.jumpMs;
-            move();
+            at += office.journey.jumpMs;
+            still();
           },
         ],
       ];

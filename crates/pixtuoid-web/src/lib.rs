@@ -233,7 +233,7 @@ impl Office {
         JOURNEY.lines().map(str::to_owned).collect()
     }
 
-    /// How far the page's clock jumps per line under reduced motion: a
+    /// How far the page's clock jumps per line, to the still it draws: a
     /// millisecond past [`EXIT_GRACE_WINDOW`], which an ended session's sweep
     /// needs strictly elapsed.
     pub fn journey_jump_ms() -> f64 {
@@ -256,13 +256,14 @@ impl Office {
     }
 
     /// Advance to `now_ms` and render an office `w`×`h` layout units big into
-    /// the RGBA staging buffer, [`Office::scale`] pixels per unit. While the
-    /// flash hold keeps this frame back, the buffer keeps the last one.
+    /// the RGBA staging buffer, [`Office::scale`] pixels per unit, and say
+    /// whether it was written: while the flash hold keeps this frame back, the
+    /// buffer keeps the last one.
     ///
     /// CONTRACT: `now_ms` must be UNIX-epoch milliseconds — `Date.now()`, NOT
     /// `performance.now()` and NOT a `requestAnimationFrame` timestamp: those are
     /// ms-since-page-load, which pins the day/night cycle and wall clock at 1970.
-    pub fn step(&mut self, now_ms: f64, w: u32, h: u32) {
+    pub fn step(&mut self, now_ms: f64, w: u32, h: u32) -> bool {
         let now = pixtuoid_scene::anim::from_epoch_ms(now_ms);
         self.last_now = Some(now);
         let (units_w, units_h) = self.units(w, h);
@@ -287,19 +288,20 @@ impl Office {
             );
             expand_rgba(&mut self.rgba, &bg);
             self.screen.landed();
-            return;
+            return true;
         };
         let badges = picture
             .text
             .map_or_else(Vec::new, |text| text.badges.to_vec());
         let picture = pixtuoid_scene::look::Picture::Floor(picture);
         if !self.screen.admit(&picture, px, (), None).written() {
-            return;
+            return false;
         }
         expand_rgba(&mut self.rgba, picture.pixels());
         self.shown_badges = badges;
         // The page draws what `step` leaves in the same task, straight after.
         self.screen.landed();
+        true
     }
 
     /// Pointer to the RGBA frame in wasm linear memory ([`Office::frame_len`]
@@ -1110,10 +1112,28 @@ mod tests {
         Strike { changes, end }
     }
 
-    /// Step `o` to `ms` with its screen clock there too.
-    fn step_at(o: &mut Office, screen: &ManualClock, ms: u64) {
+    /// Step `o` to `ms` with its screen clock there too, and say whether the
+    /// frame was written.
+    fn step_at(o: &mut Office, screen: &ManualClock, ms: u64) -> bool {
         screen.at(SystemTime::UNIX_EPOCH + Duration::from_millis(ms));
-        o.step(ms as f64, 160, 96);
+        o.step(ms as f64, 160, 96)
+    }
+
+    /// A page that draws one still at a time learns from `step` that the
+    /// flash hold kept it back, and draws it again once the floor has passed.
+    #[test]
+    fn step_says_whether_the_hold_kept_its_frame_back() {
+        use pixtuoid_scene::anim::PHOTOSENSITIVE_PHASE_MIN_MS as FLOOR_MS;
+        let strike = storm_strike();
+        let second = strike.changes[1];
+        let (mut o, screen) = storm_on_screen();
+        assert!(step_at(&mut o, &screen, strike.changes[0] - 2 * FLOOR_MS));
+        assert!(step_at(&mut o, &screen, second - FLOOR_MS / 4));
+        assert!(!step_at(&mut o, &screen, second), "inside the floor: held");
+        assert!(
+            step_at(&mut o, &screen, second + FLOOR_MS),
+            "past it: written"
+        );
     }
 
     /// Each phase of a strike stays on the page at least the photosensitive

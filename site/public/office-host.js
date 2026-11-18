@@ -50,10 +50,11 @@ export function serve(port) {
     // commands, which the page applies or drops as it stands when the reply lands.
     frame({ id, now, w, h, draw, overlay, audio }) {
       const o = offices.get(id);
-      o.office.step(now, w, h);
+      const written = o.office.step(now, w, h);
       if (draw !== null) paint(o, w, h, draw);
       return [
         {
+          written,
           overlay: overlay ? o.office.overlay_json() : null,
           audio: audio ? o.office.audio_tick(now) : null,
         },

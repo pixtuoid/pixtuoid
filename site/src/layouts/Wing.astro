@@ -387,7 +387,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     fill: var(--led);
     visibility: hidden;
   }
-  /* Plays once the figure is in view, and ends inside MOTION_LIMIT_MS (tests/e2e/wcag.ts). */
+  /* Plays once the figure is in view, and ends inside blog.spec.ts's MOTION_LIMIT_S. */
   .wing :global(.reveal.in .fig-budget__now) {
     animation: fig-now 4s linear;
   }
@@ -444,7 +444,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     transform-box: fill-box;
     transform-origin: top;
   }
-  /* Ends inside MOTION_LIMIT_MS too. */
+  /* Ends inside MOTION_LIMIT_S too. */
   .wing :global(.reveal.in .fig-pane__wash) {
     animation: fig-wash 1.8s ease-in-out 2;
   }
@@ -460,12 +460,10 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   .wing :global(.fig--journey) {
     margin: 1.8rem 0;
   }
-  /* The office is as tall as a short viewport can spare under the nav: it lays out only from
-     pixtuoid-scene's min_layout_size at the pack's art density, which a 1x screen needs 12rem for and
-     a denser screen far less. */
+  /* The office lays out only from pixtuoid-scene's min_layout_size at the pack's art density, which a 1x
+     screen needs 12rem for and a denser screen far less. */
   .wing :global(.fig-journey__player) {
     --office-min: 12rem;
-    --office-h: clamp(var(--office-min), 22vh, 14rem);
     display: flex;
     flex-wrap: wrap;
     gap: 0.7rem;
@@ -475,16 +473,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     background: var(--bg);
     border-bottom: 1px solid var(--border);
   }
-  /* journey.js sticks it while it leaves the stops room. */
-  .wing :global(.fig-journey__player.is-sticky) {
-    position: sticky;
-    top: var(--nav-h);
-    z-index: 1;
-  }
   @media (min-resolution: 2dppx) {
     .wing :global(.fig-journey__player) {
       --office-min: 7rem;
-      --office-h: clamp(var(--office-min), 22vh, 12rem);
     }
   }
   /* Beside the office while the article has room for its widest hook, else on a row of their own. */
@@ -591,7 +582,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   /* A column too narrow for 2:1 at the office's least height keeps that height. */
   .wing :global(.fig-journey__crop) {
     flex: none;
-    width: min(100%, calc(2 * var(--office-h)));
+    width: min(100%, 24rem);
     aspect-ratio: 2 / 1;
     min-height: var(--office-min);
     overflow: hidden;
