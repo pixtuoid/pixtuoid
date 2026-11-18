@@ -1149,3 +1149,95 @@ fn an_unknown_look_value_warns_and_falls_back_to_auto() {
     );
     assert_eq!(w.len(), 1, "{w:?}");
 }
+
+/// docs/CONFIGURATION.md states each setting's values, and what it is when the
+/// file leaves it out, as text no build reaches, so each phrase is built from
+/// its parser or resolver.
+#[test]
+fn the_docs_state_each_settings_values_and_default() {
+    use clap::ValueEnum;
+    let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
+    let unset = AppConfig::default();
+    let mut w = Vec::new();
+    let name =
+        |v: Option<clap::builder::PossibleValue>| v.expect("a named value").get_name().to_owned();
+    let volume = |v: f32| {
+        resolve_audio(&AppConfig {
+            audio: Some(AudioConfigRaw {
+                muted: None,
+                volume: Some(v),
+            }),
+            ..Default::default()
+        })
+        .volume
+    };
+    let audio = resolve_audio(&unset);
+    let pets: Vec<String> = resolve_pets(&unset, &mut w)
+        .iter()
+        .map(|p| format!("`{}`", p.name))
+        .collect();
+    for says in [
+        format!(
+            "| `theme` | `\"{}\"` |",
+            resolve_theme(&unset, None, &mut w)
+                .expect("the default theme")
+                .name
+        ),
+        format!(
+            "| `look` | `\"{}\"` |",
+            name(resolve_look(&unset, None, &mut w).to_possible_value())
+        ),
+        format!(
+            "| `motion` | `\"{}\"` |",
+            name(resolve_motion(&unset, &mut w).to_possible_value())
+        ),
+        format!("(`muted = {}`)", audio.muted),
+        format!(
+            "`volume` runs from {:.1} to {:.1}, clamped, and defaults to {:.1}",
+            volume(f32::NEG_INFINITY),
+            volume(f32::INFINITY),
+            audio.volume
+        ),
+        format!("{} when left out", pets.join(" or ")),
+        format!(
+            "`kind` is {}",
+            pixtuoid_scene::pet::PetKind::ALL
+                .iter()
+                .map(|k| format!("`\"{}\"`", k.config_name()))
+                .collect::<Vec<_>>()
+                .join(" or ")
+        ),
+    ] {
+        assert!(
+            doc.contains(&says),
+            "CONFIGURATION.md no longer says {says:?}"
+        );
+    }
+    assert!(w.is_empty(), "{w:?}");
+    let bullets = |heading: &str, values: Vec<String>| {
+        let text = crate::test_io::doc_section(&doc, heading);
+        assert_eq!(
+            text.matches("- **`").count(),
+            values.len(),
+            "{heading} lists one bullet per value its parser takes: {values:?}"
+        );
+        for v in values {
+            let says = format!("- **`{v}`**");
+            assert!(text.contains(&says), "{heading} no longer says {says:?}");
+        }
+    };
+    bullets(
+        "The look",
+        crate::graphics::LookMode::value_variants()
+            .iter()
+            .map(|v| name(v.to_possible_value()))
+            .collect(),
+    );
+    bullets(
+        "Motion",
+        MotionMode::value_variants()
+            .iter()
+            .map(|v| name(v.to_possible_value()))
+            .collect(),
+    );
+}

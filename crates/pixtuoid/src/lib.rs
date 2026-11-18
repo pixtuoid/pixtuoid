@@ -323,6 +323,31 @@ pub(crate) mod test_io {
             Ok(())
         }
     }
+
+    /// The text of the repo file at `path`, which a test pins to the code.
+    pub(crate) fn repo_file(path: &str) -> String {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        std::fs::read_to_string(root.join(path))
+            .unwrap_or_else(|e| panic!("{path} moved or was renamed: {e}"))
+    }
+
+    /// [`repo_file`]'s text with each run of whitespace one space, so a pinned
+    /// phrase holds wherever the prose wraps.
+    pub(crate) fn repo_prose(path: &str) -> String {
+        repo_file(path)
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    /// The `### heading` section of [`repo_prose`]'s `prose`, up to the next
+    /// heading.
+    pub(crate) fn doc_section<'a>(prose: &'a str, heading: &str) -> &'a str {
+        prose
+            .split_once(&format!("### {heading} "))
+            .and_then(|(_, rest)| rest.split(" ##").next())
+            .unwrap_or_else(|| panic!("no {heading:?} section: renamed or removed"))
+    }
 }
 
 /// What every painter's photosensitive tests drive and measure: a strike,
