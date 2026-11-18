@@ -460,8 +460,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   .wing :global(.fig--journey) {
     margin: 1.8rem 0;
   }
-  /* The office lays out only from pixtuoid-scene's min_layout_size at the pack's art density, which a 1x
-     screen needs 12rem for and a denser screen far less. */
+  /* --office-min: the office lays out only from pixtuoid-scene's min_layout_size at the pack's art
+     density, which a denser screen reaches in far less height. */
   .wing :global(.fig-journey__player) {
     --office-min: 12rem;
     display: flex;

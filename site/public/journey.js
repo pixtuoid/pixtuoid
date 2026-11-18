@@ -153,8 +153,9 @@ export async function start(figure) {
         setTimeout(resolve, ms);
       });
     };
-    // `focused`: the send came from the focused button, whose disabling drops focus to the body, so focus
-    // goes on to the button that sends next (the same one, to retry a failure) unless the reader moved it.
+    // `focused`: the send came from the focused button, whose disabling leaves focus on the body (the e2e "a
+    // hook sent from the keyboard leaves focus on the next one" fails without this), so focus goes on to the
+    // button that sends next (the same one, to retry a failure) unless the reader moved it.
     async function land(i, focused) {
       landing = true;
       syncButtons();
