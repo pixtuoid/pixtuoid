@@ -80,7 +80,7 @@ export async function start(figure) {
     });
 
     // The office's clock, which only the hooks move: each lands at it, then it jumps the office's
-    // `jumpMs`, past the walk and the sweep the hook sets off, to the still the office shows.
+    // `jumpMs`, past the sweep an ended session needs, to the still the office shows.
     let at = Date.now();
     let units = [0, 0];
     let fitSeq = 0;
