@@ -1219,12 +1219,6 @@ mod dispatch_tests {
     #[test]
     fn the_site_and_the_docs_name_the_apps_keys() {
         use super::keys::{APPEARANCE, DASHBOARD, HELP, MUTE, SOURCES, VOLUME_DOWN, VOLUME_UP};
-        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
-        // crates.io-packaged test runs don't ship the repo's site/ or docs/.
-        if !std::path::Path::new(&format!("{root}/site")).is_dir() {
-            return;
-        }
-        let read = |file: &str| std::fs::read_to_string(format!("{root}/{file}")).expect(file);
         for (file, says) in [
             (
                 "site/src/features.json",
@@ -1282,7 +1276,8 @@ mod dispatch_tests {
                 format!("e.key !== '{APPEARANCE}'"),
             ),
         ] {
-            assert!(read(file).contains(&says), "{file} no longer says {says:?}");
+            let text = crate::test_io::repo_prose(file);
+            assert!(text.contains(&says), "{file} no longer says {says:?}");
         }
     }
 
