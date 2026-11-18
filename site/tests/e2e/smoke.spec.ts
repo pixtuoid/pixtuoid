@@ -1722,6 +1722,45 @@ test('how it works: the hooks stay inside the article, beside the office or belo
   }
 });
 
+test('how it works: a stop focused under the stuck player scrolls clear of it', async ({
+  page,
+}) => {
+  for (const [width, height] of [
+    [1280, 720],
+    [390, 844],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await gotoJourney(page);
+    const player = page.locator('.fig-journey__player');
+    const summary = page.locator('.fig-journey__why summary').nth(1);
+    // The shim stop's summary, scrolled up into the middle of the player stuck under the nav.
+    await page.evaluate(() => {
+      const nav = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--nav-h')
+      );
+      const held = document.querySelector('.fig-journey__player')!.getBoundingClientRect().height;
+      const top = document
+        .querySelectorAll('.fig-journey__why summary')[1]
+        .getBoundingClientRect().top;
+      window.scrollBy({ top: top - (nav + held / 2), behavior: 'instant' });
+    });
+    const bottom = async () => {
+      const box = (await player.boundingBox())!;
+      return box.y + box.height;
+    };
+    expect((await summary.boundingBox())!.y, `${width}px: under the player`).toBeLessThan(
+      await bottom()
+    );
+    await summary.focus();
+    // The focus scroll runs as the page's scroll-behavior sets.
+    await expect
+      .poll(async () => (await summary.boundingBox())!.y - (await bottom()), {
+        message: `${width}px`,
+      })
+      .toBeGreaterThanOrEqual(-1);
+  }
+});
+
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
   page,
 }) => {

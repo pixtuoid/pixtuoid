@@ -56,6 +56,13 @@ export async function start(figure) {
   crop.append(canvas);
   player.append(crop);
   figure.prepend(player);
+  // A stop focused under the stuck player scrolls clear of it (WCAG 2.4.11): the browser's own focus
+  // scroll stops at the viewport's edge, which the player covers.
+  figure.addEventListener('focusin', function (e) {
+    if (player.contains(e.target)) return;
+    const under = player.getBoundingClientRect().bottom - e.target.getBoundingClientRect().top;
+    if (under > 0) window.scrollBy({ top: -under });
+  });
   const outs = {};
   try {
     await run();

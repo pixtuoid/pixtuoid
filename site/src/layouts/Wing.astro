@@ -611,11 +611,6 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     margin: 0.4rem 0 0;
     font-size: 0.95rem;
   }
-  @media (prefers-reduced-motion: reduce) {
-    .wing :global(.fig-journey__stop)::before {
-      transition: none;
-    }
-  }
   .wing :global(.callout__body) {
     margin: 0;
     padding: 0.9rem 1.1rem;
