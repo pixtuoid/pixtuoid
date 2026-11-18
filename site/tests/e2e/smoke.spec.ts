@@ -1626,7 +1626,7 @@ test('how it works: every recorded hook fills each stop through the real decoder
             `${theme} ${selector}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
           ).toBeGreaterThanOrEqual(AA_TEXT);
         }
-        // The journey's tab stops (a hook, a why's summary, an output): each ring clears WCAG 1.4.11.
+        // The journey's tab stops (a hook, a why's summary, an output): each ring clears AA_NON_TEXT.
         for (const selector of [
           '.fig-journey__hook:not(:disabled)',
           '.fig-journey__why summary',
@@ -1755,7 +1755,6 @@ test('how it works: a stop focused from the keyboard under the stuck player scro
     const summary = page.locator('.fig-journey__why summary').nth(1);
     await underPlayer(summary);
     await summary.evaluate((el) => el.focus({ focusVisible: true } as FocusOptions));
-    // The focus scroll runs as the page's scroll-behavior sets.
     await expect
       .poll(async () => (await summary.boundingBox())!.y - (await bottom()), {
         message: `${width}px`,
@@ -1763,16 +1762,31 @@ test('how it works: a stop focused from the keyboard under the stuck player scro
       .toBeGreaterThanOrEqual(-1);
     const output = page.locator('[data-stop="decoder"] .fig-journey__out');
     await underPlayer(output);
-    const before = await page.evaluate(() => window.scrollY);
+    const scrollY = () => page.evaluate(() => window.scrollY);
+    // Without the handler's guards, the page has moved by then.
+    const stays = async (act: () => Promise<void>, what: string) => {
+      const before = await scrollY();
+      await act();
+      await page.waitForTimeout(500);
+      expect(await scrollY(), `${width}px: ${what}`).toBe(before);
+    };
     const box = (await output.boundingBox())!;
-    await output.click({ position: { x: box.width / 2, y: box.height - 4 } });
-    // Longer than a smooth scroll would take to start.
-    await page.waitForTimeout(500);
-    expect(await page.evaluate(() => window.scrollY), `${width}px: a click`).toBe(before);
+    await stays(
+      () => output.click({ position: { x: box.width / 2, y: box.height - 4 } }),
+      'a click on an output'
+    );
+    // The stuck player's own hooks, which a keyboard send focuses, are never under it.
+    await stays(
+      () => hooks.nth(1).evaluate((el) => el.focus({ focusVisible: true } as FocusOptions)),
+      'a hook focused from the keyboard'
+    );
   }
 });
 
 test('how it works: the player sticks only where it leaves the stops room', async ({ page }) => {
+  const player = page.locator('.fig-journey__player');
+  const sticky = async () =>
+    (await player.evaluate((el) => getComputedStyle(el).position)) === 'sticky';
   for (const [width, height, sticks] of [
     [1280, 720, true],
     [390, 844, true],
@@ -1780,11 +1794,14 @@ test('how it works: the player sticks only where it leaves the stops room', asyn
   ] as const) {
     await page.setViewportSize({ width, height });
     await gotoJourney(page);
-    const position = await page
-      .locator('.fig-journey__player')
-      .evaluate((el) => getComputedStyle(el).position);
-    expect(position === 'sticky', `${width}×${height}`).toBe(sticks);
+    expect(await sticky(), `${width}×${height}`).toBe(sticks);
   }
+  // A window shortened in place, its office the same height, unsticks it too.
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await gotoJourney(page);
+  expect(await sticky(), '1280×720').toBe(true);
+  await page.setViewportSize({ width: 1280, height: 320 });
+  await expect.poll(sticky, { message: 'shortened to 1280×320' }).toBe(false);
 });
 
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({

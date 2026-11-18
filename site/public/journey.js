@@ -64,9 +64,11 @@ export async function start(figure) {
   }
   new ResizeObserver(stickiness).observe(player);
   window.addEventListener('resize', stickiness);
-  // A stop focused from the keyboard under the stuck player scrolls clear of it (WCAG 2.4.11): the
-  // browser's own focus scroll stops at the viewport's edge, which the player covers. A click focuses
-  // what the reader already sees, and scrolling it would pull the text from under the pointer.
+  // A stop focused from the keyboard where the stuck player covers it scrolls clear of it, as WCAG 2.4.11
+  // asks (w3.org/WAI/WCAG22/Understanding/focus-not-obscured-minimum): the browser leaves an element
+  // already in the viewport where it is, which the focus e2e fails on without this. A click focuses what
+  // the reader sees and doesn't match :focus-visible ("via a pointing device … don't indicate focus",
+  // drafts.csswg.org/selectors-4/#the-focus-visible-pseudo), so the text stays under the pointer.
   figure.addEventListener('focusin', function (e) {
     if (player.contains(e.target) || !e.target.matches(':focus-visible')) return;
     const under = player.getBoundingClientRect().bottom - e.target.getBoundingClientRect().top;
@@ -93,7 +95,8 @@ export async function start(figure) {
     });
     ['agent', 'shim', 'decoder', 'office'].forEach(function (role) {
       const pre = el('pre', 'fig-journey__out');
-      // A scroll container takes focus, so a keyboard can scroll it (WCAG 2.1.1).
+      // A scroll container takes focus, so a keyboard can scroll it
+      // (WCAG 2.1.1, w3.org/WAI/WCAG22/Understanding/keyboard).
       pre.tabIndex = 0;
       pre.hidden = true;
       stops[role].querySelector('.fig-journey__what').after(pre);

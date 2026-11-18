@@ -460,10 +460,9 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   .wing :global(.fig--journey) {
     margin: 1.8rem 0;
   }
-  /* The office and the send buttons stay in view while the stops below them fill. The office is as
-     tall as a short viewport can spare under the nav: it lays out only from pixtuoid-scene's
-     min_layout_size at the pack's art density, which a 1x screen needs 12rem for and a denser
-     screen far less. */
+  /* The office is as tall as a short viewport can spare under the nav: it lays out only from
+     pixtuoid-scene's min_layout_size at the pack's art density, which a 1x screen needs 12rem for and
+     a denser screen far less. */
   .wing :global(.fig-journey__player) {
     --office-min: 12rem;
     --office-h: clamp(var(--office-min), 22vh, 14rem);
