@@ -471,8 +471,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     position: sticky;
     top: var(--nav-h);
     z-index: 1;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.7rem;
     align-items: center;
     padding-block: 0.7rem;
@@ -486,17 +486,16 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
       --office-h: clamp(var(--office-min), 22vh, 12rem);
     }
   }
-  @media (min-width: 40rem) {
-    .wing :global(.fig-journey__player) {
-      grid-template-columns: min(100%, var(--office-w)) minmax(0, 1fr);
-    }
-  }
+  /* Beside the office while the article has room for its widest hook, else on a row of their own. */
   .wing :global(.fig-journey__send) {
+    flex: 1 1 0;
+    min-width: min-content;
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
   }
   .wing :global(.fig-journey__hook) {
+    white-space: nowrap;
     font-family: var(--font-mono);
     font-size: 0.84rem;
     padding: 0.45rem 0.85rem;
@@ -590,6 +589,7 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
   }
   /* A column too narrow for 2:1 at the office's least height keeps that height. */
   .wing :global(.fig-journey__crop) {
+    flex: none;
     width: min(100%, var(--office-w));
     aspect-ratio: 2 / 1; /* --office-w's 2 */
     min-height: var(--office-min);

@@ -1702,6 +1702,26 @@ test('how it works on a 320px-wide 1x screen: the office still lays out', async 
   await context.close();
 });
 
+test('how it works: the hooks stay inside the article, beside the office or below it', async ({
+  page,
+}) => {
+  // A phone, a 1x laptop whose article is narrower than the office and its widest hook, and a desktop.
+  for (const width of [390, 1001, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    const hooks = await gotoJourney(page);
+    const fig = (await page.locator('.fig--journey').boundingBox())!;
+    for (const box of await hooks.evaluateAll((els) =>
+      els.map((e) => {
+        const r = e.getBoundingClientRect();
+        return { left: r.left, right: r.right };
+      })
+    )) {
+      expect(box.left, `${width}px`).toBeGreaterThanOrEqual(fig.x);
+      expect(box.right, `${width}px`).toBeLessThanOrEqual(fig.x + fig.width);
+    }
+  }
+});
+
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
   page,
 }) => {
