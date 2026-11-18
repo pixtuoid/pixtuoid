@@ -468,9 +468,6 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     --office-min: 12rem;
     --office-h: clamp(var(--office-min), 22vh, 14rem);
     --office-w: calc(2 * var(--office-h));
-    position: sticky;
-    top: var(--nav-h);
-    z-index: 1;
     display: flex;
     flex-wrap: wrap;
     gap: 0.7rem;
@@ -479,6 +476,12 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
     margin-bottom: 1.2rem;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
+  }
+  /* journey.js sticks it while it leaves the stops room. */
+  .wing :global(.fig-journey__player.is-sticky) {
+    position: sticky;
+    top: var(--nav-h);
+    z-index: 1;
   }
   @media (min-resolution: 2dppx) {
     .wing :global(.fig-journey__player) {

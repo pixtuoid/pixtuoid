@@ -56,6 +56,14 @@ export async function start(figure) {
   crop.append(canvas);
   player.append(crop);
   figure.prepend(player);
+  // The player sticks under the nav only while it takes at most half the viewport below it, so a short
+  // screen keeps room for the stops it fills.
+  function stickiness() {
+    const nav = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--nav-h'));
+    player.classList.toggle('is-sticky', player.offsetHeight <= (window.innerHeight - nav) / 2);
+  }
+  new ResizeObserver(stickiness).observe(player);
+  window.addEventListener('resize', stickiness);
   // A stop focused under the stuck player scrolls clear of it (WCAG 2.4.11): the browser's own focus
   // scroll stops at the viewport's edge, which the player covers.
   figure.addEventListener('focusin', function (e) {

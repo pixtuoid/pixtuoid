@@ -1761,6 +1761,21 @@ test('how it works: a stop focused under the stuck player scrolls clear of it', 
   }
 });
 
+test('how it works: the player sticks only where it leaves the stops room', async ({ page }) => {
+  for (const [width, height, sticks] of [
+    [1280, 720, true],
+    [390, 844, true],
+    [568, 320, false],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await gotoJourney(page);
+    const position = await page
+      .locator('.fig-journey__player')
+      .evaluate((el) => getComputedStyle(el).position);
+    expect(position === 'sticky', `${width}×${height}`).toBe(sticks);
+  }
+});
+
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
   page,
 }) => {
