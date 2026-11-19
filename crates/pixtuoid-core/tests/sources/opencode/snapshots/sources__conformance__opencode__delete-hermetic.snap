@@ -3,47 +3,47 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 13906770436425462588
+    agent_id: 6436348896865657278
     source: opencode
-    session_id: ses_e34acbf11ffemSo24tTSyVQ556
+    session_id: ses_e0b284e3fffent9Y0NR0Tec5qe
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 13906770436425462588
+    agent_id: 6436348896865657278
     model: gpt-5.2
     effort: ~
 - TurnStart:
-    agent_id: 13906770436425462588
+    agent_id: 6436348896865657278
     turn:
       Seq: 2
 - Identity:
-    agent_id: 13906770436425462588
+    agent_id: 6436348896865657278
     source: opencode
-    session_id: ses_e34acbf11ffemSo24tTSyVQ556
+    session_id: ses_e0b284e3fffent9Y0NR0Tec5qe
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 13906770436425462588
-    tool_use_id: call_pSZR6HSUjTy8rMaV
+    agent_id: 6436348896865657278
+    tool_use_id: call_MBmWQ-jbnmnK81ib
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 13906770436425462588
+    agent_id: 6436348896865657278
     source: opencode
-    session_id: ses_e34acbf11ffemSo24tTSyVQ556
+    session_id: ses_e0b284e3fffent9Y0NR0Tec5qe
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 13906770436425462588
-    tool_use_id: call_pSZR6HSUjTy8rMaV
+    agent_id: 6436348896865657278
+    tool_use_id: call_MBmWQ-jbnmnK81ib
 - Identity:
-    agent_id: 13906770436425462588
+    agent_id: 6436348896865657278
     source: opencode
-    session_id: ses_e34acbf11ffemSo24tTSyVQ556
+    session_id: ses_e0b284e3fffent9Y0NR0Tec5qe
     cwd: ~
 - TurnEnd:
-    agent_id: 13906770436425462588
+    agent_id: 6436348896865657278
     turn:
       Seq: 2
 - SessionEnd:
-    agent_id: 13906770436425462588
+    agent_id: 6436348896865657278
     as_child: false
