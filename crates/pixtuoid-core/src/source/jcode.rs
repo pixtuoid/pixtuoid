@@ -21,7 +21,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Jcode",
     label_prefix: "jc",
-    verified_version: "0.99.1",
+    verified_version: "1.0.1",
     version_probe: Some(&["jcode", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,
