@@ -3,70 +3,70 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     model: claude-opus-5-5
     effort: ~
 - Usage:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     fresh_tokens: 19
-    reading_id: msg_NedVHCGWvFTmgioR
-    copy_id: msg_NedVHCGWvFTmgioR
+    reading_id: msg_rC13n4VCto-rQOc1
+    copy_id: msg_rC13n4VCto-rQOc1
 - ToolUseStart:
-    agent_id: 8500529423625858891
-    tool_use_id: toolu_pdXpHR5I6mdLgG6v
+    agent_id: 15232240009427230632
+    tool_use_id: toolu_YZuiGaYT42jPq2wh
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
-    copy_id: toolu_pdXpHR5I6mdLgG6v
+    copy_id: toolu_YZuiGaYT42jPq2wh
 - ToolUseEnd:
-    agent_id: 8500529423625858891
-    tool_use_id: toolu_pdXpHR5I6mdLgG6v
+    agent_id: 15232240009427230632
+    tool_use_id: toolu_YZuiGaYT42jPq2wh
 - SessionStart:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     source: claude-code
-    session_id: 2b4a81ca-d10d-4f82-8505-ceb45a43ffcd
+    session_id: 65c49e8f-abad-4068-b1e9-fae6ac51f133
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     model: claude-opus-5-5
     effort: ~
 - Identity:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     source: claude-code
-    session_id: 2b4a81ca-d10d-4f82-8505-ceb45a43ffcd
+    session_id: 65c49e8f-abad-4068-b1e9-fae6ac51f133
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 8500529423625858891
-    tool_use_id: toolu_pdXpHR5I6mdLgG6v
+    agent_id: 15232240009427230632
+    tool_use_id: toolu_YZuiGaYT42jPq2wh
     tool_name: Bash
 - ToolUseStart:
-    agent_id: 8500529423625858891
-    tool_use_id: toolu_pdXpHR5I6mdLgG6v
+    agent_id: 15232240009427230632
+    tool_use_id: toolu_YZuiGaYT42jPq2wh
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - ModelInfo:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     model: ~
     effort: medium
 - Identity:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     source: claude-code
-    session_id: 2b4a81ca-d10d-4f82-8505-ceb45a43ffcd
+    session_id: 65c49e8f-abad-4068-b1e9-fae6ac51f133
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     reason: permission
     tool_name: Bash
 - Identity:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     source: claude-code
-    session_id: 2b4a81ca-d10d-4f82-8505-ceb45a43ffcd
+    session_id: 65c49e8f-abad-4068-b1e9-fae6ac51f133
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     reason: Claude needs your permission
 - SessionEnd:
-    agent_id: 8500529423625858891
+    agent_id: 15232240009427230632
     as_child: false
