@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "jcode",
-  "version": "jcode v0.99.1 (7206efd0c)",
-  "captured": "2026-11-01",
+  "version": "jcode v1.0.1 (10114429c)",
+  "captured": "2026-11-19",
   "command": "just hermetic --record jcode",
   "deidentified": {
     "method": "decoder-allowlist",
