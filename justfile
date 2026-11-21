@@ -79,7 +79,7 @@ API_JSON_FORMAT := "61"
 # rust-toolchain.toml): hawk refuses any other, so a bump moves both, and the
 # installer's hash with them.
 HAWK_VERSION := "0.1.15"
-HAWK_RUST := "1.99.0"
+HAWK_RUST := "1.100.0"
 HAWK_INSTALLER_SHA256 := "4e1b85fc15d3d4efa9b3bd7c62620655cc5504b7164272292043e3794f54111f"
 
 # The non-linux triples `doc-check` renders, one per OS release.yml ships.
