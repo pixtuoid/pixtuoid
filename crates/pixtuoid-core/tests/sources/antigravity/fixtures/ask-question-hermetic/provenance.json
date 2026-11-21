@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "agy",
-  "version": "1.5.13",
-  "captured": "2026-11-20",
+  "version": "1.5.14",
+  "captured": "2026-11-21",
   "command": "just hermetic --record antigravity",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 42
   },
-  "aimock": "1.47.0",
+  "aimock": "1.48.0",
   "script": "tests/sources/antigravity/hermetic/ask-question.json",
   "dropped": {
     "os": "macos",
