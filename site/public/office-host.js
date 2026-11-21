@@ -25,11 +25,15 @@ export function serve(port) {
       wasm = await mod.default();
       return [true];
     },
-    open({ id, seed, canvas }) {
-      const office = new mod.Office(seed);
+    // `journey` opens the How it works page's office, which plays only the hook lines it is sent.
+    open({ id, seed, canvas, journey }) {
+      const office = journey ? mod.Office.journey(seed) : new mod.Office(seed);
       offices.set(id, { office, canvas, ctx: canvas.getContext('2d'), img: null });
       return [
         {
+          journey: journey
+            ? { lines: mod.Office.journey_lines(), jumpMs: mod.Office.journey_jump_ms() }
+            : null,
           audio: {
             sampleRate: office.audio_sample_rate(),
             ceilingDbfs: office.audio_ceiling_dbfs(),
@@ -46,10 +50,11 @@ export function serve(port) {
     // commands, which the page applies or drops as it stands when the reply lands.
     frame({ id, now, w, h, draw, overlay, audio }) {
       const o = offices.get(id);
-      o.office.step(now, w, h);
+      const written = o.office.step(now, w, h);
       if (draw !== null) paint(o, w, h, draw);
       return [
         {
+          written,
           overlay: overlay ? o.office.overlay_json() : null,
           audio: audio ? o.office.audio_tick(now) : null,
         },

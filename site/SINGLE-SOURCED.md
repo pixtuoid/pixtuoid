@@ -72,7 +72,7 @@ Notes no gate carries:
   of wasm memory (views dangle on `memory.grow`); sound rides the render's
   pause-shifted `nowMs`. **iOS silent-switch bypass is DELIBERATE (#664)**:
   `navigator.audioSession.type = 'playback'` before the context, else the Ring/Silent switch mutes a deliberate ♩ tap.
-- **Both live offices share ONE office host (`public/office-host.js`)**, which
+- **Every live office on a page shares ONE office host (`public/office-host.js`)**, which
   `public/office-driver.js`'s `officeHost` places and memoizes (#671). VIBING's
   SECOND `Office` (#468) keeps its own weather; its rAF loop runs only active +
   in-view + not paused + not reduced-motion, and joins the `pix:paused` set.

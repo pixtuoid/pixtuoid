@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { fromHtml } from 'hast-util-from-html';
 import { toText } from 'hast-util-to-text';
 import { createMarkdownProcessor } from '@astrojs/markdown-remark';
-import rehypeFigures from './rehype-figures.mjs';
+import rehypeFigures, { JOURNEY_STOPS } from './rehype-figures.mjs';
 
 const marker = (kind) => ({ type: 'raw', value: `<!-- figure: ${kind} -->` });
 const nl = { type: 'text', value: '\n' };
@@ -38,6 +38,51 @@ test('cards turn each row into a role card that keeps its links, and the marker 
   assert.equal(role.children[0].tagName, 'a');
   assert.deepEqual(acts.properties.className, ['fig-card__acts']);
   assert.equal(toText(acts), 'Posting a verdict');
+});
+
+const JOURNEY = ['Stop', 'In the code', 'What happens', 'Why'];
+const stop = (n) => [
+  `The ${JOURNEY_STOPS[n]}`,
+  `<code>code${n}</code>`,
+  `does ${n}`,
+  `because <a href="x">${n}</a>`,
+];
+
+test('a journey turns each row into a stop, in order, its why folded away', () => {
+  const tree = run([
+    marker('journey'),
+    nl,
+    table(JOURNEY, ...JOURNEY_STOPS.map((_, i) => stop(i))),
+  ]);
+  assert.deepEqual(figure(tree).properties.className, ['fig--journey']);
+  const [stops] = figure(tree).children;
+  assert.equal(stops.tagName, 'ol');
+  assert.deepEqual(
+    stops.children.map((li) => li.properties.dataStop),
+    JOURNEY_STOPS,
+    'each stop names its role, which the page fills'
+  );
+  const [head, what, why] = stops.children[1].children;
+  assert.equal(said(head), 'The shim code1');
+  assert.equal(said(what), 'does 1');
+  assert.equal(why.tagName, 'details');
+  assert.equal(said(why.children[0]), 'Why');
+  assert.equal(why.children[1].children[1].tagName, 'a', 'the why keeps its links');
+});
+
+test('a journey whose stops are out of order fails the build, naming the stop', () => {
+  const [first, second, ...rest] = JOURNEY_STOPS.map((_, i) => stop(i));
+  assert.throws(
+    () => run([marker('journey'), nl, table(JOURNEY, second, first, ...rest)]),
+    /stop 1 is "The shim", where "The agent" goes/
+  );
+});
+
+test('a journey of any other length fails the build', () => {
+  assert.throws(
+    () => run([marker('journey'), nl, table(JOURNEY, stop(0))]),
+    /figure "journey" has 5 stops, found 1/
+  );
 });
 
 const all = (node, test, out = []) => {

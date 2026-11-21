@@ -57,7 +57,7 @@ jobs:
       - uses: ./.github/actions/path-changed
         id: scope
         with:
-          paths: site docs/CONFIGURATION.md docs/ARCHITECTURE.md docs/CONTRIBUTING.md docs/HOW-WE-BUILD.md docs/images/looks-composite.png crates/pixtuoid-web crates/pixtuoid-web-music .github/workflows/site.yml
+          paths: site docs/CONFIGURATION.md docs/ARCHITECTURE.md docs/CONTRIBUTING.md docs/HOW-WE-BUILD.md docs/images/looks-composite.png crates/pixtuoid-web crates/pixtuoid-web-music crates/pixtuoid-core/tests/sources/claude_code/fixtures/tool-run-hermetic .github/workflows/site.yml
 
   check:
     name: demos · build · e2e

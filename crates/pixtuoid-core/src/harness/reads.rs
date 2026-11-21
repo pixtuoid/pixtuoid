@@ -362,11 +362,12 @@ pub(crate) fn child_pointer(at: &str, key: &str) -> String {
     format!("{at}/{}", key.replace('~', "~0").replace('/', "~1"))
 }
 
-/// Whether `key` under `at` is a shim stamp, a hook envelope's top-level `_`
-/// key, which the strip keeps: `_shim_ts_ms` is read by no decoder, only by
-/// the merge (`merge::SHIM_STAMP`) and `tests/sources/captures.rs`.
+/// Whether `key` under `at` is one of a hook envelope's top-level
+/// [`SHIM_STAMPS`](crate::source::decoder::SHIM_STAMPS), which the strip keeps:
+/// [`FORWARDED_AT_STAMP`](crate::source::decoder::FORWARDED_AT_STAMP) is read by no decoder,
+/// but the merge orders lines by it.
 pub(crate) fn is_shim_stamp(at: &str, key: &str) -> bool {
-    at.is_empty() && key.starts_with('_')
+    at.is_empty() && crate::source::decoder::SHIM_STAMPS.contains(&key)
 }
 
 /// How a transcript line spells the instant its CLI wrote it.
@@ -666,17 +667,34 @@ mod tests {
             ("grok", "model-error-hermetic"), // its agent_error line decodes to nothing
         ] {
             let (_d, hooks) = stripped_copy(source, scenario, HOOK_PAYLOADS);
-            let stamps = |p: &Path| -> Vec<serde_json::Value> {
+            // A stamp these captures lack (`_pixtuoid_event`) is planted, so no slot passes as
+            // absent on both sides.
+            let (_, mut lines) = parsed_lines(&hooks).expect("read").expect("json");
+            for line in &mut lines {
+                for key in crate::source::decoder::SHIM_STAMPS {
+                    if line.get(key).is_none() {
+                        line[key] = "planted".into();
+                    }
+                }
+            }
+            let text: Vec<String> = lines.iter().map(Value::to_string).collect();
+            std::fs::write(&hooks, text.join("\n") + "\n").expect("write");
+            let stamps = |p: &Path| -> Vec<[serde_json::Value; 4]> {
                 parsed_lines(p)
                     .expect("read")
                     .expect("json")
                     .1
                     .iter()
-                    .map(|l| l[crate::harness::merge::SHIM_STAMP].clone())
+                    .map(|l| crate::source::decoder::SHIM_STAMPS.map(|key| l[key].clone()))
                     .collect()
             };
             let before = stamps(&hooks);
-            assert!(before.iter().all(|v| v.as_i64().is_some_and(|ms| ms > 0)));
+            assert!(
+                before
+                    .iter()
+                    .all(|[at, ..]| at.as_i64().is_some_and(|ms| ms > 0))
+            );
+            assert!(before.iter().flatten().all(|v| !v.is_null()));
             strip_unread(source, std::slice::from_ref(&hooks)).expect("strip");
             assert_eq!(stamps(&hooks), before, "{source}/{scenario}");
         }

@@ -1,6 +1,6 @@
 [package]
 name        = "pixtuoid-web"
-description  = "WebAssembly canvas painter over the pixtuoid-scene engine — the live office hero"
+description  = "WebAssembly canvas painter over the pixtuoid-scene engine — the site's live offices"
 # A site build input, never a crates.io artifact: this thin wasm shim must not
 # enter the workspace's semver/release surface.
 publish     = false
