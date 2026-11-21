@@ -78,9 +78,9 @@ API_JSON_FORMAT := "61"
 # The cargo-hawk `hawk` runs, and the exact rustc it links (its
 # rust-toolchain.toml): hawk refuses any other, so a bump moves both, and the
 # installer's hash with them.
-HAWK_VERSION := "0.1.15"
+HAWK_VERSION := "0.1.18"
 HAWK_RUST := "1.100.0"
-HAWK_INSTALLER_SHA256 := "4e1b85fc15d3d4efa9b3bd7c62620655cc5504b7164272292043e3794f54111f"
+HAWK_INSTALLER_SHA256 := "90a1876f18ded618e96210c9a3097019af37bf5c229ade6cae3f9b9fd1fb6cc3"
 
 # The non-linux triples `doc-check` renders, one per OS release.yml ships.
 # rustdoc links nothing, so a triple's std is all it needs while no dependency on
