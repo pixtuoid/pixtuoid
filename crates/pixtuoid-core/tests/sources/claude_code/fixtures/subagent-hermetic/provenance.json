@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "claude",
-  "version": "2.1.329 (Claude Code)",
-  "captured": "2026-11-20",
+  "version": "2.1.330 (Claude Code)",
+  "captured": "2026-11-21",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 529
   },
-  "aimock": "1.47.0",
+  "aimock": "1.48.0",
   "script": "tests/sources/claude_code/hermetic/subagent.json",
   "dropped": {
     "os": "macos",
@@ -31,12 +31,12 @@
     }
   },
   "sentinel_reads": {
-    "636a04aa-590f-44fc-9ff4-fee9f89fe0ed.jsonl": [
+    "7461c3c0-12c3-43c4-aed7-aa8e10c0fac9.jsonl": [
       "19:/message/usage/cache_creation_input_tokens",
       "25:/message/usage/cache_creation_input_tokens",
       "35:/message/usage/cache_creation_input_tokens"
     ],
-    "agent-ac5d61b07d5dff760.jsonl": [
+    "agent-a5f3c0cf125803e22.jsonl": [
       "14:/message/usage/cache_creation_input_tokens",
       "20:/message/usage/cache_creation_input_tokens"
     ],
