@@ -257,14 +257,62 @@ pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
 }
 
 /// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond, by
-/// [`DateTime::parse_from_rfc3339`](chrono::DateTime::parse_from_rfc3339).
+/// [`Timestamp`'s RFC 3339 parser](https://docs.rs/jiff/1.0.2/jiff/struct.Timestamp.html#impl-FromStr-for-Timestamp).
 #[cfg(any(feature = "native", feature = "harness", test))]
 pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
-    let t = chrono::DateTime::parse_from_rfc3339(s).ok()?;
+    let cut = cut_fraction(s);
+    let t: jiff::Timestamp = cut.parse().ok()?;
+    if !offset_is_strict(&cut) {
+        return None;
+    }
     Some(std::time::Duration::new(
-        u64::try_from(t.timestamp()).ok()?,
-        t.timestamp_subsec_nanos(),
+        u64::try_from(t.as_second()).ok()?,
+        u32::try_from(t.subsec_nanosecond()).ok()?,
     ))
+}
+
+/// The fraction cut to nine digits: jiff's parser rejects a digit past the
+/// nanosecond, where chrono cut it, and a stamp's extra digit is not "no
+/// information" to the callers above. The tail past the fraction — the offset —
+/// is kept.
+#[cfg(any(feature = "native", feature = "harness", test))]
+fn cut_fraction(s: &str) -> std::borrow::Cow<'_, str> {
+    use std::borrow::Cow;
+    let Some(dot) = s.find('.') else {
+        return Cow::Borrowed(s);
+    };
+    let digits = s[dot + 1..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .count();
+    if digits <= 9 {
+        Cow::Borrowed(s)
+    } else {
+        Cow::Owned(format!("{}{}", &s[..dot + 1 + 9], &s[dot + 1 + digits..]))
+    }
+}
+
+/// Whether the stamp's offset is RFC 3339's `Z` or `±HH:MM` with the hour
+/// under 24: jiff's offset runs to ±25:59:59 and its parser takes a colon-less
+/// `+0200`, where chrono's grammar — the contract the tests pin — takes
+/// neither. Only the offset is checked; the rest already parsed.
+#[cfg(any(feature = "native", feature = "harness", test))]
+fn offset_is_strict(s: &str) -> bool {
+    let Some(t) = s.find(['T', 't']) else {
+        return false;
+    };
+    let after_t = &s[t + 1..];
+    let Some(sign) = after_t.find(['+', '-']) else {
+        return after_t.ends_with(['Z', 'z']);
+    };
+    let mut parts = after_t[sign + 1..].split(':');
+    let (Some(hours), Some(minutes)) = (parts.next(), parts.next()) else {
+        return false;
+    };
+    hours.len() == 2
+        && minutes.len() == 2
+        && hours.parse::<u32>().is_ok_and(|h| h < 24)
+        && minutes.parse::<u32>().is_ok_and(|m| m < 60)
 }
 
 /// The key the shim stamps with the CLI whose hook ran it. Pinned by
@@ -797,7 +845,7 @@ mod tests {
     }
 
     #[test]
-    fn rfc3339_parses_chrono_utc_shapes_and_rejects_garbage() {
+    fn rfc3339_parses_utc_shapes_and_rejects_garbage() {
         assert_eq!(
             rfc3339_to_epoch_secs("2026-07-16T12:00:05Z"),
             Some(1_784_203_205)

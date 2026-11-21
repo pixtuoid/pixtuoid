@@ -1315,8 +1315,8 @@ async fn session_end_ends_its_claim_so_later_activity_re_registers() {
 
 /// The office `events` leave, counting Today on one fixed day.
 fn office_after(events: &[(Transport, AgentEvent)]) -> crate::SceneState {
-    fn one_day(_: std::time::SystemTime) -> chrono::NaiveDate {
-        chrono::NaiveDate::MIN
+    fn one_day(_: std::time::SystemTime) -> jiff::civil::Date {
+        jiff::civil::Date::MIN
     }
     let mut reducer = crate::Reducer::new().counting(one_day);
     let mut office = crate::SceneState::uniform(8);

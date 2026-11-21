@@ -1200,7 +1200,7 @@ mod tests {
 
     #[test]
     fn the_wall_board_shows_todays_headline_and_needs_no_clock_of_its_own() {
-        let day = chrono::NaiveDate::from_ymd_opt(2027, 1, 15).expect("a date");
+        let day = jiff::civil::date(2027, 1, 15);
         let row = board_of(Some(Today::new(day, 1_200_000, 38)));
         assert_eq!(row, "up <1m  1.2M tokens");
         assert_eq!(board_of(None), "up <1m");

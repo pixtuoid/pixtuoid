@@ -53,8 +53,8 @@ fn live_run_options() -> OpenOptions {
 /// A run's file: its start in UTC, then its pid, so runs started in one
 /// second never share one and name order is start order.
 fn run_file_name(start: SystemTime, tag: impl std::fmt::Display) -> String {
-    let start: chrono::DateTime<chrono::Utc> = start.into();
-    format!("{}-{tag}.{}", start.format("%Y%m%dT%H%M%SZ"), RUN_LOG_EXT)
+    let start = jiff::Timestamp::try_from(start).expect("a run start is inside jiff's calendar");
+    format!("{}-{tag}.{}", start.strftime("%Y%m%dT%H%M%SZ"), RUN_LOG_EXT)
 }
 
 /// Remove the runs in `dir` last written over [`RUN_LOG_RETAIN`] before `now`,

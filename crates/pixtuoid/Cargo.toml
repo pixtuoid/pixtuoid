@@ -81,8 +81,8 @@ tracing-appender   = "0.2"
 which              = "8"
 # The throwaway hook endpoint `doctor` proves the shim against.
 tempfile           = { workspace = true }
-# `clock` gives `Local::now()`, the crash report's stamp in the user's zone.
-chrono             = { workspace = true, features = ["clock"] }
+# `TimeZone::system()` gives the crash report's stamp in the user's zone.
+jiff               = { workspace = true }
 open               = "5"
 semver             = { workspace = true }
 # What `panels::widgets::wrap_options` wraps, by display width. No line-break or

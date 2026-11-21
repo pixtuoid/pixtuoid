@@ -135,7 +135,7 @@ fn daemons_projects_onto_the_ground_floor_only() {
 #[test]
 fn every_floor_carries_the_days_count() {
     let mut scene = make_scene(8, 2);
-    let day = chrono::NaiveDate::from_ymd_opt(2027, 1, 15).expect("a date");
+    let day = jiff::civil::date(2027, 1, 15);
     let today = pixtuoid_core::state::Today::new(day, 1_200_000, 38);
     scene.today = Some(today);
     for floor in 0..2 {

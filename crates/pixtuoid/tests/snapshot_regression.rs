@@ -1,6 +1,6 @@
 //! Snapshot regression tests for `draw_scene`.
 //!
-//! No golden pixel buffer: the daylight code reads `chrono::Local`, which makes
+//! No golden pixel buffer: the daylight code reads `TimeZone::system()`, which makes
 //! a golden hash machine-dependent. The determinism + time-sensitivity checks
 //! together catch the likely regressions without needing per-machine goldens.
 

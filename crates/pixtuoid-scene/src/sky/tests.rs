@@ -464,12 +464,28 @@ fn solar_noon_outshines_the_brightest_night() {
 }
 
 /// `y-mo-d h:mi` UTC.
+#[expect(clippy::disallowed_methods, reason = "UTC, not the viewer's zone")]
 fn utc(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> SystemTime {
-    let secs = chrono::NaiveDate::from_ymd_opt(y, mo, d)
-        .and_then(|date| date.and_hms_opt(h, mi, 0))
+    let dt = jiff::civil::Date::new(
+        i16::try_from(y).expect("a year"),
+        i8::try_from(mo).expect("a month"),
+        i8::try_from(d).expect("a day"),
+    )
+    .expect("a valid date")
+    .to_datetime(
+        jiff::civil::Time::new(
+            i8::try_from(h).expect("an hour"),
+            i8::try_from(mi).expect("a minute"),
+            0,
+            0,
+        )
+        .expect("a valid time"),
+    );
+    let secs = dt
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
         .expect("a valid instant")
-        .and_utc()
-        .timestamp();
+        .timestamp()
+        .as_second();
     std::time::UNIX_EPOCH + std::time::Duration::from_secs(u64::try_from(secs).expect("after 1970"))
 }
 
@@ -1091,7 +1107,8 @@ fn new_years_eve_bursts_through_the_sky_on_every_tier() {
     const SAMPLED_MS: u64 = HOUR_MS / 2;
     const MINUTE_MS: u64 = 60_000;
     let at = |day, h, m| {
-        let date = chrono::NaiveDate::from_ymd_opt(2026, 12, day).expect("a date");
+        let date =
+            jiff::civil::Date::new(2026, 12, i8::try_from(day).expect("a day")).expect("a date");
         crate::localclock::local_instant(date, h, m).expect("a local time")
     };
     for motion in Motion::ALL {
@@ -1143,7 +1160,8 @@ fn new_years_eve_bursts_through_the_sky_on_every_tier() {
             if motion == Motion::Still {
                 break;
             }
-            let date = chrono::NaiveDate::from_ymd_opt(year, 12, 31).expect("a date");
+            let date = jiff::civil::Date::new(i16::try_from(year).expect("a year"), 12, 31)
+                .expect("a date");
             let eve = crate::localclock::local_instant(date, 23, 59).expect("a local time");
             let midnight = bursts(eve, 2 * MINUTE_MS);
             floor(&midnight);

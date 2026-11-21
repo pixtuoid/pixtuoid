@@ -8,52 +8,49 @@
 
 use std::time::SystemTime;
 
-use chrono::TimeZone;
-
 /// The zone the office reads local time in: the viewer's.
 #[cfg(not(test))]
 #[expect(
-    clippy::disallowed_types,
+    clippy::disallowed_methods,
     reason = "the office's reader of the viewer's zone"
 )]
-const ZONE: chrono::Local = chrono::Local;
+fn zone() -> jiff::tz::TimeZone {
+    jiff::tz::TimeZone::system()
+}
 
 /// This crate's unit tests read one fixed zone, never the runner's, which
-/// `chrono::Local` takes from `$TZ` on Unix and the system on Windows (chrono
-/// 0.4.45 `src/offset/local/unix.rs:92`, `windows.rs:138`). Its offset is
+/// `TimeZone::system()` takes from `$TZ` on Unix and the system zone on
+/// Windows (jiff 1.0.2 `src/tz/system/mod.rs:212`). Its offset is
 /// neither UTC nor a whole hour, so epoch and local hours never coincide.
 #[cfg(test)]
-const ZONE: chrono::FixedOffset = match chrono::FixedOffset::east_opt(5 * 3600 + 45 * 60) {
-    Some(zone) => zone,
-    None => panic!("the offset is within a day of UTC"),
-};
+fn zone() -> jiff::tz::TimeZone {
+    jiff::tz::TimeZone::fixed(
+        jiff::tz::Offset::from_seconds(5 * 3600 + 45 * 60)
+            .expect("the offset is within a day of UTC"),
+    )
+}
 
 /// `now` in the viewer's local time.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the office's one conversion into the viewer's zone"
-)]
-pub(crate) fn local_time(now: SystemTime) -> chrono::NaiveDateTime {
-    chrono::DateTime::<chrono::Utc>::from(now)
-        .with_timezone(&ZONE)
-        .naive_local()
+pub(crate) fn local_time(now: SystemTime) -> jiff::civil::DateTime {
+    let instant =
+        jiff::Timestamp::try_from(now).expect("a clock reading is inside jiff's calendar");
+    instant.to_zoned_datetime(zone()).datetime()
 }
 
 /// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders: a day no
 /// holiday touches, so a test meets only the holidays it names. A holiday that
 /// reaches it fails `day_zero_is_an_ordinary_day`, so day 0, and every render
 /// counted from it, moves only by an edit here.
-const DAY_ZERO: chrono::NaiveDate = match chrono::NaiveDate::from_ymd_opt(2026, 1, 2) {
-    Some(date) => date,
-    None => panic!("a calendar date"),
-};
+const DAY_ZERO: jiff::civil::Date = jiff::civil::date(2026, 1, 2);
 
 /// `day` counts FORWARD from day 0 by calendar arithmetic, not as a
 /// day-of-month: a search that walks days to find a weather or moon phase runs
 /// past 31, and `with_ymd_and_hms(.., 1, 40, ..)` is an invalid date that panics
 /// in exactly the zones whose day-hash sequence needs the extra days.
 fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
-    let date = DAY_ZERO.checked_add_days(chrono::Days::new(u64::from(day)))?;
+    let date = DAY_ZERO
+        .checked_add(jiff::Span::new().try_days(i64::from(day)).ok()?)
+        .ok()?;
     local_instant(date, h, m)
 }
 
@@ -61,11 +58,17 @@ fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
 /// that local time is skipped or ambiguous.
 #[expect(
     clippy::disallowed_methods,
-    reason = "the one sanctioned TimeZone construction clippy.toml bans elsewhere"
+    reason = "the one sanctioned zone conversion clippy.toml bans elsewhere"
 )]
-pub(crate) fn local_instant(date: chrono::NaiveDate, h: u32, m: u32) -> Option<SystemTime> {
-    let local = ZONE.from_local_datetime(&date.and_hms_opt(h, m, 0)?);
-    local.single().map(Into::into)
+pub(crate) fn local_instant(date: jiff::civil::Date, h: u32, m: u32) -> Option<SystemTime> {
+    let time = jiff::civil::Time::new(i8::try_from(h).ok()?, i8::try_from(m).ok()?, 0, 0).ok()?;
+    let local = date.to_datetime(time);
+    zone()
+        .to_ambiguous_zoned_datetime(local)
+        .unambiguous()
+        .ok()
+        .map(|zoned| zoned.timestamp())
+        .and_then(|instant| SystemTime::try_from(instant).ok())
 }
 
 fn local(day: u32, h: u32, m: u32) -> SystemTime {
@@ -98,7 +101,7 @@ pub(crate) fn on_day(day: u32, h: u32) -> SystemTime {
 /// Local `h:00`, `day` days after day 0 — weather and moon phase vary by
 /// day at a fixed hour, so a search over days reaches different sky states. Any
 /// `day` is valid, including past the end of the month; `None` where the date is
-/// past chrono's calendar, `h` is no hour, or that local time is skipped or
+/// past jiff's calendar, `h` is no hour, or that local time is skipped or
 /// ambiguous.
 pub fn try_on_day(day: u32, h: u32) -> Option<SystemTime> {
     try_local(day, h, 0)
@@ -112,22 +115,29 @@ mod tests {
     /// the office then reads, which a raw epoch offset does not.
     #[test]
     fn every_helper_lands_on_the_local_hour_it_names() {
-        use chrono::{Datelike, Timelike};
         for h in [0, 2, 5, 12, 17, 23] {
             let t = local_time(at_hour(h));
-            assert_eq!(t.hour(), h, "at_hour({h}) landed on {}", t.hour());
+            assert_eq!(
+                t.hour(),
+                i8::try_from(h).expect("a test hour"),
+                "at_hour({h}) landed on {}",
+                t.hour()
+            );
         }
         let t = local_time(at_hour_min(7, 30));
         assert_eq!((t.hour(), t.minute()), (7, 30));
         let t = local_time(on_day(8, 2));
         assert_eq!(
             (t.date(), t.hour()),
-            (DAY_ZERO + chrono::Days::new(8), 2),
+            (DAY_ZERO + jiff::Span::new().days(8), 2),
             "on_day counts days FORWARD from day 0"
         );
         // Past the end of day 0's month: the form this replaced panicked here.
         let t = local_time(on_day(45, 7));
-        assert_eq!((t.date(), t.hour()), (DAY_ZERO + chrono::Days::new(45), 7));
+        assert_eq!(
+            (t.date(), t.hour()),
+            (DAY_ZERO + jiff::Span::new().days(45), 7)
+        );
         assert_ne!(t.month(), DAY_ZERO.month());
     }
 
@@ -152,17 +162,17 @@ mod tests {
     /// The unit tests read one fixed zone: the epoch reads `ZONE`'s offset on every runner.
     #[test]
     fn the_tests_read_one_fixed_zone() {
-        let epoch = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).expect("a date");
+        let epoch = jiff::civil::date(1970, 1, 1);
         assert_eq!(
             local_time(SystemTime::UNIX_EPOCH),
-            epoch.and_hms_opt(5, 45, 0).expect("a time")
+            epoch.to_datetime(jiff::civil::time(5, 45, 0, 0))
         );
     }
 
     /// Day 0 is ordinary at every minute: no stand-in, no fireworks, no finale.
     #[test]
     fn day_zero_is_an_ordinary_day() {
-        for minute in 0..24 * 60 {
+        for minute in 0u32..24 * 60 {
             let (h, m) = (minute / 60, minute % 60);
             let t = at_hour_min(h, m);
             assert_eq!(

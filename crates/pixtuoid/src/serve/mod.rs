@@ -306,11 +306,13 @@ pub(crate) fn pair(pairing: Pairing) -> Result<()> {
             }
             for device in devices {
                 #[expect(
-                    clippy::disallowed_types,
+                    clippy::disallowed_methods,
                     reason = "the owner reads when a device paired in their own zone, which no test asserts on"
                 )]
-                let paired_at = chrono::DateTime::<chrono::Local>::from(device.paired_at);
-                let at = paired_at.format("%Y-%m-%d %H:%M");
+                let paired_at = jiff::Timestamp::try_from(device.paired_at)
+                    .expect("a pairing instant is inside jiff's calendar")
+                    .to_zoned_datetime(jiff::tz::TimeZone::system());
+                let at = paired_at.strftime("%Y-%m-%d %H:%M");
                 // The id first, as `--forget` takes it, and the name, the one
                 // column of no fixed width, last.
                 writeln!(out, "{}  {at}  {}", device.hash.short(), device.name)?;

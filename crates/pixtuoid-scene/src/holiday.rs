@@ -5,7 +5,8 @@
 
 use std::time::SystemTime;
 
-use chrono::{Datelike, Month, NaiveDate, NaiveDateTime, TimeDelta};
+use jiff::SignedDuration;
+use jiff::civil::{Date, DateTime, Time};
 use strum::VariantArray;
 
 use crate::layout::PlantKind;
@@ -14,10 +15,10 @@ use crate::sky::fireworks::Hue;
 
 /// How far past midnight a holiday's night runs: New Year's countdown, and
 /// the fireworks after it, belong to the eve they began on.
-const NIGHT_RUNS_PAST_MIDNIGHT: TimeDelta = TimeDelta::minutes(30);
+const NIGHT_RUNS_PAST_MIDNIGHT: SignedDuration = SignedDuration::from_mins(30);
 
 /// The holiday day local `local` belongs to: its date, until its night ends.
-fn festive_day(local: NaiveDateTime) -> NaiveDate {
+fn festive_day(local: DateTime) -> Date {
     (local - NIGHT_RUNS_PAST_MIDNIGHT).date()
 }
 
@@ -36,18 +37,21 @@ pub(crate) fn fireworks_at(now: std::time::SystemTime) -> Option<&'static [Hue]>
 
 /// How long before a fireworks night's midnight its finale opens, and how
 /// long after that midnight it ends: the countdown, and the cheer after it.
-const FINALE: (TimeDelta, TimeDelta) = (TimeDelta::seconds(10), TimeDelta::seconds(20));
+const FINALE: (SignedDuration, SignedDuration) =
+    (SignedDuration::from_secs(10), SignedDuration::from_secs(20));
 
 /// Whether `now` is in a fireworks night's finale, round the midnight that
 /// ends the night's day.
 pub(crate) fn finale_at(now: std::time::SystemTime) -> bool {
     let local = crate::localclock::local_time(now);
     let day = festive_day(local);
-    let since = local - day.and_time(chrono::NaiveTime::MIN);
-    let midnight = TimeDelta::days(1);
+    let midnight = day.to_datetime(Time::MIN) + SignedDuration::from_hours(24);
     Holiday::on(day).is_some_and(|h| h.fireworks(day).is_some())
-        && (midnight - FINALE.0..midnight + FINALE.1).contains(&since)
+        && (midnight - FINALE.0..midnight + FINALE.1).contains(&local)
 }
+
+/// December's month number: jiff has no month enum, so the name lives here.
+const DECEMBER: i8 = 12;
 
 /// A holiday the office keeps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::VariantArray)]
@@ -58,21 +62,24 @@ enum Holiday {
 
 impl Holiday {
     /// The holiday local `date` falls in, if any.
-    fn on(date: NaiveDate) -> Option<Self> {
+    fn on(date: Date) -> Option<Self> {
         Self::VARIANTS.iter().copied().find(|h| h.holds(date))
     }
 
-    fn holds(self, date: NaiveDate) -> bool {
+    fn holds(self, date: Date) -> bool {
         match self {
-            Holiday::Christmas => date.month() == Month::December.number_from_month(),
+            Holiday::Christmas => date.month() == DECEMBER,
         }
     }
 
     /// The hues of its fireworks, if `day` is the night it lights them on.
-    fn fireworks(self, day: NaiveDate) -> Option<&'static [Hue]> {
+    fn fireworks(self, day: Date) -> Option<&'static [Hue]> {
         match self {
             Holiday::Christmas => {
-                let years_last = day.succ_opt().is_none_or(|next| next.year() != day.year());
+                let years_last = day
+                    .tomorrow()
+                    .ok()
+                    .is_none_or(|next| next.year() != day.year());
                 years_last.then_some(NEW_YEAR_HUES.as_slice())
             }
         }
@@ -146,7 +153,7 @@ impl Occasion {
     /// The instant the tests keep Christmas at: Dec 25, local noon.
     #[cfg(test)]
     pub(crate) fn christmas_noon() -> SystemTime {
-        let day = NaiveDate::from_ymd_opt(2026, 12, 25).expect("a date");
+        let day = jiff::civil::date(2026, 12, 25);
         crate::localclock::local_instant(day, 12, 0).expect("local noon exists")
     }
 
@@ -161,10 +168,18 @@ impl Occasion {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Timelike;
+
+    fn date(y: i32, m: u32, d: u32) -> Date {
+        Date::new(
+            i16::try_from(y).expect("a year"),
+            i8::try_from(m).expect("a month"),
+            i8::try_from(d).expect("a day"),
+        )
+        .expect("a date")
+    }
 
     fn on(y: i32, m: u32, d: u32) -> Option<Holiday> {
-        Holiday::on(NaiveDate::from_ymd_opt(y, m, d).expect("a date"))
+        Holiday::on(date(y, m, d))
     }
 
     /// Christmas holds every day of December, and neither day either side.
@@ -242,14 +257,22 @@ mod tests {
     }
 
     /// The local instant `time` on `y-m-d`.
-    fn local_at(y: i32, m: u32, d: u32, time: chrono::NaiveTime) -> SystemTime {
-        let day = NaiveDate::from_ymd_opt(y, m, d).expect("a date");
-        crate::localclock::local_instant(day, time.hour(), time.minute()).expect("a local time")
+    fn local_at(y: i32, m: u32, d: u32, time: Time) -> SystemTime {
+        crate::localclock::local_instant(
+            date(y, m, d),
+            u32::try_from(time.hour()).expect("an hour"),
+            u32::try_from(time.minute()).expect("a minute"),
+        )
+        .expect("a local time")
     }
 
     /// The minute before and the minute `time` begins.
-    fn either_side(time: chrono::NaiveTime) -> (chrono::NaiveTime, chrono::NaiveTime) {
-        (time - TimeDelta::minutes(1), time)
+    fn either_side(time: Time) -> (Time, Time) {
+        (
+            time.checked_sub(SignedDuration::from_mins(1))
+                .expect("a minute earlier"),
+            time,
+        )
     }
 
     /// The occasion is the viewer's local date, its night running
@@ -258,7 +281,7 @@ mod tests {
     #[test]
     fn the_occasion_turns_as_the_night_ends() {
         let christmas = Occasion(Some(Holiday::Christmas));
-        let (before, at) = either_side(chrono::NaiveTime::MIN + NIGHT_RUNS_PAST_MIDNIGHT);
+        let (before, at) = either_side(Time::MIN + NIGHT_RUNS_PAST_MIDNIGHT);
         assert_eq!(
             Occasion::at(local_at(2026, 12, 1, before)),
             Occasion::default()
@@ -271,21 +294,26 @@ mod tests {
 
     /// The local instant `offset` from the midnight that begins `y-m-d`, to
     /// the second.
-    fn from_midnight_starting(y: i32, m: u32, d: u32, offset: TimeDelta) -> SystemTime {
-        let midnight = NaiveDate::from_ymd_opt(y, m, d)
-            .expect("a date")
-            .and_time(chrono::NaiveTime::MIN);
-        let at = midnight + offset;
-        let instant = crate::localclock::local_instant(at.date(), at.hour(), at.minute())
-            .expect("a local time");
-        instant + std::time::Duration::from_secs(u64::from(at.second()))
+    fn from_midnight_starting(y: i32, m: u32, d: u32, offset: SignedDuration) -> SystemTime {
+        let midnight = date(y, m, d).to_datetime(Time::MIN);
+        let at = midnight.checked_add(offset).expect("a time within the day");
+        let instant = crate::localclock::local_instant(
+            at.date(),
+            u32::try_from(at.hour()).expect("an hour"),
+            u32::try_from(at.minute()).expect("a minute"),
+        )
+        .expect("a local time");
+        instant
+            + std::time::Duration::from_secs(
+                u64::try_from(i32::from(at.second())).expect("a second"),
+            )
     }
 
     /// New Year's finale runs from [`FINALE`]'s lead before the midnight that
     /// ends Dec 31 to its tail after, and round no other midnight.
     #[test]
     fn new_years_finale_runs_round_its_midnight() {
-        let second = TimeDelta::seconds(1);
+        let second = SignedDuration::from_secs(1);
         let at = |offset| finale_at(from_midnight_starting(2027, 1, 1, offset));
         assert!(!at(-FINALE.0 - second));
         assert!(at(-FINALE.0));
@@ -295,7 +323,7 @@ mod tests {
             2026,
             12,
             31,
-            TimeDelta::zero()
+            SignedDuration::ZERO
         )));
     }
 
@@ -305,7 +333,7 @@ mod tests {
     fn new_years_fireworks_light_the_eve_from_dusk_until_the_night_ends() {
         let lit = |now| fireworks_at(now).is_some();
         let (before_dusk, dusk) = either_side(crate::sky::DUSK);
-        let (last, ended) = either_side(chrono::NaiveTime::MIN + NIGHT_RUNS_PAST_MIDNIGHT);
+        let (last, ended) = either_side(Time::MIN + NIGHT_RUNS_PAST_MIDNIGHT);
         assert!(!lit(local_at(2026, 12, 31, before_dusk)));
         assert!(lit(local_at(2026, 12, 31, dusk)));
         assert!(lit(local_at(2027, 1, 1, last)));

@@ -4,7 +4,6 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::NaiveDate;
 use tempfile::TempDir;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -28,11 +27,12 @@ use crate::{
 /// replay from live work.
 const HELD_PAST_ANY_WINDOW: Duration = Duration::from_secs(2 * 60 * 60);
 
-fn utc_day(now: SystemTime) -> NaiveDate {
+fn utc_day(now: SystemTime) -> jiff::civil::Date {
     let secs = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
-    chrono::DateTime::from_timestamp(secs as i64, 0)
-        .unwrap()
-        .date_naive()
+    jiff::Timestamp::new(secs as i64, 0)
+        .expect("after 1970 and in jiff's range")
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .date()
 }
 
 /// Transcript source `name` over `root`, short of omp's profiles.
@@ -81,15 +81,16 @@ fn totals(scene: &SceneState) -> (u64, u64) {
 /// `head` as a session active now wrote it: claude-code's first sight judges a
 /// transcript by its lines' own stamps, and a recording's are as old as it is.
 fn stamped_now(head: &str) -> String {
-    let now = chrono::DateTime::from_timestamp(
+    let now = jiff::Timestamp::new(
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64,
         0,
     )
-    .unwrap();
-    let stamp = format!("{}T{}Z", now.date_naive(), now.time());
+    .expect("after 1970 and in jiff's range");
+    let zoned = now.to_zoned_datetime(jiff::tz::TimeZone::UTC);
+    let stamp = format!("{}T{}Z", zoned.date(), zoned.time());
     let mut text = String::new();
     for line in head.lines() {
         let mut value: serde_json::Value = serde_json::from_str(line).expect("recorded JSON");

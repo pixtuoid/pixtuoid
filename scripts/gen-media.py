@@ -543,7 +543,7 @@ def main():
 
     # Pin TZ=UTC for EVERY render (inherited by every subprocess) so the office's
     # epoch-derived weather slot + lighting phase — snapshot reads --now-hour as a
-    # chrono::Local wall time — are machine-independent. Without it a dev box and
+    # `TimeZone::system()` wall time — are machine-independent. Without it a dev box and
     # the UTC CI runner render different frames and gen-check calls that drift.
     os.environ["TZ"] = "UTC"
 

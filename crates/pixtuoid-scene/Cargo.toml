@@ -35,8 +35,8 @@ tracing       = { workspace = true }
 lru           = { workspace = true }
 unicode-width = { workspace = true }
 unicode-segmentation = { workspace = true }
-# `clock` gives `Local`, the viewer's zone `localclock` reads local time in.
-chrono        = { workspace = true, features = ["clock"] }
+# `TimeZone::system()`, the viewer's zone `localclock` reads local time in.
+jiff          = { workspace = true }
 foldhash      = { workspace = true }
 strum         = { workspace = true }
 enum-map      = { workspace = true }

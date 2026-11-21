@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, PoisonError, TryLockError};
 use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::Result;
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use pixtuoid_core::SceneState;
 use pixtuoid_core::state::Today;
 use pixtuoid_scene::tally::local_day;
@@ -22,7 +22,7 @@ const SAVE_EVERY: Duration = Duration::from_secs(60);
 /// How a reducer keeps the day's count.
 pub(crate) struct DayCount {
     /// What dates the count, a test's own day keeping it off the runner's zone and clock.
-    pub(crate) day_of: fn(SystemTime) -> NaiveDate,
+    pub(crate) day_of: fn(SystemTime) -> Date,
     pub(crate) file: Option<TodayFile>,
 }
 
@@ -61,7 +61,7 @@ impl TodayFile {
 
     /// What an earlier run counted on `day`. Unlocked: a write is an atomic
     /// rename, so a reader sees a whole file.
-    fn load(&self, day: NaiveDate) -> Option<Today> {
+    fn load(&self, day: Date) -> Option<Today> {
         let text = read_config(&self.0)
             .inspect_err(|error| tracing::warn!(error = ?error, "cannot read the saved count"))
             .ok()?;
@@ -105,7 +105,7 @@ pub(super) struct TodaySaver {
 
 impl TodaySaver {
     /// A saver over `file`, setting what it holds for `day` on the boot `scene`.
-    pub(super) fn boot(file: TodayFile, scene: &mut SceneState, day: NaiveDate) -> Self {
+    pub(super) fn boot(file: TodayFile, scene: &mut SceneState, day: Date) -> Self {
         scene.today = file.load(day);
         Self {
             file,
@@ -169,12 +169,12 @@ impl Drop for TodaySaver {
 mod tests {
     use super::*;
 
-    fn day() -> NaiveDate {
-        NaiveDate::from_ymd_opt(2027, 1, 15).expect("a date")
+    fn day() -> Date {
+        jiff::civil::date(2027, 1, 15)
     }
 
-    fn next_day() -> NaiveDate {
-        day().succ_opt().expect("a date")
+    fn next_day() -> Date {
+        day().tomorrow().expect("a date")
     }
 
     fn fixture() -> (tempfile::TempDir, TodayFile) {

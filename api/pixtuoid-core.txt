@@ -1268,7 +1268,7 @@ pub mod pixtuoid_core::state::reducer
 pub struct pixtuoid_core::state::reducer::Reducer
 impl pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::apply(&mut self, &mut pixtuoid_core::state::SceneState, pixtuoid_core::source::AgentEvent, std::time::SystemTime, pixtuoid_core::source::Transport)
-pub fn pixtuoid_core::state::reducer::Reducer::counting(self, fn(std::time::SystemTime) -> chrono::naive::date::NaiveDate) -> Self
+pub fn pixtuoid_core::state::reducer::Reducer::counting(self, fn(std::time::SystemTime) -> jiff::civil::date::Date) -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::new() -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::reconcile_connected(&self, &mut pixtuoid_core::state::SceneState, &std::collections::hash::set::HashSet<alloc::string::String>, std::time::SystemTime)
 pub fn pixtuoid_core::state::reducer::Reducer::tick(&mut self, &mut pixtuoid_core::state::SceneState, std::time::SystemTime)
@@ -1682,11 +1682,11 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::state::SlotLabel
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::SlotLabel
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::SlotLabel
 #[non_exhaustive] pub struct pixtuoid_core::state::Today
-pub pixtuoid_core::state::Today::day: chrono::naive::date::NaiveDate
+pub pixtuoid_core::state::Today::day: jiff::civil::date::Date
 pub pixtuoid_core::state::Today::tokens: u64
 pub pixtuoid_core::state::Today::tool_calls: u64
 impl pixtuoid_core::state::Today
-pub fn pixtuoid_core::state::Today::new(chrono::naive::date::NaiveDate, u64, u64) -> Self
+pub fn pixtuoid_core::state::Today::new(jiff::civil::date::Date, u64, u64) -> Self
 impl core::clone::Clone for pixtuoid_core::state::Today
 pub fn pixtuoid_core::state::Today::clone(&self) -> Self
 impl core::cmp::Eq for pixtuoid_core::state::Today
@@ -2082,7 +2082,7 @@ impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::FloorLocalDe
 pub struct pixtuoid_core::Reducer
 impl pixtuoid_core::state::reducer::Reducer
 pub fn pixtuoid_core::state::reducer::Reducer::apply(&mut self, &mut pixtuoid_core::state::SceneState, pixtuoid_core::source::AgentEvent, std::time::SystemTime, pixtuoid_core::source::Transport)
-pub fn pixtuoid_core::state::reducer::Reducer::counting(self, fn(std::time::SystemTime) -> chrono::naive::date::NaiveDate) -> Self
+pub fn pixtuoid_core::state::reducer::Reducer::counting(self, fn(std::time::SystemTime) -> jiff::civil::date::Date) -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::new() -> Self
 pub fn pixtuoid_core::state::reducer::Reducer::reconcile_connected(&self, &mut pixtuoid_core::state::SceneState, &std::collections::hash::set::HashSet<alloc::string::String>, std::time::SystemTime)
 pub fn pixtuoid_core::state::reducer::Reducer::tick(&mut self, &mut pixtuoid_core::state::SceneState, std::time::SystemTime)

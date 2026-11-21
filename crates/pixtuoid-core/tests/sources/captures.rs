@@ -611,17 +611,21 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
     assert!(bad.is_empty(), "{}", bad.join("\n  "));
 }
 
-/// `YYYY-MM-DD`, validated: RFC 3339's `full-date`, which chrono parses only as
-/// a date-time's head.
+/// `YYYY-MM-DD`, validated: RFC 3339's `full-date`, parsed as a civil date.
 fn is_iso_date(s: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(&format!("{s}T00:00:00Z")).is_ok()
+    s.parse::<jiff::civil::Date>().is_ok()
 }
 
 /// The UTC calendar date of a millisecond epoch stamp: the shim stamps UTC and
 /// `captured` is UTC.
 fn utc_date(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms)
-        .map_or_else(|| format!("{ms} ms"), |t| t.date_naive().to_string())
+    jiff::Timestamp::from_millisecond(ms)
+        .map(|t| {
+            t.to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .date()
+                .to_string()
+        })
+        .unwrap_or_else(|_| format!("{ms} ms"))
 }
 
 /// The `YYYY-MM-DD` a CLI put at the head of a transcript filename, with codex's
