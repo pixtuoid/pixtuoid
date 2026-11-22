@@ -117,10 +117,8 @@ pub(super) async fn ended_through(
     rx: &mut crate::source::TaggedReceiver,
     witness: AgentId,
 ) -> Vec<AgentId> {
-    /// A hang guard, never a verdict.
-    const PATIENCE: std::time::Duration = std::time::Duration::from_secs(5);
     let mut ended = Vec::new();
-    let receipt = tokio::time::timeout(PATIENCE, async {
+    let receipt = tokio::time::timeout(crate::test_child::EXIT_PATIENCE, async {
         while let Some((_, event)) = rx.recv().await {
             if let AgentEvent::SessionEnd { agent_id, .. } = event {
                 ended.push(agent_id);
@@ -349,14 +347,14 @@ mod tests {
         let mut child = crate::test_child::sleeper();
         let pid = i32::try_from(child.id()).expect("pid fits i32");
         let agent = AgentId::from_parts("codewhale", "/ws");
-        watch.note(pid, agent, true);
-        watch.note(pid, agent, true); // the CLI's pid rides every hook event
+        watch.note(pid, agent, GUESS);
+        watch.note(pid, agent, GUESS); // the CLI's pid rides every hook event
         child.kill().expect("kill the watched child");
         let _ = child.wait();
 
-        let (transport, ev) = tokio::time::timeout(std::time::Duration::from_secs(5), rx.recv())
+        let (transport, ev) = tokio::time::timeout(crate::test_child::EXIT_PATIENCE, rx.recv())
             .await
-            .expect("a SessionEnd within 5s of the watched pid dying")
+            .expect("the watched pid's death never ended its agent")
             .expect("channel still open");
         assert_eq!(transport, Transport::Hook);
         assert!(

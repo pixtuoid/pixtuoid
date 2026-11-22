@@ -1,15 +1,16 @@
 {
   "origin": "recorded",
   "cli": "cursor-agent",
-  "version": "2026.11.13-eacade1",
-  "captured": "2026-11-15",
+  "version": "2026.11.22-e9042b2",
+  "captured": "2026-11-22",
   "command": "cursor-agent -p --trust --model auto {prompt}",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 53
+    "blanked": 55
   },
   "sentinel_reads": {
     "hook-payloads.jsonl": [
+      "3:/transcript_path",
       "4:/cwd",
       "5:/cwd",
       "5:/transcript_path",
