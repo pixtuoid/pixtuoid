@@ -126,11 +126,11 @@ left behind. Any other edit and the capture stops being evidence.
 
 ## Which events a CLI sends
 
-One list describes each CLI: `*_EVENTS` in `install/<cli>.rs`, the hooks
-pixtuoid registers, and so what the CLI sends. An event outside it never
+One list describes each CLI: the `registers` entry of its row in
+`install/target.rs`, the hooks pixtuoid registers, and so what the CLI sends. An event outside it never
 reaches the shim in production, so a decoder that bails on it is correct.
 
-An event the decoder handles but `*_EVENTS` never registers is a SHIPPING bug
+An event the decoder handles but that list never registers is a SHIPPING bug
 no test can see, because every test asserts our own belief about the wire.
 Claude Code's permission gate is `PermissionRequest`: the decoder had read it
 for years, but `install/claude.rs` registered four tool events without it, so
