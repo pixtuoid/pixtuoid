@@ -68,17 +68,22 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
     bump.
   - `@types/node` stays on its current major: `.github/dependabot.yml` ignores
     its major updates, and minors still flow.
-  - `@raycast/api`'s exact peer is a warning-level mismatch npm tolerates
-    under the committed lockfile, not a pin the manifest must equal.
-- `ray build` type-checks with its own bundled tsc (read its version from the
-  installed `@raycast/api`), so `raycast/tsconfig.json` stays parseable by
-  both that tsc and the local one:
+  - `@raycast/api` peers `@types/node` exactly but as optional
+    (`raycast/package-lock.json:1172-1187`), and the committed lockfile
+    resolves the manifest's own `@types/node` beside it (`:1300-1301`), so that
+    peer is not a pin the manifest must equal.
+- `ray build` parses `raycast/tsconfig.json` with the TypeScript its
+  `@raycast/api` bundles and type-checks with the local
+  `tsc -p tsconfig.json --noEmit` (the locked version's
+  [`dist/commands/build/index.js`](https://cdn.jsdelivr.net/npm/@raycast/api@2.12.1/dist/commands/build/index.js),
+  where the bundled version is TypeScript's `version` export), so
+  `raycast/tsconfig.json` stays parseable by both:
   - `moduleResolution: "Bundler"`;
   - an explicit `types: ["node"]`, since TypeScript 6.0 defaults `types` to
     `[]`
     ([announcement](https://devblogs.microsoft.com/typescript/announcing-typescript-6-0/),
     "`types` now defaults to `[]`");
-  - no `ignoreDeprecations` value the bundled tsc rejects.
+  - no `ignoreDeprecations` value the bundled TypeScript rejects.
 
 ## Gates
 
@@ -87,8 +92,6 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
   steps locally before calling a change done.
   - `ray build` writes `raycast/raycast-env.d.ts`, the manifest's generated
     `Preferences` that `tsc` reads.
-  - `ray lint` validates the manifest, icons and metadata and runs the
-    Prettier pass.
 - The pre-push hook still runs `just preflight` on a change scoped to
   `raycast/`.
 - Install scripts fail closed, as the site's do
@@ -96,7 +99,8 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
   with an exact-version `allowScripts`, enforced in CI by the npm version
   `setup-npm` installs from `site/package.json`'s `packageManager`. Review
   them with `npm install-scripts ls`.
-- `npm run audit` is plain `npm audit --audit-level=low`, as the site's is.
+- `npm run audit` runs `raycast/package.json`'s `audit` script, like the
+  site's.
   `npm audit` has no per-advisory ignore, so if an unfixable advisory recurs
   here, restore the per-advisory allow-list script
   (`raycast/scripts/audit-adjudicated.mjs`, deleted in #856) rather than lower
