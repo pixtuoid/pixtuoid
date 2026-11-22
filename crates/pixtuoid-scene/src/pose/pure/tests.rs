@@ -228,7 +228,9 @@ fn aimless_fallback_on_a_fully_blocked_mask_returns_the_desk_anchor() {
     let mut l = layout();
     let mut mask = crate::walkable::WalkableMaskBuilder::new(l.buf_w, l.buf_h, l.walkable.routed());
     mask.mark_blocked(0, 0, l.buf_w, l.buf_h, 0);
-    l.walkable = mask.freeze();
+    let mask = mask.freeze();
+    l.reachable = crate::layout::ReachSet::from_mask(&mask, l.door_threshold);
+    l.walkable = mask;
 
     let desk = l.home_desks[0];
     for seed in 0..8u64 {

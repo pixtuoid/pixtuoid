@@ -57,7 +57,6 @@ impl WalkableMaskBuilder {
         self.fill(min_x..max_x, min_y..max_y, false);
     }
 
-    /// Carve `true` back into a rect.
     #[cfg(test)]
     pub(crate) fn mark_walkable(&mut self, x: u16, y: u16, w: u16, h: u16) {
         let max_x = x.saturating_add(w).min(self.open.width());
@@ -65,7 +64,6 @@ impl WalkableMaskBuilder {
         self.fill(x..max_x, y..max_y, true);
     }
 
-    /// Sets every pixel of `xs` × `ys`, already clipped to the canvas, to `open`.
     fn fill(&mut self, xs: Range<u16>, ys: Range<u16>, open: bool) {
         for y in ys {
             for x in xs.clone() {
