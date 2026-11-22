@@ -1,11 +1,11 @@
 # AGENTS.md
 
 Instructions for any AI coding agent in this repo, read natively from these
-`AGENTS.md` files. Claude Code reads them in every session from v2.1.281 (some
-sessions before it read only `CLAUDE.md`), unless a `CLAUDE.md`,
-`.claude/CLAUDE.md` or `CLAUDE.local.md` sits in or above the working directory
-([code.claude.com/docs/en/memory](https://code.claude.com/docs/en/memory#agents-md));
-`.gitignore` keeps all three out of the repo. This file is the workspace map;
+`AGENTS.md` files. Claude Code reads them under the conditions its memory page
+lists ([code.claude.com/docs/en/memory](https://code.claude.com/docs/en/memory#agents-md));
+a session that doesn't can import this file from a `CLAUDE.md`. `.gitignore`
+keeps `CLAUDE.md` files out of the repo, since one would stop Claude Code
+reading these. This file is the workspace map;
 per-crate detail lives in the nested guides:
 
 - [`crates/pixtuoid-core/AGENTS.md`](crates/pixtuoid-core/AGENTS.md) — headless lib: sources/decoders, reducer/state.
