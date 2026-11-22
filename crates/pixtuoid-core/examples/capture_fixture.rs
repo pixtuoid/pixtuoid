@@ -1139,6 +1139,8 @@ mod recorder {
         lifeline: Option<std::process::ChildStdin>,
         /// Its start, which names it.
         start: String,
+        /// Its stdout and stderr, which say why it failed.
+        log: PathBuf,
     }
 
     /// A daemon's log, in its driver's dir.
@@ -1171,6 +1173,7 @@ mod recorder {
                 lifeline: child.stdin.take(),
                 child,
                 start: start.join(" "),
+                log: log_path,
             };
             // Every probe's output, each followed by how it ended.
             let probe_log = own.join("probe.log");
@@ -1200,8 +1203,8 @@ mod recorder {
             .map_err(|e| {
                 std::io::Error::other(format!(
                     "{e}; its probes ended:\n{}\nits log ends:\n{}",
-                    tail(&probe_log),
-                    tail(&log_path)
+                    tail(&probe_log, DAEMON_LOG_TAIL),
+                    tail(&running.log, DAEMON_LOG_TAIL)
                 ))
             })?;
             Ok(Some(running))
@@ -1218,8 +1221,10 @@ mod recorder {
             let _ = self.child.kill();
             let _ = self.child.wait();
             Err(std::io::Error::other(format!(
-                "the daemon `{}` outlived its stdin by {grace:?} and was killed",
-                self.start
+                "the daemon `{}` outlived its stdin by {grace:?} and was killed; its log ends: {}",
+                self.start,
+                // One line: it lands in `CaptureRecord::incomplete`.
+                tail(&self.log, 1)
             )))
         }
     }
@@ -1231,13 +1236,13 @@ mod recorder {
         }
     }
 
-    /// The last [`DAEMON_LOG_TAIL`] lines of the log at `path`.
-    fn tail(path: &Path) -> String {
+    /// The last `n` lines of the log at `path`, its trailing blank ones aside.
+    fn tail(path: &Path, n: usize) -> String {
         let text = std::fs::read(path)
             .map(|b| String::from_utf8_lossy(&b).into_owned())
             .unwrap_or_default();
-        let lines: Vec<&str> = text.lines().collect();
-        lines[lines.len().saturating_sub(DAEMON_LOG_TAIL)..].join("\n")
+        let lines: Vec<&str> = text.trim_end().lines().collect();
+        lines[lines.len().saturating_sub(n)..].join("\n")
     }
 
     /// Why a capture is incomplete, in one line, if it is: its tap stopped
@@ -3006,7 +3011,8 @@ mod recorder {
             const SAYS: &str = "the fake daemon will not stop";
             if let Some((_, probe)) = as_fake(true, Duration::ZERO) {
                 if !probe {
-                    println!("{SAYS}");
+                    // A blank last line, which its kill's reason skips.
+                    println!("{SAYS}\n");
                     std::thread::sleep(OUTLIVES);
                 }
                 return;
@@ -3014,7 +3020,6 @@ mod recorder {
             let markers = tempfile::tempdir().expect("markers");
             let running = start_fake(TEST, markers.path(), *DAEMON_BOOT.here()).expect("starts");
             let grace = Duration::from_secs(1);
-            let log = driver_dir(markers.path()).join(DAEMON_LOG);
             let started = std::time::Instant::now();
             let why = running.stop(grace).expect_err("a killed daemon fails");
             assert!(started.elapsed() >= grace, "killed before its grace");
@@ -3025,8 +3030,7 @@ mod recorder {
                 "names the grace: {why}"
             );
             assert!(!why.contains('\n'), "a report's one line: {why}");
-            let said = std::fs::read_to_string(&log).expect("its log");
-            assert!(said.contains(SAYS), "its log keeps what it said: {said}");
+            assert!(why.contains(SAYS), "names its log's last line: {why}");
             assert!(
                 incomplete(None, Err(std::io::Error::other(why))).is_some(),
                 "a capture whose daemon was killed is incomplete"
