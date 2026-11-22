@@ -297,7 +297,7 @@ async function ringClears(page: Page, selector: string, label: string): Promise<
   ).toBeGreaterThanOrEqual(AA_NON_TEXT);
 }
 
-/** A canvas's shot once the frame the office host was drawing when it paused has landed. */
+/** A canvas's shot once two in a row agree: the frame the office host was drawing has landed. */
 async function settledShot(shot: () => Promise<string>): Promise<string> {
   let last = await shot();
   await expect
@@ -453,16 +453,16 @@ async function wholeUpscaleBox(page: Page, selector: string): Promise<boolean> {
 
 /** A whole upscale box ({@link wholeUpscaleBox}) on whole device pixels, within a layout unit, that covers the backdrop. */
 async function expectWholeDevicePixels(page: Page) {
-  const grain = (b: { dpr: number }) => b.dpr * LAYOUT_UNIT_CSS_PX;
   await expect.poll(() => wholeUpscaleBox(page, '#office-live')).toBe(true);
   const b = await officeBox(page);
+  const grain = b.dpr * LAYOUT_UNIT_CSS_PX;
   for (const edge of [b.left, b.top]) {
-    expect(Math.abs(edge - Math.round(edge))).toBeLessThanOrEqual(grain(b));
+    expect(Math.abs(edge - Math.round(edge))).toBeLessThanOrEqual(grain);
   }
-  expect(b.left).toBeLessThanOrEqual(grain(b));
-  expect(b.top).toBeLessThanOrEqual(grain(b));
-  expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain(b));
-  expect(b.top + b.height).toBeGreaterThanOrEqual(b.viewH - grain(b));
+  expect(b.left).toBeLessThanOrEqual(grain);
+  expect(b.top).toBeLessThanOrEqual(grain);
+  expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain);
+  expect(b.top + b.height).toBeGreaterThanOrEqual(b.viewH - grain);
   // The fit crops under one unit and a whole CSS px adds under the ratio's numerator, `dpr` at a whole ratio.
   if (Number.isInteger(b.dpr)) {
     const unit = b.width / b.uw;
