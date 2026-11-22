@@ -42,8 +42,12 @@ that ships an `AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
     fails on a diff;
   - the type↔usage check, `tsc --noEmit`.
 - At runtime `raycast/src/conforms.ts` checks every CLI row against the same
-  committed schemas and fails closed on drift (`npm test`), so a stale schema
-  breaks the extension, not only the types.
+  committed schemas (`npm test`):
+  - a field the schema doesn't name is stripped, so a newer CLI's added field
+    is ignored;
+  - any other drift (a missing or mistyped field, a new `outcome` token) fails
+    the whole list closed, so a stale schema breaks the extension, not only the
+    types.
 - `outcome_row_json_shape_is_the_raycast_contract` pins `OutcomeRow`'s exact
   wire JSON; `crates/pixtuoid/tests/cli_json.rs`'s `sources --json` golden and
   the schema test pin `SourceStatus`'s. `OutcomeRow`'s doc comment in
