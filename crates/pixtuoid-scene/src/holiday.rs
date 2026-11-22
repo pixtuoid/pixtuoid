@@ -50,7 +50,8 @@ pub(crate) fn finale_at(now: std::time::SystemTime) -> bool {
         && (midnight - FINALE.0..midnight + FINALE.1).contains(&local)
 }
 
-/// December's month number.
+/// jiff has no month enum to name it: `Date::month` is a bare `i8` (jiff 1.0.2
+/// `src/civil/date.rs:485`).
 const DECEMBER: i8 = 12;
 
 /// A holiday the office keeps.
