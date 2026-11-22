@@ -1364,12 +1364,8 @@ mod recorder {
     }
 
     fn today() -> jiff::civil::Date {
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .ok()
-            .and_then(|d| jiff::Timestamp::new(i64::try_from(d.as_secs()).ok()?, 0).ok())
-            .expect("clock is after 1970 and in jiff's range")
-            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        jiff::tz::TimeZone::UTC
+            .to_datetime(jiff::Timestamp::now())
             .date()
     }
 

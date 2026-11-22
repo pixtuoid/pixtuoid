@@ -2,7 +2,7 @@
 // `Backlog`: what a replay leaves of the day's count takes the real `Source::run`.
 
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
 use tempfile::TempDir;
 use tokio::sync::mpsc;
@@ -28,11 +28,8 @@ use crate::{
 const HELD_PAST_ANY_WINDOW: Duration = Duration::from_secs(2 * 60 * 60);
 
 fn utc_day(now: SystemTime) -> jiff::civil::Date {
-    let secs = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
-    jiff::Timestamp::new(secs as i64, 0)
-        .expect("after 1970 and in jiff's range")
-        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
-        .date()
+    let instant = jiff::Timestamp::try_from(now).expect("inside jiff's range");
+    jiff::tz::TimeZone::UTC.to_datetime(instant).date()
 }
 
 /// Transcript source `name` over `root`, short of omp's profiles.
@@ -81,16 +78,7 @@ fn totals(scene: &SceneState) -> (u64, u64) {
 /// `head` as a session active now wrote it: claude-code's first sight judges a
 /// transcript by its lines' own stamps, and a recording's are as old as it is.
 fn stamped_now(head: &str) -> String {
-    let now = jiff::Timestamp::new(
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64,
-        0,
-    )
-    .expect("after 1970 and in jiff's range");
-    let zoned = now.to_zoned_datetime(jiff::tz::TimeZone::UTC);
-    let stamp = format!("{}T{}Z", zoned.date(), zoned.time());
+    let stamp = jiff::Timestamp::now().to_string();
     let mut text = String::new();
     for line in head.lines() {
         let mut value: serde_json::Value = serde_json::from_str(line).expect("recorded JSON");

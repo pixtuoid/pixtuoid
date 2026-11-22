@@ -23,11 +23,8 @@ fn t0() -> SystemTime {
 
 /// UTC, so nothing here reads the runner's zone.
 fn utc_day(now: SystemTime) -> jiff::civil::Date {
-    let secs = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
-    jiff::Timestamp::new(secs as i64, 0)
-        .expect("after 1970 and in jiff's range")
-        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
-        .date()
+    let instant = jiff::Timestamp::try_from(now).expect("inside jiff's range");
+    jiff::tz::TimeZone::UTC.to_datetime(instant).date()
 }
 
 fn counting() -> (Reducer, SceneState) {

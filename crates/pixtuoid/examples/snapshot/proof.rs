@@ -215,14 +215,9 @@ fn capture_date_str(v: &serde_json::Value) -> Result<String> {
         .get("timestamp")
         .and_then(|s| s.as_str())
         .ok_or_else(|| anyhow!("session line missing timestamp"))?;
-    // jiff's `%:z` takes a numeric offset only, so `Z` gets its own format.
-    let date = jiff::fmt::strtime::parse("%Y-%m-%dT%H:%M:%S%.f%:z", ts)
-        .or_else(|_| jiff::fmt::strtime::parse("%Y-%m-%dT%H:%M:%S%.fZ", ts))
-        .with_context(|| format!("bad session timestamp {ts:?}"))?
-        .to_datetime()
-        .with_context(|| format!("bad session timestamp {ts:?}"))?
-        .date();
-    Ok(date.to_string())
+    let pieces = jiff::fmt::temporal::Pieces::parse(ts)
+        .with_context(|| format!("bad session timestamp {ts:?}"))?;
+    Ok(pieces.date().to_string())
 }
 
 /// First human-meaningful arg of a tool_use input, for the panel line.
