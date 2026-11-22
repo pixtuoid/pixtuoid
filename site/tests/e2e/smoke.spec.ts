@@ -106,7 +106,7 @@ async function pinOfficeMoment(page: Page, at: string, theme: string): Promise<v
   }, theme);
 }
 
-/** One test per theme x office moment. `timezoneId: 'UTC'` fixes the browser's local hour, which chrono's `Local` reads for the sun's height. */
+/** One test per theme x office moment. `timezoneId: 'UTC'` fixes the browser's local hour, which the office reads through the page's `Date` for the sun's height. */
 function atOfficeMoments(
   title: string,
   themes: readonly string[],
@@ -2819,6 +2819,31 @@ test('text over the live office carries its own scrim (.text-scrim)', async ({ p
   expect(Math.abs(noteX - tabsX)).toBeLessThan(1);
 });
 
+/** How many times another moment's luminance a day moment must reach to read as clearly the brighter. */
+const FAR_BRIGHTER = 1.2;
+
+/** The office canvas's own mean luminance at `at`, before any page dimmer: what the sun and weather drew. */
+async function officeLuminanceAt(page: Page, at: string): Promise<number> {
+  await pinOfficeMoment(page, at, 'night');
+  await page.goto('./');
+  await settleReveals(page);
+  await settleAnimations(page);
+  await officeGrounds(page, '.hero .statement-sub');
+  return page.evaluate(() => {
+    const c = document.getElementById('office-live') as HTMLCanvasElement;
+    const copy = document.createElement('canvas');
+    copy.width = c.width;
+    copy.height = c.height;
+    const ctx = copy.getContext('2d')!;
+    ctx.drawImage(c, 0, 0);
+    const px = ctx.getImageData(0, 0, copy.width, copy.height).data;
+    let sum = 0;
+    for (let i = 0; i < px.length; i += 4)
+      sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
+    return sum / (px.length / 4);
+  });
+}
+
 test.describe('the office moments still span the light range', () => {
   test.use({ timezoneId: 'UTC' });
   test('the sun-highest moment is far brighter than the rest, the overcast night no brighter than morning and evening', async ({
@@ -2826,35 +2851,31 @@ test.describe('the office moments still span the light range', () => {
   }) => {
     test.setTimeout(120_000);
     const lum: number[] = [];
-    for (const { at } of OFFICE_MOMENTS) {
-      await pinOfficeMoment(page, at, 'night');
-      await page.goto('./');
-      await settleReveals(page);
-      await settleAnimations(page);
-      // The canvas's own mean, before any page dimmer: what the sun and weather drew.
-      await officeGrounds(page, '.hero .statement-sub');
-      lum.push(
-        await page.evaluate(() => {
-          const c = document.getElementById('office-live') as HTMLCanvasElement;
-          const copy = document.createElement('canvas');
-          copy.width = c.width;
-          copy.height = c.height;
-          const ctx = copy.getContext('2d')!;
-          ctx.drawImage(c, 0, 0);
-          const px = ctx.getImageData(0, 0, copy.width, copy.height).data;
-          let sum = 0;
-          for (let i = 0; i < px.length; i += 4)
-            sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
-          return sum / (px.length / 4);
-        })
-      );
-    }
+    for (const { at } of OFFICE_MOMENTS) lum.push(await officeLuminanceAt(page, at));
     const [noon, night, morning, evening] = lum;
     expect(noon, 'sun-highest moment is not far brighter than the rest').toBeGreaterThan(
-      1.2 * Math.max(night, morning, evening)
+      FAR_BRIGHTER * Math.max(night, morning, evening)
     );
     expect(night, 'overcast night is brighter than the morning or evening').toBeLessThanOrEqual(
       Math.min(morning, evening)
+    );
+  });
+});
+
+test.describe('the office keeps the visitor’s zone', () => {
+  // UTC+09:00 all year (tzdb `asia:2169-2170`, eggert/tz 8fbf8fe643d2, its last DST rule 1951): Tokyo reads the
+  // morning moment as day and the sun-highest one as night. Read with the offset's sign flipped, both are night; read
+  // in UTC, the second is the brighter.
+  test.use({ timezoneId: 'Asia/Tokyo' });
+  test('Tokyo reads the morning moment as day and the sun-highest one as night', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const [sunHighest, , morning] = OFFICE_MOMENTS;
+    const dayInTokyo = await officeLuminanceAt(page, morning.at);
+    const nightInTokyo = await officeLuminanceAt(page, sunHighest.at);
+    expect(dayInTokyo, 'the office did not read the browser’s zone').toBeGreaterThan(
+      FAR_BRIGHTER * nightInTokyo
     );
   });
 });

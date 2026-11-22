@@ -25,17 +25,12 @@ crate-type = ["cdylib", "rlib"]
 pixtuoid-core  = { path = "../pixtuoid-core", version = "0.23.0", default-features = false }
 pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.23.0", default-features = false }
 wasm-bindgen   = { workspace = true }
-# Feature-unions `wasmbind` into scene's chrono so that on wasm32
-# `chrono::Local` resolves the REAL browser timezone via js-sys; without it the
-# office's day/night cycle silently falls back to UTC for most visitors.
-chrono         = { workspace = true, features = ["wasmbind"] }
+# Not its `js` feature: jiff finds the browser's zone only in a tz database it
+# would bundle into this wasm (jiff 1.0.2 `PLATFORM.md:363-397`), so the page's
+# own `Date` gives the offset.
+jiff           = { workspace = true }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
-
-# The lib has no direct `use chrono` — it's here solely for the feature-union
-# above, which machete can't see.
-[package.metadata.cargo-machete]
-ignored = ["chrono"]
 
 [dev-dependencies]
 # hero_still example only: PNG encode for the wasm-still posters.

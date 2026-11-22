@@ -35,8 +35,8 @@ tracing       = { workspace = true }
 lru           = { workspace = true }
 unicode-width = { workspace = true }
 unicode-segmentation = { workspace = true }
-# `clock` gives `Local`, the viewer's zone `localclock` reads local time in.
-chrono        = { workspace = true, features = ["clock"] }
+# `TimeZone::system()`, the viewer's zone `localclock` reads local time in.
+jiff          = { workspace = true, features = ["tz-system"] }
 foldhash      = { workspace = true }
 strum         = { workspace = true }
 enum-map      = { workspace = true }
@@ -47,6 +47,17 @@ serde_json    = { workspace = true }
 palette       = { workspace = true }
 libm          = { workspace = true }
 vec1          = { workspace = true }
+
+# The tz database `TimeZone::system()` resolves the viewer's zone in: the
+# system's (jiff 1.0.2 `PLATFORM.md:140-166`), bundled on Windows, which keeps
+# none (`:291-313`). The site's wasm reads the page's offset instead. No database
+# helps an iOS device, whose zone link is `/var/db/timezone/localtime` (Apple
+# Libc `stdtime/FreeBSD/tzfile.h:52-57`) where jiff reads `/etc/localtime`
+# (`src/tz/system/unix.rs:3`).
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+jiff = { workspace = true, features = ["tzdb-zoneinfo"] }
+[target.'cfg(windows)'.dependencies]
+jiff = { workspace = true, features = ["tzdb-bundle-platform"] }
 
 [build-dependencies]
 toml       = { workspace = true }

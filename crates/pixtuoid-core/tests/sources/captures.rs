@@ -613,17 +613,30 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
     assert!(bad.is_empty(), "{}", bad.join("\n  "));
 }
 
-/// `YYYY-MM-DD`, validated: RFC 3339's `full-date`, which chrono parses only as
-/// a date-time's head.
+/// `YYYY-MM-DD`, validated: RFC 3339's `full-date`. The shape is held here,
+/// since jiff's date parser also reads ISO 8601's `20260815` and a whole
+/// date-time (jiff 1.0.2 `src/fmt/temporal/parser.rs:530-544`,
+/// `src/fmt/temporal/mod.rs:833-840`); jiff checks the calendar.
 fn is_iso_date(s: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(&format!("{s}T00:00:00Z")).is_ok()
+    const SHAPE: &[u8] = b"9999-99-99";
+    s.len() == SHAPE.len()
+        && SHAPE.iter().zip(s.bytes()).all(|(&want, got)| match want {
+            b'9' => got.is_ascii_digit(),
+            _ => got == want,
+        })
+        && s.parse::<jiff::civil::Date>().is_ok()
 }
 
 /// The UTC calendar date of a millisecond epoch stamp: the shim stamps UTC and
 /// `captured` is UTC.
 fn utc_date(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms)
-        .map_or_else(|| format!("{ms} ms"), |t| t.date_naive().to_string())
+    jiff::Timestamp::from_millisecond(ms)
+        .map(|t| {
+            t.to_zoned_datetime(jiff::tz::TimeZone::UTC)
+                .date()
+                .to_string()
+        })
+        .unwrap_or_else(|_| format!("{ms} ms"))
 }
 
 /// The `YYYY-MM-DD` a CLI put at the head of a transcript filename, with codex's
@@ -654,6 +667,7 @@ fn the_date_helpers_handle_the_cases_that_break_naive_ones() {
     assert!(!is_iso_date("2026-13-01") && !is_iso_date("2026-00-10"));
     assert!(!is_iso_date("2026-08-32") && !is_iso_date("2026-08-00"));
     assert!(!is_iso_date("2026/08/15") && !is_iso_date("20260815") && !is_iso_date("unknown"));
+    assert!(!is_iso_date("2024-06-19T15:22:45-04[America/New_York]"));
     assert_eq!(
         date_prefix("rollout-2026-08-14T22-19-03-01a0.jsonl").as_deref(),
         Some("2026-08-14")

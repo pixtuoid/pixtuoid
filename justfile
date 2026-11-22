@@ -94,9 +94,8 @@ UV_DEV := "uv run --locked --"
 
 # The zone a test run reads the clock in, so a test anchored to its writer's
 # zone fails on their machine, not first in CI (#1377). Its offset is neither
-# UTC nor a whole hour, so epoch and local hours never coincide. chrono reads
-# `TZ` on Unix only (chrono 0.4.45 `src/offset/local/unix.rs:92`), so Windows
-# tests keep the runner's zone; pixtuoid-scene's unit tests read `localclock`'s.
+# UTC nor a whole hour, so epoch and local hours never coincide.
+# pixtuoid-scene's unit tests read `localclock`'s.
 TEST_TZ := "Asia/Kathmandu"
 
 # List available recipes.

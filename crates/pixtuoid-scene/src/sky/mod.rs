@@ -491,10 +491,9 @@ impl ClockReading {
 /// Not [`local_hour_frac`]: the hands need the raw `hour % 12` and `minute`.
 pub(crate) fn clock_reading(now: SystemTime) -> ClockReading {
     let local = crate::localclock::local_time(now);
-    use chrono::Timelike;
     ClockReading {
-        hour: local.hour() % 12,
-        minute: local.minute(),
+        hour: u32::from(local.hour().unsigned_abs() % 12),
+        minute: u32::from(local.minute().unsigned_abs()),
     }
 }
 
@@ -519,29 +518,22 @@ pub(crate) fn octant_offset(turn: f32) -> (i32, i32) {
 
 /// Fractional local hour (`hour + minute/60`, in `0.0..24.0`) for `now`.
 pub(crate) fn local_hour_frac(now: SystemTime) -> f32 {
-    use chrono::Timelike;
     let local = crate::localclock::local_time(now);
-    local.hour() as f32 + local.minute() as f32 / 60.0
+    f32::from(local.hour()) + f32::from(local.minute()) / 60.0
 }
 
 /// When nightfall begins on `at`'s local date: where `just pace-check --run
-/// dusk` starts its clock. `None` where that local time doesn't exist.
+/// dusk` starts its clock. `None` where `localclock::on_date_of` gives none.
 #[doc(hidden)]
 pub fn nightfall_on(at: SystemTime) -> Option<SystemTime> {
-    use chrono::Timelike;
-    crate::localclock::on_date_of(at, DUSK.hour(), DUSK.minute())
+    crate::localclock::on_date_of(at, DUSK)
 }
 
 /// The local time of day nightfall begins at.
-pub(crate) const DUSK: chrono::NaiveTime = {
-    const SECS_PER_HOUR: f32 = chrono::TimeDelta::hours(1).num_seconds() as f32;
-    match chrono::NaiveTime::from_num_seconds_from_midnight_opt(
-        (SUN_SET_H * SECS_PER_HOUR) as u32,
-        0,
-    ) {
-        Some(dusk) => dusk,
-        None => panic!("SUN_SET_H is an hour of the day"),
-    }
+pub(crate) const DUSK: jiff::civil::Time = {
+    let hour = SUN_SET_H as i8;
+    assert!(hour as f32 == SUN_SET_H, "DUSK holds a whole SUN_SET_H");
+    jiff::civil::time(hour, 0, 0, 0)
 };
 
 /// How far into the night hour `h` is, 0..=1: zero by day, rising over

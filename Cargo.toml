@@ -139,7 +139,7 @@ clap               = { version = "4", features = ["derive"] }
 # `libm`, not `std`, so its float math goes through the `libm` below.
 palette            = { version = "0.7", default-features = false, features = ["libm"] }
 libm               = "0.2"
-chrono             = { version = "0.4", default-features = false }
+jiff               = { version = "1", default-features = false, features = ["std"] }
 foldhash           = { version = "0.2", default-features = false }
 image              = { version = "0.25", default-features = false, features = ["png"] }
 libc               = "0.2"
