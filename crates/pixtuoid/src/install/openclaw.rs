@@ -47,7 +47,7 @@ pub(crate) const OPENCLAW_VERDICT_EVENTS: &[&str] = &["model_call_ended"];
 const MANIFEST: &str = r#"{
   "id": "pixtuoid",
   "name": "Pixtuoid",
-  "description": "Forwards OpenClaw gateway daemon-presence signals to pixtuoid (the terminal office visualizer).",
+  "description": "Forwards OpenClaw gateway daemon-presence signals to pixtuoid.",
   "configSchema": { "type": "object", "additionalProperties": false, "properties": {} },
   "activation": { "onStartup": true }
 }
@@ -657,6 +657,17 @@ mod tests {
                 "spawns the shim with --source openclaw"
             );
         });
+    }
+
+    /// pixtuoid's own tagline is the workspace `Cargo.toml` `description`; a copy here
+    /// drifts from it.
+    #[test]
+    fn the_manifest_says_only_what_the_plugin_does() {
+        let manifest: Value = serde_json::from_str(MANIFEST).unwrap();
+        assert_eq!(
+            manifest["description"],
+            json!("Forwards OpenClaw gateway daemon-presence signals to pixtuoid.")
+        );
     }
 
     #[test]
