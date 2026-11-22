@@ -5,8 +5,8 @@ The landing page for [pixtuoid](https://github.com/pixtuoid/pixtuoid), an
 **https://pixtuoid.dev/**; the old project page,
 https://pixtuoid.github.io/pixtuoid/, redirects there.
 
-Two more guides sit beside this one: [`AGENTS.md`](AGENTS.md) for the files
-the build reads from outside `site/` and the CSP, and
+Two more guides sit beside this one: [`AGENTS.md`](AGENTS.md), the agent
+notes, for the site's rules and gates, and
 [`SINGLE-SOURCED.md`](SINGLE-SOURCED.md) for the generated content and where
 each piece comes from.
 
@@ -14,7 +14,7 @@ each piece comes from.
 
 ```sh
 npm install        # or, from the repo root: just site-setup
-npm run dev        # or, from the repo root: just site-dev
+npm run dev        # needs public/demos/; from the repo root, just site-dev renders it first
 just site-dev-bg   # the dev server in the background, for an agent; just site-dev-stop ends it
 ```
 
@@ -29,7 +29,7 @@ the office shows its poster.
 ## Checks
 
 ```sh
-npm run verify     # format:check → lint → check → knip → test:unit → test:demos → build → check:docs → audit
+npm run verify     # the static tier: the steps package.json's verify script lists
 npm run lighthouse # Lighthouse CI's budgets
 ```
 
@@ -39,9 +39,13 @@ and `just site-e2e` runs the Playwright smoke suite. Use `just site-e2e`, not
 
 - **`audit` runs last** on purpose: it reads advisories live, so a stranger's
   publish would otherwise stop every check after it.
-- **The npm `packageManager` names is required** (`engine-strict`).
-  Dependencies' install scripts don't run unless `allowScripts` lists them
-  (`.npmrc`); `npm install-scripts ls` shows what a change would run.
+- **npm must be in the range `package.json`'s `engines.npm` names**, which
+  `.npmrc`'s `engine-strict` enforces
+  ([package.json](https://docs.npmjs.com/cli/v12/configuring-npm/package-json/#engines)).
+- **Install scripts fail closed.** `.npmrc`'s `strict-allow-scripts` fails
+  the install on a dependency script that `package.json`'s `allowScripts`
+  neither approves nor denies, and `npm install-scripts ls` lists those
+  ([config](https://docs.npmjs.com/cli/v12/using-npm/config/#strict-allow-scripts)).
 
 In CI, `.github/workflows/site.yml` runs `verify`'s checks, the e2e and
 Lighthouse. It runs `audit` only when a PR changes `package.json` or
@@ -58,12 +62,13 @@ deploys.
   follows their local time by `window.__pixNight()`, and a system that
   prefers dark keeps night at noon too. `dracula` is a hidden easter egg:
   type it, or open `?theme=dracula`.
-- **The building.** The home page is one continuous shot of the real office.
+- **The building (OPEN FLOOR).** The home page is one continuous camera hold
+  on the real office.
   `OfficeBackdrop.astro` runs the `pixtuoid-web` wasm engine on a fixed
   full-viewport canvas, showing its poster first. Under reduced motion,
   without script, or if the engine fails, the poster stays.
   - Scrolling is the light switch: the `#dimmer` sheet darkens toward a
-    statement and lifts in the gaps that show the office.
+    statement and lifts in the office gaps (`.office-gap`).
   - Each section is a floor, from the top floor down to 1F. The fixed chrome
     is `Statusline.astro` (the floor readout, scrollspy, the PR feed and the
     install chip) and two switches, `#office-pause` and ♩ `#office-audio`.
@@ -74,9 +79,10 @@ deploys.
     dictation into a control can't fire it (WCAG 2.1.4). The statusline's
     popover holds the saved off-switch for the keys.
   - The 404 page is the office at 3 a.m.
-- **What a new section wires.**
-  - `data-lit`, for the dimmer, and a row in `src/floors.json`, from which
-    the statusline, the wings' sidebar and the section ids derive.
+- **Cross-component seams.**
+  - A new section wires `data-lit`, for the dimmer, and a row in
+    `src/floors.json`, from which the statusline, the wings' sidebar and the
+    section ids derive.
   - The backdrop publishes `window.__pixLights`, `pix:onair` with
     `.is-live`, and `pix:paused`. Every auto-motion longer than five seconds
     listens to `pix:paused`, so one control governs the page's motion.
@@ -91,7 +97,7 @@ deploys.
   safe under `prefers-reduced-motion`. Pause freezes the office's frame and
   stops all ambient motion through `pix:paused`. It still shows on the
   no-wasm poster, where the ticker, the dust and the clips still run.
-- **Wings.** `layouts/Wing.astro` gives the doc routes and the blog one
+- **Wing shell.** `layouts/Wing.astro` gives the doc routes and the blog one
   shell: an elevator-panel sidebar, a mini table of contents and a pager,
   each from its own roster. A blockquote becomes a terminal-window callout.
 
@@ -111,18 +117,13 @@ whose optimizer would resize and blur it.
 
 The `Showcase` and `ChannelStage` components draw what **`src/showcase.json`**
 lists, beside `src/themes.json`, `src/weather.json`, `src/features.json` and
-`src/install.json`. A channel is one of three kinds:
+`src/install.json`. A channel's kinds and fields are `ShowcaseChannel` in
+`src/consts.ts`, and `astro.config.mjs` checks the file when the site builds
+or the dev server starts.
 
-- **`clip`**: an mp4, a webm and a poster from `just gen-media --only site`;
-- **`variant-set`**: a grid of screenshots, from `variantsRef` or `variants`;
-- **`soon`**: a placeholder.
-
-`astro.config.mjs` checks at build time that one channel is the default live
-one, that ids are unique, that each asset exists, and that features and
-showcase channels pair one to one.
-
-- **A new demo channel** is one `showcase.json` entry and its assets from
-  `just gen-media --only site`. A `clip` channel also adds its
+- **A new demo channel** is one `showcase.json` entry, its assets from
+  `just gen-media --only site`, and a `src/features.json` row whose `channel`
+  is the entry's id. A `clip` channel also adds its
   `"kind": "clip"` job, named by the channel's `asset`, to
   `scripts/media.json`. No component changes.
 - **A new theme** is one row in `src/themes.json` and

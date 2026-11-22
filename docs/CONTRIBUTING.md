@@ -50,16 +50,15 @@ Before 1.0:
 - **A minor (`0.Y.z`)** is everything else: a new user-facing feature, or any
   breaking change to a published crate's API.
 
-Both rules are applied by machine on the release PR, never per PR:
+Two halves of them are applied by machine on the release PR, never per PR:
 
-- release-plz derives the level from the commit log, and
-  `features_always_increment_minor` in `release-plz.toml` makes a feature
-  bump the minor.
-- release-plz's own `cargo-semver-checks` run keeps a patch from breaking
-  anything: a break it detects raises the bump to the next minor on its own,
-  and the release PR's body reports it. Never weaken a lint to dodge the
-  bump. It runs inside release-plz on the release PR, not as a CI job;
-  `just semver` reproduces its verdict locally.
+- **A feature bumps the minor.** release-plz derives the level from the
+  commit log, and `features_always_increment_minor` in `release-plz.toml`
+  makes a feature bump the minor.
+- **Nothing breaks on a patch.** release-plz's own `cargo-semver-checks` run
+  raises the bump to the next minor on its own when it detects a break, and
+  the release PR's body reports it. It is not a CI job; `just semver`
+  reproduces its verdict locally. Never weaken a lint to dodge the bump.
 
 ### Cutting the release
 

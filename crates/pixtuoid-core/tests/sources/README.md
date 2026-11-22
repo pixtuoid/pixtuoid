@@ -4,7 +4,7 @@ The golden fixtures for each CLI's decoding, and for the **coalescing**
 contract between its hooks and its JSONL transcript, driven by
 `tests/sources/conformance.rs`.
 
-## Record them, never write them
+## Record them, never compose them
 
 `just hermetic --record <source>` records the scenarios its profile scripts.
 `just capture-fixture <source> <scenario> <cmd...>` records the rest, a
@@ -161,8 +161,8 @@ to declare `sessionId: "permission-flow"`. So a recorded grok scenario nests,
 parent dirs that leave the registry's own `id_deriver_for` id unchanged, and
 the harness recurses to find it.
 
-`conformance.rs` scans every capture but one `harness::OUTSIDE_CONFORMANCE`
-names, and each home must be a registered source's. Hand-built inputs,
+`conformance.rs` scans every capture except those
+`harness::OUTSIDE_CONFORMANCE` lists, and each home must be a registered source's. Hand-built inputs,
 `sources/decode/fixtures/`, live with their module: see
 [`tests/AGENTS.md`](../AGENTS.md).
 
