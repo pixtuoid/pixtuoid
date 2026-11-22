@@ -251,7 +251,9 @@
   assert: |
     ($against.runs.steps[] | select((.uses // "") | startswith("Swatinem/rust-cache@")) | .with["prefix-key"]) as $prefix
     | [.jobs[].steps[]?.run | strings | select(contains("gh cache list"))] as $prunes
-    | ($prunes | length > 0) and all($prunes[]; test("--key " + $prefix + "-(\\s|$)"))
+    | ($prunes | length > 0)
+      and all($prunes[]; [splits("\\s+")] as $words | ($words | indices("--key")) as $at
+                         | ($at | length) == 1 and $words[$at[0] + 1] == $prefix + "-")
   break:
     - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key [^ ]*"; "--key v0-rust-")
     - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key (?<k>[^ ]*)"; "--key \(.k)-")
