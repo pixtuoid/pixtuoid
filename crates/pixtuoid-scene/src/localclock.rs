@@ -73,7 +73,9 @@ fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
 }
 
 /// The instant the viewer's clock reads `local`; `None` where the system zone
-/// skips or repeats it.
+/// skips or repeats it. A host's offset gives one instant for every local
+/// time, skipped or repeated, as chrono did in the browser (chrono 0.4.45
+/// `src/offset/local/mod.rs:93`).
 pub(crate) fn local_instant(local: jiff::civil::DateTime) -> Option<SystemTime> {
     let in_zone = |zone: TimeZone| zone.to_ambiguous_timestamp(local).unambiguous().ok();
     // A host's offset is per instant, so it is read where the local time read
@@ -89,7 +91,7 @@ fn local(day: u32, h: u32, m: u32) -> SystemTime {
 }
 
 /// Local `time` on `at`'s own local date, not day 0: a run on
-/// today's sky. `None` where that local time doesn't exist.
+/// today's sky. `None` where [`local_instant`] gives none.
 pub(crate) fn on_date_of(at: SystemTime, time: jiff::civil::Time) -> Option<SystemTime> {
     local_instant(local_time(at).date().to_datetime(time))
 }
@@ -113,8 +115,7 @@ pub(crate) fn on_day(day: u32, h: u32) -> SystemTime {
 /// Local `h:00`, `day` days after day 0 — weather and moon phase vary by
 /// day at a fixed hour, so a search over days reaches different sky states. Any
 /// `day` is valid, including past the end of the month; `None` where the date is
-/// past jiff's calendar, `h` is no hour, or the system zone skips or repeats
-/// that local time.
+/// past jiff's calendar, `h` is no hour, or `local_instant` gives none.
 pub fn try_on_day(day: u32, h: u32) -> Option<SystemTime> {
     try_local(day, h, 0)
 }
