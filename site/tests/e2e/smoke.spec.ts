@@ -1593,6 +1593,8 @@ test('how it works: every recorded hook fills each stop through the real decoder
       expect(JSON.parse((await out('decoder').textContent())!).length).toBeGreaterThan(0);
       const slots = JSON.parse((await out('office').textContent())!);
       expect(slots.length, `hook ${i}: the one session in the office`).toBe(1);
+      if (i < count - 1)
+        expect(slots[0].desk, `hook ${i}: the session sits at a desk`).not.toBeNull();
       if (i === count - 1) expect(slots[0].exiting_at, 'the last hook ends it').not.toBeNull();
       if (i === 0) {
         expect(await canvasPainted(page, '.fig-journey__office')).toBe(true);
@@ -1688,8 +1690,7 @@ test('how it works: the hooks stay inside the article, beside the office or belo
 test('how it works: a change of device-pixel ratio refits the office to whole device pixels', async ({
   page,
 }) => {
-  // Chromium's metrics emulation fires no `change` on a resolution query, so the test fires it on each
-  // the page asks for.
+  // The test sets the ratio, and fires `change` on each resolution query the page asked for.
   await page.addInitScript(() => {
     const lists: MediaQueryList[] = [];
     (window as unknown as { __ratios: MediaQueryList[] }).__ratios = lists;
@@ -1763,7 +1764,6 @@ test('how it works without its wasm: the player it began is taken down, and the 
   // The player goes up before the office opens, and down once the office driver's retries give up.
   await expect(player).toHaveCount(1, { timeout: 15_000 });
   await expect(player).toHaveCount(0, { timeout: 15_000 });
-  await expect(page.locator('.fig-journey__out')).toHaveCount(0);
   await expect(page.locator('.fig-journey__what').first()).toBeVisible();
 });
 

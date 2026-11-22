@@ -1599,6 +1599,12 @@ mod tests {
         }
         let state = |l: &serde_json::Value| l["agents"][0]["state"].clone();
         assert_eq!(state(&landed[0]), serde_json::json!("Idle"));
+        for l in &landed[..3] {
+            assert!(
+                !l["agents"][0]["desk"].is_null(),
+                "the session sits at a desk: {l}"
+            );
+        }
         assert_eq!(
             state(&landed[1])["Running"]["item"]["kind"],
             serde_json::json!("Read")

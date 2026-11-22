@@ -50,15 +50,11 @@ export async function start(figure) {
   crop.append(canvas);
   player.append(crop);
   figure.prepend(player);
-  const outs = {};
   try {
     await run();
   } catch (err) {
-    // Whatever the page added goes, so the stops stay the prose they were.
+    // The player goes, so the stops read as the prose they were: an output no hook filled stays hidden.
     player.remove();
-    Object.values(outs).forEach(function (pre) {
-      pre.remove();
-    });
     throw err;
   }
 
@@ -69,6 +65,7 @@ export async function start(figure) {
     const payloads = lines.map(function (line) {
       return JSON.parse(line);
     });
+    const outs = {};
     ['agent', 'shim', 'decoder', 'office'].forEach(function (role) {
       const pre = el('pre', 'fig-journey__out');
       // A scroll container takes focus, so a keyboard can scroll it
