@@ -59,39 +59,31 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
 
 ## Toolchain policy
 
-`raycast/package.json` cannot carry a comment, so these rules live here.
-
 - Keep toolchain bumps within what Raycast declares; check the peers, don't
-  guess:
+  guess. These rules live here because `raycast/package.json` cannot carry a
+  comment.
   - `eslint` and `typescript` stay within the installed
     `@raycast/eslint-config`'s peerDependencies ranges; read them before a
     bump.
   - `@types/node` stays on its current major: `.github/dependabot.yml` ignores
     its major updates, and minors still flow.
-  - `@raycast/api` peers `@types/node` exactly but as optional
-    (`raycast/package-lock.json:1172-1187`), and the committed lockfile
-    resolves the manifest's own `@types/node` beside it (`:1300-1301`), so that
-    peer is not a pin the manifest must equal.
-- `ray build` parses `raycast/tsconfig.json` with the TypeScript its
-  `@raycast/api` bundles and type-checks with the local
-  `tsc -p tsconfig.json --noEmit` (the locked version's
-  [`dist/commands/build/index.js`](https://cdn.jsdelivr.net/npm/@raycast/api@2.12.1/dist/commands/build/index.js),
-  where the bundled version is TypeScript's `version` export), so
-  `raycast/tsconfig.json` stays parseable by both:
-  - `moduleResolution: "Bundler"`;
-  - an explicit `types: ["node"]`, since TypeScript 6.0 defaults `types` to
-    `[]`
-    ([announcement](https://devblogs.microsoft.com/typescript/announcing-typescript-6-0/),
-    "`types` now defaults to `[]`");
-  - no `ignoreDeprecations` value the bundled TypeScript rejects.
+  - `@raycast/api`'s exact `@types/node` peer is not a pin the manifest must
+    equal: it also lists `@types/node` as a dependency
+    (`raycast/package-lock.json:1159`, installed nested at `:1189-1190`), and
+    npm loads a package's dependencies after its peers, the later edge
+    replacing the earlier
+    ([arborist `node.js:903-956`](https://github.com/npm/cli/blob/v12.2.1/workspaces/arborist/lib/node.js#L903-L956)).
+- `ray build -e dist` (CI's step, `raycast.yml:53`) type-checks with the local
+  `tsc -p tsconfig.json --noEmit`; the default dev build, `npm run build`,
+  does not
+  ([build/index.js](https://cdn.jsdelivr.net/npm/@raycast/api@2.12.1/dist/commands/build/index.js)).
+- `raycast/tsconfig.json`'s comments say why its options are set.
 
 ## Gates
 
 - CI runs `.github/workflows/raycast.yml`'s `check` job on a Linux runner when
   a PR changes a path its `scope` job lists, and `ci-gate` judges it. Run its
   steps locally before calling a change done.
-  - `ray build` writes `raycast/raycast-env.d.ts`, the manifest's generated
-    `Preferences` that `tsc` reads.
 - The pre-push hook still runs `just preflight` on a change scoped to
   `raycast/`.
 - Install scripts fail closed, as the site's do
@@ -99,11 +91,12 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
   with an exact-version `allowScripts`, enforced in CI by the npm version
   `setup-npm` installs from `site/package.json`'s `packageManager`. Review
   them with `npm install-scripts ls`.
-- `npm run audit` runs `raycast/package.json`'s `audit` script, like the
-  site's.
-  `npm audit` has no per-advisory ignore, so if an unfixable advisory recurs
-  here, restore the per-advisory allow-list script
-  (`raycast/scripts/audit-adjudicated.mjs`, deleted in #856) rather than lower
-  `--audit-level`, which blinds a whole severity band to hide one id.
+- `npm audit` documents no per-advisory ignore, and `--audit-level` is "the
+  minimum level of vulnerability for `npm audit` to exit with a non-zero exit
+  code" ([npm-audit](https://docs.npmjs.com/cli/v12/commands/npm-audit)). So
+  if an unfixable advisory recurs here, restore the per-advisory allow-list
+  script (`raycast/scripts/audit-adjudicated.mjs`, deleted in #856) rather
+  than loosen `--audit-level`, which stops a whole severity band from failing
+  to hide one advisory.
   - Unfixable is realistic: a transitive chain we own no link of.
   - An `overrides` patch can green the audit over code that throws (#792).

@@ -9,7 +9,15 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    // TypeScript 6.0 removed classic, the default under this `module`, and
+    // deprecated node10, which "TypeScript 7.0 will not support"; bundler is
+    // "for use with bundlers", and `ray build` bundles with esbuild.
+    // https://devblogs.microsoft.com/typescript/announcing-typescript-6-0/
+    // https://www.typescriptlang.org/tsconfig/#moduleResolution
+    // https://cdn.jsdelivr.net/npm/@raycast/api@2.12.1/dist/commands/build/index.js
     "moduleResolution": "Bundler",
+    // "In TypeScript 6.0, the default `types` value will be `[]`", so Node's
+    // globals load only when named (the announcement above).
     "types": ["node"],
     "resolveJsonModule": true,
     "jsx": "react-jsx",
