@@ -13,7 +13,7 @@ each piece comes from.
 ## Develop
 
 ```sh
-npm install        # or, from the repo root: just site-setup
+npm install        # or, from the repo root: just site-setup, which adds the e2e's browsers
 npm run dev        # or, from the repo root: just site-dev
 just site-dev-bg   # the dev server in the background, for an agent; just site-dev-stop ends it
 ```
@@ -22,7 +22,7 @@ just site-dev-bg   # the dev server in the background, for an agent; just site-d
 `/_astro/status` endpoint. Stop it before `just site-e2e`: the dev server and
 the e2e's preview server share one port.
 
-`dev`, `verify` and the e2e need the demo art in `public/demos/`
+`dev` and `verify` need the demo art in `public/demos/`
 ([Demo art](#demo-art)). The repo root's `just` recipes render it first; with
 `npm` alone, run `just site-demos` first.
 
@@ -39,7 +39,8 @@ npm run lighthouse # Lighthouse CI's budgets
 
 From the repo root, `just site-check` runs `verify`, `just site-fmt` formats,
 and `just site-e2e` runs the Playwright smoke suite. Use `just site-e2e`, not
-`npm run e2e`: it builds the wasm and renders the demos first.
+`npm run e2e`: it builds the wasm, renders the demos and builds the site
+first, and `npm run e2e` only previews the `dist/` already there.
 
 - **`audit` runs last** on purpose: it reads advisories live, so a stranger's
   publish would otherwise stop every check after it.

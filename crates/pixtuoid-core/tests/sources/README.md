@@ -65,7 +65,7 @@ The recorder is `pixtuoid-core/examples/capture_fixture.rs` (why it is Rust:
   roster, a global-instruction attachment or a stray home path rides a field
   no decoder touches, so it leaves without anyone naming it, and what stays
   decodes to the same events. The allowlist is derived by probing the
-  decoders, never listed, so it can't drift from them.
+  decoders, never listed, so it follows them, within the probe's limit below.
   - `/Users/dev` stays the convention for a home path a decoder DOES read. A
     capture redacted by hand says so in its `note`: without that, a reader
     can't tell an edited capture from an untouched one, the distinction the
@@ -145,6 +145,7 @@ tests/sources/<module>/fixtures/<scenario>/
                            # (JSONL-bearing sources only — a hook-only row,
                            # transcript: None, ships NO transcript)
     hook-payloads.jsonl    # one hook payload per line, fed to decode_hook_payload
+    provenance.json        # where the bytes came from (see Provenance); the recorder writes it
     # expected snapshot lives in tests/sources/<module>/snapshots/ (insta), generated on first run
 ```
 
