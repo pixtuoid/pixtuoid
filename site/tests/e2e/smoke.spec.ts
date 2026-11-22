@@ -389,21 +389,6 @@ async function gotoLive(page: Page): Promise<void> {
   await expect(page.locator('.backdrop.is-live')).toBeAttached({ timeout: 15_000 });
 }
 
-/** Whether the journey's office puts every art pixel on whole device pixels: on both axes, a whole CSS box that is the frame at its whole upscale. */
-async function journeyWhole(page: Page): Promise<boolean> {
-  return page.locator('.fig-journey__office').evaluate((c: HTMLCanvasElement) => {
-    const css = [parseFloat(c.style.width), parseFloat(c.style.height)];
-    const frame = [c.width, c.height];
-    const upscale = Number(c.dataset.upscale);
-    return (
-      upscale % 1 === 0 &&
-      [0, 1].every(
-        (axis) => css[axis] % 1 === 0 && css[axis] * devicePixelRatio === frame[axis] * upscale
-      )
-    );
-  });
-}
-
 /** How it works at `query`, once its journey's hooks are ready, which it returns. */
 async function gotoJourney(page: Page, query = ''): Promise<Locator> {
   await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
@@ -435,16 +420,12 @@ async function officeBox(page: Page) {
     const dpr = devicePixelRatio;
     return {
       dpr,
-      cssW: r.width,
-      cssH: r.height,
       left: r.left * dpr,
       top: r.top * dpr,
       width: r.width * dpr,
       height: r.height * dpr,
       viewW: innerWidth * dpr,
       viewH: innerHeight * dpr,
-      bufW: c.width,
-      bufH: c.height,
       uw,
       uh,
       upscale: Number(c.dataset.upscale),
@@ -452,26 +433,32 @@ async function officeBox(page: Page) {
   });
 }
 
+/** The grain a CSS box reports, in CSS px: `LayoutUnit = FixedPoint<6, int32_t>` (blink's layout_unit.h:473). */
+const LAYOUT_UNIT_CSS_PX = 1 / 64;
+
 /**
- * Each frame pixel spans exactly `upscale` device pixels a side, on whole device pixels, and the box covers the
- * backdrop. Within one layout unit, the grain a CSS box reports (`LayoutUnit = FixedPoint<6, int32_t>`, 1/64 CSS px,
- * blink's layout_unit.h:473).
+ * Whether the canvas `selector` names lays out as its frame at a whole upscale, measured: each side a whole CSS px,
+ * and each frame pixel `upscale` device pixels a side, within a layout unit.
  */
+async function wholeUpscaleBox(page: Page, selector: string): Promise<boolean> {
+  return page.locator(selector).evaluate((c: HTMLCanvasElement, unit) => {
+    const r = c.getBoundingClientRect();
+    const dpr = devicePixelRatio;
+    const upscale = Number(c.dataset.upscale);
+    const off =
+      Math.abs(r.width * dpr - c.width * upscale) + Math.abs(r.height * dpr - c.height * upscale);
+    return upscale % 1 === 0 && r.width % 1 === 0 && r.height % 1 === 0 && off <= 2 * dpr * unit;
+  }, LAYOUT_UNIT_CSS_PX);
+}
+
+/** A whole upscale box ({@link wholeUpscaleBox}) on whole device pixels, within a layout unit, that covers the backdrop. */
 async function expectWholeDevicePixels(page: Page) {
-  const grain = (b: { dpr: number }) => b.dpr / 64;
-  await expect
-    .poll(async () => {
-      const b = await officeBox(page);
-      const off = Math.abs(b.width - b.bufW * b.upscale) + Math.abs(b.height - b.bufH * b.upscale);
-      return off <= 2 * grain(b);
-    })
-    .toBe(true);
+  const grain = (b: { dpr: number }) => b.dpr * LAYOUT_UNIT_CSS_PX;
+  await expect.poll(() => wholeUpscaleBox(page, '#office-live')).toBe(true);
   const b = await officeBox(page);
-  expect(b.upscale % 1).toBe(0);
   for (const edge of [b.left, b.top]) {
     expect(Math.abs(edge - Math.round(edge))).toBeLessThanOrEqual(grain(b));
   }
-  for (const side of [b.cssW, b.cssH]) expect(side % 1, 'a whole CSS px').toBe(0);
   expect(b.left).toBeLessThanOrEqual(grain(b));
   expect(b.top).toBeLessThanOrEqual(grain(b));
   expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain(b));
@@ -1621,7 +1608,10 @@ test('how it works: every recorded hook fills each stop through the real decoder
       if (i === count - 1) expect(slots[0].exiting_at, 'the last hook ends it').not.toBeNull();
       if (i === 0) {
         expect(await canvasColours(page, '.fig-journey__office')).toBeGreaterThan(0);
-        expect(await journeyWhole(page), 'every art pixel on whole device pixels').toBe(true);
+        expect(
+          await wholeUpscaleBox(page, '.fig-journey__office'),
+          'a whole-CSS-pixel box that is the frame at its whole upscale'
+        ).toBe(true);
         await page.locator('.fig-journey__why summary').first().click();
         for (const selector of [
           '.fig-journey__hook:not(:disabled)',
@@ -1687,7 +1677,7 @@ test('how it works: the hooks stay inside the article, beside the office or belo
   }
 });
 
-test('how it works: a change of device-pixel ratio refits the office to whole device pixels', async ({
+test('how it works: a change of device-pixel ratio refits the office to a whole upscale', async ({
   page,
 }) => {
   // The test sets the ratio, and fires `change` on each resolution query the page asked for.
@@ -1703,7 +1693,9 @@ test('how it works: a change of device-pixel ratio refits the office to whole de
   });
   await page.setViewportSize({ width: 1280, height: 720 });
   await gotoJourney(page);
-  await expect.poll(() => journeyWhole(page), { message: 'at 1x' }).toBe(true);
+  await expect
+    .poll(() => wholeUpscaleBox(page, '.fig-journey__office'), { message: 'at 1x' })
+    .toBe(true);
   await page.evaluate(() => {
     Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
     // Each change asks for the next ratio's query, so only the lists asked so far fire.
@@ -1711,7 +1703,9 @@ test('how it works: a change of device-pixel ratio refits the office to whole de
       list.dispatchEvent(new Event('change'));
     }
   });
-  await expect.poll(() => journeyWhole(page), { message: 'at 2x' }).toBe(true);
+  await expect
+    .poll(() => wholeUpscaleBox(page, '.fig-journey__office'), { message: 'at 2x' })
+    .toBe(true);
 });
 
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
