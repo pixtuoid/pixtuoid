@@ -1,116 +1,101 @@
 # site — agent guide
 
-The **landing page**: a self-contained **Astro** static site (NOT Rust) →
-GitHub Pages. A *consumer* of the Rust workspace's outputs — version, rendered
-docs, demo media all flow in from outside `site/`. Parent guide: the workspace
-[`../AGENTS.md`](../AGENTS.md). Human detail: [`README.md`](README.md).
+The **landing page**: a self-contained Astro static site, not Rust, deployed
+to GitHub Pages. It consumes the Rust workspace's outputs: the version, the
+rendered docs and the demo media all come from outside `site/`.
+Cross-cutting rules: the root [`AGENTS.md`](../AGENTS.md). Read these two
+before changing the site:
 
-> **You are in the Astro consumer, not the Rust producer.** Rust house rules
-> (`cargo`/`clippy`, `just preflight`, the crate CI gates) do not apply to a
-> site-only change. The gates here are `just site-check` (+ `just site-fmt`)
-> and `just site-e2e`; the pre-push hook still runs `just preflight`.
-
-## Cross-boundary build inputs (the coupling that bites)
-
-`astro build` reads **these files from OUTSIDE `site/`** (workspace
-`Cargo.toml`, the `docs/` pages below and the images the posts show); a
-rename/move of any FAILS the build:
-
-- workspace `Cargo.toml` → the origin (`homepage`), the default title
-  (`description`) and the displayed-version
-  FALLBACK; the primary version is the latest release tag (`released-version.mjs`,
-  unit-tested — main runs ahead of it mid-cycle). Both workflows checkout with
-  `fetch-depth: 0`. `pages.yml` deploys on push to `main`, not on tag push, so
-  a fresh tag shows after the next `main` commit or a `workflow_dispatch`.
-- the `docs/*.md` files `src/docs.json` names → rendered routes. **Adding,
-  renaming, or REMOVING a rendered doc is a multi-point edit**: its
-  `docs.json` entry (the collection, the route, `Nav.astro`, `Wing.astro`'s
-  sidebar/pager, the in-site doc links and Lighthouse's URLs derive from it;
-  `assert-docs-rendered` globs every rendered `article.prose` and needs no
-  edit), `site.yml`'s `scope` paths, and the e2e rows that name a route (smoke's
-  pan and `PLATE_SURFACES` tables, `docs-lobby.spec.ts`).
-- the `docs/` images the posts show.
-
-`public/wasm/` is gitignored `just gen-wasm` output; without it the office
-silently stays on its poster. `public/demos/` is gitignored too:
-`just gen-media --only site` renders it locally (before a build or dev server,
-which `astro.config.mjs`'s `demoAssets()` fails on a missing demo, and before
-`test:demos`), and CI renders it per build.
-
-**Every Mermaid diagram in a rendered doc renders at build**, as a framed
-figure, in process (`config/rehype-beautiful-mermaid.mjs` — no browser).
-`npm run build` passes `--force` because astro's content store outlives a
-rehype plugin edit (its `content/content-layer.js`, at `package.json`'s version,
-clears it only on a config or version change). Playwright's Chromium is
-installed only for `site.yml`'s e2e step. The empty-render class is
-gated by `config/assert-docs-rendered.mjs` (`check:docs`), whose header owns
-the mechanism; `pages.yml`'s pins carry their own.
-
-**Wing shell**: the doc routes (`src/docs.json` is the roster) and the blog
-mount the Statusline without its index-only organs (no PR feed fetch); `Wing.astro`'s sidebar
-reads the one `FLOORS` manifest. A post is one file in `src/content/blog/`:
-its route, the lobby, the feed, Lighthouse's URLs and `check:docs`'s roster
-derive from that directory (`config/blog.mjs`). Edited by hand: the e2e rows
-that name its route (smoke's `PLATE_SURFACES` table), and `site.yml`'s `scope`
-paths for each `docs/` image it shows, which `rendered-docs-scope.test.mjs`
-holds to the posts.
-Blockquotes promote to terminal callouts (`config/rehype-callouts.mjs`,
-unit-tested). Adding a `.prose` colour rule
-needs a twin under `.callout__body` — the specificity arithmetic and its
-theme-prefixed tie are on the rule itself in `Wing.astro`, and the smoke
-suite's callout AA sweep grades it.
-
-## Single-sourced content
-
-Every generated artifact, manifest seam, and rendered-copy sharp edge:
-[`SINGLE-SOURCED.md`](SINGLE-SOURCED.md) — read it before touching this area.
-
-## CSP (hash-based, two coordinated halves in astro.config.mjs)
-
-`cspInlineHashes()` in `astro.config.mjs` owns the WHY; `config/csp-hashes.mjs`
-owns the parse. The rules a page author needs: an `is:inline` script needs NO
-manual CSP step; a hand-written `public/*.js` loaded by URL rides
-`script-src 'self'`; an inline `<style>` or `style` attribute needs none
-either — each is hashed, an attribute's under `'unsafe-hashes'`, but one set
-at runtime (`setAttribute('style', …)`, `style.cssText`, markup through
-`innerHTML`) is blocked: set `el.style.<property>` instead. `astro dev` serves
-NO CSP; regressions surface in `just site-e2e`'s console watchdog.
-
-## Dev server (agent-driving)
-
-`just site-dev-bg` daemonizes (`astro dev --background`, polls the dev-only
-`/_astro/status` endpoint); `just site-dev-stop` frees the port. Two edges:
-the status endpoint is dev-server only (astro's `core/create-vite.js`, at
-`package.json`'s version, registers it under `command === "dev"`; `astro
-preview` daemonizes too but has nothing to poll), and dev/preview share port
-4321 — stop the daemon before `just site-e2e` (its webServer fails loud on a
-squatted port).
+- [`README.md`](README.md): developing, the dev server, the demo art and the
+  wasm, and the checks with their npm policy.
+- [`SINGLE-SOURCED.md`](SINGLE-SOURCED.md): every generated artifact, manifest
+  seam and rendered-copy sharp edge.
 
 ## Gates
 
-`just site-check` runs the site's static tier (`package.json`'s `verify`
-script owns its steps). `just site-e2e` = Playwright vs the PRODUCTION build — the
-runtime-contract tier (`__pixLights`/`pix:onair`/
-`data-lit` seams, scrollspy keys, docs-nav variant, reduced-motion, console
-watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
+- The gates are `just site-check`, `just site-fmt` and `just site-e2e`
+  (README's Checks says what each runs). The pre-push hook still runs
+  `just preflight` on a site-only change.
+- `just site-e2e` runs Playwright against the production build. It is the
+  only tier that sees the runtime contracts tsc, knip and the build are blind
+  to: the `__pixLights`, `pix:onair` and `data-lit` seams, the scrollspy keys,
+  the docs-nav variant, reduced motion and the console watchdog.
+- Lighthouse (`npm run lighthouse`, which serves `dist/` itself) audits the
+  home page and every route `config/blog.mjs`'s `readingRoutes` lists: each
+  rendered doc, the blog's lobby and every post.
+  `config/lighthouse-budget.test.mjs` holds the assertion policy.
+  - The theme matrix (day, night, dracula) is `smoke.spec.ts`'s; don't double
+    Lighthouse's collect list per theme.
+  - The office's worker fetches its wasm, which Lighthouse's simulation drops,
+    so `just gen-wasm-check` alone gates the wasm (#1124).
+- Fonts are WOFF2 with `font-display: optional`, loaded before use: a preload,
+  or for the captions' face OfficeBackdrop's boot. Never `swap`: Ubuntu cold
+  visits reflow past the CLS budget, which `font-layout.spec.ts` reproduces.
+- Nothing gates a stale `overrides` entry, and `npm audit` cannot clear one
+  (the retired `chrome-launcher` pin guarded a chain no advisory covered). To
+  retire an entry, fresh-resolve `--package-lock-only` in a scratch dir with
+  and without it and diff the `packages` maps.
 
-- **Lighthouse** (`npm run lighthouse`: `lhci autorun` over `lighthouserc.mjs`,
-  which serves `dist/` itself and audits the home page, every route
-  `src/docs.json` renders, the blog's lobby and every post; `config/lighthouse-budget.test.mjs` holds the
-  assertion policy).
-  **The theme matrix is `smoke.spec.ts`** (day/night/dracula), not a
-  doubled collect list. The office's wasm is fetched by its worker, which
-  Lighthouse's simulation drops, so `just gen-wasm-check` alone gates it (#1124).
-- **Fonts**: WOFF2, `font-display: optional`, loaded before use (a preload;
-  the captions' face: OfficeBackdrop's boot) — never `swap` (Ubuntu cold
-  visits reflow past the CLS budget; `font-layout.spec.ts` reproduces it).
-- **npm**: `audit` runs LAST in `verify` (a live advisory would short-circuit
-  the checks below it — #847/#849); CI runs it when a PR changes
-  `package.json` or `package-lock.json`, and daily in `audit.yml`.
-  npm held to `engines.npm` by `engine-strict`; install scripts
-  fail-closed (`strict-allow-scripts`, exact-version `allowScripts`, explicit
-  `fsevents` denial) — review with `npm install-scripts ls`.
-- **Nothing gates a STALE `overrides` entry**: to retire one, fresh-resolve
-  `--package-lock-only` in a scratch dir with and without it and diff the
-  `packages` maps — `npm audit` cannot clear an entry (the retired
-  `chrome-launcher` pin guarded a chain no advisory covered).
+## Build inputs outside `site/`
+
+`astro build` reads these files from outside `site/`; renaming or moving one
+fails the build:
+
+- The workspace `Cargo.toml`: the origin (`homepage`), the default title
+  (`description`) and the displayed version's fallback.
+  - The displayed version is the latest release tag
+    (`config/released-version.mjs`, unit-tested), since main runs ahead of it
+    mid-cycle. A CI job that builds the site checks out with
+    `fetch-depth: 0`; a shallow checkout silently falls back to `Cargo.toml`.
+  - `pages.yml` deploys on a push to `main`, not on a tag push, so a fresh tag
+    shows after the next `main` commit or a `workflow_dispatch`.
+- The `docs/*.md` files `src/docs.json` names, each a rendered route. Adding,
+  renaming or removing a rendered doc edits each of these:
+  - its `docs.json` entry, from which the collection, the route, `Nav.astro`,
+    `Wing.astro`'s sidebar and pager, the in-site doc links and Lighthouse's
+    URLs derive (`assert-docs-rendered` globs every rendered `article.prose`
+    and needs no edit);
+  - `site.yml`'s `scope` paths;
+  - the e2e rows that name a route: smoke's pan and `PLATE_SURFACES` tables,
+    and `docs-lobby.spec.ts`.
+- The `docs/` images the posts show.
+
+## Rendered docs and the blog
+
+- Every Mermaid diagram in a rendered doc renders at build, as a framed
+  figure, in process with no browser (`config/rehype-beautiful-mermaid.mjs`).
+  Playwright's Chromium is installed only for `site.yml`'s e2e step.
+- `npm run build` passes `--force` because Astro's content store outlives an
+  edit to a rehype plugin: its `content/content-layer.js`, at `package.json`'s
+  version, clears the store only on a config or version change.
+- `config/assert-docs-rendered.mjs` (`check:docs`) gates the empty-render
+  class; its header owns the mechanism, and `pages.yml`'s pins carry their
+  own.
+- The doc routes (`src/docs.json` is the roster) and the blog share the Wing
+  shell: they mount the Statusline without its index-only parts (no PR feed
+  fetch), and `Wing.astro`'s sidebar reads the one `FLOORS` manifest.
+- A post is one file in `src/content/blog/`. Its route, the lobby, the feed,
+  Lighthouse's URLs and `check:docs`'s roster derive from that directory
+  (`config/blog.mjs`). Edit these by hand:
+  - the e2e rows that name its route (smoke's `PLATE_SURFACES` table);
+  - `site.yml`'s `scope` paths, one for each `docs/` image it shows, which
+    `config/rendered-docs-scope.test.mjs` holds to the posts.
+- Blockquotes become terminal callouts (`config/rehype-callouts.mjs`,
+  unit-tested). A new `.prose` colour rule needs a twin under
+  `.callout__body`: the specificity arithmetic and its theme-prefixed tie are
+  on the rule itself in `Wing.astro`, and the smoke suite's callout AA sweep
+  grades it.
+
+## CSP
+
+`cspInlineHashes()` in `astro.config.mjs` owns the why and
+`config/csp-hashes.mjs` the parse. For a page author:
+
+- An `is:inline` script needs no manual CSP step.
+- A hand-written `public/*.js` loaded by URL rides `script-src 'self'`.
+- An inline `<style>` or `style` attribute needs no step either: each is
+  hashed, an attribute's under `'unsafe-hashes'`.
+- A style set at runtime (`setAttribute('style', …)`, `style.cssText`, markup
+  through `innerHTML`) is blocked: set `el.style.<property>` instead.
+- `astro dev` serves no CSP, so a regression shows only in `just site-e2e`'s
+  console watchdog.
