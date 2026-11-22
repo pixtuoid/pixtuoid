@@ -88,8 +88,8 @@ squatted port).
 
 ## Gates
 
-`just site-check` = `just site-demos`, then `npm run verify` (the steps
-`package.json`'s `verify` script lists). `just site-e2e` = Playwright vs the PRODUCTION build — the
+`just site-check` runs the site's static tier (`package.json`'s `verify`
+script owns its steps). `just site-e2e` = Playwright vs the PRODUCTION build — the
 runtime-contract tier (`__pixLights`/`pix:onair`/
 `data-lit` seams, scrollspy keys, docs-nav variant, reduced-motion, console
 watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
