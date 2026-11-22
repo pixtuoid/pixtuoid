@@ -46,7 +46,9 @@ re-recorded under a better name.
 ## What the recorder does
 
 The recorder is `pixtuoid-core/examples/capture_fixture.rs` (why it is Rust:
-[below](#why-the-recorder-is-a-rust-example)).
+[below](#why-the-recorder-is-a-rust-example)). Its checks hold for what it
+records into the tree; a raw `--out` capture keeps the run's bytes as they
+came, with no stamp check, strip or scan.
 
 - **It records at the shim's output**, through a `PIXTUOID_SOCKET` listener,
   the seam that doesn't care how a payload reached the shim. codewhale passes
@@ -114,8 +116,7 @@ left behind. Any other edit and the capture stops being evidence.
   tool's command string. So read a capture before committing it, rather than
   trusting a filter on key names.
 - The recorder's `scan_for_pii` refuses the operator's OWN identity (its
-  `identity_needles`) in what it records into the tree, the one set gitleaks
-  can't know; a raw `--out` capture is neither stripped nor scanned.
+  `identity_needles`), the one set gitleaks can't know.
   `just fixture-pii` re-scans the committed tree by the shape of its values.
   Neither reaches a value it can't name, which is why a capture still gets
   read.
@@ -199,15 +200,19 @@ semantics, not recording logic:
 - `pipefail` swallowing a lister's exit 3 after the turn was billed;
 - `head -1` taking SIGPIPE once a corpus passed ~700 files (the same failure,
   in the same place, found later);
-- `stat -f %B`, which is macOS-only;
+- `stat -f %B`, BSD stat's birth time, which GNU stat reads as
+  `--file-system`
+  ([GNU stat](https://www.gnu.org/software/coreutils/manual/html_node/stat-invocation.html));
 - three world-writable temp paths.
 
 None of them could fail in a selftest small enough to run in CI, which is the
 argument, not the count. In Rust they are absent by construction: no arrays,
-no pipelines, `Metadata::created()` for birth time, `TempDir` for a private
-0700 sandbox. And the decisions are ordinary `#[test]`s that `just test`
+no pipelines,
+[`Metadata::created()`](https://doc.rust-lang.org/std/fs/struct.Metadata.html#method.created)
+for birth time, and `TempDir` in place of fixed temp paths. And the decisions are ordinary `#[test]`s that `just test`
 already runs, not a bespoke `--selftest` wired into two gates.
 
 That holds only because `Cargo.toml` declares `[[example]] test = true`.
-Without it an example is not a test target: its tests compile and never run,
+Without it `cargo test` only builds the example, so its `#[test]`s never run
+([Cargo: the `test` field](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-test-field)),
 which is how they first shipped.
