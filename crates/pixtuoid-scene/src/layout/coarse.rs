@@ -263,7 +263,7 @@ struct CoarseCell {
     steps: StepSet,
 }
 
-/// The coarse grid over a [`WalkableMask`]: each cell's [`walk_piece`] and the
+/// The graph over a [`WalkableMask`]'s coarse grid: each cell's [`walk_piece`] and the
 /// steps out of it, worked out once when the mask freezes. The A\* expansion
 /// and the reach BFS both step through [`CoarseGraph::neighbors`], so
 /// "reachable" and "routable" share ONE neighbour rule.

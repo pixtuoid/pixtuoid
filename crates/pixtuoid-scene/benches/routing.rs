@@ -62,10 +62,9 @@ fn find_path_group(c: &mut Criterion) {
     group.finish();
 }
 
-// A module, because rustc ignores a lint attribute on the macro call itself.
 #[expect(
     clippy::disallowed_methods,
-    reason = "codspeed's `criterion_group!` reads CODSPEED_ENV and CODSPEED_CARGO_WORKSPACE_ROOT with `env::var`"
+    reason = "codspeed's `criterion_group!` reads CODSPEED_ENV and CODSPEED_CARGO_WORKSPACE_ROOT with `env::var` (codspeed-criterion-compat-walltime 6.0.0 `src/macros.rs:71`, codspeed 6.0.0 `src/macros.rs:5`)"
 )]
 mod group {
     use super::{find_path_group, layout_compute};
