@@ -17,7 +17,7 @@ that ships an `AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
 - `raycast/src/pixtuoid.ts` is the CLI bridge; `raycast/src/manage-sources.tsx`
   and `raycast/src/start-floating.tsx` are the command UIs.
 - No server and no state of its own: every fact comes from the CLI, its
-  `--json` rows, and Start Floating's ready line, exit code and stderr.
+  `--json` rows, and Start Floating Window's ready line, exit code and stderr.
 
 ## The wire types are generated
 
@@ -48,8 +48,8 @@ that ships an `AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
   wire JSON; `crates/pixtuoid/tests/cli_json.rs`'s `sources --json` golden and
   the schema test pin `SourceStatus`'s. `OutcomeRow`'s doc comment in
   `sources.rs` owns the published-wire rule.
-- `raycast/contract/floating-launch.json`, Start Floating's args, usage exit
-  and error prefix, is hand-written; `cli_packaging`'s
+- `raycast/contract/floating-launch.json`, Start Floating Window's args, usage
+  exit and error prefix, is hand-written; `cli_packaging`'s
   `the_floating_launch_contract_holds` pins it against the binary.
 
 ## Toolchain policy
