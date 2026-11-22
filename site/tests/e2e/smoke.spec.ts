@@ -2566,19 +2566,23 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
   await page.keyboard.press('Escape');
   await expect(page.locator('#docs-menu')).not.toHaveClass(/is-open/);
   await expect(btn).toBeFocused();
-  // The anchored heading must clear the 60px sticky nav.
   await page.locator('[data-toc-link="logging--troubleshooting"]').click();
   await expect(page.locator('[data-toc-link="logging--troubleshooting"]')).toHaveAttribute(
     'aria-current',
     'location'
   );
+  // The click returns before its smooth anchor scroll moves; until it lands, Themes can still
+  // sit in the reading band, and parking it there crosses no observer threshold.
+  const anchored = page.locator('#logging--troubleshooting');
   await expect
     .poll(() =>
-      page.evaluate(
-        () => document.getElementById('logging--troubleshooting')!.getBoundingClientRect().top
+      anchored.evaluate((h) =>
+        Math.abs(h.getBoundingClientRect().top - parseFloat(getComputedStyle(h).scrollMarginTop))
       )
     )
-    .toBeGreaterThan(60);
+    .toBeLessThan(1);
+  const nav = (await page.locator('.nav').boundingBox())!;
+  expect((await anchored.boundingBox())!.y).toBeGreaterThan(nav.y + nav.height);
   // Park a heading at 20% viewport — inside the -15%/-75% reading band.
   await page.evaluate(() => {
     const h = document.getElementById('themes')!;
