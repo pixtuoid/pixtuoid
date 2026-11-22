@@ -192,7 +192,7 @@ fn aimless_fallback_scans_the_midline_for_a_walkable_cell() {
         x: c.x + c.width - POCKET_PX / 2,
         y: mid_y,
     };
-    let mut mask = crate::walkable::WalkableMask::new_open(l.buf_w, l.buf_h);
+    let mut mask = crate::walkable::WalkableMaskBuilder::new_open(l.buf_w, l.buf_h);
     mask.mark_blocked(0, 0, l.buf_w, l.buf_h, 0);
     mask.mark_walkable(
         open.x - POCKET_PX / 2,
@@ -200,6 +200,7 @@ fn aimless_fallback_scans_the_midline_for_a_walkable_cell() {
         POCKET_PX,
         POCKET_PX,
     );
+    let mask = mask.freeze();
     // `reachable` is DERIVED from `walkable` in a real layout — rebuild it, or
     // the routability filter reads a ReachSet describing a different office.
     l.reachable = crate::layout::ReachSet::from_mask(&mask, open);
@@ -225,9 +226,9 @@ fn aimless_fallback_on_a_fully_blocked_mask_returns_the_desk_anchor() {
     // Degenerate layout (nothing walkable at all): the desk anchor is a
     // destination every consumer already handles (A* snap / render anchor).
     let mut l = layout();
-    let mut mask = crate::walkable::WalkableMask::new_open(l.buf_w, l.buf_h);
+    let mut mask = crate::walkable::WalkableMaskBuilder::new_open(l.buf_w, l.buf_h);
     mask.mark_blocked(0, 0, l.buf_w, l.buf_h, 0);
-    l.walkable = mask;
+    l.walkable = mask.freeze();
 
     let desk = l.home_desks[0];
     for seed in 0..8u64 {

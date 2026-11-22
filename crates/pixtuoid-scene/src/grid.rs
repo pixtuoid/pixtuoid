@@ -69,6 +69,18 @@ impl<T> Grid<T> {
         }
     }
 
+    /// A `width × height` grid whose cell `(x, y)` is `f(x, y)`.
+    pub(crate) fn from_fn(width: u16, height: u16, mut f: impl FnMut(u16, u16) -> T) -> Self {
+        Self {
+            width,
+            height,
+            data: (0..height)
+                .flat_map(|y| (0..width).map(move |x| (x, y)))
+                .map(|(x, y)| f(x, y))
+                .collect(),
+        }
+    }
+
     #[inline]
     fn index(&self, x: u16, y: u16) -> Option<usize> {
         if x >= self.width || y >= self.height {

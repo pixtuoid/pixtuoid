@@ -52,7 +52,7 @@ use crate::pose::{
     WANDER_DWELL_EST_MS, dwell_ms, est_wander_cycle_ms, seated_dwell_ms, stale_resume_gap_ms,
     takes_trip,
 };
-use crate::walkable::WalkableMask;
+use crate::walkable::{WalkableMask, WalkableMaskBuilder};
 use pixtuoid_core::state::ActivityState;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -461,7 +461,7 @@ fn settle_collapses_a_seat_pair_and_gives_it_back() {
 fn snapshot_leg_profile_measures_the_routed_leg_plus_settles() {
     use crate::physics::{WalkIntent, walk_profile};
 
-    let mask = WalkableMask::new_open(64, 64);
+    let mask = WalkableMaskBuilder::new_open(64, 64).freeze();
     let id = AgentId::from_parts("test", "leg-profile");
     let from = Point { x: 4, y: 8 };
     let to = Point { x: 40, y: 8 };
@@ -828,8 +828,10 @@ fn resolve_wander_target_falls_back_to_aimless_when_boxed_in() {
     assert!(!l.waypoints.is_empty(), "layout must have waypoints");
     // Box EVERY waypoint in, so approach_point finds no allowed+reachable side
     // and returns its blocked-`pos` sentinel.
-    l.walkable
-        .mark_blocked(0, 0, l.walkable.width(), l.walkable.height(), 0);
+    let (w, h) = (l.walkable.width(), l.walkable.height());
+    let mut sealed = WalkableMaskBuilder::new(w, h, l.walkable.routed());
+    sealed.mark_blocked(0, 0, w, h, 0);
+    l.walkable = sealed.freeze();
     l.reachable = ReachSet::from_mask(&l.walkable, Point { x: 0, y: 0 });
 
     let id = (0u64..2000)

@@ -208,6 +208,7 @@ pub(crate) fn approach_point(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::walkable::WalkableMaskBuilder;
 
     #[test]
     fn overhanging_obstacle_stand_clearance_uses_visual_not_footprint() {
@@ -231,7 +232,7 @@ mod tests {
     /// Build an open mask with a centred obstacle stamped with the pad `mask.rs`
     /// gives a waypoint.
     fn mask_with_obstacle(w: u16, h: u16, pos: Point, fw: u16, fh: u16) -> WalkableMask {
-        let mut m = WalkableMask::new_open(w, h);
+        let mut m = WalkableMaskBuilder::new_open(w, h);
         m.mark_blocked(
             pos.x - fw / 2,
             pos.y - fh / 2,
@@ -239,7 +240,7 @@ mod tests {
             fh,
             furniture_def(Furniture::Pantry).pad,
         );
-        m
+        m.freeze()
     }
 
     #[test]
@@ -483,8 +484,9 @@ mod tests {
         // A vending machine recessed into a wall: everything down to y=54 is
         // blocked, so N/E/W are walled and only the south side is open.
         let pos = Point { x: 50, y: 50 };
-        let mut m = WalkableMask::new_open(100, 100);
+        let mut m = WalkableMaskBuilder::new_open(100, 100);
         m.mark_blocked(0, 0, 100, 54, 0);
+        let m = m.freeze();
         let reach = ReachSet::from_mask(&m, Point { x: 50, y: 80 });
         let s = stand_point(
             WaypointKind::VendingMachine,
@@ -504,7 +506,7 @@ mod tests {
         // Open field, so the reachability filter is a no-op and only the
         // allowed-side (no-back) rule is under test.
         let pos = Point { x: 50, y: 50 };
-        let m = WalkableMask::new_open(100, 100);
+        let m = WalkableMaskBuilder::new_open(100, 100).freeze();
         let reach = ReachSet::from_mask(&m, Point { x: 5, y: 5 });
         let s = approach_point(
             Furniture::MeetingSofa,
@@ -591,9 +593,10 @@ mod tests {
         // south backrest side opening onto a reachable corridor — so there is NO
         // valid approach, not even as a last resort.
         let pos = Point { x: 50, y: 50 };
-        let mut m = WalkableMask::new_open(100, 100);
+        let mut m = WalkableMaskBuilder::new_open(100, 100);
         m.mark_blocked(0, 0, 100, 100, 0);
         m.mark_walkable(48, 54, 5, 44); // a corridor SOUTH, behind the backrest
+        let m = m.freeze();
         let reach = ReachSet::from_mask(&m, Point { x: 50, y: 90 });
         let s = approach_point(
             Furniture::MeetingSofa,
@@ -669,13 +672,14 @@ mod tests {
 
     #[test]
     fn the_seat_scan_steps_through_a_dead_edge_but_never_hops_a_second_obstacle() {
-        let mut m = WalkableMask::new_open(40, 40);
+        let mut m = WalkableMaskBuilder::new_open(40, 40);
         // Seat body rows 19-20, a 1-cell pocket at row 21 sealed on all four
         // sides (walkable, unreachable), a second body rows 22-23, floor beyond.
         m.mark_blocked(8, 19, 5, 2, 0);
         m.mark_blocked(8, 22, 5, 2, 0);
         m.mark_blocked(9, 21, 1, 1, 0);
         m.mark_blocked(11, 21, 1, 1, 0);
+        let m = m.freeze();
         let reach = ReachSet::from_mask(&m, Point { x: 2, y: 2 });
         let seat = Point { x: 10, y: 18 };
         assert!(m.is_walkable(10, 21), "the pocket cell is walkable");

@@ -1,7 +1,7 @@
 //! Pathfinding façade — `Router` trait + `AStarRouter` impl.
 //!
 //! `AStarRouter` runs A* on a coarsened cell grid whose primitives
-//! (`cell_walkable`/`snap`/`CoarseGrid`/`CELL_SIZE`) are the SHARED
+//! (`cell_walkable`/`snap`/`CoarseGraph`/`CELL_SIZE`) are the SHARED
 //! `layout::coarse` ones `layout::reach` also rides, so router reachability
 //! can't drift from `ReachSet`. Routes are memoized per `(from, to, aim)` until a
 //! new layout, or the cache outgrowing its cap, clears them.
@@ -13,7 +13,7 @@ use crate::grid::Grid;
 use crate::walkable::WalkableMask;
 
 use crate::layout::{
-    Bounds, COARSE_CELL_SIZE, CoarseGrid, Point, cell_anchor, cell_center, cell_dims, cell_holding,
+    Bounds, COARSE_CELL_SIZE, Point, cell_anchor, cell_center, cell_dims, cell_holding,
     cell_walkable, grid_origin, snap, snap_cell, snap_where,
 };
 use crate::physics::{OCTILE_DIAGONAL_COST, OCTILE_STRAIGHT_COST, octile_cost};
@@ -157,13 +157,12 @@ pub fn find_path(
     };
     let cell_near = |p: Point| snap(mask, snap_cell(mask, p), cell_w, cell_h, MAX_SNAP_RADIUS);
     let start = cell_near(from)?;
-    let mut coarse = CoarseGrid::new(mask);
-    let mut search = |goal| Some((goal, a_star(&mut coarse, mask, preferred, start, goal)?));
+    let search = |goal| Some((goal, a_star(mask, preferred, start, goal)?));
     // `aim`'s cell stands in for `to`'s own only where A* reaches it and the last step,
     // from that cell's anchor to `to`, stays on open floor.
     let aimed =
         cell_near(aim).filter(|&(cx, cy)| segment_clear(mask, cell_anchor(mask, cx, cy), to));
-    let (goal, came_from) = match aimed.and_then(&mut search) {
+    let (goal, came_from) = match aimed.and_then(search) {
         Some(reached) => reached,
         None => search(cell_near(to)?)?,
     };
@@ -175,7 +174,6 @@ pub fn find_path(
 /// `preferred` get a step-cost discount, so paths hug that zone even when an
 /// off-zone diagonal cut would be slightly shorter.
 fn a_star(
-    coarse: &mut CoarseGrid<'_>,
     mask: &WalkableMask,
     preferred: Option<Bounds>,
     start: (u16, u16),
@@ -204,7 +202,7 @@ fn a_star(
         if current.g > g_score.get_or(current.cell.0, current.cell.1, u32::MAX) {
             continue;
         }
-        for ((nx, ny), diagonal) in coarse.neighbors(current.cell) {
+        for ((nx, ny), diagonal) in mask.coarse().neighbors(current.cell) {
             let base_step = if diagonal {
                 OCTILE_DIAGONAL_COST
             } else {
