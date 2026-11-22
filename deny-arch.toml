@@ -65,6 +65,8 @@ allow = [
     "itoa",
     "jiff-core",
     "jiff-static",
+    "jiff-tzdb",
+    "jiff-tzdb-platform",
     "kqueue",
     "kqueue-sys",
     "linux-raw-sys",

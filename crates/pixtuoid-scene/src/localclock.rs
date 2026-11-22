@@ -184,6 +184,18 @@ mod tests {
         );
     }
 
+    /// The zone `TZ` names (`just test`'s `TEST_TZ`), else the system's,
+    /// resolves from this crate's own jiff features: a build of scene alone,
+    /// `just hack`'s, carries no other crate's.
+    #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the database the office's reader resolves through"
+    )]
+    fn the_viewers_zone_resolves_from_this_crates_own_features() {
+        assert!(TimeZone::try_system().is_ok());
+    }
+
     /// Day 0 is ordinary at every minute: no stand-in, no fireworks, no finale.
     #[test]
     fn day_zero_is_an_ordinary_day() {

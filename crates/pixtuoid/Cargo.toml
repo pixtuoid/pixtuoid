@@ -81,9 +81,9 @@ tracing-appender   = "0.2"
 which              = "8"
 # The throwaway hook endpoint `doctor` proves the shim against.
 tempfile           = { workspace = true }
-# jiff's defaults: the tz database `TimeZone::system()` finds the user's zone
-# in, bundled on Windows, which keeps none.
-jiff               = { workspace = true, features = ["default"] }
+# Its `TimeZone::system()` resolves through the tz database pixtuoid-scene's
+# jiff turns on, the zone the office reads.
+jiff               = { workspace = true }
 open               = "5"
 semver             = { workspace = true }
 # What `panels::widgets::wrap_options` wraps, by display width. No line-break or
