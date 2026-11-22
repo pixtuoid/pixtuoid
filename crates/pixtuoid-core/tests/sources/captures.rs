@@ -615,7 +615,8 @@ fn a_recorded_captures_claims_are_falsified_by_its_own_bytes() {
 
 /// `YYYY-MM-DD`, validated: RFC 3339's `full-date`. The shape is held here,
 /// since jiff's date parser also reads ISO 8601's `20260815` and a whole
-/// date-time; jiff checks the calendar.
+/// date-time (jiff 1.0.2 `src/fmt/temporal/parser.rs:530-544`,
+/// `src/fmt/temporal/mod.rs:833-840`); jiff checks the calendar.
 fn is_iso_date(s: &str) -> bool {
     const SHAPE: &[u8] = b"9999-99-99";
     s.len() == SHAPE.len()

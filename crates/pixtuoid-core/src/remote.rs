@@ -170,8 +170,9 @@ impl Os {
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 struct Day {
-    // schemars 1.2.3's jiff feature is `jiff02` (jiff ^0.2), so the date's
-    // schema is a plain string; the wire stays `"YYYY-MM-DD"` via serde.
+    // schemars 1.2.3's jiff feature is `jiff02`, for jiff 0.2 (its
+    // `Cargo.toml:153-157`), so the date's schema is a plain string; the wire
+    // stays `"YYYY-MM-DD"` via serde.
     #[cfg_attr(test, schemars(with = "String"))]
     day: Date,
     tokens: u64,

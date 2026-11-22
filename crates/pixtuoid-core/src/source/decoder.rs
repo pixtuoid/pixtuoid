@@ -267,7 +267,7 @@ pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
 }
 
 /// `s` for jiff's parser when it has RFC 3339's `date-time` shape: that parser
-/// reads [Temporal's wider grammar](https://docs.rs/jiff/1.0.2/jiff/fmt/temporal/index.html)
+/// reads Temporal's wider grammar (jiff 1.0.2 `src/fmt/temporal/mod.rs:1-56`)
 /// (no seconds, a comma fraction, a `[zone]` annotation, `+0200`, `+02:00:30`),
 /// so the shape is held here and jiff checks the ranges.
 #[cfg(any(feature = "native", feature = "harness", test))]
@@ -275,8 +275,8 @@ fn rfc3339_date_time(s: &str) -> Option<std::borrow::Cow<'_, str>> {
     /// `full-date`, the separator and `partial-time` up to its seconds: `9` is
     /// any digit, and §5.6's NOTE lets a space stand for the `T`.
     const HEAD: &[u8] = b"9999-99-99T99:99:99";
-    /// jiff refuses a fraction digit past the nanosecond, which is cut instead:
-    /// it is no reason to drop the stamp.
+    /// jiff refuses a fraction digit past the nanosecond (`src/fmt/util.rs:761-765`),
+    /// which is cut instead: it is no reason to drop the stamp.
     const NANOSECOND_DIGITS: usize = 9;
     let head = s.as_bytes().get(..HEAD.len())?;
     let head_fits = HEAD.iter().zip(head).all(|(&want, &got)| match want {
@@ -298,7 +298,8 @@ fn rfc3339_date_time(s: &str) -> Option<std::borrow::Cow<'_, str>> {
         }
         None => (0, rest),
     };
-    /// RFC 3339's `time-hour` ends at 23, where jiff's offset hours run to 25.
+    /// RFC 3339's `time-hour` ends at 23, where jiff's offset hours run to 25
+    /// (jiff-core 1.0.1 `src/bounds.rs:277`).
     const OFFSET_HOUR_END: [u8; 2] = *b"24";
     let offset_fits = match *offset.as_bytes() {
         [b'Z' | b'z'] => true,

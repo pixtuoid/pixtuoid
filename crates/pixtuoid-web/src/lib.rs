@@ -145,7 +145,7 @@ fn page_clock() -> ScreenClock {
 /// The browser's offset at `instant`, from its own zone data.
 #[cfg(target_arch = "wasm32")]
 fn page_offset(instant: jiff::Timestamp) -> jiff::tz::Offset {
-    // `getTimezoneOffset` counts minutes WEST of UTC.
+    // `getTimezoneOffset` counts minutes WEST of UTC (https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/getTimezoneOffset#negative_values_and_positive_values).
     let west = Date::new(instant.as_millisecond() as f64).get_timezone_offset();
     jiff::tz::Offset::try_from(jiff::SignedDuration::from_mins(-(west as i64)))
         .unwrap_or(jiff::tz::Offset::UTC)

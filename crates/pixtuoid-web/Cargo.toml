@@ -26,7 +26,8 @@ pixtuoid-core  = { path = "../pixtuoid-core", version = "0.23.0", default-featur
 pixtuoid-scene = { path = "../pixtuoid-scene", version = "0.23.0", default-features = false }
 wasm-bindgen   = { workspace = true }
 # Not its `js` feature: jiff finds the browser's zone only in a tz database it
-# would bundle into this wasm, so the page's own `Date` gives the offset.
+# would bundle into this wasm (jiff 1.0.2 `PLATFORM.md:363-397`), so the page's
+# own `Date` gives the offset.
 jiff           = { workspace = true }
 serde          = { workspace = true }
 serde_json     = { workspace = true }
