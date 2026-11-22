@@ -102,6 +102,13 @@ impl HookPidWatch {
     }
 }
 
+/// `corroborate` as a test passes it: a pid the shim guessed, and one the
+/// source stamped.
+#[cfg(test)]
+pub(super) const GUESS: bool = true;
+#[cfg(test)]
+pub(super) const FACT: bool = false;
+
 /// The agents ended through `witness`'s `SessionEnd`, `witness` being armed on
 /// the pid whose death a test awaits: one death ends every agent armed on its
 /// pid at once ([`Bindings::take`]), so an agent missing here was never armed.
@@ -195,9 +202,6 @@ mod tests {
             crate::source::exit_watch::HAS_BACKEND
         );
     }
-
-    const GUESS: bool = true;
-    const FACT: bool = false;
 
     /// Two sightings each, so both agents are ARMED on the shared pid.
     #[test]

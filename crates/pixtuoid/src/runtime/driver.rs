@@ -643,7 +643,7 @@ mod tests {
     fn a_runtime_ended_at_quit_still_saves_the_count() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("today.json");
-        let (tx, ended) = super::super::on_runtime(|rt| {
+        let (tx, ending) = super::super::on_runtime(|rt| {
             let tx = rt.block_on(async {
                 let (tx, rx) = tokio::sync::mpsc::channel(8);
                 let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
@@ -662,7 +662,7 @@ mod tests {
             (tx, Instant::now())
         })
         .expect("a runtime");
-        let waited = ended.elapsed();
+        let waited = ending.elapsed();
         drop(tx);
         let last = || saved_at(&path).map(|today| today.tool_calls);
         if waited < crate::EXIT_WAIT {

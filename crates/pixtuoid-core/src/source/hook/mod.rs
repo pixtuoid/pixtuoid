@@ -1109,7 +1109,11 @@ mod tests {
         drop(client);
         task.await.unwrap();
         let witness = AgentId::from_parts("opencode", "ses_witness");
-        watch.note(i32::try_from(pid).expect("pid fits i32"), witness, false);
+        watch.note(
+            i32::try_from(pid).expect("pid fits i32"),
+            witness,
+            pid_watch::FACT,
+        );
 
         wrapper.kill().expect("kill the wrapper");
         let _ = wrapper.wait();

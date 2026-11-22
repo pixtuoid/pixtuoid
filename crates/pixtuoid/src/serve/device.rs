@@ -876,7 +876,7 @@ mod tests {
         kept.sees_a_change(&fixture).await;
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_devices_new_connection_ends_its_old_one() {
         let fixture = fixture();
         let token = paired(&fixture);

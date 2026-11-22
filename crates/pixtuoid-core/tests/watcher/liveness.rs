@@ -14,8 +14,8 @@ use pixtuoid_core::source::jsonl::{LivenessProbe, ProbeSnapshot};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::vouch_snapshot_with_pids;
 use crate::{
-    backdate, codex_meta_line, codex_watcher, codex_work_line, collect_for, collect_until,
-    start_id, vouch_snapshot, write_lines,
+    backdate, codex_meta_line, codex_watcher, codex_work_line, collect_until, start_id,
+    vouch_snapshot, write_lines,
 };
 
 /// The probe poll these tests run the watcher at.
@@ -28,8 +28,8 @@ const UNREACHED_VOUCH_SPAN: Duration = Duration::from_secs(3600);
 
 /// A probe a test answers for, flipping its answer mid-run, and each instant
 /// the watcher asked it. A scan pass asks once and passes run one at a time,
-/// so by an ask, the pass before it has sent all it caused: a wait counts
-/// passes, never the clock.
+/// so by an ask, the pass before it has sent all it caused: a wait ends on an
+/// ask, never on a sleep.
 #[derive(Clone)]
 struct Probe(Arc<watch::Sender<Asked>>);
 
@@ -80,7 +80,7 @@ impl Probe {
     /// Once the watcher has asked `n` times since the `from`th ask, leaving
     /// what it sent queued.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    async fn asked(&self, from: usize, n: usize) {
+    async fn until_asked(&self, from: usize, n: usize) {
         let mut asked = self.0.subscribe();
         tokio::time::timeout(crate::DEADLINE, asked.wait_for(|a| a.at.len() >= from + n))
             .await
@@ -218,9 +218,6 @@ async fn watcher_emits_proof_of_life_for_probe_live_ids() {
 /// production 60s cadence makes the poll arm untestable.
 #[tokio::test]
 async fn poll_arm_refreshes_probe_snapshot_and_reemits_proof_of_life() {
-    use std::collections::HashSet;
-    use std::sync::{Arc, Mutex};
-
     let dir = TempDir::new().unwrap();
     let projects_root = dir.path().to_path_buf();
     let project_dir = projects_root.join("proj-poll-pol");
@@ -233,19 +230,18 @@ async fn poll_arm_refreshes_probe_snapshot_and_reemits_proof_of_life() {
     let backdated = FileTime::from_system_time(SystemTime::now() - Duration::from_secs(3600));
     set_file_mtime(&stale, backdated).unwrap();
 
-    let live: Arc<Mutex<HashSet<String>>> = Arc::new(Mutex::new(HashSet::new()));
-    let probe_view = live.clone();
+    let probe = Probe::new(vouch_snapshot(&[]));
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(32);
     let watcher = codex_watcher(projects_root.clone())
         .with_initial_window(Duration::from_secs(60))
         .with_poll_interval(PROBE_POLL)
-        .with_liveness_probe(Arc::new(move || {
-            let ids = probe_view.lock().unwrap().clone();
-            vouch_snapshot(&ids.iter().map(String::as_str).collect::<Vec<_>>())
-        }));
+        .with_liveness_probe(probe.liveness());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
-    let held = collect_for(&mut rx, 3 * PROBE_POLL, "the empty-probe gate").await;
+    // The seed's pass and a poll arm's, each sent by the ask after it.
+    let held = probe
+        .listen_until(&mut rx, "the empty-probe gate", |at| at.len() >= 3)
+        .await;
     assert!(
         !held.iter().any(|(_, ev)| matches!(
             ev,
@@ -254,7 +250,7 @@ async fn poll_arm_refreshes_probe_snapshot_and_reemits_proof_of_life() {
         "the gate must hold while the probe snapshot is empty, got {held:?}"
     );
 
-    live.lock().unwrap().insert(uuid.to_string());
+    probe.answer(vouch_snapshot(&[uuid]));
 
     let expected = AgentId::from_parts("codex", uuid);
     let (mut got_start, mut got_pol) = (false, false);
@@ -485,7 +481,7 @@ async fn probe_panic_changes_nothing() {
     let boom = Arc::new(AtomicBool::new(false));
     let probe_boom = boom.clone();
     let probe = Probe::new(vouch_snapshot(&[uuid]));
-    let asked = probe.clone();
+    let live = probe.liveness();
     // Short, so a panic taken for an empty snapshot confirms inside the wait.
     let span = Duration::from_millis(200);
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
@@ -494,7 +490,7 @@ async fn probe_panic_changes_nothing() {
         .with_poll_interval(PROBE_POLL)
         .with_negative_vouch_min_span(span)
         .with_liveness_probe(Arc::new(move || {
-            let snap = asked.ask();
+            let snap = live();
             if probe_boom.load(Ordering::SeqCst) {
                 panic!("probe boom");
             }
@@ -620,7 +616,7 @@ async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {
     // Another of the process's rollouts, whose end is the death's receipt.
     let witness_sid = "01000000-0000-7000-8000-0000000000c1";
     let bound = probe.answer(vouch_snapshot_with_pids(&[witness_sid], &[pid]));
-    probe.asked(bound, 2).await;
+    probe.until_asked(bound, 2).await;
     let witness = AgentId::from_parts("codex", witness_sid);
     let _ = child.kill();
     let _ = child.wait();
@@ -710,7 +706,7 @@ async fn a_rebound_session_ends_with_its_new_pid_while_the_old_one_lives() {
 
     // The pass that takes the migration folds it before the next one asks.
     let migrated = probe.answer(vouch_snapshot_with_pids(&[uuid], &[new_pid]));
-    probe.asked(migrated, 2).await;
+    probe.until_asked(migrated, 2).await;
 
     let _ = new.kill();
     let _ = new.wait();
