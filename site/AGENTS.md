@@ -13,13 +13,13 @@ before changing the site:
 
 ## Gates
 
-- The gates are `just site-check`, `just site-fmt` and `just site-e2e`
-  (README's Checks says what each runs). The pre-push hook still runs
+- The gates are `just site-check` and `just site-e2e`, with `just site-fmt` to
+  format (README's Checks says what each runs). The pre-push hook still runs
   `just preflight` on a site-only change.
-- `just site-e2e` runs Playwright against the production build. It is the
-  only tier that sees the runtime contracts tsc, knip and the build are blind
-  to: the `__pixLights`, `pix:onair` and `data-lit` seams, the scrollspy keys,
-  the docs-nav variant, reduced motion and the console watchdog.
+- `just site-e2e` runs Playwright against the production build: the
+  runtime-contract tier, which sees what tsc, knip and the build are blind
+  to (the `__pixLights`, `pix:onair` and `data-lit` seams, the scrollspy keys,
+  the docs-nav variant, reduced motion and the console watchdog).
 - Lighthouse (`npm run lighthouse`, which serves `dist/` itself) audits the
   home page and every route `config/blog.mjs`'s `readingRoutes` lists: each
   rendered doc, the blog's lobby and every post.
