@@ -531,9 +531,9 @@ pub fn nightfall_on(at: SystemTime) -> Option<SystemTime> {
 
 /// The local time of day nightfall begins at.
 pub(crate) const DUSK: jiff::civil::Time = {
-    const SECS_PER_HOUR: f32 = jiff::SignedDuration::from_hours(1).as_secs() as f32;
-    // SUN_SET_H is an hour of the day, so the seconds are a whole hour.
-    jiff::civil::time(((SUN_SET_H * SECS_PER_HOUR) as u32 / 3600) as i8, 0, 0, 0)
+    let hour = SUN_SET_H as i8;
+    assert!(hour as f32 == SUN_SET_H, "DUSK holds a whole SUN_SET_H");
+    jiff::civil::time(hour, 0, 0, 0)
 };
 
 /// How far into the night hour `h` is, 0..=1: zero by day, rising over
