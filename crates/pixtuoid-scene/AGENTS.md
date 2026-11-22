@@ -21,8 +21,8 @@ real-world headings:
   (`layout/placement.rs`'s `sort_row_at_is_the_sprite_south_row_for_every_pivot`)
   and where a south-anchored ground strip (`GroundAlign::End`) sits.
 - **East** is +x (right); **west** is −x (left).
-- A piece's approach set is written facing south, then rotated by its live
-  `Facing`. Read the live facing from `HomeDesk::facing`; never assume the
+- A piece's approach set is canonical, written facing south, then rotated by
+  its live `Facing`. Read the live facing from `HomeDesk::facing`; never assume the
   canonical set is the live one.
 - Keep the compass screen-space even where real-world geography disagrees:
   flipping it would invert the z-sort's "south row" vocabulary across the
@@ -170,7 +170,8 @@ The rules the bundled pack (`sprites/default/`) is drawn to.
 
 ## When refactoring
 
-- A change to `derive_with_routing`, `WalkState` or the `pixel_painter`
-  passes adds or updates a frame-by-frame continuity guard: `walk/tests.rs`,
-  `pose/tests.rs`, or the binary's `tui/tui_renderer/harness`. Each past
+- A change to `derive_with_routing`, `WalkState` or a pixel pass
+  (`pixel_painter`, `cutaway/paint.rs`) adds or updates a frame-by-frame
+  continuity guard: `walk/tests.rs`, `pose/tests.rs`, or the binary's
+  `tui/tui_renderer/harness`. Each past
   flash, teleport and replay regression came back as a failing guard first.

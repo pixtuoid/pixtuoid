@@ -84,13 +84,13 @@ that ships an `AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
     `Preferences` that `tsc` reads.
   - `ray lint` validates the manifest, icons and metadata and runs the
     Prettier pass.
-  - The [README](raycast/README.md) covers `npm run {build,dev,lint}`.
-- Don't run `cargo` for a change scoped to `raycast/`; the pre-push hook still
-  runs `just preflight`.
-- Install scripts fail closed, as the site's do: `strict-allow-scripts` with an
-  exact-version `allowScripts`, enforced in CI by the npm `setup-npm` installs
-  (`site/package.json`'s `packageManager`). Review them with
-  `npm install-scripts ls`.
+- The pre-push hook still runs `just preflight` on a change scoped to
+  `raycast/`.
+- Install scripts fail closed, as the site's do
+  ([its README's Checks](../site/README.md#checks)): `strict-allow-scripts`
+  with an exact-version `allowScripts`, enforced in CI by the npm version
+  `setup-npm` installs from `site/package.json`'s `packageManager`. Review
+  them with `npm install-scripts ls`.
 - `npm run audit` is plain `npm audit --audit-level=low`, as the site's is.
   `npm audit` has no per-advisory ignore, so if an unfixable advisory recurs
   here, restore the per-advisory allow-list script

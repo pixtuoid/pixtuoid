@@ -13,9 +13,9 @@ Cross-cutting rules: the root [`AGENTS.md`](../../AGENTS.md).
   the other.
 - `src/panels/` holds what both show: the modal panels, and the one key
   dispatch and mouse ladder that drive them.
-- A change to the panels' widgets or the dispatch precedence adds or updates a
-  test in `src/tui/tui_renderer/harness/`, which drives the real `TuiRenderer`
-  through a ratatui `TestBackend`.
+- A change to the panels' widgets or the dispatch precedence adds or updates an
+  output-first test in the
+  [tui harness](src/tui/AGENTS.md#when-refactoring).
 
 ## The corpus census
 

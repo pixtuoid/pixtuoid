@@ -72,7 +72,7 @@ fails the build:
   class; its header owns the mechanism, and `pages.yml`'s pins carry their
   own.
 - The doc routes (`src/docs.json` is the roster) and the blog share the Wing
-  shell: they mount the Statusline without its index-only parts (no PR feed
+  shell: they mount the Statusline without its index-only organs (no PR feed
   fetch), and `Wing.astro`'s sidebar reads the one `FLOORS` manifest.
 - A post is one file in `src/content/blog/`. Its route, the lobby, the feed,
   Lighthouse's URLs and `check:docs`'s roster derive from that directory

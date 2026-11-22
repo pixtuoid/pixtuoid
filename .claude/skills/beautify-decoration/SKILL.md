@@ -21,9 +21,9 @@ A repo-specific iteration loop for visually redesigning a decoration in `pixtuoi
 3. `./target/release/examples/snapshot /tmp/snap.png`
 4. Crop the render, either way:
    - `uv run --locked -- python3 scripts/crop-snapshot.py /tmp/snap.png --scale 3 -q <quadrant>`; its `QUADRANTS` table is the zone map.
-   - Skip the quadrant guessing and the Python step: `snapshot --crop-furniture <piece>` (`examples/snapshot/encode.rs` lists the pieces) or `--crop-agent <label|session>` renders a `CROP_WINDOW` already centred on the target.
+   - Skip the quadrant guessing and the Python step: `snapshot --crop-furniture <piece>` (`crates/pixtuoid/examples/snapshot/encode.rs` lists the pieces) or `--crop-agent <label|session>` renders a `CROP_WINDOW` already centred on the target.
 5. Read the cropped PNG, critique it, and go back to step 1.
-6. When the [self-critique checklist](#self-critique-checklist--before-sending-a-render-to-the-user) passes, send the crop to the user with a short caption. The user is the final judge of "does it look like a fridge / coffee machine / etc."; send only once your own critique passes.
+6. When the [self-critique checklist](#self-critique-checklist--before-sending-a-render-to-the-user) passes, send the crop to the user with a short caption. The user is the final judge of "does it look like a fridge / coffee machine / etc."
 7. `cargo build --release --workspace` to rebuild the live binary too. Never skip it: step 2 does not rebuild the main binary, so `./target/release/pixtuoid run` shows no sprite change until the workspace is rebuilt. Skipping it is how "I changed the sprite but nothing happened in the live TUI" bugs get filed.
 8. Name each rejected design and why it lost in the PR body. Never skip it: a sprite change's PR body, which becomes its squash message on main, gives a one-line reason for each rejected design, as the org rules' "why this approach", so a later editor doesn't retry the same dead ends.
 
