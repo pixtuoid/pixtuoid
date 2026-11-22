@@ -50,7 +50,7 @@ const DEFAULT_HEIGHT: u32 = pixtuoid_web::FRAMING_UNITS_H;
 const DEFAULT_WIDTH: u32 = DEFAULT_HEIGHT * 16 / 9;
 // Arbitrary but FIXED — never "today": only the hour-of-day drives the sky, and
 // pinning the date keeps an `--hour` render byte-identical across machines.
-const T0_REFERENCE_YMD: (i32, u32, u32) = (2024, 6, 1);
+const T0_REFERENCE_DAY: jiff::civil::Date = jiff::civil::date(2024, 6, 1);
 
 fn arg<T: std::str::FromStr>(args: &[String], name: &str) -> Option<T> {
     args.iter()
@@ -63,15 +63,11 @@ fn arg<T: std::str::FromStr>(args: &[String], name: &str) -> Option<T> {
 /// The office's sky decodes `t0_ms` via `TimeZone::system()`, so this only lands on
 /// the same hour because the gen pipeline pins the process to `TZ=UTC`.
 fn hour_to_t0_ms(hour: u32) -> Option<f64> {
-    let (y, m, d) = T0_REFERENCE_YMD;
-    let dt = jiff::civil::Date::new(
-        i16::try_from(y).ok()?,
-        i8::try_from(m).ok()?,
-        i8::try_from(d).ok()?,
-    )
-    .ok()?
-    .to_datetime(jiff::civil::Time::new(i8::try_from(hour).ok()?, 0, 0, 0).ok()?);
-    let ts = dt.to_zoned_datetime(jiff::tz::TimeZone::UTC).ok()?;
+    let time = jiff::civil::Time::new(i8::try_from(hour).ok()?, 0, 0, 0).ok()?;
+    let ts = T0_REFERENCE_DAY
+        .to_datetime(time)
+        .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+        .ok()?;
     Some(ts.timestamp().as_millisecond() as f64)
 }
 

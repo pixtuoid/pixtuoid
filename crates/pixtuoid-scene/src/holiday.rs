@@ -50,7 +50,7 @@ pub(crate) fn finale_at(now: std::time::SystemTime) -> bool {
         && (midnight - FINALE.0..midnight + FINALE.1).contains(&local)
 }
 
-/// December's month number: jiff has no month enum, so the name lives here.
+/// December's month number.
 const DECEMBER: i8 = 12;
 
 /// A holiday the office keeps.
@@ -153,8 +153,8 @@ impl Occasion {
     /// The instant the tests keep Christmas at: Dec 25, local noon.
     #[cfg(test)]
     pub(crate) fn christmas_noon() -> SystemTime {
-        let day = jiff::civil::date(2026, 12, 25);
-        crate::localclock::local_instant(day, 12, 0).expect("local noon exists")
+        let noon = jiff::civil::date(2026, 12, 25).at(12, 0, 0, 0);
+        crate::localclock::local_instant(noon).expect("local noon exists")
     }
 
     /// The art `piece` is drawn in: its holiday's stand-in for it, else itself.
@@ -168,17 +168,9 @@ impl Occasion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jiff::civil::date;
 
-    fn date(y: i32, m: u32, d: u32) -> Date {
-        Date::new(
-            i16::try_from(y).expect("a year"),
-            i8::try_from(m).expect("a month"),
-            i8::try_from(d).expect("a day"),
-        )
-        .expect("a date")
-    }
-
-    fn on(y: i32, m: u32, d: u32) -> Option<Holiday> {
+    fn on(y: i16, m: i8, d: i8) -> Option<Holiday> {
         Holiday::on(date(y, m, d))
     }
 
@@ -257,13 +249,8 @@ mod tests {
     }
 
     /// The local instant `time` on `y-m-d`.
-    fn local_at(y: i32, m: u32, d: u32, time: Time) -> SystemTime {
-        crate::localclock::local_instant(
-            date(y, m, d),
-            u32::try_from(time.hour()).expect("an hour"),
-            u32::try_from(time.minute()).expect("a minute"),
-        )
-        .expect("a local time")
+    fn local_at(y: i16, m: i8, d: i8, time: Time) -> SystemTime {
+        crate::localclock::local_instant(date(y, m, d).to_datetime(time)).expect("a local time")
     }
 
     /// The minute before and the minute `time` begins.
@@ -294,19 +281,10 @@ mod tests {
 
     /// The local instant `offset` from the midnight that begins `y-m-d`, to
     /// the second.
-    fn from_midnight_starting(y: i32, m: u32, d: u32, offset: SignedDuration) -> SystemTime {
+    fn from_midnight_starting(y: i16, m: i8, d: i8, offset: SignedDuration) -> SystemTime {
         let midnight = date(y, m, d).to_datetime(Time::MIN);
         let at = midnight.checked_add(offset).expect("a time within the day");
-        let instant = crate::localclock::local_instant(
-            at.date(),
-            u32::try_from(at.hour()).expect("an hour"),
-            u32::try_from(at.minute()).expect("a minute"),
-        )
-        .expect("a local time");
-        instant
-            + std::time::Duration::from_secs(
-                u64::try_from(i32::from(at.second())).expect("a second"),
-            )
+        crate::localclock::local_instant(at).expect("a local time")
     }
 
     /// New Year's finale runs from [`FINALE`]'s lead before the midnight that

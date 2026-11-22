@@ -526,7 +526,7 @@ pub(crate) fn local_hour_frac(now: SystemTime) -> f32 {
 /// dusk` starts its clock. `None` where that local time doesn't exist.
 #[doc(hidden)]
 pub fn nightfall_on(at: SystemTime) -> Option<SystemTime> {
-    crate::localclock::on_date_of(at, DUSK.hour() as u32, DUSK.minute() as u32)
+    crate::localclock::on_date_of(at, DUSK)
 }
 
 /// The local time of day nightfall begins at.

@@ -464,28 +464,13 @@ fn solar_noon_outshines_the_brightest_night() {
 }
 
 /// `y-mo-d h:mi` UTC.
-fn utc(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> SystemTime {
-    let dt = jiff::civil::Date::new(
-        i16::try_from(y).expect("a year"),
-        i8::try_from(mo).expect("a month"),
-        i8::try_from(d).expect("a day"),
-    )
-    .expect("a valid date")
-    .to_datetime(
-        jiff::civil::Time::new(
-            i8::try_from(h).expect("an hour"),
-            i8::try_from(mi).expect("a minute"),
-            0,
-            0,
-        )
-        .expect("a valid time"),
-    );
-    let secs = dt
+fn utc(y: i16, mo: i8, d: i8, h: i8, mi: i8) -> SystemTime {
+    let instant = jiff::civil::date(y, mo, d)
+        .at(h, mi, 0, 0)
         .to_zoned_datetime(jiff::tz::TimeZone::UTC)
         .expect("a valid instant")
-        .timestamp()
-        .as_second();
-    std::time::UNIX_EPOCH + std::time::Duration::from_secs(u64::try_from(secs).expect("after 1970"))
+        .timestamp();
+    SystemTime::try_from(instant).expect("inside the system clock's range")
 }
 
 /// How far a true lunation strays from the mean one: under a day.
@@ -494,7 +479,7 @@ const MAX_MISS_DAYS: f32 = 1.0;
 /// 2026's full moons, `(month, day, hour, minute)` UTC, from NASA GSFC's "Phases
 /// of the Moon 2001 to 2100"
 /// (<https://eclipse.gsfc.nasa.gov/phase/phases2001.html>, Universal Time).
-const FULL_MOONS_2026: [(u32, u32, u32, u32); 13] = [
+const FULL_MOONS_2026: [(i8, i8, i8, i8); 13] = [
     (1, 3, 10, 3),
     (2, 1, 22, 9),
     (3, 3, 11, 38),
@@ -1106,9 +1091,8 @@ fn new_years_eve_bursts_through_the_sky_on_every_tier() {
     const SAMPLED_MS: u64 = HOUR_MS / 2;
     const MINUTE_MS: u64 = 60_000;
     let at = |day, h, m| {
-        let date =
-            jiff::civil::Date::new(2026, 12, i8::try_from(day).expect("a day")).expect("a date");
-        crate::localclock::local_instant(date, h, m).expect("a local time")
+        let local = jiff::civil::date(2026, 12, day).at(h, m, 0, 0);
+        crate::localclock::local_instant(local).expect("a local time")
     };
     for motion in Motion::ALL {
         let bursts = |from: SystemTime, span_ms: u64| {
@@ -1159,9 +1143,8 @@ fn new_years_eve_bursts_through_the_sky_on_every_tier() {
             if motion == Motion::Still {
                 break;
             }
-            let date = jiff::civil::Date::new(i16::try_from(year).expect("a year"), 12, 31)
-                .expect("a date");
-            let eve = crate::localclock::local_instant(date, 23, 59).expect("a local time");
+            let eve = jiff::civil::date(year, 12, 31).at(23, 59, 0, 0);
+            let eve = crate::localclock::local_instant(eve).expect("a local time");
             let midnight = bursts(eve, 2 * MINUTE_MS);
             floor(&midnight);
             let most = |finale: bool| {

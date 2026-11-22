@@ -19,8 +19,7 @@ static VIEWER_OFFSET: OnceLock<fn(Timestamp) -> Offset> = OnceLock::new();
 /// Reads the viewer's offset at each instant through `offset_at` in place of
 /// `TimeZone::system()`, for a host whose platform jiff finds no zone on
 /// without a bundled tz database: a browser, whose own clock knows its offset
-/// (jiff 1.0.2 `PLATFORM.md`, "IANA Time Zone Database"). The first host's
-/// reading stands.
+/// (jiff 1.0.2 `PLATFORM.md:363-397`). The first host's reading stands.
 pub fn read_viewer_offset_with(offset_at: fn(Timestamp) -> Offset) {
     let _ = VIEWER_OFFSET.set(offset_at);
 }
@@ -29,7 +28,7 @@ pub fn read_viewer_offset_with(offset_at: fn(Timestamp) -> Offset) {
 fn zone_at(instant: Timestamp) -> TimeZone {
     VIEWER_OFFSET
         .get()
-        .map_or_else(host_zone, |offset_at| TimeZone::fixed(offset_at(instant)))
+        .map_or_else(system_zone, |offset_at| TimeZone::fixed(offset_at(instant)))
 }
 
 #[cfg(not(test))]
@@ -37,7 +36,7 @@ fn zone_at(instant: Timestamp) -> TimeZone {
     clippy::disallowed_methods,
     reason = "the office's reader of the viewer's zone"
 )]
-fn host_zone() -> TimeZone {
+fn system_zone() -> TimeZone {
     TimeZone::system()
 }
 
@@ -45,7 +44,7 @@ fn host_zone() -> TimeZone {
 /// offset is neither UTC nor a whole hour, so epoch and local hours never
 /// coincide.
 #[cfg(test)]
-fn host_zone() -> TimeZone {
+fn system_zone() -> TimeZone {
     let offset = jiff::SignedDuration::from_hours(5) + jiff::SignedDuration::from_mins(45);
     TimeZone::fixed(Offset::try_from(offset).expect("the offset is within a day of UTC"))
 }
@@ -64,20 +63,18 @@ const DAY_ZERO: jiff::civil::Date = jiff::civil::date(2026, 1, 2);
 
 /// `day` counts FORWARD from day 0 by calendar arithmetic, not as a
 /// day-of-month: a search that walks days to find a weather or moon phase runs
-/// past 31, and `with_ymd_and_hms(.., 1, 40, ..)` is an invalid date that panics
-/// in exactly the zones whose day-hash sequence needs the extra days.
+/// past 31.
 fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
     let date = DAY_ZERO
         .checked_add(jiff::Span::new().try_days(i64::from(day)).ok()?)
         .ok()?;
-    local_instant(date, h, m)
+    let time = jiff::civil::Time::new(i8::try_from(h).ok()?, i8::try_from(m).ok()?, 0, 0).ok()?;
+    local_instant(date.to_datetime(time))
 }
 
-/// The instant `date` reads `h:m` in the viewer's local time; `None` where
-/// that local time is skipped or ambiguous.
-pub(crate) fn local_instant(date: jiff::civil::Date, h: u32, m: u32) -> Option<SystemTime> {
-    let time = jiff::civil::Time::new(i8::try_from(h).ok()?, i8::try_from(m).ok()?, 0, 0).ok()?;
-    let local = date.to_datetime(time);
+/// The instant the viewer's clock reads `local`; `None` where the system zone
+/// skips or repeats it.
+pub(crate) fn local_instant(local: jiff::civil::DateTime) -> Option<SystemTime> {
     let in_zone = |zone: TimeZone| zone.to_ambiguous_timestamp(local).unambiguous().ok();
     // A host's offset is per instant, so it is read where the local time read
     // as UTC lands, then again where that lands: once is an offset's width off
@@ -91,10 +88,10 @@ fn local(day: u32, h: u32, m: u32) -> SystemTime {
         .expect("a helper's time in the weeks after day 0 is valid and unambiguous in every zone")
 }
 
-/// Local `h:m` on `at`'s own local date, not day 0: a run on
+/// Local `time` on `at`'s own local date, not day 0: a run on
 /// today's sky. `None` where that local time doesn't exist.
-pub(crate) fn on_date_of(at: SystemTime, h: u32, m: u32) -> Option<SystemTime> {
-    local_instant(local_time(at).date(), h, m)
+pub(crate) fn on_date_of(at: SystemTime, time: jiff::civil::Time) -> Option<SystemTime> {
+    local_instant(local_time(at).date().to_datetime(time))
 }
 
 /// Local `h:00` on day 0.
@@ -116,8 +113,8 @@ pub(crate) fn on_day(day: u32, h: u32) -> SystemTime {
 /// Local `h:00`, `day` days after day 0 — weather and moon phase vary by
 /// day at a fixed hour, so a search over days reaches different sky states. Any
 /// `day` is valid, including past the end of the month; `None` where the date is
-/// past jiff's calendar, `h` is no hour, or that local time is skipped or
-/// ambiguous.
+/// past jiff's calendar, `h` is no hour, or the system zone skips or repeats
+/// that local time.
 pub fn try_on_day(day: u32, h: u32) -> Option<SystemTime> {
     try_local(day, h, 0)
 }
@@ -174,7 +171,8 @@ mod tests {
         );
     }
 
-    /// The unit tests read one fixed zone: the epoch reads `ZONE`'s offset on every runner.
+    /// The unit tests read one fixed zone: the epoch reads [`system_zone`]'s
+    /// offset on every runner.
     #[test]
     fn the_tests_read_one_fixed_zone() {
         let epoch = jiff::civil::date(1970, 1, 1);
