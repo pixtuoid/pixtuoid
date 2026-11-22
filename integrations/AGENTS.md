@@ -69,11 +69,11 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
     its major updates, and minors still flow.
   - `@raycast/api`'s exact `@types/node` peer is not a pin the manifest must
     equal: it also lists `@types/node` as a dependency
-    (`raycast/package-lock.json:1159`, installed nested at `:1189-1190`), and
-    npm loads a package's dependencies after its peers, the later edge
-    replacing the earlier
+    (`raycast/package-lock.json`'s `node_modules/@raycast/api` entry, installed
+    nested under it), and npm loads a package's dependencies after its peers,
+    the later edge replacing the earlier
     ([arborist `node.js:903-956`](https://github.com/npm/cli/blob/v12.2.1/workspaces/arborist/lib/node.js#L903-L956)).
-- `ray build -e dist` (CI's step, `raycast.yml:53`) type-checks with the local
+- `ray build -e dist` (the `check` job's step) type-checks with the local
   `tsc -p tsconfig.json --noEmit`; the default dev build, `npm run build`,
   does not
   ([build/index.js](https://cdn.jsdelivr.net/npm/@raycast/api@2.12.1/dist/commands/build/index.js)).
