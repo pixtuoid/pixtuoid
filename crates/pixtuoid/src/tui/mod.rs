@@ -1321,7 +1321,7 @@ mod apply_key_action_tests {
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty)
                         if std::time::Instant::now() < deadline =>
                     {
-                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        std::thread::sleep(crate::panels::noted::POLL);
                     }
                     Err(e) => panic!("nothing landed: {e}"),
                 }
@@ -1710,19 +1710,23 @@ mod apply_key_action_tests {
                 h.audio_ctl.tick(std::time::Instant::now() + faded);
             }),
         ];
+        // A loop action's own work takes milliseconds; one that waits on the disk,
+        // even for a bound, takes it from the loop.
+        const RETURNS_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
         for (save, make) in saves {
             let mut h = Harness::new();
-            let release = crate::panels::noted::stall(&h.config_path);
+            let stall = crate::panels::noted::stall(&h.config_path);
             let started = std::time::Instant::now();
             make(&mut h);
+            let took = started.elapsed();
             assert!(
-                started.elapsed() < crate::panels::noted::STALL,
-                "the loop waited on a stalled save: {save}"
+                stall.holds() && took < RETURNS_WITHIN,
+                "the loop waited on a stalled save: {save} took {took:?}"
             );
+            stall.release();
             h.settle();
             let footer = h.footer();
             assert!(!footer.contains("not saved"), "{save}: {footer}");
-            release.join().expect("the stall ends");
         }
     }
 

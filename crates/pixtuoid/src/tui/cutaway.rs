@@ -408,7 +408,7 @@ impl TileCutaway {
             route: self.route,
             base: self.base,
             origin: self.origin,
-            threads: self.cores,
+            cores: self.cores,
         }
     }
 
@@ -539,14 +539,14 @@ struct Encoder<'a> {
     route: crate::graphics::Route,
     base: u32,
     origin: Position,
-    threads: usize,
+    cores: usize,
 }
 
 impl Encoder<'_> {
     /// Each of `send`'s escapes, in its order, split across as many threads
     /// as it has [`TILES_PER_THREAD`] shares, up to the cores.
     fn encode_all(self, send: &[Changed]) -> Vec<Option<Vec<u8>>> {
-        pixtuoid_scene::par::map(send, threads_for(send.len(), self.threads), |&c| {
+        pixtuoid_scene::par::map(send, threads_for(send.len(), self.cores), |&c| {
             self.encode(c)
         })
     }

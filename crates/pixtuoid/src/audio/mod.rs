@@ -485,16 +485,21 @@ mod controller_tests {
         let Ctl {
             mut c, path, _dir, ..
         } = Ctl::new(false, 0.50);
-        let release = crate::panels::noted::stall(&path);
+        let stall = crate::panels::noted::stall(&path);
         c.apply(AudioAction::Volume(false), false, Instant::now(), |_, _| {});
         drop(c);
+        // The disk answers only once the join has taken the save's thread.
+        let releaser = std::thread::spawn(move || {
+            crate::panels::noted::until_joining();
+            stall.release();
+        });
         crate::panels::join_off_loop_threads();
         assert!(
             std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_file()),
             "the quit left its queued save unwritten"
         );
         assert!(std::fs::read_to_string(&path).unwrap().contains("volume"));
-        release.join().expect("the stall ends");
+        releaser.join().expect("the stall ends");
     }
 }
 

@@ -23,6 +23,18 @@ fn stamp_headroom_covers_worst_case_stamps() {
 }
 
 #[test]
+fn the_keys_the_shim_stamps_are_its_stamps() {
+    let mut p = json!({});
+    let map = p.as_object_mut().unwrap();
+    enrich_payload(map, Some("x".into()), Some("y".into()), 1, || Some(1));
+    let mut stamped: Vec<&str> = map.keys().map(String::as_str).collect();
+    let mut stamps = keys::SHIM_STAMPS.to_vec();
+    stamped.sort_unstable();
+    stamps.sort_unstable();
+    assert_eq!(stamped, stamps);
+}
+
+#[test]
 fn stamps_parent_pid_under_pid_when_absent() {
     let mut p = json!({ "hook_event_name": "Stop" });
     let map = p.as_object_mut().unwrap();
