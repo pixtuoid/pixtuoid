@@ -24,7 +24,7 @@ the e2e's preview server share one port.
 
 `dev`, `verify` and the e2e need the demo art in `public/demos/`
 ([Demo art](#demo-art)). The repo root's `just` recipes render it first; with
-`npm` alone, run `just site-demos` once.
+`npm` alone, run `just site-demos` first.
 
 The live office runs from `public/wasm/`, which `just gen-wasm` builds (it
 needs Rust) and git ignores. Without it, `dev` and `verify` still work, and
