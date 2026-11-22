@@ -182,11 +182,6 @@ For each fixture dir, the harness:
    contract. This is the bug class that keeps biting, a hook and a JSONL file
    keying one session differently, and two sprites.
 
-`{{TRANSCRIPT_PATH}}` in a hook payload's `transcript_path` is replaced at
-run time with the fixture's transcript path (for a hook-only scenario, the
-scenario dir's relative path), so a Claude Code hook, which coalesces on
-`transcript_path`, lines up with its JSONL file.
-
 **Adding a CLI:** [the test steps](../AGENTS.md#adding-a-new-agent-cli--the-test-steps).
 
 ## Why the recorder is a Rust example
