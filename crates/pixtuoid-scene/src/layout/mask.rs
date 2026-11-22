@@ -1,5 +1,5 @@
-//! Walkable-mask construction: stamps every obstacle into a `WalkableMask` so
-//! A* knows where characters can route.
+//! Walkable-mask construction: stamps every obstacle into a
+//! `WalkableMaskBuilder` and freezes it into the `WalkableMask` A* routes over.
 
 use super::decor::{FurnitureDef, GroundAlign};
 use super::{

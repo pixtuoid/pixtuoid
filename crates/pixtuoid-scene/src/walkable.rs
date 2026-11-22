@@ -71,7 +71,6 @@ impl WalkableMaskBuilder {
         }
     }
 
-    /// The finished mask, its coarse graph built from the stamped pixels.
     pub(crate) fn freeze(self) -> WalkableMask {
         let mut mask = WalkableMask {
             open: self.open,
@@ -102,7 +101,6 @@ impl WalkableMask {
         self.routed
     }
 
-    /// The coarse routing grid's graph.
     #[inline]
     pub(crate) fn coarse(&self) -> &CoarseGraph {
         &self.coarse

@@ -1,9 +1,8 @@
 //! Routing benchmarks. `layout_compute` costs `SceneLayout::compute`: whatever
 //! routing precomputes per layout lands there, so it is measured beside the
 //! queries that precompute serves. `find_path` costs the A\* router over the
-//! wide office: the door to every home desk in one iteration, the routes a
-//! floor's arrivals take, and the two home desks farthest apart, the longest
-//! route a desk-to-desk visit makes.
+//! wide office: the door to every home desk's top-left (`HomeDesk::at`) in one
+//! iteration, and the two home desks farthest apart by Manhattan span.
 //! Run via `just bench`; the numbers are LOCAL statistical evidence, as
 //! `render_frame`'s header says.
 
@@ -15,7 +14,7 @@ use pixtuoid_scene::pathfind::find_path;
 /// A compact and a wide classic office.
 const SIZES: [Size; 2] = [Size { w: 192, h: 160 }, Size { w: 360, h: 240 }];
 /// The office `find_path` routes over: the most desks, so the longest routes.
-const ROUTED: Size = SIZES[1];
+const WIDE: Size = SIZES[1];
 
 fn layout(size: Size) -> Option<SceneLayout> {
     SceneLayout::compute(Viewport::from(size), None, floor_seed(0))
@@ -32,7 +31,7 @@ fn layout_compute(c: &mut Criterion) {
 }
 
 fn find_path_group(c: &mut Criterion) {
-    let l = layout(ROUTED).expect("the routed office lays out");
+    let l = layout(WIDE).expect("the wide office lays out");
     let route = |from: Point, to: Point| find_path(&l.walkable, None, from, to, to);
     let door = l.door_threshold;
     let desks: Vec<Point> = l.home_desks.iter().map(|d| d.at).collect();
@@ -52,7 +51,7 @@ fn find_path_group(c: &mut Criterion) {
         "{farthest:?} routes"
     );
 
-    let Size { w, h } = ROUTED;
+    let Size { w, h } = WIDE;
     let mut group = c.benchmark_group("find_path");
     group.bench_function(format!("door_to_every_desk_{w}x{h}"), |b| {
         b.iter(|| desks.iter().filter_map(|&d| route(door, d)).count());

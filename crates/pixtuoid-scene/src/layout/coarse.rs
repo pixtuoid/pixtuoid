@@ -241,7 +241,6 @@ fn step_bit(d: (i16, i16)) -> StepSet {
     STEPS.iter().position(|&s| s == d).map_or(0, |i| 1 << i)
 }
 
-/// The set of `steps` a walker `can` take.
 fn steps_where(steps: &[(i16, i16)], can: impl Fn((i16, i16)) -> bool) -> StepSet {
     steps
         .iter()
@@ -257,12 +256,10 @@ fn offset(cell: (u16, u16), (dx, dy): (i16, i16)) -> Option<(u16, u16)> {
     ))
 }
 
-/// One coarse cell, as routing reads it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 struct CoarseCell {
     /// Its [`walk_piece`].
     piece: CellBits,
-    /// The steps out of it a walker can take.
     steps: StepSet,
 }
 
@@ -284,10 +281,7 @@ impl CoarseGraph {
         // An orthogonal step needs the neighbour walkable and `crossable`.
         let orthogonal = |from: (u16, u16), d| {
             offset(from, d).is_some_and(|to| {
-                to.0 < w
-                    && to.1 < h
-                    && piece_walkable(piece(to))
-                    && crossable((from, piece(from)), (to, piece(to)))
+                piece_walkable(piece(to)) && crossable((from, piece(from)), (to, piece(to)))
             })
         };
         let orthogonals = Grid::from_fn(w, h, |cx, cy| {
@@ -412,6 +406,11 @@ mod tests {
         assert!(
             n.contains(&(0, 2)) && n.contains(&(1, 2)),
             "the open side still steps"
+        );
+        let n = neighbours(&m, (2, 2));
+        assert!(
+            !n.contains(&(1, 1)) && !n.contains(&(3, 1)),
+            "nor past a blocked vertical neighbour"
         );
     }
 
