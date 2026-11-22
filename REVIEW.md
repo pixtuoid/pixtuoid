@@ -75,7 +75,7 @@ skipping one is not partial coverage.
   trace the downstream interaction graph (rebind, sweeps, TTLs, cascade,
   dedup, polarity) and the provenance of every newly keyed signal.
 - **Domain math**: geometry, sky, lighting (under
-  `crates/pixtuoid-scene/src/`: `sky/`, `celestial.rs`, `lighting/`,
+  `crates/pixtuoid-scene/src/`: `sky/`, `celestial.rs`, `lighting.rs`,
   `layout/`). Enumerate the domain invariants and re-derive each across the
   parameter space, edges included (#471, #1049, #1053).
 - **A refactor**: a `refactor` PR, or a move or dedup across modules. Review

@@ -6,7 +6,7 @@ lists ([code.claude.com/docs/en/memory](https://code.claude.com/docs/en/memory#a
 a session that doesn't can import this file from a `CLAUDE.md`. `.gitignore`
 keeps `CLAUDE.md` files out of the repo, since one would stop Claude Code
 reading these. This file is the workspace map;
-per-crate detail lives in the nested guides:
+per-directory detail lives in the nested guides:
 
 - [`crates/pixtuoid-core/AGENTS.md`](crates/pixtuoid-core/AGENTS.md) — headless lib: sources/decoders, reducer/state.
   - [`tests/AGENTS.md`](crates/pixtuoid-core/tests/AGENTS.md) — the test-binary layout and the add-a-CLI test steps.
@@ -17,7 +17,7 @@ per-crate detail lives in the nested guides:
 
 **What the guides hold:**
 
-- A nested `AGENTS.md` says what its crate is, plus the facts no single
+- A nested `AGENTS.md` says what its directory is, plus the facts no single
   declaration can own: cross-file workflows, comment-less manifests and
   directory-shape rules.
 - Everything else a change needs (the constraint that looks like a bug, the
@@ -89,7 +89,7 @@ cargo run --release --example snapshot -- /tmp/snap.png   # render TUI to PNG
 cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the same, rebuilt faster; scripts still read target/release
 ```
 
-- Once per clone, set up as
+- Once per clone, install the git hooks and dev tools as
   [CONTRIBUTING's Build & test](docs/CONTRIBUTING.md#build--test) says.
 - Iterate with clippy or test, not both: clippy doesn't warm test's build
   ([why](docs/CONTRIBUTING.md#build--test)).

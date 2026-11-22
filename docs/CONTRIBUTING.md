@@ -408,7 +408,7 @@ that fails without it; step 8 has one only for a hook-only source.
      `SNAPSHOTS=overwrite just test -p pixtuoid --test cli_json`.
 6. **Record the fixture and add the tests**:
    [the test steps](../crates/pixtuoid-core/tests/AGENTS.md#adding-a-new-agent-cli--the-test-steps).
-   The conformance suite fails without it.
+   The conformance suite fails without the fixture; test step 2 has no check.
 7. **Wire it into `runtime/driver.rs::build_source_set`**, the one
    construction site. The registry drives the guard test, not the spawning,
    and `just test` fails without it.
