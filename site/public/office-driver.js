@@ -1,21 +1,73 @@
-// The shared live-office driver for OfficeBackdrop and Showcase's VIBING channel, and OfficeBackdrop's audio bus and
-// music. Both are `is:inline` scripts (CSP-hashed), which the bundler doesn't process, so they can't static-import a
-// shared `src/` module — they dynamic-`import()` this public ES module at boot instead. office-host.js and
-// music-worker.js static-import `loadWasm` into module workers, which have no `window`: module scope touches no page
-// global.
+// The shared live-office driver for OfficeBackdrop, Showcase's VIBING channel and the How it works page's journey
+// (journey.js), and OfficeBackdrop's audio bus and music. The first two boot from `is:inline` scripts (CSP-hashed),
+// which the bundler doesn't process, so they can't static-import a shared `src/` module; they dynamic-`import()` this
+// public ES module at boot instead, and journey.js, a public module itself, static-imports it. office-host.js and music-worker.js
+// static-import `loadWasm` into module workers, which have no `window`: module scope touches no page global.
 'use strict';
+
+// The office host and the office wasm's glue, and the music's worker, worklet and wasm glue, beside this module
+// wherever the site is served from.
+const HOST_URL = new URL('office-host.js', import.meta.url).href;
+const WASM_JS_URL = new URL('wasm/pixtuoid_web.js', import.meta.url).href;
+const MUSIC_WORKER_URL = new URL('music-worker.js', import.meta.url).href;
+const MUSIC_WORKLET_URL = new URL('music-worklet.js', import.meta.url).href;
+const MUSIC_WASM_JS_URL = new URL('wasm/pixtuoid_web_music.js', import.meta.url).href;
+
+// Chromium lays a box out in 64ths of a CSS px (`LayoutUnit`, blink's layout_unit.h:473), so a box finer than that
+// rasterizes a device pixel short and shifts every frame pixel past it: the office grows to a whole CSS pixel, within
+// as many units as the ratio's numerator (21 at 2.625).
+const WHOLE_CSS_TRIES = 32;
+// A ratio's float32 noise (110% reads 1.100000023841858) moves a whole size by far less; the box is then set to the
+// whole px itself, so no conversion of a fraction decides it.
+const WHOLE_CSS_EPS = 1 / 128;
+
+// The fewest units from `units` whose box is a whole CSS px, with that size; none within the tries keeps `units` and
+// its fractional size.
+function wholeCss(units, pxPerUnit, dpr) {
+  for (let u = units; u < units + WHOLE_CSS_TRIES; u++) {
+    const css = (u * pxPerUnit) / dpr;
+    if (Math.abs(css - Math.round(css)) < WHOLE_CSS_EPS) return [u, Math.round(css)];
+  }
+  return [units, (units * pxPerUnit) / dpr];
+}
+
+// Calls `then` each time the window's device-pixel ratio changes. A window moved to a screen of another ratio keeps its
+// CSS size, so no `resize` says so: a query on the current ratio does, made anew for each ratio
+// (https://developer.mozilla.org/en-US/docs/Web/API/Window/devicePixelRatio).
+export function onRatioChange(then) {
+  (function watch() {
+    window.matchMedia('(resolution: ' + window.devicePixelRatio + 'dppx)').addEventListener(
+      'change',
+      function () {
+        then();
+        watch();
+      },
+      { once: true }
+    );
+  })();
+}
+
+// The office an `Office.fit` reply lays out at ratio `dpr`, as `{ units: [w, h], css: [w, h] }`: the units `step`
+// takes and the canvas box, in CSS px, that shows its frame at the fit's whole upscale.
+export function wholeBox(fit, dpr) {
+  const across = wholeCss(fit[0], fit[2], dpr);
+  const down = wholeCss(fit[1], fit[2], dpr);
+  return { units: [across[0], down[0]], css: [across[1], down[1]] };
+}
 
 const WASM_INIT_RETRIES = 2; // extra attempts after the first
 const WASM_INIT_BACKOFF_MS = 400;
 
-// The page's ONE office host (office-host.js), which both live-office consumers open their `Office` on, so one wasm
+// The page's ONE office host (office-host.js), which every live-office consumer opens its `Office` on, so one wasm
 // instance serves the page. A module worker runs it wherever a canvas can hand its drawing to one, so the wasm's boot
 // and frames never block the page's thread (Lighthouse's TBT); else the page's thread does. A host whose wasm never
-// loaded clears the memo, so a later consumer starts a fresh one (#671). Resolves to `{ offThread, open(seed, canvas) }`;
-// `open` resolves to the office's handle, whose `frame`, `call` and `warmAudio` are office-host.js's ops of those names.
-export function officeHost(hostUrl, wasmJsUrl) {
+// loaded clears the memo, so a later consumer starts a fresh one (#671). Resolves to
+// `{ offThread, open(seed, canvas, journey) }`; `open` resolves to the office's handle, whose `frame`, `call` and
+// `warmAudio` are office-host.js's ops of those names, and whose `journey` (`{ lines, jumpMs }`) a journey office
+// carries.
+export function officeHost() {
   if (!window.__pixOfficeHost) {
-    const host = startHost(hostUrl, wasmJsUrl);
+    const host = startHost(HOST_URL, WASM_JS_URL);
     window.__pixOfficeHost = host;
     host.catch(function () {
       if (window.__pixOfficeHost === host) window.__pixOfficeHost = null;
@@ -67,33 +119,36 @@ async function startHost(hostUrl, wasmJsUrl) {
   }
   return {
     offThread: !!worker,
-    open(seed, canvas) {
+    open(seed, canvas, journey) {
       const id = ++ids;
       const target = worker ? canvas.transferControlToOffscreen() : canvas;
-      return rpc('open', { id, seed, canvas: target }, worker ? [target] : []).then(
-        function (info) {
-          let busy = false;
-          return {
-            audio: info.audio,
-            // A frame is in the host: its caller holds the next one rather than queue frames behind it.
-            get busy() {
-              return busy;
-            },
-            frame(req) {
-              busy = true;
-              return rpc('frame', Object.assign({ id }, req)).finally(function () {
-                busy = false;
-              });
-            },
-            call(method, ...args) {
-              return rpc('call', { id, method, args });
-            },
-            warmAudio(take) {
-              return rpc('warmAudio', { id, take });
-            },
-          };
-        }
-      );
+      return rpc(
+        'open',
+        { id, seed, canvas: target, journey: !!journey },
+        worker ? [target] : []
+      ).then(function (info) {
+        let busy = false;
+        return {
+          audio: info.audio,
+          journey: info.journey,
+          // A frame is in the host: its caller holds the next one rather than queue frames behind it.
+          get busy() {
+            return busy;
+          },
+          frame(req) {
+            busy = true;
+            return rpc('frame', Object.assign({ id }, req)).finally(function () {
+              busy = false;
+            });
+          },
+          call(method, ...args) {
+            return rpc('call', { id, method, args });
+          },
+          warmAudio(take) {
+            return rpc('warmAudio', { id, take });
+          },
+        };
+      });
     },
   };
 }
@@ -183,20 +238,19 @@ export function audioBus(ctx, audio) {
   return limiter;
 }
 
-// The ♩ music: the office's lofi stream, rendered in the music worker (`urls.worker`, loading the music's own wasm
-// glue, `urls.musicWasm`) and played
-// by the worklet (`urls.worklet`) `aheadS` ahead, the two joined by their own MessageChannel so the main thread stays
-// off the audio path. `controls`, a tick's `music.controls`, pick the first song. Resolves, once the worklet loads, to
+// The ♩ music: the office's lofi stream, rendered in the music worker (loading the music's own wasm glue) and played by
+// the worklet `aheadS` ahead, the two joined by their own MessageChannel so the main thread stays off the audio path.
+// `controls`, a tick's `music.controls`, pick the first song. Resolves, once the worklet loads, to
 // `{ node, primed, failed, setControls, stop }`: `node` to connect, `primed` on the worklet's first chunk, `failed` on
 // the worker's death; rejects where there is no AudioWorklet.
-export async function startMusic(ctx, urls, aheadS, nowMs, controls) {
-  await ctx.audioWorklet.addModule(urls.worklet);
+export async function startMusic(ctx, aheadS, nowMs, controls) {
+  await ctx.audioWorklet.addModule(MUSIC_WORKLET_URL);
   const node = new AudioWorkletNode(ctx, 'pix-music', {
     numberOfInputs: 0,
     outputChannelCount: [2],
     processorOptions: { aheadS },
   });
-  const worker = new Worker(urls.worker, { type: 'module' });
+  const worker = new Worker(MUSIC_WORKER_URL, { type: 'module' });
   const failed = new Promise(function (resolve) {
     worker.onerror = resolve;
     worker.onmessage = resolve;
@@ -207,7 +261,7 @@ export async function startMusic(ctx, urls, aheadS, nowMs, controls) {
     };
   });
   const channel = new MessageChannel();
-  worker.postMessage({ musicWasmJsUrl: urls.musicWasm, port: channel.port1, nowMs, controls }, [
+  worker.postMessage({ musicWasmJsUrl: MUSIC_WASM_JS_URL, port: channel.port1, nowMs, controls }, [
     channel.port1,
   ]);
   node.port.postMessage({ source: channel.port2 }, [channel.port2]);

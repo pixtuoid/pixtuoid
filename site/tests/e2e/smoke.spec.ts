@@ -1,4 +1,4 @@
-import { devices, expect, test, type Page } from '@playwright/test';
+import { devices, expect, test, type Locator, type Page } from '@playwright/test';
 import docs from '../../src/docs.json' with { type: 'json' };
 import sourcesData from '../../src/sources.json' with { type: 'json' };
 import { readFileSync } from 'node:fs';
@@ -7,6 +7,7 @@ import { E2E_STAR_COUNT, REPO } from '../../config/github.mjs';
 import { FLOORS, floorById } from '../../config/floors.mjs';
 import { DISCORD } from '../../config/discord.mjs';
 import { VALID_THEMES } from '../../config/page-themes.mjs';
+import { JOURNEY_STOPS } from '../../config/rehype-figures.mjs';
 import { workspacePackageField } from '../../config/workspace-package.mjs';
 
 // WCAG 2.2's AA floors: text (SC 1.4.3) and non-text (SC 1.4.11).
@@ -276,7 +277,27 @@ async function paintedContrast(
   }
   return worst;
 }
-/** A canvas's shot once the frame the office host was drawing when it paused has landed. */
+/**
+ * That `selector`'s first match shows a focus ring that clears WCAG 1.4.11 against what it lies on. `label`
+ * prefixes each failure message: give it the theme, the moment and the place, so a failure names its case.
+ */
+async function ringClears(page: Page, selector: string, label: string): Promise<void> {
+  const ringShown = await page
+    .locator(selector)
+    .first()
+    .evaluate((el) => {
+      (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
+      return getComputedStyle(el).outlineStyle !== 'none';
+    });
+  expect(ringShown, `${label} ${selector}: no focus ring`).toBe(true);
+  const ring = await paintedContrast(page, selector, 0, 'outlineColor');
+  expect(
+    ring,
+    `${label} ${selector} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
+  ).toBeGreaterThanOrEqual(AA_NON_TEXT);
+}
+
+/** A canvas's shot once two in a row agree: the frame the office host was drawing has landed. */
 async function settledShot(shot: () => Promise<string>): Promise<string> {
   let last = await shot();
   await expect
@@ -291,17 +312,22 @@ async function settledShot(shot: () => Promise<string>): Promise<string> {
   return last;
 }
 
-/** Whether the canvas `selector` names shows a painted pixel, read through a copy: the office host holds its drawing. */
-async function canvasPainted(page: Page, selector: string): Promise<boolean> {
+/**
+ * How many colours the canvas `selector` names shows, transparent black aside, so 0 is unpainted; read through a
+ * copy: the office host holds its drawing.
+ */
+async function canvasColours(page: Page, selector: string): Promise<number> {
   return page.evaluate((sel) => {
     const c = document.querySelector(sel) as HTMLCanvasElement | null;
-    if (!c) return false;
+    if (!c) return 0;
     const copy = document.createElement('canvas');
     copy.width = c.width;
     copy.height = c.height;
     const ctx = copy.getContext('2d')!;
     ctx.drawImage(c, 0, 0);
-    return ctx.getImageData(0, 0, c.width, c.height).data.some((v) => v !== 0);
+    const seen = new Set(new Uint32Array(ctx.getImageData(0, 0, c.width, c.height).data.buffer));
+    seen.delete(0);
+    return seen.size;
   }, selector);
 }
 
@@ -363,6 +389,16 @@ async function gotoLive(page: Page): Promise<void> {
   await expect(page.locator('.backdrop.is-live')).toBeAttached({ timeout: 15_000 });
 }
 
+/** How it works at `query`, once its journey's hooks are ready, which it returns. */
+async function gotoJourney(page: Page, query = ''): Promise<Locator> {
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto(`./how-it-works/${query}`);
+  const hooks = page.locator('.fig-journey__hook');
+  // The first hook enables once the office wasm opens: a timeout here is gotoLive's signal.
+  await expect(hooks.first()).toBeEnabled({ timeout: 15_000 });
+  return hooks;
+}
+
 test('the office goes live and the statusline truth-light agrees', async ({ page }) => {
   const errors = watchErrors(page);
   await gotoLive(page);
@@ -384,16 +420,12 @@ async function officeBox(page: Page) {
     const dpr = devicePixelRatio;
     return {
       dpr,
-      cssW: r.width,
-      cssH: r.height,
       left: r.left * dpr,
       top: r.top * dpr,
       width: r.width * dpr,
       height: r.height * dpr,
       viewW: innerWidth * dpr,
       viewH: innerHeight * dpr,
-      bufW: c.width,
-      bufH: c.height,
       uw,
       uh,
       upscale: Number(c.dataset.upscale),
@@ -401,30 +433,36 @@ async function officeBox(page: Page) {
   });
 }
 
+/** The grain a CSS box reports, in CSS px: `LayoutUnit = FixedPoint<6, int32_t>` (blink's layout_unit.h:473). */
+const LAYOUT_UNIT_CSS_PX = 1 / 64;
+
 /**
- * Each frame pixel spans exactly `upscale` device pixels a side, on whole device pixels, and the box covers the
- * backdrop. Within one layout unit, the grain a CSS box reports (`LayoutUnit = FixedPoint<6, int32_t>`, 1/64 CSS px,
- * blink's layout_unit.h:473).
+ * Whether the canvas `selector` names lays out as its frame at a whole upscale, measured: each side a whole CSS px,
+ * and each frame pixel `upscale` device pixels a side, within a layout unit.
  */
+async function wholeUpscaleBox(page: Page, selector: string): Promise<boolean> {
+  return page.locator(selector).evaluate((c: HTMLCanvasElement, unit) => {
+    const r = c.getBoundingClientRect();
+    const dpr = devicePixelRatio;
+    const upscale = Number(c.dataset.upscale);
+    const off =
+      Math.abs(r.width * dpr - c.width * upscale) + Math.abs(r.height * dpr - c.height * upscale);
+    return upscale % 1 === 0 && r.width % 1 === 0 && r.height % 1 === 0 && off <= 2 * dpr * unit;
+  }, LAYOUT_UNIT_CSS_PX);
+}
+
+/** A whole upscale box ({@link wholeUpscaleBox}) on whole device pixels, within a layout unit, that covers the backdrop. */
 async function expectWholeDevicePixels(page: Page) {
-  const grain = (b: { dpr: number }) => b.dpr / 64;
-  await expect
-    .poll(async () => {
-      const b = await officeBox(page);
-      const off = Math.abs(b.width - b.bufW * b.upscale) + Math.abs(b.height - b.bufH * b.upscale);
-      return off <= 2 * grain(b);
-    })
-    .toBe(true);
+  await expect.poll(() => wholeUpscaleBox(page, '#office-live')).toBe(true);
   const b = await officeBox(page);
-  expect(b.upscale % 1).toBe(0);
+  const grain = b.dpr * LAYOUT_UNIT_CSS_PX;
   for (const edge of [b.left, b.top]) {
-    expect(Math.abs(edge - Math.round(edge))).toBeLessThanOrEqual(grain(b));
+    expect(Math.abs(edge - Math.round(edge))).toBeLessThanOrEqual(grain);
   }
-  for (const side of [b.cssW, b.cssH]) expect(side % 1, 'a whole CSS px').toBe(0);
-  expect(b.left).toBeLessThanOrEqual(grain(b));
-  expect(b.top).toBeLessThanOrEqual(grain(b));
-  expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain(b));
-  expect(b.top + b.height).toBeGreaterThanOrEqual(b.viewH - grain(b));
+  expect(b.left).toBeLessThanOrEqual(grain);
+  expect(b.top).toBeLessThanOrEqual(grain);
+  expect(b.left + b.width).toBeGreaterThanOrEqual(b.viewW - grain);
+  expect(b.top + b.height).toBeGreaterThanOrEqual(b.viewH - grain);
   // The fit crops under one unit and a whole CSS px adds under the ratio's numerator, `dpr` at a whole ratio.
   if (Number.isInteger(b.dpr)) {
     const unit = b.width / b.uw;
@@ -800,7 +838,7 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   await page.setViewportSize({ width: 500, height: 900 });
   await expect.poll(frameW).not.toBe(frozenW);
   expect(await btn.getAttribute('aria-pressed')).toBe('true');
-  expect(await canvasPainted(page, '#office-live')).toBe(true);
+  expect(await canvasColours(page, '#office-live')).toBeGreaterThan(0);
   const frozen2 = await shot();
   await page.waitForTimeout(400);
   expect(await shot()).toBe(frozen2);
@@ -848,11 +886,11 @@ test('the ♩ bus holds an over-full sum under the native ceiling and passes a q
   const errors = watchErrors(page);
   await gotoLive(page);
   const { ceiling, loudPeak, quietPeak } = await page.evaluate(async () => {
-    const { officeDriverUrl, officeHostUrl, wasmJsUrl } = (
+    const { officeDriverUrl } = (
       document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
     ).dataset;
     const drv = await import(officeDriverUrl!);
-    const host = await drv.officeHost(officeHostUrl!, wasmJsUrl!);
+    const host = await drv.officeHost();
     const { audio } = await host.open(0, document.createElement('canvas'));
     const rate = 48_000;
     // Each tone starts at `startS`; the peak is read from `fromS` on, since the spec starts the compressor's detector
@@ -889,16 +927,11 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
   const errors = watchErrors(page);
   await gotoLive(page);
   const { peaks, sidesDiffer } = await page.evaluate(async () => {
-    const {
-      officeDriverUrl,
-      officeHostUrl,
-      wasmJsUrl,
-      musicWorkerUrl,
-      musicWasmJsUrl,
-      musicWorkletUrl,
-    } = (document.querySelector('script[data-office-driver-url]') as HTMLScriptElement).dataset;
+    const { officeDriverUrl } = (
+      document.querySelector('script[data-office-driver-url]') as HTMLScriptElement
+    ).dataset;
     const drv = await import(officeDriverUrl!);
-    const host = await drv.officeHost(officeHostUrl!, wasmJsUrl!);
+    const host = await drv.officeHost();
     const office = await host.open(0, document.createElement('canvas'));
     // The controls as a tick hands them over.
     const tick = { now: Date.now(), w: 64, h: 64, draw: null, overlay: false };
@@ -907,8 +940,7 @@ test('♩ music: the music worker streams lofi into the worklet, which plays it'
     const { controls } = JSON.parse((await office.frame({ ...tick, audio: true })).audio).music;
     const rate = office.audio.sampleRate;
     const ctx = new OfflineAudioContext(2, rate, rate);
-    const urls = { worklet: musicWorkletUrl, worker: musicWorkerUrl, musicWasm: musicWasmJsUrl };
-    const music = await drv.startMusic(ctx, urls, office.audio.musicAheadS, Date.now(), controls);
+    const music = await drv.startMusic(ctx, office.audio.musicAheadS, Date.now(), controls);
     music.node.connect(ctx.destination);
     // The first chunk crossed worklet → worker ("need") → worklet before a quantum renders.
     await music.primed;
@@ -1541,6 +1573,219 @@ test('docs pages keep the sticky nav with its links', async ({ page }) => {
   expect(errors()).toEqual([]);
 });
 
+test('how it works: every recorded hook fills each stop through the real decoder and reducer, legible in every theme', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const errors = watchErrors(page);
+  const out = (stop: string) => page.locator(`[data-stop="${stop}"] .fig-journey__out`);
+  for (const theme of VALID_THEMES) {
+    const hooks = await gotoJourney(page, `?theme=${theme}`);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    const count = await hooks.count();
+    expect(count, 'a journey of more than one hook').toBeGreaterThan(1);
+    for (let i = 0; i < count; i++) {
+      await hooks.nth(i).click();
+      // The next hook opens once every stop has shown this one.
+      await expect(hooks.nth((i + 1) % count)).toBeEnabled();
+      // journey.js fills the stops by role, a copy of JOURNEY_STOPS no build checks.
+      for (const stop of JOURNEY_STOPS) {
+        await expect(page.locator(`[data-stop="${stop}"]`), `hook ${i}: ${stop}`).toHaveClass(
+          /is-lit/
+        );
+      }
+      const stamps = await out('shim').locator('.fig-journey__stamp').allTextContents();
+      expect(stamps.length, `hook ${i}: the shim's stamps are marked`).toBeGreaterThan(0);
+      const agent = (await out('agent').textContent())!;
+      for (const stamp of stamps) {
+        expect(agent, `hook ${i}: the agent's own line`).not.toContain(stamp.split(':')[0].trim());
+      }
+      expect(JSON.parse((await out('decoder').textContent())!).length).toBeGreaterThan(0);
+      const slots = JSON.parse((await out('office').textContent())!);
+      expect(slots.length, `hook ${i}: the one session in the office`).toBe(1);
+      if (i < count - 1)
+        expect(slots[0].desk, `hook ${i}: the session sits at a desk`).not.toBeNull();
+      if (i === count - 1) expect(slots[0].exiting_at, 'the last hook ends it').not.toBeNull();
+      if (i === 0) {
+        expect(await canvasColours(page, '.fig-journey__office')).toBeGreaterThan(0);
+        expect(
+          await wholeUpscaleBox(page, '.fig-journey__office'),
+          'a whole-CSS-pixel box that is the frame at its whole upscale'
+        ).toBe(true);
+        await page.locator('.fig-journey__why summary').first().click();
+        for (const selector of [
+          '.fig-journey__hook:not(:disabled)',
+          '.fig-journey__hook:not(:disabled) .fig-journey__n',
+          '.fig-journey__name',
+          '.fig-journey__what',
+          '.fig-journey__why summary',
+          '.fig-journey__why[open] p',
+          '.fig-journey__out',
+          '.fig-journey__stamp',
+        ]) {
+          const ratio = await paintedContrast(page, selector);
+          expect(
+            ratio,
+            `${theme} ${selector}: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
+          ).toBeGreaterThanOrEqual(AA_TEXT);
+        }
+        // The journey's tab stops (a hook, a why's summary, an output): each ring clears AA_NON_TEXT.
+        for (const selector of [
+          '.fig-journey__hook:not(:disabled)',
+          '.fig-journey__why summary',
+          '.fig-journey__out',
+        ]) {
+          await ringClears(page, selector, theme);
+        }
+      }
+    }
+  }
+  expect(errors()).toEqual([]);
+});
+
+test('how it works on a 320px-wide 1x screen: the office still lays out', async ({ browser }) => {
+  const context = await browser.newContext({
+    viewport: { width: 320, height: 700 },
+    deviceScaleFactor: 1,
+  });
+  const page = await context.newPage();
+  await gotoJourney(page);
+  const office = page.locator('.fig-journey__office');
+  await office.scrollIntoViewIfNeeded();
+  // An office too small to lay out is one fill; a laid-out one has many colours.
+  await expect.poll(() => canvasColours(page, '.fig-journey__office')).toBeGreaterThan(1);
+  await context.close();
+});
+
+test('how it works: the hooks stay inside the article, beside the office or below it', async ({
+  page,
+}) => {
+  // A phone, a 1x laptop whose article is narrower than the office and its widest hook, and a desktop.
+  for (const width of [390, 1001, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    const hooks = await gotoJourney(page);
+    const fig = (await page.locator('.fig--journey').boundingBox())!;
+    for (const box of await hooks.evaluateAll((els) =>
+      els.map((e) => {
+        const r = e.getBoundingClientRect();
+        return { left: r.left, right: r.right };
+      })
+    )) {
+      expect(box.left, `${width}px`).toBeGreaterThanOrEqual(fig.x);
+      expect(box.right, `${width}px`).toBeLessThanOrEqual(fig.x + fig.width);
+    }
+  }
+});
+
+test('how it works: a change of device-pixel ratio refits the office to a whole upscale', async ({
+  page,
+}) => {
+  // The test sets the ratio, and fires `change` on each resolution query the page asked for.
+  await page.addInitScript(() => {
+    const lists: MediaQueryList[] = [];
+    (window as unknown as { __ratios: MediaQueryList[] }).__ratios = lists;
+    const ask = window.matchMedia.bind(window);
+    window.matchMedia = (query: string) => {
+      const list = ask(query);
+      if (query.startsWith('(resolution:')) lists.push(list);
+      return list;
+    };
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await gotoJourney(page);
+  await expect
+    .poll(() => wholeUpscaleBox(page, '.fig-journey__office'), { message: 'at 1x' })
+    .toBe(true);
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
+    // Each change asks for the next ratio's query, so only the lists asked so far fire.
+    for (const list of [...(window as unknown as { __ratios: MediaQueryList[] }).__ratios]) {
+      list.dispatchEvent(new Event('change'));
+    }
+  });
+  await expect
+    .poll(() => wholeUpscaleBox(page, '.fig-journey__office'), { message: 'at 2x' })
+    .toBe(true);
+});
+
+test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
+  page,
+}) => {
+  // Short enough that the hooks leave view as the reader follows the stops.
+  await page.setViewportSize({ width: 1280, height: 480 });
+  const hooks = await gotoJourney(page);
+  await hooks.first().focus();
+  await page.keyboard.press('Enter');
+  await page
+    .locator('[data-stop="office"]')
+    .evaluate((el) => el.scrollIntoView({ behavior: 'instant', block: 'center' }));
+  await expect(hooks.nth(1)).toBeFocused();
+  const box = (await hooks.nth(1).boundingBox())!;
+  expect(box.y + box.height, 'the hand-off left the hook out of view, above').toBeLessThan(0);
+  // A reader who moves focus while the stops fill keeps it there.
+  await page.keyboard.press('Enter');
+  const why = page.locator('.fig-journey__why summary').first();
+  await why.focus();
+  await expect(hooks.nth(2)).toBeEnabled();
+  await expect(why).toBeFocused();
+});
+
+test('how it works without script: its stops read as prose, each why folded, and no player', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ javaScriptEnabled: false });
+  const page = await context.newPage();
+  await page.goto('./how-it-works/');
+  await expect(page.locator('.fig-journey__stop')).toHaveCount(JOURNEY_STOPS.length);
+  await expect(page.locator('.fig-journey__what').first()).toBeVisible();
+  await expect(page.locator('.fig-journey__why').first()).not.toHaveAttribute('open');
+  await expect(page.locator('.fig-journey__player')).toHaveCount(0);
+  await context.close();
+});
+
+test('how it works without its wasm: the player it began is taken down, and the stops stay prose', async ({
+  page,
+}) => {
+  await page.route('**/wasm/pixtuoid_web*', (route) => route.abort());
+  await page.addInitScript(() => sessionStorage.setItem('pix-booted', '1'));
+  await page.goto('./how-it-works/');
+  const player = page.locator('.fig-journey__player');
+  // The player goes up before the office opens, and down once the office driver's retries give up.
+  await expect(player).toHaveCount(1, { timeout: 15_000 });
+  await expect(player).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator('.fig-journey__what').first()).toBeVisible();
+});
+
+test('how it works: the last hook walks its session out, so the next seats a fresh one', async ({
+  page,
+}) => {
+  const hooks = await gotoJourney(page);
+  const office = page.locator('[data-stop="office"] .fig-journey__out');
+  const count = await hooks.count();
+  for (let i = 0; i < count; i++) {
+    await hooks.nth(i).click();
+    await expect(hooks.nth((i + 1) % count)).toBeEnabled();
+    // The session's one read, which a slot revived in place would still show.
+    if (i === count - 2) await expect(office).toContainText('"tool_call_count": 1');
+  }
+  // Only the hooks move the clock, so the last one's jump alone takes the ended session past its sweep.
+  await hooks.first().click();
+  await expect(hooks.nth(1)).toBeEnabled();
+  await expect(office).toContainText('"tool_call_count": 0');
+});
+
+test('how it works: a hook lands, and the office draws a still of it', async ({ page }) => {
+  const hooks = await gotoJourney(page);
+  const office = page.locator('.fig-journey__office');
+  const shot = async () => (await office.screenshot()).toString('base64');
+  const before = await settledShot(shot);
+  await hooks.first().click();
+  await expect(hooks.nth(1)).toBeEnabled();
+  await expect(page.locator('[data-stop="office"] .fig-journey__out')).toContainText('"label"');
+  // The empty office's still gives way to the still of the session it seated.
+  expect(await settledShot(shot)).not.toBe(before);
+});
+
 test('at the narrowest width that lays the nav out as a wide bar, its items sit on one line, in order, inside the bar', async ({
   page,
 }) => {
@@ -1735,8 +1980,8 @@ test('#671 cross-trigger recovery: after the hero exhausts its retries, a later 
     document.getElementById('studio')!.scrollIntoView({ block: 'center', behavior: 'instant' })
   );
   await expect
-    .poll(() => canvasPainted(page, '[data-vibing-canvas]'), { timeout: 15_000 })
-    .toBe(true);
+    .poll(() => canvasColours(page, '[data-vibing-canvas]'), { timeout: 15_000 })
+    .toBeGreaterThan(0);
   expect(await page.evaluate(() => window.__pixOfficeHost !== null)).toBe(true);
   expect(wasmHits).toBeGreaterThan(3);
   expect(errors().filter((e) => !e.includes('Failed to load resource'))).toEqual([]);
@@ -2027,7 +2272,7 @@ test('first visit on an office-less page lifts the splash promptly (no engine-ga
 }) => {
   // window.__pixEngineReady is set ONLY by OfficeBackdrop (index-only), so an office-less page's Level-2 gate must fall back to the flat delay.
   const errors = watchErrors(page);
-  await page.goto('./architecture/'); // real first visit (no pix-booted), no OfficeBackdrop
+  await page.goto('./contributing/'); // real first visit (no pix-booted), no OfficeBackdrop
   await expect(page.locator('#boot')).toBeVisible();
   await expect(page.locator('#office-live')).toHaveCount(0);
   await expect(
@@ -2251,8 +2496,8 @@ test('VIBING channel: live office paints, is pause-gated, chips drive it', async
       (document.querySelector('[data-vibing-canvas]') as HTMLCanvasElement).toDataURL()
     );
   await expect
-    .poll(() => canvasPainted(page, '[data-vibing-canvas]'), { timeout: 15_000 })
-    .toBe(true);
+    .poll(() => canvasColours(page, '[data-vibing-canvas]'), { timeout: 15_000 })
+    .toBeGreaterThan(0);
 
   const beforeWeather = await vibingShot();
   const stormChip = page.locator('[data-stage="vibing"] .osd__chip[data-weather="storm"]');
@@ -2444,9 +2689,9 @@ test('no horizontal overflow at phone widths (mobile pan guard)', async ({ brows
     ['./', 768],
     ['./config/', 390],
     ['./config/', 768],
-    ['./architecture/', 375],
+    ['./how-it-works/', 375],
     ['./contributing/', 375],
-    ['./architecture/', 768],
+    ['./how-it-works/', 768],
     // Every reading page (the blog's lobby, each doc and post) at the narrowest width: a wide pre, a long link or a diagram pans there first (#503).
     ...readingRoutes().map((route) => [`./${route}`, 320] as const),
   ] as const) {
@@ -2672,23 +2917,8 @@ atOfficeMoments(
         `${theme} ${moment} ${selector} hovered: WCAG AA floor is ${AA_TEXT}:1; measured ${ratio.toFixed(2)}:1`
       ).toBeGreaterThanOrEqual(AA_TEXT);
     }
-    const ringClears = async (selector: string, where: string) => {
-      const ringShown = await page
-        .locator(selector)
-        .first()
-        .evaluate((el) => {
-          (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
-          return getComputedStyle(el).outlineStyle !== 'none';
-        });
-      expect(ringShown, `${theme} ${moment} ${selector} ${where}: no focus ring`).toBe(true);
-      const ring = await paintedContrast(page, selector, 0, 'outlineColor');
-      expect(
-        ring,
-        `${theme} ${moment} ${selector} ${where} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
-      ).toBeGreaterThanOrEqual(AA_NON_TEXT);
-    };
     for (const selector of ['.nav__logo', ...NAV_OVER_OFFICE, '.nav__install', '#theme-toggle'])
-      await ringClears(selector, 'over the office');
+      await ringClears(page, selector, `${theme} ${moment} over the office`);
 
     for (const selector of ['.nav__install', '.btn-primary']) {
       const fill = () =>
@@ -2717,14 +2947,14 @@ atOfficeMoments(
 
     // The bar's ring ink also rings the links on its two plates: the Docs menu and the burger's panel.
     await page.click('#docs-btn');
-    await ringClears('#docs-menu a', 'in the Docs menu');
+    await ringClears(page, '#docs-menu a', `${theme} ${moment} in the Docs menu`);
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 480, height: 800 });
     await page.click('#nav-burger');
-    await ringClears('#nav-links > a', "in the burger's panel");
+    await ringClears(page, '#nav-links > a', `${theme} ${moment} in the burger's panel`);
     await page.keyboard.press('Escape');
     for (const selector of ['#nav-burger', '#theme-toggle'])
-      await ringClears(selector, 'over the office at 480px');
+      await ringClears(page, selector, `${theme} ${moment} over the office at 480px`);
   }
 );
 
@@ -2749,7 +2979,7 @@ atOfficeMoments('plate and chip text clears WCAG AA', VALID_THEMES, async (page,
       '.app__note',
     ],
     './404.html': ['.terminal__title'],
-    './architecture/': [
+    './how-it-works/': [
       '.prose :not(pre) > code',
       '.prose a > code',
       '.wing__pager-dir',
