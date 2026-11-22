@@ -945,6 +945,11 @@ mod tests {
             assert!(rfc3339_to_epoch_secs(ok).is_some(), "{ok:?} must parse");
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?} must not");
         }
+        assert_eq!(
+            rfc3339_to_epoch_secs("2026-07-16T12:00:60Z"),
+            rfc3339_to_epoch_secs("2026-07-16T12:00:59Z"),
+            "the leap second lands on :59"
+        );
         for bad in [
             "2026-07-00T12:00:05Z",
             "2026-02-31T12:00:05Z",
@@ -965,6 +970,7 @@ mod tests {
             "2026-07-16T12:00:05+02:00extra",
             "2026-07-16T12:00:05+0200",
             "2026-07-16T12:00:05+02:00:30",
+            "2026-07-16T12:00:05\u{2212}02:00",
         ] {
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
         }

@@ -73,9 +73,9 @@ fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
 }
 
 /// The instant the viewer's clock reads `local`; `None` where the system zone
-/// skips or repeats it. A host's offset gives one instant for every local
-/// time, skipped or repeated, as chrono did in the browser (chrono 0.4.45
-/// `src/offset/local/mod.rs:93`).
+/// skips or repeats it. A host reports an offset per instant, not its zone's
+/// transitions, so under one a skipped or repeated time still resolves to one
+/// instant.
 pub(crate) fn local_instant(local: jiff::civil::DateTime) -> Option<SystemTime> {
     let in_zone = |zone: TimeZone| zone.to_ambiguous_timestamp(local).unambiguous().ok();
     // A host's offset is per instant, so it is read where the local time read

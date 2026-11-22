@@ -2863,8 +2863,9 @@ test.describe('the office moments still span the light range', () => {
 });
 
 test.describe('the office keeps the visitor’s zone', () => {
-  // UTC+09:00: the morning moment reads 17:00 here, still day, and the sun-highest one 21:30, night. Read with the
-  // offset's sign flipped, both are night; read in UTC, the second is noon.
+  // UTC+09:00 all year (tzdb `asia:2169-2170`, eggert/tz 8fbf8fe643d2, its last DST rule 1951): the morning moment
+  // reads 17:00 here, still day, and the sun-highest one 21:30, night. Read with the offset's sign flipped, both are
+  // night; read in UTC, the second is noon.
   test.use({ timezoneId: 'Asia/Tokyo' });
   test('Tokyo’s 17:00 is far brighter than its 21:30', async ({ page }) => {
     test.setTimeout(120_000);

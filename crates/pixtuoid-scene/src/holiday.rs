@@ -284,7 +284,9 @@ mod tests {
     /// the second.
     fn from_midnight_starting(y: i16, m: i8, d: i8, offset: SignedDuration) -> SystemTime {
         let midnight = date(y, m, d).to_datetime(Time::MIN);
-        let at = midnight.checked_add(offset).expect("a time within the day");
+        let at = midnight
+            .checked_add(offset)
+            .expect("a time inside jiff's calendar");
         crate::localclock::local_instant(at).expect("a local time")
     }
 

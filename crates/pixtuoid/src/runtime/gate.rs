@@ -247,7 +247,7 @@ mod tests {
 
     fn utc_day(now: SystemTime) -> jiff::civil::Date {
         jiff::Timestamp::try_from(now)
-            .expect("after 1970 and in jiff's range")
+            .expect("a time inside jiff's range")
             .to_zoned_datetime(jiff::tz::TimeZone::UTC)
             .date()
     }

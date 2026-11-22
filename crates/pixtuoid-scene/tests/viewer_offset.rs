@@ -18,10 +18,10 @@ fn at(s: &str) -> SystemTime {
     SystemTime::try_from(stamp(s)).expect("a stamp inside the system clock's range")
 }
 
-/// Auckland's offsets round its 2026 spring-forward, `+12:00` then `+13:00`: a
-/// zone east of UTC, so a local time read as UTC lands past a change the true
+/// A zone east of UTC that moves from `+12:00` to `+13:00` at
+/// 2026-09-26T14:00Z, so a local time read as UTC lands past a change the true
 /// instant precedes.
-fn auckland(instant: Timestamp) -> Offset {
+fn springs_forward_east_of_utc(instant: Timestamp) -> Offset {
     let hours = if instant < stamp("2026-09-26T14:00:00Z") {
         12
     } else {
@@ -32,10 +32,11 @@ fn auckland(instant: Timestamp) -> Offset {
 
 #[test]
 fn the_office_reads_the_hosts_offset_at_each_instant_both_ways() {
-    read_viewer_offset_with(auckland);
+    read_viewer_offset_with(springs_forward_east_of_utc);
     assert_eq!(local_day(at("2026-09-26T11:30:00Z")), date(2026, 9, 26));
     assert_eq!(local_day(at("2026-09-27T11:30:00Z")), date(2026, 9, 28));
-    // Dusk the evening before the change keeps the offset it was read in.
+    // Dusk on the evening before the change is in that evening's +12:00,
+    // though 20:00 read as UTC lands after the change.
     assert_eq!(
         nightfall_on(at("2026-09-26T00:00:00Z")),
         Some(at("2026-09-26T08:00:00Z"))

@@ -492,8 +492,8 @@ impl ClockReading {
 pub(crate) fn clock_reading(now: SystemTime) -> ClockReading {
     let local = crate::localclock::local_time(now);
     ClockReading {
-        hour: (local.hour() % 12) as u32,
-        minute: local.minute() as u32,
+        hour: u32::from(local.hour().unsigned_abs() % 12),
+        minute: u32::from(local.minute().unsigned_abs()),
     }
 }
 
@@ -523,7 +523,7 @@ pub(crate) fn local_hour_frac(now: SystemTime) -> f32 {
 }
 
 /// When nightfall begins on `at`'s local date: where `just pace-check --run
-/// dusk` starts its clock. `None` where that local time doesn't exist.
+/// dusk` starts its clock. `None` where `localclock::on_date_of` gives none.
 #[doc(hidden)]
 pub fn nightfall_on(at: SystemTime) -> Option<SystemTime> {
     crate::localclock::on_date_of(at, DUSK)

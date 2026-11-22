@@ -64,7 +64,6 @@ allow = [
     "inotify-sys",
     "itoa",
     "jiff-core",
-    "jiff-static",
     "jiff-tzdb",
     "jiff-tzdb-platform",
     "kqueue",
