@@ -122,6 +122,12 @@ impl VisitorHires {
 extern "C" {
     #[wasm_bindgen(js_namespace = performance, js_name = now)]
     fn performance_now() -> f64;
+
+    type Date;
+    #[wasm_bindgen(constructor)]
+    fn new(epoch_ms: f64) -> Date;
+    #[wasm_bindgen(method, js_name = getTimezoneOffset)]
+    fn get_timezone_offset(this: &Date) -> f64;
 }
 
 /// The page's monotonic clock, `performance.now()`, for the flash hold.
@@ -134,6 +140,15 @@ fn page_clock() -> ScreenClock {
 #[cfg(not(target_arch = "wasm32"))]
 fn page_clock() -> ScreenClock {
     pixtuoid_scene::screen::monotonic()
+}
+
+/// The browser's offset at `instant`, from its own zone data.
+#[cfg(target_arch = "wasm32")]
+fn page_offset(instant: jiff::Timestamp) -> jiff::tz::Offset {
+    // `getTimezoneOffset` counts minutes WEST of UTC.
+    let west = Date::new(instant.as_millisecond() as f64).get_timezone_offset();
+    jiff::tz::Offset::try_from(jiff::SignedDuration::from_mins(-(west as i64)))
+        .unwrap_or(jiff::tz::Offset::UTC)
 }
 
 /// A live office rendered to a reusable RGBA buffer across frames. Keeping ONE
@@ -572,6 +587,8 @@ const GAIN_DEZIPPER: Duration = Duration::from_millis(30);
 impl Office {
     /// An office playing `show`, its flash hold on `clock`.
     fn on_screen(seed: u32, clock: ScreenClock, show: Show) -> Result<Office, PackError> {
+        #[cfg(target_arch = "wasm32")]
+        pixtuoid_scene::localclock::read_viewer_offset_with(page_offset);
         let pack = std::sync::Arc::new(load_bundled_pack()?);
         let density = pack.max_density_variant();
         // The browser upscales the frame, so it renders at the art's own

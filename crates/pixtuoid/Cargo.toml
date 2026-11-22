@@ -81,8 +81,9 @@ tracing-appender   = "0.2"
 which              = "8"
 # The throwaway hook endpoint `doctor` proves the shim against.
 tempfile           = { workspace = true }
-# `TimeZone::system()` gives the crash report's stamp in the user's zone.
-jiff               = { workspace = true }
+# jiff's defaults: the tz database `TimeZone::system()` finds the user's zone
+# in, bundled on Windows, which keeps none.
+jiff               = { workspace = true, features = ["default"] }
 open               = "5"
 semver             = { workspace = true }
 # What `panels::widgets::wrap_options` wraps, by display width. No line-break or

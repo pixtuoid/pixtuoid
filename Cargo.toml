@@ -139,10 +139,7 @@ clap               = { version = "4", features = ["derive"] }
 # `libm`, not `std`, so its float math goes through the `libm` below.
 palette            = { version = "0.7", default-features = false, features = ["libm"] }
 libm               = "0.2"
-# jiff's default features stay on: the bundled tz database is what the system
-# zone reads from on Windows (no zoneinfo there), and `tz-system` is what
-# `TimeZone::system()` needs everywhere.
-jiff               = { version = "1", features = ["serde"] }
+jiff               = { version = "1", default-features = false, features = ["std"] }
 foldhash           = { version = "0.2", default-features = false }
 image              = { version = "0.25", default-features = false, features = ["png"] }
 libc               = "0.2"

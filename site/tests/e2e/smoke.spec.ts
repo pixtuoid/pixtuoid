@@ -106,7 +106,7 @@ async function pinOfficeMoment(page: Page, at: string, theme: string): Promise<v
   }, theme);
 }
 
-/** One test per theme x office moment. `timezoneId: 'UTC'` fixes the browser's local hour, which jiff's `TimeZone::system()` reads for the sun's height. */
+/** One test per theme x office moment. `timezoneId: 'UTC'` fixes the browser's local hour, which the office reads through the page's `Date` for the sun's height. */
 function atOfficeMoments(
   title: string,
   themes: readonly string[],

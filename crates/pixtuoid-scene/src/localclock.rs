@@ -6,35 +6,54 @@
 //! Anything whose ASSERTION depends on the local hour or date builds its
 //! instants here; a unit test needing only "some fixed moment" keeps an epoch offset.
 
+use std::sync::OnceLock;
 use std::time::SystemTime;
 
-/// The zone the office reads local time in: the viewer's.
+use jiff::Timestamp;
+use jiff::tz::{Offset, TimeZone};
+
+/// The viewer's offset at an instant, where a host reads it: see
+/// [`read_viewer_offset_with`].
+static VIEWER_OFFSET: OnceLock<fn(Timestamp) -> Offset> = OnceLock::new();
+
+/// Reads the viewer's offset at each instant through `offset_at` in place of
+/// `TimeZone::system()`, for a host whose platform jiff finds no zone on
+/// without a bundled tz database: a browser, whose own clock knows its offset
+/// (jiff 1.0.2 `PLATFORM.md`, "IANA Time Zone Database"). The first host's
+/// reading stands.
+pub fn read_viewer_offset_with(offset_at: fn(Timestamp) -> Offset) {
+    let _ = VIEWER_OFFSET.set(offset_at);
+}
+
+/// The zone the office reads `instant` in: the viewer's.
+fn zone_at(instant: Timestamp) -> TimeZone {
+    VIEWER_OFFSET
+        .get()
+        .map_or_else(host_zone, |offset_at| TimeZone::fixed(offset_at(instant)))
+}
+
 #[cfg(not(test))]
 #[expect(
     clippy::disallowed_methods,
     reason = "the office's reader of the viewer's zone"
 )]
-fn zone() -> jiff::tz::TimeZone {
-    jiff::tz::TimeZone::system()
+fn host_zone() -> TimeZone {
+    TimeZone::system()
 }
 
-/// This crate's unit tests read one fixed zone, never the runner's, which
-/// `TimeZone::system()` takes from `$TZ` on Unix and the system zone on
-/// Windows (jiff 1.0.2 `src/tz/system/mod.rs:212`). Its offset is
-/// neither UTC nor a whole hour, so epoch and local hours never coincide.
+/// This crate's unit tests read one fixed zone, never the runner's. Its
+/// offset is neither UTC nor a whole hour, so epoch and local hours never
+/// coincide.
 #[cfg(test)]
-fn zone() -> jiff::tz::TimeZone {
-    jiff::tz::TimeZone::fixed(
-        jiff::tz::Offset::from_seconds(5 * 3600 + 45 * 60)
-            .expect("the offset is within a day of UTC"),
-    )
+fn host_zone() -> TimeZone {
+    let offset = jiff::SignedDuration::from_hours(5) + jiff::SignedDuration::from_mins(45);
+    TimeZone::fixed(Offset::try_from(offset).expect("the offset is within a day of UTC"))
 }
 
 /// `now` in the viewer's local time.
 pub(crate) fn local_time(now: SystemTime) -> jiff::civil::DateTime {
-    let instant =
-        jiff::Timestamp::try_from(now).expect("a clock reading is inside jiff's calendar");
-    instant.to_zoned_datetime(zone()).datetime()
+    let instant = Timestamp::try_from(now).expect("a clock reading is inside jiff's calendar");
+    zone_at(instant).to_datetime(instant)
 }
 
 /// Day 0 for every helper, so day 1 of `scripts/media.json`'s renders: a day no
@@ -56,19 +75,15 @@ fn try_local(day: u32, h: u32, m: u32) -> Option<SystemTime> {
 
 /// The instant `date` reads `h:m` in the viewer's local time; `None` where
 /// that local time is skipped or ambiguous.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the one sanctioned zone conversion clippy.toml bans elsewhere"
-)]
 pub(crate) fn local_instant(date: jiff::civil::Date, h: u32, m: u32) -> Option<SystemTime> {
     let time = jiff::civil::Time::new(i8::try_from(h).ok()?, i8::try_from(m).ok()?, 0, 0).ok()?;
     let local = date.to_datetime(time);
-    zone()
-        .to_ambiguous_zoned_datetime(local)
-        .unambiguous()
-        .ok()
-        .map(|zoned| zoned.timestamp())
-        .and_then(|instant| SystemTime::try_from(instant).ok())
+    let in_zone = |zone: TimeZone| zone.to_ambiguous_timestamp(local).unambiguous().ok();
+    // A host's offset is per instant, so it is read where the local time read
+    // as UTC lands, then again where that lands: once is an offset's width off
+    // across a change.
+    let first = in_zone(zone_at(in_zone(TimeZone::UTC)?))?;
+    SystemTime::try_from(in_zone(zone_at(first))?).ok()
 }
 
 fn local(day: u32, h: u32, m: u32) -> SystemTime {
