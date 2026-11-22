@@ -141,9 +141,9 @@ fn ends(events: &[(Transport, AgentEvent)], agent: AgentId) -> bool {
 }
 
 /// The distinct agents a pid's death ended, through `witness`'s `SessionEnd`,
-/// `witness` being bound to that pid alone: an instant exit ends every id the
-/// dead pid held in one pass of the watch loop, so the ask after it has every
-/// one sent.
+/// `witness` being bound to that pid alone: an instant exit ends, in one pass
+/// of the watch loop, every id no other live pid still holds, so the ask after
+/// it has every one sent.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 async fn ended_through(
     probe: &Probe,
