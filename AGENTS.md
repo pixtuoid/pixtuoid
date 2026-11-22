@@ -1,10 +1,11 @@
 # AGENTS.md
 
 Instructions for any AI coding agent in this repo, read natively from these
-`AGENTS.md` files. Claude Code reads them from v2.1.277, unless a `CLAUDE.md` or
-`CLAUDE.local.md` sits in or above the working directory
+`AGENTS.md` files. Claude Code reads them in every session from v2.1.281 (some
+sessions before it read only `CLAUDE.md`), unless a `CLAUDE.md`,
+`.claude/CLAUDE.md` or `CLAUDE.local.md` sits in or above the working directory
 ([code.claude.com/docs/en/memory](https://code.claude.com/docs/en/memory#agents-md));
-`.gitignore` keeps both out of the repo. This file is the workspace map;
+`.gitignore` keeps all three out of the repo. This file is the workspace map;
 per-crate detail lives in the nested guides:
 
 - [`crates/pixtuoid-core/AGENTS.md`](crates/pixtuoid-core/AGENTS.md) — headless lib: sources/decoders, reducer/state.
@@ -127,7 +128,8 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
   plugin reads the skill's
   [source](https://github.com/pixtuoid/.github/blob/main/plugins/pixtuoid-dev/skills/local-review/SKILL.md).
 - Every PR, an arc's or not, queues as
-  [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) says.
+  [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) says; a release PR
+  merges by hand instead ([the org rules](#org-rules)' Git).
 - A session pushes its own PR branches freely.
 - **The open-PR cap: at most 6 open PRs across the sessions**, bots' and
   outside contributors' aside. It is the owner's cap: the runners take
