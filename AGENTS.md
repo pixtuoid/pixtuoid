@@ -119,8 +119,8 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 
 - Non-trivial work runs as [an arc](docs/CONTRIBUTING.md#the-arc-loop). Read
   each step there before taking it, never from recall.
-- The CI review applies REVIEW.md. The org's local-review skill runs it first,
-  when [the org rules](#org-rules)' Local review says. An agent without the
+- The CI review applies REVIEW.md. The org's local-review skill runs that
+  review first, when [the org rules](#org-rules)' Local review says. An agent without the
   plugin reads the skill's
   [source](https://github.com/pixtuoid/.github/blob/main/plugins/pixtuoid-dev/skills/local-review/SKILL.md).
 - Every PR, an arc's or not, queues as

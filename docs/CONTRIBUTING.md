@@ -268,7 +268,7 @@ Two special cases:
 
 #### A fork's or a bot's PR
 
-The review skips a fork's or a bot's PR, and its skipped check passes.
+The CI review skips a fork's or a bot's PR, and its skipped check passes.
 
 - A maintainer reviews a fork's or Dependabot's PR by hand before queueing it,
   holding it to its claims and must-run results.
@@ -302,8 +302,9 @@ the reply that resolves it, and the reply starts with its state:
   mechanism, and no defensive code lands.
 - **A redesign** that brings a RE-SCOPED finding into scope ends FIXED.
 - **In place**, so FIXED rather than FOLLOW-UP, fits a small defect inside
-  code this change already touches, pulling in no new must-run item. A breach of a written rule there is fixed in
-  place whatever it pulls in (AGENTS.md's org rules: Refactor).
+  code this change already touches, pulling in no new must-run item. A breach
+  of a written rule there is fixed in place whatever it pulls in (AGENTS.md's
+  org rules: Refactor).
 - **Another session's tree**: a FOLLOW-UP for a defect there cites that
   session's PR.
 - **#N** is a PR other than this one: open, merged, or closed under
