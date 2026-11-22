@@ -13,7 +13,7 @@
 //! `AgentId` is a deterministic hash of that key.
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::{Drive, Driven};
@@ -79,22 +79,18 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
         transcripts.len()
     );
 
-    // Hook-only scenarios key the substitution on the scenario dir instead.
-    // Separators are normalized to '/' so the key — and therefore every AgentId
-    // hash baked into the snapshots — is byte-identical on Windows.
     let fixtures = dir.parent().expect("a scenario sits in its fixtures dir");
-    let logical = format!(
-        "{source}/{}",
-        transcripts
-            .first()
-            .map_or(dir, PathBuf::as_path)
-            .strip_prefix(fixtures)
-            .unwrap()
-            .to_string_lossy()
-            .replace('\\', "/")
-    );
-
     let jsonl = transcripts.first().map(|transcript| {
+        // Separators are normalized to '/' so the key — and therefore every AgentId
+        // hash baked into the snapshots — is byte-identical on Windows.
+        let logical = format!(
+            "{source}/{}",
+            transcript
+                .strip_prefix(fixtures)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/")
+        );
         let drive = Drive::transcript(source, &logical).unwrap_or_else(|| {
             panic!(
                 "fixture source {source:?} has no line_decoder — add/extend its \

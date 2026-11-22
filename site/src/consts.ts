@@ -124,14 +124,14 @@ export interface ShowcaseChannel {
   default?: boolean; // exactly one — the channel tuned at load
 }
 
-// The manifest's kind/status/default/asset invariants are enforced whenever
-// Astro loads its config, by the showcase guard in astro.config.mjs.
+// The showcase guard in astro.config.mjs enforces the manifest's
+// kind/status/default/asset invariants.
 export const SHOWCASE: ShowcaseChannel[] = showcaseData as unknown as ShowcaseChannel[];
 
 // features.json is the TOTAL set (also the README Features table's source, via
 // gen-readme.mjs), partitioned by has-demo: rows carrying `channel` are exactly
 // the Studio Wall dial, the `!channel` half is Showcase.astro's roster. The
-// channel↔feature bijection is enforced by astro.config.mjs's build-time guard.
+// channel↔feature bijection is enforced by astro.config.mjs's bijection guard.
 export interface Feature {
   icon: string;
   name: string;
