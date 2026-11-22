@@ -130,7 +130,8 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
 - Every PR, an arc's or not, queues as
   [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) says; a release PR
   merges by hand instead ([the org rules](#org-rules)' Git).
-- A session pushes its own PR branches freely.
+- A session pushes to its own PR branches without asking the owner first;
+  [the org rules](#org-rules)' Local review and Git still govern each push.
 - **The open-PR cap: at most 6 open PRs across the sessions**, bots' and
   outside contributors' aside. It is the owner's cap: the runners take
   [20 jobs at once](https://docs.github.com/en/actions/reference/limits), and

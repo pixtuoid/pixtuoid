@@ -118,7 +118,7 @@ transcript and no desk, shown as one wandering mascot per running instance.
 
 ## Seams & invariants
 
-Load-bearing — see `AGENTS.md` and the nested crate guides before changing:
+Load-bearing — see `AGENTS.md` and the nested guides before changing:
 
 - The **`Source` trait** is the only seam for a transcript-bearing agent CLI;
   per-source format knowledge lives in that source's own decoders. Hook-only
@@ -139,4 +139,4 @@ Load-bearing — see `AGENTS.md` and the nested crate guides before changing:
   [live `/config`](https://pixtuoid.dev/config/)
 - **Contribute:** [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - **Agent/contributor detail:** the workspace `AGENTS.md` + the nested
-  per-crate `AGENTS.md` files.
+  per-directory `AGENTS.md` files.
