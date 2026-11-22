@@ -2496,11 +2496,10 @@ pub(crate) mod noted {
     /// has taken every thread queued for it, the caller having queued one.
     #[cfg(unix)]
     pub(crate) fn until_joining() {
-        let deadline = std::time::Instant::now() + SETTLES_WITHIN;
-        while !super::off_loop_threads().is_empty() {
-            assert!(std::time::Instant::now() < deadline, "no join took them");
-            std::thread::sleep(POLL);
-        }
+        pixtuoid_core::harness::wait_until("a join", SETTLES_WITHIN, || {
+            Ok(super::off_loop_threads().is_empty())
+        })
+        .expect("a join takes them");
     }
 
     /// End the reads a [`stall`] holds by opening its FIFO for writing and

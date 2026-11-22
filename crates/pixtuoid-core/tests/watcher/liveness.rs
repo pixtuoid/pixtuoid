@@ -132,14 +132,14 @@ impl Probe {
     }
 }
 
-/// Whether `events` hold a root `SessionEnd` for `agent`.
+/// Whether `events` hold a `SessionEnd` for `agent`.
 fn ends(events: &[(Transport, AgentEvent)], agent: AgentId) -> bool {
     events
         .iter()
         .any(|(_, e)| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == agent))
 }
 
-/// The agents a pid's death ended, through `witness`'s `SessionEnd`,
+/// The distinct agents a pid's death ended, through `witness`'s `SessionEnd`,
 /// `witness` being bound to that pid alone: an instant exit ends every id the
 /// dead pid held in one pass of the watch loop, so the ask after it has every
 /// one sent.
@@ -161,13 +161,18 @@ async fn ended_through(
             .listen_until(rx, "past the death", |at| at.len() > from)
             .await,
     );
-    events
+    let mut ended: Vec<AgentId> = events
         .iter()
         .filter_map(|(_, e)| match e {
             AgentEvent::SessionEnd { agent_id, .. } => Some(*agent_id),
             _ => None,
         })
-        .collect()
+        .collect();
+    // A probe still naming the witness on its dead pid binds it again, and the
+    // exit watch answers that pid with an exit of its own.
+    ended.sort_unstable();
+    ended.dedup();
+    ended
 }
 
 #[tokio::test]
@@ -373,10 +378,10 @@ async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
 async fn one_missed_snapshot_does_not_end_the_session() {
     let dir = TempDir::new().unwrap();
     let uuid = "01000000-0000-7000-8000-0000000000ae";
-    // The span must dwarf the drop below, two misses one poll apart, so the
-    // re-vouch lands INSIDE it even when load stretches a pass; a span close to
-    // the drop flakes into a confirmed exit on a busy machine.
-    let span = PROBE_POLL * 10;
+    // The span must dwarf the drop below, two misses a poll apart, so the
+    // re-vouch lands INSIDE it even when load delays the poll between them; a
+    // span close to the drop flakes into a confirmed exit on a busy machine.
+    let span = PROBE_POLL * 25;
     let (probe, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
@@ -582,7 +587,7 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
 /// The pid binding must be UNBOUND when the negative vouch confirms an id: a
 /// codex-style process owns many rollouts, so a session can end (rollout fd
 /// closed → vouch gone) while its OS process lives on, and that process's
-/// later death must emit NOTHING.
+/// later death must emit nothing for that id.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 #[tokio::test]
 async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {

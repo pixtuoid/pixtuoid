@@ -2589,17 +2589,24 @@ mod recorder {
                 .expect("a birth time")
         }
 
-        /// `path` written once its birth time sorts after `after`, and that
-        /// time: a filesystem stamps a birth at its own granularity, on some
-        /// coarser than `SystemTime`'s, so a file written just after an instant
-        /// can be born before it.
-        fn born_past(path: &Path, after: SystemTime) -> SystemTime {
+        /// A file `stem` names in `dir`, written once one is born past
+        /// `after`, and its birth time. On Linux a file written just after an
+        /// instant can be born before it: ext4 copies a new inode's mtime into
+        /// its birth (`fs/ext4/ialloc.c`'s `i_crtime`), and the kernel stamps
+        /// inodes from "coarse time values"
+        /// (<https://docs.kernel.org/filesystems/multigrain-ts.html>).
+        /// Each try takes a fresh name: Windows hands a name created again
+        /// "shortly afterward" its deleted file's creation time
+        /// (<https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew>).
+        fn born_past(dir: &Path, stem: &str, after: SystemTime) -> (PathBuf, SystemTime) {
+            let mut tries = 0;
             loop {
-                let at = born(path);
+                let path = dir.join(format!("{stem}-{tries}.jsonl"));
+                let at = born(&path);
                 if at > after {
-                    return at;
+                    return (path, at);
                 }
-                std::fs::remove_file(path).expect("remove");
+                tries += 1;
                 std::thread::sleep(TICK);
             }
         }
@@ -2618,11 +2625,10 @@ mod recorder {
         #[test]
         fn birth_time_selection_ignores_a_file_that_predates_the_run() {
             let d = tempfile::tempdir().expect("tempdir");
-            let (old, new) = (d.path().join("old.jsonl"), d.path().join("new.jsonl"));
+            let old = d.path().join("old.jsonl");
             let started = past(born(&old));
-            let new_born = born_past(&new, started);
-            let newer = d.path().join("newer.jsonl");
-            born_past(&newer, new_born);
+            let (new, new_born) = born_past(d.path(), "new", started);
+            let (newer, _) = born_past(d.path(), "newer", new_born);
             // Listed newest first, returned oldest first.
             let candidates = vec![newer.clone(), old.clone(), new.clone()];
             assert_eq!(

@@ -424,8 +424,9 @@ mod tests {
     const HOLD: Duration = Duration::from_secs(5);
 
     /// A pause that waits on `release`, and rows behind it, to show what goes on
-    /// during an ask. A test over it keeps the real clock: its pause is blocking
-    /// work, which holds a paused clock, and the frame gap with it.
+    /// during an ask. A test over it keeps the real clock: its pause runs in a
+    /// `spawn_blocking`, which holds a paused clock's auto-advance until it ends
+    /// (tokio's `runtime/blocking/schedule.rs`), and the frame gap with it.
     struct Held {
         pause: Pause,
         rows: ReadRows,

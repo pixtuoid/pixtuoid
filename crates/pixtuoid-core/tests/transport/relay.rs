@@ -113,8 +113,10 @@ async fn a_second_router_receives_the_owners_payloads_in_order() {
     subscriber.abort();
 }
 
-// Paused: every byte here crosses between this runtime's own tasks, so none is
-// in flight when it idles and the clock jumps to the takeover loser's retry.
+// Paused, so the clock jumps to the takeover loser's retry: a `Timeout` polls
+// its future before its delay (tokio's `time/timeout.rs`), and each one here
+// wraps its IO in its own task, so a jump past it still reads what this
+// runtime's tasks wrote.
 #[tokio::test(start_paused = true)]
 async fn a_subscriber_takes_the_endpoint_when_its_owner_leaves() {
     let (_dir, at) = endpoint("takeover");

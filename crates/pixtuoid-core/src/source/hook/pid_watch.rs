@@ -110,7 +110,7 @@ pub(super) async fn ended_through(
     rx: &mut crate::source::TaggedReceiver,
     witness: AgentId,
 ) -> Vec<AgentId> {
-    /// A hang guard: the kernel reports a death within milliseconds.
+    /// A hang guard, never a verdict.
     const PATIENCE: std::time::Duration = std::time::Duration::from_secs(5);
     let mut ended = Vec::new();
     let receipt = tokio::time::timeout(PATIENCE, async {
