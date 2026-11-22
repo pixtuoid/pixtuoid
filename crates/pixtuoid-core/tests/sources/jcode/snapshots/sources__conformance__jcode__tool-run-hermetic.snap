@@ -3,57 +3,57 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     source: jcode
-    session_id: session_tiger_1795108352947_422911ee78f99a11
+    session_id: session_eagle_1795364268050_c07196d5ecb6adab
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Rename:
-    agent_id: 7183020812189044719
-    label: jc·tiger
+    agent_id: 3752205845334103129
+    label: jc·eagle
 - ModelInfo:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     model: hermetic
     effort: ~
 - Identity:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     source: jcode
-    session_id: session_tiger_1795108352947_422911ee78f99a11
+    session_id: session_eagle_1795364268050_c07196d5ecb6adab
     cwd: /private/tmp/pixtuoid-capture/proj
 - Rename:
-    agent_id: 7183020812189044719
-    label: jc·tiger
+    agent_id: 3752205845334103129
+    label: jc·eagle
 - ToolUseStart:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     tool_use_id: ~
     detail:
       Generic:
         display: read
 - Identity:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     source: jcode
-    session_id: session_tiger_1795108352947_422911ee78f99a11
+    session_id: session_eagle_1795364268050_c07196d5ecb6adab
     cwd: /private/tmp/pixtuoid-capture/proj
 - Rename:
-    agent_id: 7183020812189044719
-    label: jc·tiger
+    agent_id: 3752205845334103129
+    label: jc·eagle
 - ToolUseEnd:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     tool_use_id: ~
 - Identity:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     source: jcode
-    session_id: session_tiger_1795108352947_422911ee78f99a11
+    session_id: session_eagle_1795364268050_c07196d5ecb6adab
     cwd: /private/tmp/pixtuoid-capture/proj
 - Rename:
-    agent_id: 7183020812189044719
-    label: jc·tiger
+    agent_id: 3752205845334103129
+    label: jc·eagle
 - ModelInfo:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     model: hermetic
     effort: ~
 - TurnEnd:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
 - SessionEnd:
-    agent_id: 7183020812189044719
+    agent_id: 3752205845334103129
     as_child: false
