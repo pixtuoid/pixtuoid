@@ -40,7 +40,7 @@ runs:
       with:
         prefix-key: v1-rust
         shared-key: ${{ inputs.shared-key }}
-        # Main's caches are what every ref restores, and the 10 GB quota evicts
+        # Main's caches are what every ref restores, and the cache quota evicts
         # the least recently used first, so another ref's copy only pushes
         # main's full-tier entries out.
         save-if: ${{ github.ref == 'refs/heads/main' }}
