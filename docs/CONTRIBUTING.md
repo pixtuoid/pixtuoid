@@ -1,14 +1,15 @@
 # Contributing to pixtuoid
 
-Thanks for your interest! PRs are welcome — especially **new themes**, sprite and
-decoration polish, and **`Source` adapters** for agent CLIs we don't support yet
-(the agent CLIs plus the OpenClaw gateway already wired up are listed in the README).
+Thanks for your interest! PRs are welcome, especially **new themes**, sprite
+and decoration polish, and **`Source` adapters** for agent CLIs we don't
+support yet. The README lists the agent CLIs already wired up, and the OpenClaw
+gateway.
 
-Before you start, read [`AGENTS.md`](../AGENTS.md) at the repo root (and the
-nested `crates/*/AGENTS.md` for the crate you touch). It holds the load-bearing
+Before you start, read [`AGENTS.md`](../AGENTS.md) at the repo root, and the
+nested `AGENTS.md` of each directory you touch. They hold the load-bearing
 architecture invariants and conventions. Many things that look like bugs are
-documented, intentional design: read the whole item, its doc comment and the
-comments on the lines it governs, before changing it.
+documented, intentional design, and AGENTS.md says what to read before
+changing one.
 
 ## Build & test
 
@@ -31,8 +32,9 @@ just test -p <crate> <filter>   # fast loop while iterating on one crate
 > builds carry over only build scripts and proc-macros, so iterate with one of
 > them.
 
-Activate the git hooks once per clone: `git config core.hooksPath .githooks`
-(`pre-commit` runs `just fmt-check`, `pre-push` runs `just preflight`).
+Run `just setup-tools` once per clone. It activates the git hooks (`pre-commit`
+runs `just fmt-check`, `pre-push` runs `just preflight`), then installs the dev
+tools, rust-analyzer included.
 
 `just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each
 profiled CLI against a scripted model (aimock), then its install's lifecycle
@@ -160,199 +162,275 @@ hours" Apple's release-option page gives a release to reach the App Store.
 
 ## The arc loop
 
-Non-trivial work (a new feature, config key, flag, seam or module, a
-documented sharp edge, or 3+ *counted files*: changed files outside tests,
-fixtures, snapshots, lockfiles, `.md`, binary assets and what a `just gen*`
-recipe regenerates; not a typo, a docs fix, a mechanical move or a one-file
-fix with its pinning test) runs as an **arc**: design → build → gate → wrap.
+An **arc** is design → build → gate → wrap, in the nine steps below.
 
-1. **Pick** — a [Roadmap](https://github.com/orgs/pixtuoid/projects/1) item, an issue or a draft.
-2. **Grill the design** — decide the open questions one at a time, each with a
+Non-trivial work runs as an arc. Work is non-trivial when it has any of:
+
+- a new feature, config key, flag, seam or module;
+- a documented sharp edge;
+- 3 or more *counted files*. A counted file is a changed file outside tests,
+  fixtures, snapshots, lockfiles, `.md`, binary assets and what a `just gen*`
+  recipe regenerates.
+
+A typo, a docs fix, a mechanical move, or a one-file fix with its pinning test
+is trivial and needs no arc.
+
+1. **Pick** a [Roadmap](https://github.com/orgs/pixtuoid/projects/1) item, an
+   issue or a draft.
+2. **Grill the design.** Decide the open questions one at a time, each with a
    recommended answer, before writing code.
-3. **Design gate** (before build) — four lenses so slop dies in design:
-   best-practice search (confirm the idiomatic way against real docs online,
-   never memory) · adversarial design review (red-team the design before code
-   exists) · deepening lens (would deleting this concentrate complexity or
-   just move it? does the change deepen a module or add a shallow one? a
-   refactor it warrants is in scope) · reuse lens (which layer lets every
-   surface read this feature, which existing surfaces take it now, and why
-   the rest don't).
-4. **Spec** — synthesize into `docs/superpowers/specs/` (LOCAL, git-ignored),
-   planned against [`REVIEW.md`](../REVIEW.md)'s lenses; the PR body states
-   the change's claims, which the review's Claims lens holds it to.
-5. **Mock gate** (taste/visual work only) — ratify the AFTER visual before code
-   (`beautify-decoration` skill).
-6. **Build** — TDD: failing test → minimal impl → commit.
-7. **Local review** — the org's local-review skill, when
+3. **Design gate**, before the build. Four lenses, so slop dies in design:
+   - **Best-practice search**: confirm the idiomatic way against real docs
+     online, never memory.
+   - **Adversarial design review**: red-team the design before code exists.
+   - **Deepening**: would deleting this concentrate complexity or just move
+     it? Does the change deepen a module or add a shallow one? A refactor it
+     warrants is in scope.
+   - **Reuse**: which layer lets every surface read this feature, which
+     existing surfaces take it now, and why the rest don't.
+4. **Spec.** Write it in `docs/superpowers/specs/` (local and git-ignored),
+   planned against [`REVIEW.md`](../REVIEW.md)'s lenses. The PR body states
+   the change's claims, and the review's Claims lens holds it to them.
+5. **Mock gate**, for taste or visual work only: ratify the after visual before
+   code (the `beautify-decoration` skill).
+6. **Build**, test first, as [the org rules](../AGENTS.md#org-rules)' TDD says.
+7. **Local review**: the org's local-review skill, when
    [the org rules](../AGENTS.md#org-rules)' Local review says.
-8. **Merge gate** — [the gate](#the-merge-gate).
-9. **Wrap** — retro; a durable lesson becomes a mechanism (a test, a gate) or
-   a line on the narrowest rule it amends — never an agent's private memory,
+8. **Merge gate**: [the gate](#the-merge-gate).
+9. **Wrap**: a retro. A durable lesson becomes a mechanism (a test, a gate) or
+   a line on the narrowest rule it amends, never an agent's private memory,
    which nobody reviews and nothing executes.
 
-Checks hold only the merge gate (the org's [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml)
-`queue_conditions`), step 6's tests (the review's test teeth) and the head step 7
-ended on, in the body ([the org rules](../AGENTS.md#org-rules)); every other step is
-the session's to keep.
+Only three steps have a check behind them; the session keeps every other step
+itself:
+
+- step 8, through the org's [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml)
+  `queue_conditions`;
+- step 6's tests, through the review's Test teeth;
+- step 7, through the head it ended on, which the PR body names
+  ([the org rules](../AGENTS.md#org-rules)).
 
 ### Parallel sessions
 
-- **One `git worktree` and one cargo target per branch** — a target shared
+- **One `git worktree` and one cargo target per branch.** A target shared
   across branches swaps uplifted examples and builds one branch's types into
-  another. Targets run to several GB each: check `df -h /` before parallel
-  builds, and remove a PR's worktree and local branch once it merges.
-- **Fold before opening** — a change to a surface an open PR already touches
-  folds into it.
-- **The queue never idles** — it checks one batch at a time (the org queue's
-  `max_parallel_checks`), so queue every PR once what no check can confirm holds
-  and dequeue one only when it would jump a green priority PR.
+  another.
+- **Check `df -h /` before parallel builds.** A target runs to several GB.
+- **Remove a PR's worktree and local branch once it merges.**
+- **Add to an open PR first.** A change to a surface an open PR already
+  touches goes into that PR.
+- **Keep the queue busy.** It checks one batch at a time (the org queue's
+  `max_parallel_checks`), so queue every PR as soon as [Queueing](#queueing)
+  allows. Dequeue one only when it would jump a green priority PR.
 
 ## Pull requests
 
 ### The merge gate
 
-Every [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml) `queue_conditions` check green at the
-final head, and what no check can confirm: every review of that head posted and
-read, every finding's thread resolved by its disposition, zero open confirmed
-blocking finding, the must-run results in the body. A bot's finding posted only
-in its review body gets a thread. A refuted blocking finding needs no push:
-resolve its thread with the disposition and re-run the review
-(`gh run rerun <id> --failed`), whose verifier judges the refutation once.
+A PR merges only when, at its final head:
 
-Comment `@mergifyio queue` once the latter holds: the command waits for the
-`queue_conditions` ([queue](https://docs.mergify.com/commands/queue/)), and a
-push cancels it or dequeues the PR, so comment again after one. The
-queue tests up to `batch_size` PRs together on a draft PR
-(`mergify/merge-queue/…`) running the full tier, then merges the PRs
-themselves, but merges an up-to-date PR alone at the front on its own CI
-([direct merge](https://docs.mergify.com/merge-queue/direct-merge/)); it never updates a PR's own branch
-([batches](https://docs.mergify.com/merge-queue/batches/): "the original PRs
-are the ones merged"), so the bots' statuses on the PR's head are the ones its
-`queue_conditions` read. A session or the owner queues a bot's PR after reading
-what no review sees: `media-regen.yml`'s images, `hermetic-nightly.yml`'s whole
-diff, fixtures included.
+- every [`.mergify.yml`](https://github.com/pixtuoid/.github/blob/main/.mergify.yml)
+  `queue_conditions` check is green;
+- and what no check can confirm holds:
+  - every review of that head is posted and read;
+  - every finding's thread is resolved by its [disposition](#dispositions);
+  - no confirmed blocking finding is open;
+  - the must-run results are in the PR body.
 
-The review skips a fork's or a bot's PR, and its skipped check passes. A
-maintainer reviews a fork's or Dependabot's PR by hand, holding it to its claims and
-must-run results (a fork's PR owes no local review: the review run on its commits
-below or, when its diff touches a workflow, this hand review stands in for it),
-before queueing it; a fork's author can resolve their own threads, so read each
-thread's `resolvedBy` and its reply. To run the review on a fork's commits once its
-diff is read as code CI runs with this repo's permissions (`ci.yml`'s `id-token:
-write`) and touches no workflow, open them as a same-repo PR and close it unmerged:
-merging it would take the author's credit. Its checks share the fork PR's commit, so
-force-cancelling its other runs shows them cancelled there too.
+Two special cases:
+
+- Open a thread for a bot's finding posted only in its review body.
+- A refuted blocking finding needs no push. Resolve its thread with the
+  disposition and re-run the review (`gh run rerun <id> --failed`); its
+  verifier judges the refutation once.
+
+#### Queueing
+
+- Comment `@mergifyio queue` once what no check can confirm holds. The command
+  waits for the `queue_conditions`
+  ([queue](https://docs.mergify.com/commands/queue/)).
+- A push cancels the command or dequeues the PR, so comment again after one.
+- A session or the owner queues a bot's PR only after reading what no review
+  sees: `media-regen.yml`'s images, and `hermetic-nightly.yml`'s whole diff,
+  fixtures included.
+
+#### How Mergify merges
+
+- It tests up to `batch_size` PRs together on a draft PR
+  (`mergify/merge-queue/…`) running the full tier, then merges the PRs
+  themselves.
+- An up-to-date PR alone at the front merges on its own CI instead
+  ([direct merge](https://docs.mergify.com/merge-queue/direct-merge/)), so it
+  skips the full tier (`ci.yml`'s `tier` job).
+- It never updates a PR's own branch
+  ([batches](https://docs.mergify.com/merge-queue/batches/): "the original PRs
+  are the ones merged"), so the bots' statuses on the PR's head are the ones
+  its `queue_conditions` read.
+
+#### A fork's or a bot's PR
+
+The CI review skips a fork's or a bot's PR, and its skipped check passes.
+
+- A maintainer reviews a fork's or Dependabot's PR by hand before queueing it,
+  holding it to its claims and must-run results.
+- A fork's PR owes no local review. The review run on its commits, below,
+  stands in for it, or, when its diff touches a workflow, the hand review does.
+- A fork's author can resolve their own threads, so read each thread's
+  `resolvedBy` and its reply.
+- **To run the review on a fork's commits**, first read its diff as code CI
+  runs with this repo's permissions (`ci.yml`'s `id-token: write`), and check
+  that it touches no workflow. Then:
+  1. Open the commits as a same-repo PR.
+  2. Close that PR unmerged: merging it would take the author's credit.
+
+  Its checks share the fork PR's commit, so force-cancelling its other runs
+  shows them cancelled on the fork PR too.
 
 ### Dispositions
 
-Every finding reaches exactly one terminal state: FIXED ·
-REFUTED (cite the mechanism, per AGENTS.md; add one where none exists. Before
-adding code for a finding, establish its case is reachable: when a test or
-sweep shows it isn't, that test is the mechanism and no defensive code lands) ·
-RE-SCOPED → #N (real and INTRODUCED — or first made reachable — by this
-change, and bigger than the PR: split it off into #N; a redesign that brings
-the finding into scope ends FIXED) · FOLLOW-UP → #N (real and reachable at
-the base, and not FIXED in place
-— in place fits a small defect inside code this change already touches,
-pulling in no new must-run item, and a breach of a written rule there is fixed
-in place whatever it pulls in (AGENTS.md's org rules: Refactor) — so it is
-fixed in #N; a defect in another session's tree cites that session's PR). A
-thread's disposition is the reply that resolves it, STARTING with its state:
-`FIXED: …` · `REFUTED: … — <mechanism>` · `RE-SCOPED → #N: …` ·
-`FOLLOW-UP → #N: …`, where #N is a PR other than this one: open, merged, or
-closed under [the open-PR cap](../AGENTS.md#workflow) with the fix on its branch. A
-re-flag of an already-dispositioned finding replies with the original's
-disposition (link it). "Acknowledged" and "surfaced" are not states. Sweep at
-the FINAL merge head; check WHICH commit a bot re-flag was raised against
-before re-litigating.
+Every finding reaches exactly one terminal state. A thread's disposition is
+the reply that resolves it, and the reply starts with its state:
+
+| State | Rule | Reply starts with |
+| --- | --- | --- |
+| FIXED | Fixed in this PR. | `FIXED: …` |
+| REFUTED | Its premise fails. As this repo applies [the org rules' Review findings](../AGENTS.md#org-rules): cite the mechanism, adding one where none exists, and add a code comment only for an external fact (another CLI's wire bytes, an OS semantic), on the narrowest thing it constrains. | `REFUTED: … — <mechanism>` |
+| RE-SCOPED → #N | Real, introduced or first made reachable by this change, and bigger than the PR: split it off into #N. | `RE-SCOPED → #N: …` |
+| FOLLOW-UP → #N | Real and reachable at the base, and not fixed in place: fixed in #N. | `FOLLOW-UP → #N: …` |
+
+- **Reachable first.** Before adding code for a finding, establish that its
+  case is reachable. When a test or sweep shows it isn't, that test is the
+  mechanism, and no defensive code lands.
+- **A redesign** that brings a RE-SCOPED finding into scope ends FIXED.
+- **In place**, so FIXED rather than FOLLOW-UP, fits a small defect inside
+  code this change already touches, pulling in no new must-run item. A breach
+  of a written rule there is fixed in place whatever it pulls in (AGENTS.md's
+  org rules: Refactor).
+- **Another session's tree**: a FOLLOW-UP for a defect there cites that
+  session's PR.
+- **#N** is a PR other than this one: open, merged, or closed under
+  [the open-PR cap](../AGENTS.md#workflow) with the fix on its branch.
+- **A re-flag** of an already-dispositioned finding replies with the
+  original's disposition, linked.
+- "Acknowledged" and "surfaced" are not states.
+- At the final merge head, sweep every finding for its disposition. Before
+  re-litigating a bot's re-flag, check which commit it was raised against.
 
 ### Convergence contract
 
-- **Churn budget** — a diff whose added + modified lines exceed ~1500 is split
-  (stacked PRs) before review. Pure deletions are exempt once censused; a
-  change that both adds and deletes at scale is two PRs.
-- **Deletion census** — before deleting N members of a class, the full list
-  and its criterion land in the first commit or the PR body (#943).
-- **Fixes are never put off.** Each fold takes every accepted finding,
-  whatever code it names, into ONE commit: a defect this change introduced is
-  FIXED in it, since a clean-up left for later rarely lands
-  ([Google](https://google.github.io/eng-practices/review/reviewer/pushback.html#cleaning-it-up-later)).
-  The loop converges because a re-review judges only the PR's own change since
-  the last reviewed head (the [shared review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)'s
-  scope), so a fold's findings are the fold's. A blocking issue confirmed in a
-  fold STOPS the loop: revert the fold and re-land smaller, or re-scope.
-- **A fold's behavior change**, a user-visible string included (a doc
-  comment clap renders as `--help` is one), ships a test that fails without
-  it; the rest of a fold is a revert, a deletion, a
-  comment or doc change, or a refactor the existing tests cover. Anything
-  else reverts the fold.
-- **A fix round adds no gate** beyond a refutation's mechanism — any other
-  wanted check is its own PR, asserting
-  facts in its own layer (a Rust fact from Rust, never a Python regex over
-  `.rs`).
+A **fold** is the one commit that takes a review round's accepted findings.
+
+- **Churn budget**: split a diff whose added + modified lines exceed ~1500
+  into stacked PRs before review.
+  - Pure deletions are exempt once censused.
+  - A change that both adds and deletes at scale is two PRs.
+- **Deletion census**: before deleting N members of a class, land the full
+  list and its criterion in the first commit or the PR body (#943).
+- **Fixes are never put off.**
+  - Each fold takes every accepted finding, whatever code it names.
+  - A defect this change introduced is FIXED in it, since a clean-up left for
+    later rarely lands
+    ([Google](https://google.github.io/eng-practices/review/reviewer/pushback.html#cleaning-it-up-later)).
+    Only one bigger than the PR is RE-SCOPED instead
+    ([Dispositions](#dispositions)).
+  - The loop converges because a re-review judges only the PR's own change
+    since the last reviewed head (the
+    [CI review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)'s
+    scope), so a fold's findings are the fold's.
+  - A blocking issue confirmed in a fold stops the loop: revert the fold and
+    re-land smaller, or re-scope.
+- **A fold's behavior change ships a test that fails without it.** A
+  user-visible string is a behavior change, a doc comment clap renders as
+  `--help` included.
+  - The rest of a fold is a revert, a deletion, a comment or doc change, or a
+    refactor the existing tests cover.
+  - Anything else reverts the fold.
+- **A fix round adds no gate** beyond a refutation's mechanism. Any other
+  wanted check is its own PR, asserting facts in its own layer: a Rust fact
+  from Rust, never a Python regex over `.rs`.
 
 ## Adding a new agent CLI
 
-The registration steps (4–7, 9) and step 11's roster literal are test-forced —
-skipping one fails `just test`, or step 9's dropdown `just ci-observability`. Step 8 is
-forced only for hook-only sources; step 10 by the theme guards; steps 1–3 are on you.
+No test forces steps 1–3; they are on you. Each later step names the check
+that fails without it; step 8 has one only for a hook-only source.
 
-1. **Verify the wire format against the CLI's actual source/releases first** —
-   transcript location, line shape, hooks, session identity; pin every fact
-   to an upstream file/version. **Audit its HOME RESOLVER per axis in the
-   same pass** — PROBE the installed artifact rather than trusting docs; an
-   unmirrored axis is fail-silent: the watcher polls a directory the CLI
-   never writes and the office stays empty (#880). No tier checks an axis past
-   the home variable a hermetic profile sandboxes: re-probe it when the CLI majors.
-   A custom root gets ONE `pub fn <cli>_home()`, called by both the watcher's
-   `default_paths()` and the installer's `default_config_path()` so they
-   can't disagree. No test can ask the rest, so the PR body answers each with an
-   upstream cite:
-   - **Where can hooks live?** A plugin or a dir the CLI scans keeps pixtuoid out
-     of the user's file (step 8). Name each route checked; a merge's
-     `no_owned_route` cites why none runs unattended.
-   - **What rewrites that file?** A CLI that saves its whole config can drop a
-     sentinel, so ownership keys on what survives (`install/jcode.rs`'s
-     `managed_path`).
-   - **Which events fire for a session nobody sees?** A resume, a reload or a
-     per-connection placeholder, each a phantom sprite if it registers
-     (`source/jcode.rs`'s `turn_start` arm).
-   - **How does a hook get its payload?** Off stdin, the shim needs an arm and
-     `shim_stamp_parity.rs` a pin, and it forwards only what a decoder reads.
-2. **Write the source module** — `crates/pixtuoid-core/src/source/<name>.rs`:
-   `SOURCE_NAME`, a `LineDecoder` fn (one JSONL line → `Vec<AgentEvent>`), a label
-   deriver, unit tests for mappings no fixture reaches. Format knowledge lives HERE.
-3. **Implement the `Source` trait** (an async `run(self, tx)` watching +
-   decoding until the session universe ends). **Hook-only CLI?** Skip the
-   decoder, trait, and step 7: `transcript: None` in the registry row, format
-   knowledge in a `HookDecoding::ClaimsAll` decoder, and do step 8 instead.
-4. **Add the module's `DESCRIPTOR`**, listed in `source/registry.rs`'s `REGISTRY` — `display_name`
-   (as upstream's README writes it), label prefix, decoder, `HookDecoding` (a `Shared` row's
-   `tool_id_key` verified against a CAPTURED tool call — kimi's `ToolCall` cost a source its
-   tool ids), truthful capability flags, `verified_version` + `version_probe`. Lifecycle policy
-   derives from the flags; you do **not** edit the reducer.
-5. The descriptor's `name` **is the roster** — `registered_source_names()`
-   projects `REGISTRY`; the conformance suite then requires a fixture, and
-   `harness/hermetic/mod.rs` a `PROFILES` row or a `NOT_HERMETIC` reason and feed. The
-   `sources --json` golden (`crates/pixtuoid/tests/snapshots/cli/sources.json`)
-   must list it: `SNAPSHOTS=overwrite just test -p pixtuoid --test cli_json`.
-6. **Record the fixture** — the test steps in
-   [`crates/pixtuoid-core/tests/AGENTS.md`](../crates/pixtuoid-core/tests/AGENTS.md)
-   (a RECORDED SessionStart scenario), then `cargo insta review`.
-7. **Wire it into `runtime/driver.rs::build_source_set`** (the one
-   construction site; the registry drives the guard test, not the spawning).
-8. **If the CLI has hooks**, add an `install/` target: a `Target` row whose
+1. **Verify the wire format against the CLI's actual source and releases
+   first**: transcript location, line shape, hooks, session identity. Pin
+   every fact to an upstream file and version.
+   - **Audit its home resolver per axis in the same pass.** Probe the
+     installed artifact rather than trusting docs. An unmirrored axis fails
+     silently: the watcher polls a directory the CLI never writes, and the
+     office stays empty (#880).
+   - No tier checks an axis past the home variable a hermetic profile
+     sandboxes, so re-probe it when the CLI ships a new major version.
+   - A custom root gets one `pub fn <cli>_home()`, called by both the
+     watcher's `default_paths()` and the installer's `default_config_path()`
+     so they can't disagree.
+   - No test can ask the questions below, so the PR body answers each with an
+     upstream cite:
+     - **Where can hooks live?** A plugin or a dir the CLI scans keeps
+       pixtuoid out of the user's file (step 8). Name each route checked; a
+       merge's `no_owned_route` cites why none runs unattended.
+     - **What rewrites that file?** A CLI that saves its whole config can drop
+       a sentinel, so ownership keys on what survives (`install/jcode.rs`'s
+       `managed_path`).
+     - **Which events fire for a session nobody sees?** A resume, a reload or
+       a per-connection placeholder: each is a phantom sprite if it registers
+       (`source/jcode.rs`'s `turn_start` arm).
+     - **How does a hook get its payload?** When not on stdin, the shim needs
+       an arm and `shim_stamp_parity.rs` a pin, and it forwards only what a
+       decoder reads.
+2. **Write the source module**, `crates/pixtuoid-core/src/source/<name>.rs`:
+   `SOURCE_NAME`, a `LineDecoder` fn (one JSONL line → `Vec<AgentEvent>`), a
+   label deriver, and unit tests for mappings no fixture reaches. Format
+   knowledge lives here.
+3. **Implement the `Source` trait**: an async `run(self, tx)` that watches and
+   decodes until the session universe ends.
+   - **Hook-only CLI?** Skip the decoder, the trait and step 7. Put
+     `transcript: None` in the registry row and the format knowledge in a
+     `HookDecoding::ClaimsAll` decoder, and do step 8 instead.
+4. **Add the module's `DESCRIPTOR`** to `source/registry.rs`'s `REGISTRY`.
+   `just test` fails without it.
+   - `display_name`, as upstream's README writes it.
+   - The label prefix, the decoder, and `HookDecoding`. Verify a `Shared`
+     row's `tool_id_key` against a captured tool call: kimi's `ToolCall` cost
+     a source its tool ids.
+   - Truthful capability flags. Lifecycle policy derives from them, so don't
+     edit the reducer.
+   - `verified_version` and `version_probe`.
+5. **The descriptor's `name` is the roster**: `registered_source_names()`
+   projects `REGISTRY`. `just test` then requires:
+   - a fixture, by the conformance suite;
+   - a `PROFILES` row, or a `NOT_HERMETIC` reason and feed, by
+     `harness/hermetic/mod.rs`;
+   - the name in the `sources --json` golden
+     (`crates/pixtuoid/tests/snapshots/cli/sources.json`):
+     `SNAPSHOTS=overwrite just test -p pixtuoid --test cli_json`.
+6. **Record the fixture and add the tests**:
+   [the test steps](../crates/pixtuoid-core/tests/AGENTS.md#adding-a-new-agent-cli--the-test-steps).
+   The conformance suite fails without the fixture; test step 2 has no check.
+7. **Wire it into `runtime/driver.rs::build_source_set`**, the one
+   construction site. The registry drives the guard test, not the spawning,
+   and `just test` fails without it.
+8. **If the CLI has hooks, add an `install/` target**: a `Target` row whose
    `Primary` is a plugin file pixtuoid owns whole or, only when no such route
-   runs unattended, the CLI's config (`merge_install`/`merge_uninstall` + a
-   `verify_schema` fn mirroring its format), plus the registered-events↔decoder-arms
-   guard.
-9. **Add a row to `site/src/sources.json`** (`status`, `name` = the `display_name`, per-OS `platforms` as its neighbours') and that name to the bug form's `agent-cli` dropdown, then `just gen-readme`.
-   The row is pinned to the registry by `supported_sources_manifest.rs`, the dropdown to the rows by the `bug-form-lists-every-supported-cli` contract.
-10. **Add the per-source badge hue** — a `SourceColors` field + value in EVERY
-    theme file + `badge_color` in the manifest row; the coverage, legibility
-    and site-bridge tests fail until it exists.
-11. **A roster literal in a second test binary** (a scoped run misses it): a
-    case row in `crates/pixtuoid/tests/wire_to_pixels.rs`'s `agent_cases()`.
+   runs unattended, the CLI's config (`merge_install`/`merge_uninstall` and a
+   `verify_schema` fn mirroring its format). Add the
+   registered-events↔decoder-arms guard too. `just test` fails without this
+   step for a hook-only source only.
+9. **Add a row to `site/src/sources.json`**, with the fields its neighbours
+   carry (`name` is the `display_name`). Add that name to the bug form's
+   `agent-cli` dropdown, then run `just gen-readme`.
+   - `supported_sources_manifest.rs` pins the row to the registry
+     (`just test`).
+   - The `bug-form-lists-every-supported-cli` contract pins the dropdown to
+     the rows (`just ci-observability`).
+10. **Add the per-source badge hue**: a `SourceColors` field, its value in
+    every theme file, and `badge_color` in the manifest row. The coverage,
+    legibility and site-bridge tests fail until it exists.
+11. **Add the roster literal in a second test binary**: a case row in
+    `crates/pixtuoid/tests/wire_to_pixels.rs`'s `agent_cases()`. `just test`
+    fails without it, but a scoped run misses it.
 
 ## License
 

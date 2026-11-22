@@ -11,8 +11,7 @@ check until it passes.
 - [ ] **Upstream facts.** Answer [the checklist](../../../docs/CONTRIBUTING.md#adding-a-new-agent-cli)'s
       step 1 before any code, from the latest release's source. Its questions have
       no test, so a wrong answer ships green.
-- [ ] **The rest of that checklist**, with the test steps in
-      [`tests/AGENTS.md`](../../../crates/pixtuoid-core/tests/AGENTS.md).
+- [ ] **The rest of that checklist**, in order.
 - [ ] **`just test`, never `--lib` alone.** The `sources --json` golden (`cli_json`)
       and the `wire_to_pixels` matrix are integration binaries a `--lib` run skips:
       kimi's PR (#692) passed `--lib` and a multi-lens review with both red.
