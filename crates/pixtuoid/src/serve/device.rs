@@ -424,7 +424,8 @@ mod tests {
     const HOLD: Duration = Duration::from_secs(5);
 
     /// A pause that waits on `release`, and rows behind it, to show what goes on
-    /// during an ask.
+    /// during an ask. A test over it keeps the real clock: its pause is blocking
+    /// work, which holds a paused clock, and the frame gap with it.
     struct Held {
         pause: Pause,
         rows: ReadRows,
@@ -910,7 +911,7 @@ mod tests {
         assert!(!one.is_empty() && !two.is_empty());
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_device_that_leaves_ends_its_stream() {
         let fixture = fixture();
         let mut leaves = streaming(&fixture).await;
@@ -924,7 +925,7 @@ mod tests {
         mid_line.ended().await.expect("a cut line is a clean end");
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_ask_is_answered_and_the_stream_goes_on() {
         let fixture = fixture_reading(Arc::new(|| vec![one_row()]));
         let mut peer = streaming(&fixture).await;
@@ -944,7 +945,7 @@ mod tests {
 
     /// An ask of a kind this build doesn't name is as unreadable as junk: a new
     /// kind bumps the wire version, which the hello already answered.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_unreadable_line_ends_the_stream() {
         let fixture = fixture();
         for line in ["junk", "", "{}", UNNAMED_ASK] {
@@ -954,7 +955,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_line_may_fill_the_cap_and_not_pass_it() {
         let padded = |bytes: usize| format!("{:<bytes$}", r#"{"ask":"sources"}"#);
         let newline = 1;
@@ -989,7 +990,7 @@ mod tests {
     }
 
     /// Reads end anywhere: two lines in one, or one across two.
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn an_ask_may_share_a_write_or_span_two() {
         let fixture = fixture();
         let token = paired(&fixture);
