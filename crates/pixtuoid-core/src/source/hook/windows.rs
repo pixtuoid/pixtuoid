@@ -60,7 +60,9 @@ pub(crate) const PIPE_BUSY_BACKOFF: Duration = Duration::from_millis(10);
 /// the pipe namespace is machine-wide, so another user can squat the name and
 /// feed the office invented agents.
 pub(crate) async fn connect(path: &Path) -> std::io::Result<Client> {
-    let started = std::time::Instant::now();
+    // Tokio's clock, the one the backoff sleeps on: under a paused test clock a
+    // wall-clock bound would spin through the sleeps for its whole length.
+    let started = tokio::time::Instant::now();
     let client = loop {
         match ClientOptions::new().open(path) {
             Ok(client) => break client,

@@ -179,7 +179,9 @@ async fn listener_handles_concurrent_connections() {
     handle.abort();
 }
 
-#[tokio::test]
+// Paused: the slow client sends nothing, so the clock jumps to the listener's
+// budget.
+#[tokio::test(start_paused = true)]
 async fn listener_drops_slow_connection_via_timeout() {
     let name = pipe_name("slowconn");
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(16);

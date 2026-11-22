@@ -1096,7 +1096,7 @@ mod tests {
         let task = tokio::spawn(handle_conn(
             server.take(MAX_CONN_BYTES),
             tx,
-            Some(watch),
+            Some(watch.clone()),
             None,
             None,
         ));
@@ -1108,20 +1108,18 @@ mod tests {
         client.write_all(line.as_bytes()).await.unwrap();
         drop(client);
         task.await.unwrap();
+        let witness = AgentId::from_parts("opencode", "ses_witness");
+        watch.note(
+            i32::try_from(pid).expect("pid fits i32"),
+            witness,
+            pid_watch::FACT,
+        );
 
         wrapper.kill().expect("kill the wrapper");
         let _ = wrapper.wait();
-        let ends = tokio::time::timeout(std::time::Duration::from_secs(2), async {
-            while let Some((_, ev)) = rx.recv().await {
-                if matches!(ev, AgentEvent::SessionEnd { .. }) {
-                    return true;
-                }
-            }
-            false
-        })
-        .await;
-        assert!(
-            matches!(ends, Err(_) | Ok(false)),
+        assert_eq!(
+            pid_watch::ended_through(&mut rx, witness).await,
+            [witness],
             "a single payload's pid must not end the session when it dies"
         );
     }
