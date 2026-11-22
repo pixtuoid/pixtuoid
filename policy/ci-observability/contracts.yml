@@ -238,7 +238,7 @@
     ($against.runs.steps[] | select((.uses // "") | startswith("Swatinem/rust-cache@")) | .with["prefix-key"]) as $prefix
     | all((.jobs[]?.steps[]?, .runs.steps[]?) | select((.uses // "") | startswith("Swatinem/rust-cache@")); .with["prefix-key"] == $prefix)
   break:
-    - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .with["prefix-key"] = "v0-rust" else . end)
+    - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .with["prefix-key"] += "x" else . end)
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then del(.with["prefix-key"]) else . end)
 
 - id: cache-cleanup-prunes-the-rust-cache-prefix
@@ -252,11 +252,13 @@
     ($against.runs.steps[] | select((.uses // "") | startswith("Swatinem/rust-cache@")) | .with["prefix-key"]) as $prefix
     | [.jobs[].steps[]?.run | strings | select(contains("gh cache list"))] as $prunes
     | ($prunes | length > 0)
-      and all($prunes[]; [splits("\\s+")] as $words | ($words | indices("--key")) as $at
-                         | ($at | length) == 1 and $words[$at[0] + 1] == $prefix + "-")
+      and all($prunes[] | [splits("gh cache list")][1:][] | [splits("\\s+")] | .[:(index("|") // length)];
+              indices("--key") as $at | ($at | length) == 1 and .[$at[0] + 1] == $prefix + "-")
   break:
-    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key [^ ]*"; "--key v0-rust-")
+    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key (?<k>[^ ]*)"; "--key x\(.k)")
     - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key (?<k>[^ ]*)"; "--key \(.k)-")
+    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key (?<k>[^ ]*)"; "--key \(.k) --key \(.k)")
+    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= . + "\ngh cache list --ref refs/heads/main --json id\n"
     - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("gh cache list"; "gh api repos/{owner}/{repo}/actions/caches")
 
 - id: only-main-saves-the-binaryen-tarball
