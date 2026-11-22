@@ -168,7 +168,8 @@ fn ag_step_line() -> serde_json::Value {
     serde_json::json!({ "step_index": 0, "type": "PLANNER_RESPONSE", "tool_calls": [] })
 }
 
-/// [`collect_until`]'s bound on reaching its event: a hang guard, never a verdict.
+/// The watcher tests' bound on a wait, for an event or an ask: a hang guard,
+/// never a verdict.
 const DEADLINE: Duration = Duration::from_secs(15);
 
 /// The first `T` `pick` finds in what the watcher sends, by [`collect_until`].

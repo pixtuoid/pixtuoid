@@ -46,7 +46,6 @@ impl Probe {
         }))
     }
 
-    /// One ask, as the watcher makes it.
     fn ask(&self) -> Option<ProbeSnapshot> {
         let mut answer = None;
         self.0.send_modify(|asked| {
