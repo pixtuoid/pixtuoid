@@ -113,9 +113,9 @@ impl Probe {
     }
 
     /// [`Self::listen_until`] two asks at or past `span` after the one that
-    /// follows the `from`th, which starts after the watcher timed the `from`th
-    /// pass's miss: the first folds past the span, and the second has its pass
-    /// sent.
+    /// follows the `from`th, which starts once the `from`th pass has folded, so
+    /// a window it opened (a miss, or a failure wrongly taken for one) is past
+    /// the span by the first, and the second has its pass sent.
     async fn listen_past(
         &self,
         rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
