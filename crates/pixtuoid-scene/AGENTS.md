@@ -41,12 +41,12 @@ The rules the bundled pack (`sprites/default/`) is drawn to.
 ### Recolor
 
 - Character art is recolored per agent by palette key: whatever a pack draws
-  with `B` (shirt), `H` (hair), `S` (skin) or `P` (pants) takes each agent's
-  colors (`character::colors::SHIRT_KEY` and its siblings). Every other key
-  keeps the pack's color, even one with the same RGB.
+  in `character::colors`'s `SHIRT_KEY`, `HAIR_KEY`, `SKIN_KEY` or `PANTS_KEY`
+  takes each agent's colors. Every other key keeps the pack's color, even one
+  with the same RGB.
 - A `[ramps]` entry such as `"h" = { of = "H", level = -1 }` is a key with no
   color of its own: `H` one step darker and cooler (a positive level is
-  lighter and warmer), so it follows whatever color replaces `H`.
+  lighter and warmer), so it follows whatever color `H` takes.
 - A ramp's `of` names a key with an opaque color in `[palette]`.
 - A key is declared in one table, `[palette]` or `[ramps]`, never both.
 
@@ -58,10 +58,10 @@ The rules the bundled pack (`sprites/default/`) is drawn to.
   frame counts match, or the pack does not load.
 - The classic renderer draws the base art, at any scale.
 - Variants are for the pixel-graphics cutaway, which paints the `floating`
-  window, the site's live office, and `run` over kitty's graphics protocol,
-  SIXEL or iTerm2's inline images. It takes the densest variant whose `N`
-  divides its render scale (`pack::density::densest`) and draws it without a
-  derived front: a variant carries its own front, where a desk's top-down
+  window, the site's live office, and `run` over a terminal graphics protocol
+  (the binary's `graphics::ImageProtocol`). It takes the densest variant whose
+  `N` divides its render scale (`pack::density::densest`) and draws it without
+  a derived front: a variant carries its own front, where a desk's top-down
   base art gets a front face derived under it.
 - The recolor keys and `[ramps]` apply at every density.
 - A variant plays its base's `frame_ms` and `stride`. Validation reports a
@@ -72,7 +72,7 @@ The rules the bundled pack (`sprites/default/`) is drawn to.
 
 ### Desks
 
-- A desk (`desk`, `desk_north`) marks where its cup and token tower stand with `@mark cup <x> <y>` and `@mark tower <x> <y>` on its first frame, and draws its lamp's bulb in palette key `9`, at every density. The lamp's pool centres on those pixels.
+- A desk (each `pack::Desk`'s `piece()`) marks where its cup and token tower stand with `@mark cup <x> <y>` and `@mark tower <x> <y>` on its first frame, and draws its lamp's bulb in palette key `9`, at every density. The lamp's pool centres on those pixels.
 - A pack whose desk lacks a mark or the bulb does not load.
 - `desk_north` is `desk` seen from its sitter's side, so it stands its props
   mirrored: each mark names the prop's bottom-right cell instead of its
@@ -88,22 +88,21 @@ The rules the bundled pack (`sprites/default/`) is drawn to.
 - Its art is one frame, one text line tall (`display::text::LINE_H`), and as
   wide as the cells its terminal glyph takes, less the gap column after the
   last cell (each cell is `display::text::ADVANCE` wide, its gap included).
-- Its pixels in key `ι` (`pack::ICON_INK_KEY`), and that key's ramps, take the
-  text's ink; every other key keeps the pack's colour.
+- Its pixels in `pack::ICON_INK_KEY`, and that key's ramps, take the text's
+  ink; every other key keeps the pack's colour.
 - Screen text finds an icon by its glyph, so icons that write one glyph draw
   one art.
 - The icon tests pin the size, the ink and the shared art.
 
 ### Walks
 
-- A walk, each piece `pack::Walk` lists (a person's `walking`, `walking_back`
-  and `walking_coffee`, a pet's `cat_walk` and `dog_walk`, the gateway
-  mascot's `lobster_walk`), takes `stride = <pixels>`: how far, on the base
+- A walk, each piece `pack::Walk` lists (`Walk::piece`, whose `Piece::name`
+  is its `[animations]` key), takes `stride = <pixels>`: how far, on the base
   grid, the walker travels in one full cycle of its frames.
 - Its frames, and its `@Nx` variants', then step by the ground covered, not by
   `frame_ms`.
 - A walk without a stride does not load.
-- A pet's walk (`cat_walk`, `dog_walk`) is drawn facing east: the renderer
+- A pet's walk is drawn facing east: the renderer
   mirrors it when the pet heads west, so a walk drawn facing west walks
   backwards.
 
@@ -112,9 +111,9 @@ The rules the bundled pack (`sprites/default/`) is drawn to.
 - A frame names points on itself for the renderer with `@mark <name> <x> <y>`
   in its `@frame` block, at column `x` and row `y` from the frame's top-left.
 - A frame names each mark once.
-- `head.<view>` (`front`, `back`, `side` or `crown`), at most one per frame,
-  is its brow: where its hair is laid mark on mark and a subagent's cap sets
-  its brim.
+- `head.<view>`, where `<view>` is a `sprite::HeadView::name()`, at most one
+  per frame, is its brow: where its hair is laid mark on mark and a subagent's
+  cap sets its brim.
 
 ### Hairstyles and outline
 
@@ -141,16 +140,16 @@ The rules the bundled pack (`sprites/default/`) is drawn to.
 ### City
 
 - A pack also ships the city seen through the office's windows.
-- `[city]` names the palette key of each material (`pack::Material`):
-  `facade`, `shade`, `roof`, `glass`, `mullion`, `detail` and `sign`. A
-  building is drawn in those keys alone, since its colours come from its depth
-  and the sky rather than the pack.
+- `[city]` names a palette key for each `pack::Material`, under the name
+  `Material::name()` gives it. A building is drawn in those keys alone, since
+  its colours come from its depth and the sky rather than the pack.
 - `[buildings.<name>]` is one building: a one-frame `sprite` and the `planes`
-  (`"mid"`, `"near"`) it may stand in. `[buildings."<name>@<N>x"]` redraws its
-  sprite at exactly `N` times the size.
+  it may stand in, each a `pack::CityPlane` by the name
+  `CityPlane::from_name` reads. `[buildings."<name>@<N>x"]` redraws its sprite
+  at exactly `N` times the size.
 - A building that breaks these rules fails the pack's load.
-- Each connected run of `glass` is one window, and more of them burn as night
-  falls.
+- Each connected run of `Material::Glass` is one window, and more of them
+  burn as night falls.
 - How tall the city stands is a share of the window, so a short window shows
   the tops of the towers and a tall one shows them whole.
 - Every window looks out on one city: the pack's buildings standing in front

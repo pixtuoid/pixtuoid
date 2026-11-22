@@ -21,11 +21,10 @@ before changing the site:
   to (the `__pixLights`, `pix:onair` and `data-lit` seams, the scrollspy keys,
   the docs-nav variant, reduced motion and the console watchdog).
 - Lighthouse (`npm run lighthouse`, which serves `dist/` itself) audits the
-  home page and every route `config/blog.mjs`'s `readingRoutes` lists: each
-  rendered doc, the blog's lobby and every post.
+  home page and every route `config/blog.mjs`'s `readingRoutes` lists.
   `config/lighthouse-budget.test.mjs` holds the assertion policy.
-  - The theme matrix (day, night, dracula) is `smoke.spec.ts`'s; don't double
-    Lighthouse's collect list per theme.
+  - The theme matrix is `config/page-themes.mjs`'s `VALID_THEMES`, which
+    `smoke.spec.ts` sweeps; don't double Lighthouse's collect list per theme.
   - The office's worker fetches its wasm, which Lighthouse's simulation drops,
     so `just gen-wasm-check` alone gates the wasm (#1124).
 - Fonts are WOFF2 with `font-display: optional`, loaded before use: a preload,

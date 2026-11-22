@@ -2,12 +2,12 @@
 
 The **Raycast extension** in [`raycast/`](raycast/): a self-contained
 TypeScript/Node project, not Rust, and a thin presenter over the
-`pixtuoid … --json` CLI contract. Its two commands, `package.json`'s
-`commands`, are Manage Sources (connect/disconnect over
-`pixtuoid sources|connect|disconnect --json`) and Start Floating Window.
-Cross-cutting rules: the workspace [`AGENTS.md`](../AGENTS.md). This guide sits
-here, not in `raycast/`, because the Store review rejects an extension folder
-that ships an `AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
+`pixtuoid … --json` CLI contract. Its commands are `raycast/package.json`'s
+`commands`; the README's [How it works](raycast/README.md#how-it-works) maps
+each to its CLI call. Cross-cutting rules: the workspace
+[`AGENTS.md`](../AGENTS.md). This guide sits here, not in `raycast/`, because
+the Store review rejects an extension folder that ships an `AGENTS.md`
+(`no-agent-scaffolding` in raycast/extensions'
 [`.greptile/config.json`](https://github.com/raycast/extensions/blob/main/.greptile/config.json)).
 
 ## What it is
