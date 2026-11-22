@@ -131,8 +131,9 @@ tracing-subscriber = { workspace = true }
 # `examples/support/bounded.rs`'s `kill_child_on_signal`.
 signal-hook = { workspace = true }
 
-# Without this an example is not a test target, so its `#[test]`s build and
-# never run — the same wiring `pixtuoid`'s `snapshot` example already carries.
+# Without this `cargo test` only builds an example, so its `#[test]`s never run
+# (https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-test-field)
+# — the same wiring `pixtuoid`'s `snapshot` example already carries.
 [[example]]
 name = "capture_fixture"
 test = true

@@ -12,15 +12,16 @@ comments on the lines it governs, before changing it.
 
 ## Build & test
 
-Requires a recent stable Rust toolchain and [`mise`](https://mise.jdx.dev),
-[activated](https://mise.jdx.dev/getting-started.html#activate-mise), whose `mise install`
-brings `just` and the other dev tools. On Linux you also need `lld`, `pkg-config`
-and the ALSA headers (`apt install lld pkg-config libasound2-dev`), and, with no GPU
-driver, Mesa's software Vulkan for the GPU tests (`apt install mesa-vulkan-drivers`).
+You need a recent stable Rust toolchain and [`mise`](https://mise.jdx.dev),
+[activated](https://mise.jdx.dev/getting-started.html#activate-mise): its
+`mise install` brings `just` and the other dev tools. On Linux you also need
+`lld`, `pkg-config` and the ALSA headers (`apt install lld pkg-config
+libasound2-dev`), and, with no GPU driver, Mesa's software Vulkan for the GPU
+tests (`apt install mesa-vulkan-drivers`).
 
 ```bash
 just              # list recipes
-just preflight    # pre-push gate: lint → clippy; `just preflight full` adds hack → test (CI's Rust recipes)
+just preflight    # the pre-push gate; `full` adds some of CI's other Rust recipes (`just --list` shows which)
 just fmt          # auto-format
 just test         # the suite, under cargo-nextest (`just setup-tools`)
 just test -p <crate> <filter>   # fast loop while iterating on one crate
@@ -31,95 +32,117 @@ just test -p <crate> <filter>   # fast loop while iterating on one crate
 > them.
 
 Activate the git hooks once per clone: `git config core.hooksPath .githooks`
-(`pre-commit` = `just fmt-check`; `pre-push` = `just preflight`).
+(`pre-commit` runs `just fmt-check`, `pre-push` runs `just preflight`).
 
-`just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each profiled CLI against a
-scripted model (aimock), then its install's lifecycle, and a daemon's live tier, with a headless pixtuoid:
-the full tier gates on it at each `verified_version`, the nightly runs it at latest.
+`just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each
+profiled CLI against a scripted model (aimock), then its install's lifecycle
+and a daemon's live tier, all with a headless pixtuoid. The full tier gates on
+it at each `verified_version`; the nightly runs it at each CLI's latest.
 
 ## Releasing
 
 ### Versioning
 
-Pre-1.0: **patch (`0.y.Z`)** = bug fixes and polish only — no new public API,
-nothing breaks. **minor (`0.Y.z`)** = everything else: new user-facing features
-AND any breaking change to the published crates' API. Both halves are machine-
-applied on the release PR, not per-PR: release-plz derives the level from the
-commit log (`features_always_increment_minor` in `release-plz.toml` is the
-"features also bump minor" half), and release-plz's own `cargo-semver-checks`
-run is the "nothing breaks on a patch" half: a detected break raises the bump
-to the next minor on its own, and the release PR's body reports it. Never weaken
-a lint to dodge the bump.
+Before 1.0:
+
+- **A patch (`0.y.Z`)** is bug fixes and polish only: no new public API,
+  nothing breaks.
+- **A minor (`0.Y.z`)** is everything else: a new user-facing feature, or any
+  breaking change to a published crate's API.
+
+Two halves of them are applied by machine on the release PR, never per PR:
+
+- **A feature bumps the minor.** release-plz derives the level from the
+  commit log, and `features_always_increment_minor` in `release-plz.toml`
+  makes a feature bump the minor.
+- **Nothing breaks on a patch.** release-plz's own `cargo-semver-checks` run
+  raises the bump to the next minor on its own when it detects a break, and
+  the release PR's body reports it. It is not a CI job; `just semver`
+  reproduces its verdict locally. Never weaken a lint to dodge the bump.
 
 ### Cutting the release
 
 [release-plz](https://release-plz.dev) owns every version number and the tag;
-`release.yml` still owns every publish. Four steps, all human-initiated:
+`release.yml` still owns every publish. A person starts each of the four
+steps:
 
 1. **Dispatch** `release-plz.yml` from Actions, on `main`. It opens
    `chore(release): vX.Y.Z` from a `release-plz-*` branch, with the workspace
    version, every path-dep requirement, `Cargo.lock` and `CHANGELOG.md`
    rewritten.
-2. **Review it like any PR, but merge it by hand**: the merge queue refuses it,
-   since it would squash it onto whatever `main` has become by then, which
-   `release-merge` refuses after the merge. If `main` moved, **re-dispatch —
-   never "Update branch"**: only a dispatch recomputes `CHANGELOG.md` for the
-   new commits, and the merge commit "Update branch" adds counts as a human's,
-   so the next dispatch closes this PR and opens a new number. Merged behind
-   `main`, or with `main` merged or rebased in, it fails `release-plz.yml`'s
-   `release-merge` and publishes nothing. Raise the bump with
-   `cargo set-version --workspace X.Y.Z` (cargo-edit) and push only for a break
-   `cargo-semver-checks` cannot see. A user-facing change that touched no packaged file
-   (`npm/`, `release.yml` packaging) is not in the generated notes — add its line
-   to `CHANGELOG.md` by hand as the last commit before merging.
-3. **Merge it** (squash). That merge is the *irreversible* step: the `release` job
-   publishes every crate to crates.io over OIDC, creates `vX.Y.Z` and a DRAFT
-   GitHub release carrying the changelog; the tag then fires `release.yml`,
-   which builds every target in its build matrix, attaches them,
-   publishes the draft, and publishes the npm packages. The crates.io and npm
-   jobs each wait for an approval from the `release` environment's reviewer,
-   crates.io first. The tag also starts a homebrew-core autobump.
+2. **Review it like any PR, but merge it by hand.** The merge queue refuses
+   it: the queue would squash it onto whatever `main` has become by then,
+   which `release-merge` refuses after the merge.
+   - **If `main` moved, re-dispatch; never "Update branch".** Only a dispatch
+     recomputes `CHANGELOG.md` for the new commits, and the merge commit
+     "Update branch" adds counts as a human's, so the next dispatch closes
+     this PR and opens a new number. Merged behind `main`, or with `main`
+     merged or rebased in, the PR fails `release-plz.yml`'s `release-merge`
+     and publishes nothing.
+   - **Raise the bump** with `cargo set-version --workspace X.Y.Z`
+     (cargo-edit), and push, only for a break `cargo-semver-checks` can't see.
+   - **A user-facing change that touched no packaged file** (`npm/`,
+     `release.yml`'s packaging) is missing from the generated notes: add its
+     line to `CHANGELOG.md` by hand, as the last commit before merging.
+   - **If release-plz closes and re-opens the PR**, which it does when the
+     branch carries non-bot commits, a commit you pushed to it, such as a
+     raised bump, stays behind: `git cherry-pick` it onto the new branch.
+   - No committed frame carries the version (`BOARD_BRAND`), so a release PR
+     needs no `just gen`.
+3. **Merge it** (squash). That merge is the *irreversible* step:
+   - the `release` job publishes every crate to crates.io over OIDC, and
+     creates `vX.Y.Z` and a DRAFT GitHub release carrying the changelog;
+   - the tag then fires `release.yml`, which builds every target in its build
+     matrix, attaches them, publishes the draft, and publishes the npm
+     packages;
+   - the crates.io and npm jobs each wait for an approval from the `release`
+     environment's reviewer, crates.io first;
+   - the tag also starts a homebrew-core autobump.
 4. **If the dispatch's run summary showed homebrew-core's formula differing**,
-   send each hunk this tree's `pixtuoid.rb` made there as a PR once the tag
-   exists, and bring each one homebrew-core made into `pixtuoid.rb` here.
+   then once the tag exists, send each hunk this tree's `pixtuoid.rb` made as
+   a PR there, and bring each hunk homebrew-core made into `pixtuoid.rb` here.
 
-The crates.io upload happens in the `release` job on the merge push, which
-first waits for that commit's own `ci-gate`: a failure or timeout publishes
-nothing, and re-running the workflow after a passing `ci.yml` re-run resumes it.
-The wait is in the workflow because the queue can land other PRs while a
-release PR is open, so no merge-time check proves the tree it publishes.
+### What guards a release
 
-`cargo-semver-checks` runs inside release-plz on the release PR, not as a CI
-job; `just semver` reproduces its verdict locally.
+- **The crates.io upload waits for CI.** It runs in the `release` job on the
+  merge push, which first waits for that commit's own `ci-gate`: a failure or
+  a timeout publishes nothing, and re-running the workflow after a passing
+  `ci.yml` re-run resumes it. The wait is in the workflow because the queue
+  can land other PRs while a release PR is open, so no merge-time check
+  proves the tree it publishes.
+- **Credentials.** `release-plz.yml`'s `release-pr` and `release` jobs
+  authenticate with `RELEASE_PLZ_TOKEN`, a fine-grained PAT scoped to this
+  repository with Contents and Pull requests read/write; the workflow's
+  header says why it can't be the automatic token. Publishing uses **OIDC
+  trusted publishing**, so CI carries no registry tokens: each crate's and
+  each package's Trusted Publisher, naming the environment `release`, must
+  exist before the tag
+  ([#216](https://github.com/pixtuoid/pixtuoid/issues/216)).
 
-Both jobs authenticate with `RELEASE_PLZ_TOKEN`, a fine-grained PAT scoped to
-this repository with Contents and Pull requests read/write; `release-plz.yml`'s
-header says why it cannot be the automatic token.
+### Homebrew
 
-A release PR that release-plz closes and re-opens (it does that when the branch
-carries non-bot commits) leaves a commit you pushed to it — a raised bump —
-behind: `git cherry-pick` it onto the new branch. No committed frame carries the
-version (`BOARD_BRAND`), so a release PR needs no `just gen`.
+The tag also publishes **outside** this repo. homebrew-core's formula is
+`autobump: true` and builds from the tag's tarball at once, with DEFAULT
+features on macOS *and* Linux: the one configuration our release never builds.
 
-The tag also publishes **outside** this repo:
-homebrew-core's formula is `autobump: true` and builds from the tag tarball,
-instantly, with DEFAULT features on macOS *and* Linux — the one configuration
-our release never builds. [`pixtuoid.rb`](../.github/actions/packaging-build/pixtuoid.rb)
-is the formula we hold them to: packaging-build runs Homebrew's own
-`brew install --build-from-source` and `brew test` of it in the full tier (`main`
-and the merge queue), sandboxes included, so a new system-library dependency or a
-`test do` this tree breaks (see the "homebrew-core contract" comments) reds there
-and is fixed in that file. A dispatch warns with the diff wherever homebrew-core's copy differs,
-and never fails, because the owner, who sent a test update before its release,
-was told to release first (no public record); step 4 settles it.
+- [`pixtuoid.rb`](../.github/actions/packaging-build/pixtuoid.rb) is the
+  formula we hold them to. packaging-build runs Homebrew's own
+  `brew install --build-from-source` and `brew test` of it in the full tier
+  (`main` and the merge queue), sandboxes included. A new system-library
+  dependency, or a `test do` this tree breaks (see the "homebrew-core
+  contract" comments), fails there and is fixed in that file.
+- A dispatch warns with the diff wherever homebrew-core's copy differs, and
+  never fails: the owner, who sent a test update before its release, was told
+  to release first (no public record). Step 4 settles it.
+- Don't try to preempt BrewTestBot. The formula is on homebrew-core's
+  autobump list, so `brew bump-formula-pr pixtuoid` refuses by policy, and
+  the bot opens the PR itself on its next scheduled run
+  ([`autobump.yml`](https://github.com/Homebrew/homebrew-core/blob/main/.github/workflows/autobump.yml)).
+  Watch THAT PR's CI, and step in only if it fails.
 
-Do not try to preempt BrewTestBot: the formula is on homebrew-core's
-autobump list, so `brew bump-formula-pr pixtuoid` refuses by policy and the
-bot opens the PR itself on its next scheduled run
-([`autobump.yml`](https://github.com/Homebrew/homebrew-core/blob/main/.github/workflows/autobump.yml)).
-Watch THAT PR's CI and intervene only if it reds.
+### A release that bumps `remote::VERSION`
 
-**A release that bumps `remote::VERSION`** goes out with the iOS App in this order:
+It goes out with the iOS App, in this order:
 
 1. Once the bump is on `main`, build the App against that rev through
    [`[patch.crates-io]`](https://doc.rust-lang.org/cargo/reference/overriding-dependencies.html#working-with-an-unpublished-minor-version)
@@ -134,11 +157,6 @@ Watch THAT PR's CI and intervene only if it reds.
 Two gaps remain, each leaving the App asking for its own update until that
 arrives: a CLI installed another way before the brew merge, and the "up to 24
 hours" Apple's release-option page gives a release to reach the App Store.
-
-Publishing uses **OIDC trusted publishing** — CI carries no registry tokens;
-the per-crate/per-package Trusted Publishers, each naming environment
-`release`, must exist before the tag
-([#216](https://github.com/pixtuoid/pixtuoid/issues/216)).
 
 ## The arc loop
 
