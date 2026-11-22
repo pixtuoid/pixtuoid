@@ -163,8 +163,8 @@ const toc = raw.map((h) => ({ ...h, text: h.text.replace(/\s*\([^)]*\)\s*$/, '')
       const h = document.getElementById(slug);
       if (h) io.observe(h);
     });
-    // An INSTANT jump (reduced-motion click, deep-linked #anchor load) parks the
-    // heading above the band, so no entry fires — sync explicitly instead.
+    // An INSTANT jump (reduced-motion click, deep-linked #anchor load) can park
+    // the heading outside the band, where no entry fires — sync explicitly instead.
     links.forEach(function (a) {
       a.addEventListener('click', function () {
         setActive(a.dataset.tocLink);
