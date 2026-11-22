@@ -3,39 +3,39 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 3430794226264846936
+    agent_id: 17912622260688407164
     source: copilot
-    session_id: 717c627d-2ceb-4fae-9c23-ada450096c6a
+    session_id: 0e1cb47d-e3fb-4e6d-b09f-a4192120bc63
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 3430794226264846936
+    agent_id: 17912622260688407164
     fresh_tokens: 5682
-    reading_id: 66a9de3f-9497-49b9-a5e7-76774378633d
+    reading_id: 747cfe1f-d1b8-43f7-9e3a-dd1d42454597
 - ToolUseStart:
-    agent_id: 3430794226264846936
-    tool_use_id: call_zr2v5MI6HAGxBHPt
+    agent_id: 17912622260688407164
+    tool_use_id: call_DKr3eBhyXzzvbVUG
     detail:
       Generic:
         display: "bash: rm NOTE.txt"
 - UserActionRequest:
-    agent_id: 3430794226264846936
+    agent_id: 17912622260688407164
     reason: "permission: shell"
-    tool_use_id: call_zr2v5MI6HAGxBHPt
+    tool_use_id: call_DKr3eBhyXzzvbVUG
 - ToolUseEnd:
-    agent_id: 3430794226264846936
-    tool_use_id: call_zr2v5MI6HAGxBHPt
+    agent_id: 17912622260688407164
+    tool_use_id: call_DKr3eBhyXzzvbVUG
 - ToolUseEnd:
-    agent_id: 3430794226264846936
-    tool_use_id: call_zr2v5MI6HAGxBHPt
+    agent_id: 17912622260688407164
+    tool_use_id: call_DKr3eBhyXzzvbVUG
 - ModelInfo:
-    agent_id: 3430794226264846936
+    agent_id: 17912622260688407164
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 3430794226264846936
+    agent_id: 17912622260688407164
     fresh_tokens: 5714
-    reading_id: d5e20d9a-a086-497e-aba2-2949dc820ee7
+    reading_id: 36ff3ea8-8473-44fe-bcce-84327813d16c
 - SessionEnd:
-    agent_id: 3430794226264846936
+    agent_id: 17912622260688407164
     as_child: false

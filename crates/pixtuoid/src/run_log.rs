@@ -363,6 +363,17 @@ fn read_runs(dir: &std::path::Path, budget: u64) -> (String, Option<String>) {
 mod tests {
     use super::*;
 
+    /// The tidy-up test ages its runs off [`RUN_LOG_RETAIN`] itself, so this
+    /// pins the week its doc cites, which docs/CONFIGURATION.md tells a user as
+    /// text no build reaches.
+    #[test]
+    fn a_run_log_stays_the_week_the_docs_say() {
+        const WEEK: Duration = Duration::from_hours(7 * 24);
+        let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
+        assert_eq!(RUN_LOG_RETAIN, WEEK);
+        assert!(doc.contains("removed a week after its last write"));
+    }
+
     #[cfg(unix)]
     fn mode_of(p: &Path) -> u32 {
         use std::os::unix::fs::PermissionsExt;
@@ -674,21 +685,6 @@ mod tests {
         assert_eq!(warning, None);
         let order: Vec<&str> = text.lines().collect();
         assert_eq!(order, ["x", "x"], "runs read oldest first");
-    }
-
-    /// The tidy-up test ages its runs off [`RUN_LOG_RETAIN`] itself, so only an
-    /// absolute age pins the week its doc cites.
-    #[test]
-    fn a_run_is_kept_for_a_week() {
-        const DAY: Duration = Duration::from_hours(24);
-        let dir = tempfile::tempdir().unwrap();
-        let now = SystemTime::now();
-        let aged = |name: &str, age: Duration| aged(dir.path(), name, now, age);
-        let six_days = aged(&run_file_name(now - DAY * 6, 1), DAY * 6);
-        let eight_days = aged(&run_file_name(now - DAY * 8, 2), DAY * 8);
-        prune_runs(dir.path(), now);
-        assert!(six_days.exists(), "a run inside the week stays");
-        assert!(!eight_days.exists(), "a run past the week goes");
     }
 
     /// No runs directory yet is a fresh install, read as an empty log.

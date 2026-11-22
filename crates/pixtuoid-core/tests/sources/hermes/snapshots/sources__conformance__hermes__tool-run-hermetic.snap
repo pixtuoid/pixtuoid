@@ -3,42 +3,42 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 5122823443149988865
+    agent_id: 1064606561136359926
     source: hermes
-    session_id: local-cde010ccd7b76276437537eabdcbcb523e5277040e61de29bd0a2a6ef2bcdb53
+    session_id: local-dfdbf2af7514767e513a82855bcc296193ddc8255cc00a0cf8ba3cdaf05fd9b8
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 5122823443149988865
+    agent_id: 1064606561136359926
     model: hermetic
     effort: ~
 - Identity:
-    agent_id: 5122823443149988865
+    agent_id: 1064606561136359926
     source: hermes
-    session_id: local-cde010ccd7b76276437537eabdcbcb523e5277040e61de29bd0a2a6ef2bcdb53
+    session_id: local-dfdbf2af7514767e513a82855bcc296193ddc8255cc00a0cf8ba3cdaf05fd9b8
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 5122823443149988865
-    tool_use_id: call_yybNmc_LYAHV8yWw
+    agent_id: 1064606561136359926
+    tool_use_id: call_SbDAmyGl5G689M1c
     detail:
       Generic:
         display: "read_file: NOTE.txt"
 - Identity:
-    agent_id: 5122823443149988865
+    agent_id: 1064606561136359926
     source: hermes
-    session_id: local-cde010ccd7b76276437537eabdcbcb523e5277040e61de29bd0a2a6ef2bcdb53
+    session_id: local-dfdbf2af7514767e513a82855bcc296193ddc8255cc00a0cf8ba3cdaf05fd9b8
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 5122823443149988865
-    tool_use_id: call_yybNmc_LYAHV8yWw
+    agent_id: 1064606561136359926
+    tool_use_id: call_SbDAmyGl5G689M1c
 - Identity:
-    agent_id: 5122823443149988865
+    agent_id: 1064606561136359926
     source: hermes
-    session_id: local-cde010ccd7b76276437537eabdcbcb523e5277040e61de29bd0a2a6ef2bcdb53
+    session_id: local-dfdbf2af7514767e513a82855bcc296193ddc8255cc00a0cf8ba3cdaf05fd9b8
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 5122823443149988865
+    agent_id: 1064606561136359926
 - ModelInfo:
-    agent_id: 5122823443149988865
+    agent_id: 1064606561136359926
     model: hermetic
     effort: ~

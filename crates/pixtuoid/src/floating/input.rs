@@ -72,23 +72,32 @@ const ZOOM_CHORDS: [(&str, ZoomKey); 5] = [
     ("0", ZoomKey::Reset),
 ];
 
+/// The key the help names for `zoom`: its first chord.
+fn first_chord(zoom: ZoomKey) -> &'static str {
+    ZOOM_CHORDS
+        .iter()
+        .find(|&&(_, z)| z == zoom)
+        .map_or("", |&(key, _)| key)
+}
+
 /// The zoom chords, as the help lists them.
 pub(crate) static ZOOM_SHORTCUTS: std::sync::LazyLock<[crate::panels::widgets::Shortcut; 2]> =
     std::sync::LazyLock::new(|| {
         use crate::panels::widgets::shortcut;
-        let first = |zoom| {
-            ZOOM_CHORDS
-                .iter()
-                .find(|&&(_, z)| z == zoom)
-                .map_or("", |&(key, _)| key)
-        };
         let hold = ZOOM_HOLD.1;
         [
             shortcut(
-                format!("{hold} {}/{}", first(ZoomKey::In), first(ZoomKey::Out)),
+                format!(
+                    "{hold} {}/{}",
+                    first_chord(ZoomKey::In),
+                    first_chord(ZoomKey::Out)
+                ),
                 "zoom in / out",
             ),
-            shortcut(format!("{hold} {}", first(ZoomKey::Reset)), "reset zoom"),
+            shortcut(
+                format!("{hold} {}", first_chord(ZoomKey::Reset)),
+                "reset zoom",
+            ),
         ]
     });
 
@@ -228,6 +237,29 @@ mod tests {
     use super::*;
     use pixtuoid_core::state::SceneState;
     use std::time::SystemTime;
+
+    /// docs/CONFIGURATION.md names the zoom chords, on every OS's hold, as text
+    /// no build reaches.
+    #[test]
+    fn the_docs_name_the_zoom_chords() {
+        let doc = crate::test_io::repo_prose("docs/CONFIGURATION.md");
+        let holds = "Cmd/Ctrl";
+        assert!(
+            holds.split('/').any(|h| h == ZOOM_HOLD.1),
+            "{holds} misses {}",
+            ZOOM_HOLD.1
+        );
+        let says = format!(
+            "{holds} `{}` and `{}` change it, and {holds} `{}` resets it",
+            first_chord(ZoomKey::In),
+            first_chord(ZoomKey::Out),
+            first_chord(ZoomKey::Reset)
+        );
+        assert!(
+            doc.contains(&says),
+            "CONFIGURATION.md no longer says {says:?}"
+        );
+    }
 
     /// The window's keys reach the TUI's dispatch as its own: characters as
     /// typed, the named keys it binds, and Ctrl held through.

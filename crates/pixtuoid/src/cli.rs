@@ -267,7 +267,8 @@ pub(crate) enum SourcesAction {
 /// `--log-level` values. A typed enum (not a free `String`) so a typo like
 /// `dbug` is a hard clap parse error instead of silently parsing as an
 /// `EnvFilter` TARGET directive (`dbug=trace`) that filters everything off.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+/// Declared strictest first, so `<=` reads as "at least as strict".
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub(crate) enum LogLevel {
     Error,
     Warn,
@@ -520,6 +521,24 @@ mod tests {
     fn log_level_typo_is_a_hard_parse_error() {
         let err = Cli::try_parse_from(["pixtuoid", "--log-level", "dbug"]).unwrap_err();
         assert_eq!(err.kind(), clap::error::ErrorKind::InvalidValue);
+    }
+
+    /// `LogLevel`'s order is tracing's, which ranks ERROR lowest: the log
+    /// file's floor compares by it.
+    #[test]
+    fn log_levels_are_ordered_as_tracings() {
+        let level = |l: LogLevel| {
+            l.as_str()
+                .parse::<tracing::Level>()
+                .expect("a tracing level")
+        };
+        for pair in LogLevel::value_variants().windows(2) {
+            assert!(pair[0] < pair[1], "{pair:?} declared out of order");
+            assert!(
+                level(pair[0]) < level(pair[1]),
+                "{pair:?} out of tracing's order"
+            );
+        }
     }
 
     #[test]

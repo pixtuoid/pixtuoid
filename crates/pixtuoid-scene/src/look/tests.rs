@@ -283,6 +283,11 @@ fn no_text_is_set_under_an_inset() {
             (inner.x * k..inner.right() * k).contains(&x)
                 && (inner.y * k..inner.bottom() * k).contains(&y)
         };
+        // A run's checks read only the run, this viewport and the pack and pen
+        // every look shares, so each is checked once.
+        let pack = Arc::new(crate::pack::test_office());
+        let pen = crate::display::pen::Pen::for_pack(scale, &pack);
+        let mut checked = std::collections::HashSet::new();
         let looks = [
             Look::Classic {
                 scale,
@@ -294,9 +299,7 @@ fn no_text_is_set_under_an_inset() {
             },
         ];
         for look in looks {
-            let pack = Arc::new(crate::pack::test_office());
             let (mut floor, mut office) = (PerFloor::new(Arc::clone(&pack)), PerOffice::new());
-            let pen = crate::display::pen::Pen::for_pack(scale, &pack);
             let now = t0 + Duration::from_secs(600);
             carry_to_each_edge(
                 (&mut floor, &mut office),
@@ -349,6 +352,9 @@ fn no_text_is_set_under_an_inset() {
                         .chain(text.signs.iter().cloned())
                         .collect();
                     for run in &runs {
+                        if !checked.insert(run.clone()) {
+                            continue;
+                        }
                         let (set, [xs, ys]) = kept(run);
                         assert!(
                             xs.is_empty()
