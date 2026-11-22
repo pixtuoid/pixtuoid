@@ -2,7 +2,7 @@
 //! routing precomputes per layout lands there, so it is measured beside the
 //! queries that precompute serves. `find_path` costs the A\* router over the
 //! wide office: the door to every home desk's top-left (`HomeDesk::at`) in one
-//! iteration, and the two home desks farthest apart by Manhattan span.
+//! iteration, and the two home desks farthest apart by Manhattan distance.
 //! Run via `just bench`; the numbers are LOCAL statistical evidence, as
 //! `render_frame`'s header says.
 
@@ -40,11 +40,11 @@ fn find_path_group(c: &mut Criterion) {
         desks.iter().all(|&d| route(door, d).is_some()),
         "every desk routes from the door"
     );
-    let span = |(a, b): (Point, Point)| a.x.abs_diff(b.x) + a.y.abs_diff(b.y);
+    let distance = |(a, b): (Point, Point)| a.x.abs_diff(b.x) + a.y.abs_diff(b.y);
     let farthest = desks
         .iter()
         .flat_map(|&a| desks.iter().map(move |&b| (a, b)))
-        .max_by_key(|&pair| span(pair))
+        .max_by_key(|&pair| distance(pair))
         .expect("the office has desks");
     assert!(
         route(farthest.0, farthest.1).is_some(),

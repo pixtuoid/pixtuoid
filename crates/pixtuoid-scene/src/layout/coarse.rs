@@ -217,8 +217,10 @@ fn crossable((a, a_piece): ((u16, u16), CellBits), (b, b_piece): ((u16, u16), Ce
 }
 
 /// The steps out of a coarse cell, the four orthogonal ones first, in the
-/// order [`CoarseGraph::neighbors`] yields them: A\*'s heap breaks its ties by
-/// push order, so this order is part of every route.
+/// order [`CoarseGraph::neighbors`] yields them and A\* pushes them: its `Node`
+/// order ties equal-cost cells and std's `BinaryHeap` documents no order among
+/// equal items (<https://doc.rust-lang.org/std/collections/struct.BinaryHeap.html>),
+/// so this order is part of every route.
 const STEPS: [(i16, i16); 8] = [
     (1, 0),
     (-1, 0),
