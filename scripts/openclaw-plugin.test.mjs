@@ -8,7 +8,7 @@ import test from "node:test";
 import { POSIX, assertRegisters, assertShimContract, recorded, render, row } from "./lib/plugin-harness.mjs";
 
 const SOURCE = "openclaw";
-const { registers, consumes } = row(SOURCE);
+const { id, name, registers, consumes } = row(SOURCE);
 const FORWARDED = registers.filter((hook) => !consumes.includes(hook));
 // OpenClaw's own default — the plugin's last-resort fallback.
 const DEFAULT_GATEWAY_PORT = 18789;
@@ -232,7 +232,8 @@ test("every forwarded hook keeps the shim contract", { skip: !POSIX }, async (t)
   // `--source openclaw` is how the shim stamps `_pixtuoid_source` — its ONLY
   // attribution channel, and the reason a payload reaches the daemon lane at all.
   const { argvFile, module, outFile, plugin } = await renderPlugin(t);
-  assert.equal(module.default.id, "pixtuoid", "the export id must match the manifest id");
+  assert.equal(module.default.id, id, "the export id must match the manifest id");
+  assert.equal(module.default.name, name, "the export name must match the manifest name");
   const handlers = register(plugin);
   for (const hook of FORWARDED) handlers[hook]({ reason: "shutdown" }, {});
   const payloads = await recorded(outFile);

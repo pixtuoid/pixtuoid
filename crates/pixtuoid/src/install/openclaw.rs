@@ -19,8 +19,8 @@ use crate::install::io;
 use crate::install::merge::{emit_json, parse_json_or_empty, prune_empty, prune_empty_root};
 use crate::install::target::MergeOutcome;
 
-const PLUGIN_ID: &str = "pixtuoid";
-const PLUGIN_NAME: &str = "Pixtuoid";
+pub(crate) const PLUGIN_ID: &str = "pixtuoid";
+pub(crate) const PLUGIN_NAME: &str = "Pixtuoid";
 
 const STATE_DIR: &str = ".openclaw";
 const CONFIG_FILE: &str = "openclaw.json";
@@ -656,23 +656,6 @@ mod tests {
                 "spawns the shim with --source openclaw"
             );
         });
-    }
-
-    /// The entry module's `id` and `name` stay literals, since its selftest runs the
-    /// template as is, so this pins them to the manifest's source.
-    #[test]
-    fn the_entry_module_names_the_plugin_as_the_manifest_does() {
-        let (_, export) = PLUGIN_TEMPLATE.split_once("export default {").unwrap();
-        let field = |key: &str| {
-            let prefix = format!("{key}: ");
-            let value = export
-                .lines()
-                .find_map(|l| l.trim_start().strip_prefix(prefix.as_str()))
-                .unwrap();
-            serde_json::from_str::<String>(value.strip_suffix(',').unwrap()).unwrap()
-        };
-        assert_eq!(field("id"), PLUGIN_ID);
-        assert_eq!(field("name"), PLUGIN_NAME);
     }
 
     #[test]
