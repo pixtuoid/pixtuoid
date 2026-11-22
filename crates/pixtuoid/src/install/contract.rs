@@ -1,5 +1,5 @@
-//! What each plugin must register and send, written from the Rust authorities
-//! into the `plugin-contract.json` its selftest executes it against
+//! What each plugin must declare, register and send, written from the Rust
+//! authorities into the `plugin-contract.json` its selftest executes it against
 //! (`scripts/lib/plugin-harness.mjs`), so neither language reads the other's
 //! source text, except dsh's `registers`, which `dsh::plugin_events` scans from
 //! its template. `SNAPSHOTS=overwrite just test -p pixtuoid --lib plugin_contract`
