@@ -1157,7 +1157,8 @@ mod tests {
 
 /// Armed quit arms catch a signal raised before they are first polled — the
 /// window between arming and the loop that listens. The dispositions are
-/// process-wide, which only nextest's process per test (justfile `test`) isolates.
+/// process-wide, which only nextest's process per test isolates
+/// (nexte.st/docs/design/how-it-works/).
 #[cfg(all(test, unix))]
 mod quit_arms {
     use super::{QUIT_SIGNALS, QuitArms, QuitSignal};
