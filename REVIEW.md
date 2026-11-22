@@ -205,8 +205,8 @@ These items need the change run, which the review can't do. The author runs
 each one the change touches before the PR queues, and writes its result into
 the PR body.
 
-- A result holds for the head it ran at. A later push that changes what it
-  checked runs it again; a merge of `main` or a comment-only change does not.
+- A result holds for the head it ran at. A later push or merge of `main` that
+  changes what it checked runs it again; a comment-only change does not.
 - The org's local-review skill ([AGENTS.md](AGENTS.md#org-rules)) runs them.
 
 The items:
