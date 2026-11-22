@@ -1,14 +1,15 @@
-use std::time::{Duration, SystemTime};
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
 
 use filetime::{FileTime, set_file_mtime};
 use tempfile::TempDir;
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::Transport;
-use pixtuoid_core::source::jsonl::ProbeSnapshot;
+use pixtuoid_core::source::jsonl::{LivenessProbe, ProbeSnapshot};
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::vouch_snapshot_with_pids;
@@ -20,15 +21,154 @@ use crate::{
 /// The probe poll these tests run the watcher at.
 const PROBE_POLL: Duration = Duration::from_millis(100);
 
-/// A negative check's window here: several [`PROBE_POLL`]s past the short
-/// negative-vouch spans these tests set, and past an exit receipt, so a wrong
-/// `SessionEnd` from either rung lands inside it.
-const QUIET: Duration = PROBE_POLL.saturating_mul(15);
-
 /// A negative-vouch span no wait here reaches, so only the instant-exit rung
 /// can end a session.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 const UNREACHED_VOUCH_SPAN: Duration = Duration::from_secs(3600);
+
+/// A probe a test answers for, flipping its answer mid-run, and each instant
+/// the watcher asked it. A scan pass asks once and passes run one at a time,
+/// so by an ask, the pass before it has sent all it caused: a wait counts
+/// passes, never the clock.
+#[derive(Clone)]
+struct Probe(Arc<watch::Sender<Asked>>);
+
+struct Asked {
+    answer: Option<ProbeSnapshot>,
+    at: Vec<Instant>,
+}
+
+impl Probe {
+    fn new(answer: Option<ProbeSnapshot>) -> Self {
+        Self(Arc::new(watch::Sender::new(Asked {
+            answer,
+            at: Vec::new(),
+        })))
+    }
+
+    /// One ask, as the watcher makes it.
+    fn ask(&self) -> Option<ProbeSnapshot> {
+        let mut answer = None;
+        self.0.send_modify(|asked| {
+            asked.at.push(Instant::now());
+            answer = asked.answer.clone();
+        });
+        answer
+    }
+
+    fn liveness(&self) -> LivenessProbe {
+        let probe = self.clone();
+        Arc::new(move || probe.ask())
+    }
+
+    /// Answer `answer` from now on; how many asks came before, so the first to
+    /// take it is that index.
+    fn answer(&self, answer: Option<ProbeSnapshot>) -> usize {
+        let mut before = 0;
+        self.0.send_modify(|asked| {
+            asked.answer = answer;
+            before = asked.at.len();
+        });
+        before
+    }
+
+    /// How many asks so far.
+    fn asks(&self) -> usize {
+        self.0.borrow().at.len()
+    }
+
+    /// Once the watcher has asked `n` times since the `from`th ask, leaving
+    /// what it sent queued.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    async fn asked(&self, from: usize, n: usize) {
+        let mut asked = self.0.subscribe();
+        tokio::time::timeout(crate::DEADLINE, asked.wait_for(|a| a.at.len() >= from + n))
+            .await
+            .expect("the watcher stopped asking")
+            .expect("the probe outlives its watcher");
+    }
+
+    /// Every event `rx` gets until `done` holds of the asks' instants:
+    /// nothing but listening proves an absence.
+    async fn listen_until(
+        &self,
+        rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+        what: &str,
+        done: impl Fn(&[Instant]) -> bool,
+    ) -> Vec<(Transport, AgentEvent)> {
+        let mut asked = self.0.subscribe();
+        let deadline = tokio::time::Instant::now() + crate::DEADLINE;
+        let mut events = Vec::new();
+        while !done(&asked.borrow_and_update().at) {
+            tokio::select! {
+                tagged = rx.recv() => {
+                    events.push(tagged.unwrap_or_else(|| panic!("{what}: the stream closed")));
+                }
+                changed = asked.changed() => changed.expect("the probe outlives its watcher"),
+                () = tokio::time::sleep_until(deadline) => {
+                    panic!("{what}: the watcher stopped asking");
+                }
+            }
+        }
+        events.extend(std::iter::from_fn(|| rx.try_recv().ok()));
+        events
+    }
+
+    /// [`Self::listen_until`] three asks at or past `span` after the `from`th:
+    /// the first may fold a hair inside the span, the second folds past it,
+    /// and the third has the second's pass sent.
+    async fn listen_past(
+        &self,
+        rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+        from: usize,
+        span: Duration,
+        what: &str,
+    ) -> Vec<(Transport, AgentEvent)> {
+        self.listen_until(rx, what, |at| {
+            at.get(from)
+                .is_some_and(|first| at.iter().filter(|a| **a >= *first + span).count() >= 3)
+        })
+        .await
+    }
+}
+
+/// Whether `events` hold a root `SessionEnd` for `agent`.
+fn ends(events: &[(Transport, AgentEvent)], agent: AgentId) -> bool {
+    events
+        .iter()
+        .any(|(_, e)| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == agent))
+}
+
+/// The agents a pid's death ended, through `witness`'s `SessionEnd`,
+/// `witness` being bound to that pid alone: an instant exit ends every id the
+/// dead pid held in one pass of the watch loop, so the ask after it has every
+/// one sent.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+async fn ended_through(
+    probe: &Probe,
+    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
+    witness: AgentId,
+) -> Vec<AgentId> {
+    let mut events = collect_until(
+        rx,
+        "the witness's SessionEnd",
+        |e| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == witness),
+    )
+    .await;
+    let from = probe.asks();
+    events.extend(
+        probe
+            .listen_until(rx, "past the death", |at| at.len() > from)
+            .await,
+    );
+    events
+        .iter()
+        .filter_map(|(_, e)| match e {
+            AgentEvent::SessionEnd { agent_id, .. } => Some(*agent_id),
+            _ => None,
+        })
+        .collect()
+}
 
 #[tokio::test]
 async fn watcher_emits_proof_of_life_for_probe_live_ids() {
@@ -130,8 +270,8 @@ async fn poll_arm_refreshes_probe_snapshot_and_reemits_proof_of_life() {
 }
 
 /// Shared fixture for the negative-vouch + instant-exit tests: a stale
-/// transcript admitted via a MUTABLE probe the test flips mid-run. Returns the
-/// probe handle, the event receiver, the transcript path, and the watcher task
+/// transcript admitted via a [`Probe`] the test flips mid-run. Returns the
+/// probe, the event receiver, the transcript path, and the watcher task
 /// — after asserting the probe-vouched admission already happened.
 async fn admitted_with_mutable_probe(
     projects_root: std::path::PathBuf,
@@ -139,7 +279,7 @@ async fn admitted_with_mutable_probe(
     min_span: Duration,
     initial: Option<ProbeSnapshot>,
 ) -> (
-    std::sync::Arc<std::sync::Mutex<Option<ProbeSnapshot>>>,
+    Probe,
     mpsc::Receiver<(Transport, AgentEvent)>,
     std::path::PathBuf,
     tokio::task::JoinHandle<anyhow::Result<()>>,
@@ -150,17 +290,13 @@ async fn admitted_with_mutable_probe(
     write_lines(&stale, &[codex_meta_line(uuid, "/repo")]).await;
     backdate(&stale, 7200);
 
-    let probe_state: std::sync::Arc<std::sync::Mutex<Option<ProbeSnapshot>>> =
-        std::sync::Arc::new(std::sync::Mutex::new(initial));
-    let probe_view = probe_state.clone();
+    let probe = Probe::new(initial);
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
     let watcher = codex_watcher(projects_root)
         .with_initial_window(Duration::from_secs(60))
         .with_poll_interval(PROBE_POLL)
         .with_negative_vouch_min_span(min_span)
-        .with_liveness_probe(std::sync::Arc::new(move || {
-            probe_view.lock().unwrap().clone()
-        }));
+        .with_liveness_probe(probe.liveness());
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
     let expected = AgentId::from_parts("codex", uuid);
@@ -170,23 +306,7 @@ async fn admitted_with_mutable_probe(
         |e| start_id(e) == Some(expected),
     )
     .await;
-    (probe_state, rx, stale, handle)
-}
-
-/// Drain `rx` for `window`, panicking if a `SessionEnd` for `expected` arrives.
-async fn assert_no_session_end_within(
-    rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
-    expected: AgentId,
-    window: Duration,
-    why: &str,
-) {
-    let events = collect_for(rx, window, why).await;
-    assert!(
-        !events.iter().any(
-            |(_, e)| matches!(e, AgentEvent::SessionEnd { agent_id, .. } if *agent_id == expected)
-        ),
-        "{why}"
-    );
+    (probe, rx, stale, handle)
 }
 
 /// Drain `rx` until `expected`'s root `SessionEnd`, panicking with `why` if
@@ -207,7 +327,7 @@ async fn expect_session_end(
 async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
     let dir = TempDir::new().unwrap();
     let uuid = "01000000-0000-7000-8000-0000000000ad";
-    let (probe_state, mut rx, transcript, handle) = admitted_with_mutable_probe(
+    let (probe, mut rx, transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
         Duration::from_millis(300),
@@ -217,7 +337,7 @@ async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
     let expected = AgentId::from_parts("codex", uuid);
 
     // The owning process exits: the probe stays HEALTHY but stops vouching.
-    *probe_state.lock().unwrap() = vouch_snapshot(&[]);
+    probe.answer(vouch_snapshot(&[]));
 
     expect_session_end(
         &mut rx,
@@ -253,11 +373,11 @@ async fn negative_vouch_emits_session_end_after_sustained_disappearance() {
 async fn one_missed_snapshot_does_not_end_the_session() {
     let dir = TempDir::new().unwrap();
     let uuid = "01000000-0000-7000-8000-0000000000ae";
-    // The span must dwarf the 250ms drop below so the re-vouch lands INSIDE it
-    // even when load stretches the sleep; a span close to the drop flakes into
-    // a confirmed exit on a busy machine.
-    let span = Duration::from_millis(2500);
-    let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
+    // The span must dwarf the drop below, two misses one poll apart, so the
+    // re-vouch lands INSIDE it even when load stretches a pass; a span close to
+    // the drop flakes into a confirmed exit on a busy machine.
+    let span = PROBE_POLL * 10;
+    let (probe, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
         span,
@@ -266,19 +386,24 @@ async fn one_missed_snapshot_does_not_end_the_session() {
     .await;
     let expected = AgentId::from_parts("codex", uuid);
 
-    *probe_state.lock().unwrap() = vouch_snapshot(&[]);
-    tokio::time::sleep(Duration::from_millis(250)).await;
-    *probe_state.lock().unwrap() = vouch_snapshot(&[uuid]);
+    // The first miss opens the window and the second lands inside it.
+    let first_miss = probe.answer(vouch_snapshot(&[]));
+    let mut events = probe
+        .listen_until(&mut rx, "the drop", |at| at.len() >= first_miss + 2)
+        .await;
+    probe.answer(vouch_snapshot(&[uuid]));
 
     // The quiet window must reach PAST the span: an uncancelled miss window
     // would confirm inside it, which is what proves the cancellation.
-    assert_no_session_end_within(
-        &mut rx,
-        expected,
-        span + Duration::from_millis(1000),
-        "a vouch re-appearing within the span must cancel the miss window — no SessionEnd",
-    )
-    .await;
+    events.extend(
+        probe
+            .listen_past(&mut rx, first_miss, span, "past the span")
+            .await,
+    );
+    assert!(
+        !ends(&events, expected),
+        "a vouch re-appearing within the span must cancel the miss window — no SessionEnd"
+    );
     handle.abort();
 }
 
@@ -289,24 +414,25 @@ async fn one_missed_snapshot_does_not_end_the_session() {
 async fn probe_failure_changes_nothing() {
     let dir = TempDir::new().unwrap();
     let uuid = "01000000-0000-7000-8000-0000000000af";
-    let (probe_state, mut rx, transcript, handle) = admitted_with_mutable_probe(
+    let span = Duration::from_millis(200);
+    let (probe, mut rx, transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
-        Duration::from_millis(200),
+        span,
         vouch_snapshot(&[uuid]),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
 
-    *probe_state.lock().unwrap() = None;
+    let first_failure = probe.answer(None);
 
-    assert_no_session_end_within(
-        &mut rx,
-        expected,
-        QUIET,
-        "a probe failure must never confirm an exit — None is not an observation",
-    )
-    .await;
+    let events = probe
+        .listen_past(&mut rx, first_failure, span, "the failing probe")
+        .await;
+    assert!(
+        !ends(&events, expected),
+        "a probe failure must never confirm an exit — None is not an observation"
+    );
 
     let mut f = tokio::fs::OpenOptions::new()
         .append(true)
@@ -343,20 +469,23 @@ async fn probe_panic_changes_nothing() {
     write_lines(&stale, &[codex_meta_line(uuid, "/repo")]).await;
     backdate(&stale, 7200);
 
-    let boom = std::sync::Arc::new(AtomicBool::new(false));
+    let boom = Arc::new(AtomicBool::new(false));
     let probe_boom = boom.clone();
-    let snap = vouch_snapshot(&[uuid]);
+    let probe = Probe::new(vouch_snapshot(&[uuid]));
+    let asked = probe.clone();
+    // Short, so a panic taken for an empty snapshot confirms inside the wait.
+    let span = Duration::from_millis(200);
     let (tx, mut rx) = mpsc::channel::<(Transport, AgentEvent)>(64);
     let watcher = codex_watcher(projects_root)
         .with_initial_window(Duration::from_secs(60))
         .with_poll_interval(PROBE_POLL)
-        // Short, so a panic taken for an empty snapshot confirms inside `QUIET`.
-        .with_negative_vouch_min_span(Duration::from_millis(200))
-        .with_liveness_probe(std::sync::Arc::new(move || {
+        .with_negative_vouch_min_span(span)
+        .with_liveness_probe(Arc::new(move || {
+            let snap = asked.ask();
             if probe_boom.load(Ordering::SeqCst) {
                 panic!("probe boom");
             }
-            snap.clone()
+            snap
         }));
     let handle = tokio::spawn(async move { watcher.run(tx).await });
 
@@ -369,13 +498,15 @@ async fn probe_panic_changes_nothing() {
     .await;
 
     boom.store(true, Ordering::SeqCst);
-    assert_no_session_end_within(
-        &mut rx,
-        expected,
-        QUIET,
-        "a probe panic must fold into the fail-safe, never confirm an exit",
-    )
-    .await;
+    // Read after the store, so every ask from this index on panics.
+    let first_panic = probe.asks();
+    let events = probe
+        .listen_past(&mut rx, first_panic, span, "the panicking probe")
+        .await;
+    assert!(
+        !ends(&events, expected),
+        "a probe panic must fold into the fail-safe, never confirm an exit"
+    );
     assert!(
         !handle.is_finished(),
         "a probe panic must not crash the watcher task"
@@ -398,7 +529,7 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
         .spawn()
         .unwrap();
     let pid = child.id() as i32;
-    let (probe_state, mut rx, transcript, handle) = admitted_with_mutable_probe(
+    let (probe, mut rx, transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
         UNREACHED_VOUCH_SPAN,
@@ -410,7 +541,7 @@ async fn instant_exit_emits_session_end_when_bound_pid_dies() {
     // Flip the probe FIRST — a real probe stops vouching a dead pid, and the
     // re-vouch sweep would otherwise re-admit the ended session. Under
     // `UNREACHED_VOUCH_SPAN` the flip alone cannot produce a SessionEnd.
-    *probe_state.lock().unwrap() = vouch_snapshot(&[]);
+    probe.answer(vouch_snapshot(&[]));
     let _ = child.kill();
     let _ = child.wait();
 
@@ -455,7 +586,7 @@ async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {
         .spawn()
         .unwrap();
     let pid = child.id() as i32;
-    let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
+    let (probe, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
         Duration::from_millis(300),
@@ -465,7 +596,7 @@ async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {
     let expected = AgentId::from_parts("codex", uuid);
 
     // The session ends while its process lives on: healthy probe, no vouch.
-    *probe_state.lock().unwrap() = vouch_snapshot(&[]);
+    probe.answer(vouch_snapshot(&[]));
     expect_session_end(
         &mut rx,
         expected,
@@ -473,15 +604,18 @@ async fn negative_vouch_confirm_unbinds_pid_so_a_later_exit_is_quiet() {
     )
     .await;
 
+    // Another of the process's rollouts, whose end is the death's receipt.
+    let witness_sid = "01000000-0000-7000-8000-0000000000c1";
+    let bound = probe.answer(vouch_snapshot_with_pids(&[witness_sid], &[pid]));
+    probe.asked(bound, 2).await;
+    let witness = AgentId::from_parts("codex", witness_sid);
     let _ = child.kill();
     let _ = child.wait();
-    assert_no_session_end_within(
-        &mut rx,
-        expected,
-        QUIET,
-        "a process exit after the id was negative-vouch-confirmed must not re-emit SessionEnd",
-    )
-    .await;
+    assert_eq!(
+        ended_through(&probe, &mut rx, witness).await,
+        [witness],
+        "a process exit after the id was negative-vouch-confirmed must not re-emit SessionEnd"
+    );
     handle.abort();
 }
 
@@ -500,7 +634,7 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
         .spawn()
         .unwrap();
     let pid = child.id() as i32;
-    let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
+    let (probe, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
         UNREACHED_VOUCH_SPAN,
@@ -511,7 +645,7 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
 
     // The probe breaks FIRST: `None` leaves `live` holding the last healthy
     // snapshot, which still vouches the id.
-    *probe_state.lock().unwrap() = None;
+    probe.answer(None);
     let _ = child.kill();
     let _ = child.wait();
 
@@ -522,7 +656,12 @@ async fn instant_exit_under_probe_failure_does_not_resurrect_the_session() {
     )
     .await;
 
-    let after = collect_for(&mut rx, QUIET, "past the instant exit").await;
+    // A whole failing pass: its re-vouch sweep would reset the parked
+    // transcript and its scan replay it.
+    let from = probe.asks();
+    let after = probe
+        .listen_until(&mut rx, "past the instant exit", |at| at.len() >= from + 2)
+        .await;
     assert!(
         !after.iter().any(|(_, e)| start_id(e) == Some(expected)),
         "a probe-failure pass after the instant exit must not mint a phantom SessionStart"
@@ -547,7 +686,7 @@ async fn a_rebound_session_ends_with_its_new_pid_while_the_old_one_lives() {
         .unwrap();
     let old_pid = old.id() as i32;
     let new_pid = new.id() as i32;
-    let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
+    let (probe, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
         UNREACHED_VOUCH_SPAN,
@@ -556,9 +695,9 @@ async fn a_rebound_session_ends_with_its_new_pid_while_the_old_one_lives() {
     .await;
     let expected = AgentId::from_parts("codex", uuid);
 
-    // Give the probe poll a few passes to fold the migration.
-    *probe_state.lock().unwrap() = vouch_snapshot_with_pids(&[uuid], &[new_pid]);
-    tokio::time::sleep(7 * PROBE_POLL).await;
+    // The pass that takes the migration folds it before the next one asks.
+    let migrated = probe.answer(vouch_snapshot_with_pids(&[uuid], &[new_pid]));
+    probe.asked(migrated, 2).await;
 
     let _ = new.kill();
     let _ = new.wait();
@@ -592,29 +731,31 @@ async fn a_session_two_live_pids_hold_ends_only_when_both_die() {
         std::mem::swap(&mut first, &mut last);
     }
     let (first_pid, last_pid) = (first.id() as i32, last.id() as i32);
-    let (probe_state, mut rx, _transcript, handle) = admitted_with_mutable_probe(
+    // Held by the first pid alone, so its end is that death's receipt.
+    let witness_sid = "01000000-0000-7000-8000-0000000000c4";
+    let mut held = vouch_snapshot_with_pids(&[uuid], &[first_pid, last_pid]).expect("healthy");
+    held.bind_pid(witness_sid.to_owned(), first_pid);
+    let witness = AgentId::from_parts("codex", witness_sid);
+    let (probe, mut rx, _transcript, handle) = admitted_with_mutable_probe(
         dir.path().to_path_buf(),
         uuid,
         UNREACHED_VOUCH_SPAN,
-        vouch_snapshot_with_pids(&[uuid], &[first_pid, last_pid]),
+        Some(held),
     )
     .await;
     let expected = AgentId::from_parts("codex", uuid);
 
-    // Give the probe poll a few passes to fold both bindings; the probe still
+    // The pass that admitted it folded both bindings first; the probe still
     // lists the first pid when its exit lands, as the kernel watch outruns a refresh.
-    tokio::time::sleep(7 * PROBE_POLL).await;
     let _ = first.kill();
     let _ = first.wait();
-    assert_no_session_end_within(
-        &mut rx,
-        expected,
-        QUIET,
-        "a holder's death must not end a session another live pid holds",
-    )
-    .await;
+    assert_eq!(
+        ended_through(&probe, &mut rx, witness).await,
+        [witness],
+        "a holder's death must not end a session another live pid holds"
+    );
 
-    *probe_state.lock().unwrap() = vouch_snapshot_with_pids(&[uuid], &[last_pid]);
+    probe.answer(vouch_snapshot_with_pids(&[uuid], &[last_pid]));
     let _ = last.kill();
     let _ = last.wait();
     expect_session_end(
