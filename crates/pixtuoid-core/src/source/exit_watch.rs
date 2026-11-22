@@ -668,13 +668,7 @@ mod tests {
         use std::time::Duration;
 
         use super::ExitWatch;
-        use crate::test_child::sleeper;
-
-        /// Liveness ceiling for the real-process `live::` tests — wide enough
-        /// to absorb `cargo llvm-cov` instrumentation and CI scheduling jitter
-        /// (3s flaked `drop_stops_cleanly`). A liveness bound, NOT a latency
-        /// assertion: a true hang is still failed by nextest's slow-timeout.
-        const LIVE_PID_DEADLINE: Duration = Duration::from_secs(10);
+        use crate::test_child::{EXIT_PATIENCE, sleeper};
 
         fn kill_and_reap(child: &mut Child) {
             let _ = child.kill();
@@ -719,7 +713,7 @@ mod tests {
                 let dead = dead_pid();
                 watch.watch(dead);
                 assert!(
-                    wait_for_pid(rx, dead, LIVE_PID_DEADLINE).await,
+                    wait_for_pid(rx, dead, EXIT_PATIENCE).await,
                     "a dead pid's watch is answered"
                 );
             }
@@ -752,7 +746,7 @@ mod tests {
             watch.watch(pid);
             kill_and_reap(&mut child);
             assert!(
-                wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
+                wait_for_pid(&mut rx, pid, EXIT_PATIENCE).await,
                 "a watched process dying must surface its pid on the exit channel"
             );
         }
@@ -766,7 +760,7 @@ mod tests {
             };
             watch.watch(pid);
             assert!(
-                wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
+                wait_for_pid(&mut rx, pid, EXIT_PATIENCE).await,
                 "watching an already-dead pid must synthesize its exit (already-dead path)"
             );
         }
@@ -786,7 +780,7 @@ mod tests {
             settle(&watch, &mut rx).await;
             kill_and_reap(&mut child);
             assert!(
-                wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
+                wait_for_pid(&mut rx, pid, EXIT_PATIENCE).await,
                 "the first exit must arrive"
             );
             assert_no_pid_within(
@@ -810,13 +804,13 @@ mod tests {
             settle(&watch, &mut rx).await;
             kill_and_reap(&mut child);
             assert!(
-                wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
+                wait_for_pid(&mut rx, pid, EXIT_PATIENCE).await,
                 "the death of a watched pid"
             );
             drop(child);
             watch.watch(pid);
             assert!(
-                wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
+                wait_for_pid(&mut rx, pid, EXIT_PATIENCE).await,
                 "a watch after the death is answered"
             );
         }
@@ -836,7 +830,7 @@ mod tests {
             watch.watch(pid);
             kill_and_reap(&mut child);
             assert!(
-                wait_for_pid(&mut rx, pid, LIVE_PID_DEADLINE).await,
+                wait_for_pid(&mut rx, pid, EXIT_PATIENCE).await,
                 "a bogus registration must not break later real watches"
             );
         }
@@ -857,7 +851,7 @@ mod tests {
             let pid = child.id() as i32;
             kill_and_reap(&mut child);
             watch.watch(pid);
-            let deadline = tokio::time::Instant::now() + LIVE_PID_DEADLINE;
+            let deadline = tokio::time::Instant::now() + EXIT_PATIENCE;
             while !watch.shared.closed.load(Ordering::SeqCst)
                 && tokio::time::Instant::now() < deadline
             {
@@ -890,7 +884,7 @@ mod tests {
                 let mut child = sleeper();
                 watch.watch(child.id() as i32);
                 drop(watch);
-                let closed = tokio::time::timeout(LIVE_PID_DEADLINE, async {
+                let closed = tokio::time::timeout(EXIT_PATIENCE, async {
                     while rx.recv().await.is_some() {}
                 })
                 .await;
@@ -926,7 +920,7 @@ mod tests {
             let (inside, past) = (children[CAP - 1].id() as i32, children[CAP].id() as i32);
             kill_and_reap(&mut children[CAP - 1]);
             kill_and_reap(&mut children[CAP]);
-            let fired = wait_for_pid(&mut rx, inside, LIVE_PID_DEADLINE).await;
+            let fired = wait_for_pid(&mut rx, inside, EXIT_PATIENCE).await;
             assert_no_pid_within(&mut rx, past, Duration::from_millis(500), "never watched").await;
             let closed = watch.shared.closed.load(Ordering::SeqCst);
             for child in &mut children {
