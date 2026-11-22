@@ -114,7 +114,8 @@ left behind. Any other edit and the capture stops being evidence.
   tool's command string. So read a capture before committing it, rather than
   trusting a filter on key names.
 - The recorder's `scan_for_pii` refuses the operator's OWN identity (its
-  `identity_needles`), the one set gitleaks can't know.
+  `identity_needles`) in what it records into the tree, the one set gitleaks
+  can't know; a raw `--out` capture is neither stripped nor scanned.
   `just fixture-pii` re-scans the committed tree by the shape of its values.
   Neither reaches a value it can't name, which is why a capture still gets
   read.
