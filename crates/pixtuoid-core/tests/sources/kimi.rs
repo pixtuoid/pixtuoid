@@ -22,7 +22,7 @@ fn payload(scenario: &str, event: &str) -> String {
 #[test]
 fn a_turn_end_alone_registers_its_session() {
     for (scenario, event) in [
-        ("tool-run-hermetic", "Stop"),
+        ("permission-hermetic", "Stop"),
         ("model-error-hermetic", "StopFailure"),
         ("cancel-hermetic", "Interrupt"),
     ] {
