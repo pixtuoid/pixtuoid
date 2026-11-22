@@ -393,11 +393,18 @@ async fn one_missed_snapshot_does_not_end_the_session() {
         .await;
     probe.answer(vouch_snapshot(&[uuid]));
 
-    // The quiet window must reach PAST the span: an uncancelled miss window
-    // would confirm inside it, which is what proves the cancellation.
+    // The quiet window must reach PAST the span and end on a miss there: an
+    // uncancelled miss window would confirm on it, which is what proves the
+    // cancellation.
     events.extend(
         probe
             .listen_past(&mut rx, first_miss, span, "past the span")
+            .await,
+    );
+    let late_miss = probe.answer(vouch_snapshot(&[]));
+    events.extend(
+        probe
+            .listen_until(&mut rx, "the late miss", |at| at.len() >= late_miss + 2)
             .await,
     );
     assert!(
