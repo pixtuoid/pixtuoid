@@ -75,7 +75,7 @@ site/     Astro landing page; integrations/raycast/  Raycast extension
 ```
 just build [--release] · just test                   # the one test runner (nextest)
 just test -p <crate> <filter>                        # fast loop
-just preflight [full]                                # pre-push gate: lint → clippy; `full` adds hack → test (CI's Rust recipes)
+just preflight [full]                                # pre-push gate; `full` adds some of CI's Rust recipes (`just --list` shows which)
 cargo run --release --example snapshot -- /tmp/snap.png   # render TUI to PNG
 cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the same, rebuilt faster; scripts still read target/release
 ```
@@ -141,7 +141,7 @@ Repo skills (committed): `beautify-decoration`, `add-source`.
 
 1. **`pixtuoid-core` and `pixtuoid-scene` have no terminal/window/audio-device deps** (compiler-enforced by crate boundary; `just arch` holds their dep set to the allowlist in `deny-arch.toml`, so a new crate fails until it is listed). New render targets are thin painters over `pixtuoid_scene::look::render`.
 2. **Agent events flow through ONE channel** `mpsc::Sender<(Transport, AgentEvent)>`; the `Transport` tag drives hook-wins dedup — producers tag their own events. Daemon presence rides a separate `AgentId`-free channel (`PresenceMsg { key: DaemonInstanceKey, delta }`) and never enters `Reducer::apply`.
-3. **`Source` trait is the only seam** for a transcript-bearing CLI; per-source format knowledge lives in that source's decoder. Exceptions: hook-only CLIs (Reasonix) and the shared ACP wire standard (`source/acp.rs`, reused by grok) — [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#adding-a-new-agent-cli) step 3 and `source/acp.rs`'s header.
+3. **`Source` trait is the only seam** for a transcript-bearing CLI; per-source format knowledge lives in that source's decoder. Exceptions: hook-only CLIs (the registry rows with `transcript: None`) and the shared ACP wire standard (`source/acp.rs`, reused by grok) — [`CONTRIBUTING.md`](docs/CONTRIBUTING.md#adding-a-new-agent-cli) step 3 and `source/acp.rs`'s header.
 4. **Hook install writes through symlinks** (`resolve_symlink` in `install/io.rs`) — critical for stow-managed configs; Windows keeps the bounded rename-retry.
 5. **The hook shim never blocks CC** — always exit 0 silently; the send bound (pixtuoid-hook's `transport::WRITE_TIMEOUT`) is watchdog-enforced on both platforms. Shim coverage is child-process level only.
 6. **Walkable mask = ground footprint only**; sprite size never moves a sim position — the sprite fit (`keep_sprite_inside`) adjusts only a placement's paint top-left (#912).
