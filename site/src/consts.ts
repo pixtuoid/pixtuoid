@@ -124,8 +124,7 @@ export interface ShowcaseChannel {
   default?: boolean; // exactly one — the channel tuned at load
 }
 
-// The showcase guard in astro.config.mjs enforces the manifest's
-// kind/status/default/asset invariants.
+// The showcase guard in astro.config.mjs checks this manifest.
 export const SHOWCASE: ShowcaseChannel[] = showcaseData as unknown as ShowcaseChannel[];
 
 // features.json is the TOTAL set (also the README Features table's source, via
