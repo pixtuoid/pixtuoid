@@ -107,13 +107,8 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
     });
 
     let hooks_path = dir.join(HOOK_PAYLOADS);
-    // `{{TRANSCRIPT_PATH}}` lets a path-keyed hook (CC) line up with its
-    // transcript.
     let hook_lines: Vec<String> = if hooks_path.exists() {
         fixture_lines(&hooks_path)
-            .into_iter()
-            .map(|l| l.replace("{{TRANSCRIPT_PATH}}", &logical))
-            .collect()
     } else {
         Vec::new()
     };
