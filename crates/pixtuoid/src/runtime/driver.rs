@@ -643,8 +643,8 @@ mod tests {
     fn a_runtime_ended_at_quit_still_saves_the_count() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("today.json");
-        let tx = super::super::on_runtime(|rt| {
-            rt.block_on(async {
+        let (tx, ended) = super::super::on_runtime(|rt| {
+            let tx = rt.block_on(async {
                 let (tx, rx) = tokio::sync::mpsc::channel(8);
                 let (sink, mut scene) = SceneSink::latest([FALLBACK_DESKS; MAX_FLOORS]);
                 tokio::spawn(reduce_saving(rx, sink, Some(TodayFile::at(path.clone()))));
@@ -658,11 +658,25 @@ mod tests {
                     .expect("the reducer publishes");
                 assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(1));
                 tx
-            })
+            });
+            (tx, Instant::now())
         })
         .expect("a runtime");
+        let waited = ended.elapsed();
         drop(tx);
-        assert_eq!(saved_at(&path).map(|today| today.tool_calls), Some(2));
+        let last = || saved_at(&path).map(|today| today.tool_calls);
+        if waited < crate::EXIT_WAIT {
+            assert_eq!(last(), Some(2), "the end returned with the count unsaved");
+        } else {
+            // The disk outlasted the bound, which let the quit go on, as it
+            // must for a stalled one: the write it left behind still lands.
+            pixtuoid_core::harness::wait_until(
+                "the last count",
+                crate::panels::noted::SETTLES_WITHIN,
+                || Ok(last() == Some(2)),
+            )
+            .expect("the end's write lands");
+        }
     }
 
     #[test]
