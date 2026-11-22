@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use pixtuoid_scene::pet::PetKind;
 
 /// `--now-sec`'s exclusive bound: from it on, a second is the next hour's.
-const HOUR_SECS: u64 = chrono::TimeDelta::hours(1).num_seconds().unsigned_abs();
+const HOUR_SECS: u64 = Duration::from_hours(1).as_secs();
 
 /// The instant a snapshot draws: an hour, and a day and a second read only
 /// beside it.

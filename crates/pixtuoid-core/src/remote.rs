@@ -14,7 +14,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
@@ -170,7 +170,11 @@ impl Os {
 #[derive(Debug, Serialize, Deserialize)]
 #[cfg_attr(test, derive(schemars::JsonSchema))]
 struct Day {
-    day: NaiveDate,
+    // schemars 1.2.3's jiff feature is `jiff02`, for jiff 0.2 (its
+    // `Cargo.toml:153-157`), so the date's schema is a plain string; the wire
+    // stays `"YYYY-MM-DD"` via serde.
+    #[cfg_attr(test, schemars(with = "String"))]
+    day: Date,
     tokens: u64,
     tool_calls: u64,
 }
@@ -1084,8 +1088,8 @@ mod tests {
     const GOLDEN: &str = include_str!(golden_path!());
     const AT: u64 = 1_800_000_000_000;
 
-    fn day() -> NaiveDate {
-        NaiveDate::from_ymd_opt(2027, 1, 15).expect("a date")
+    fn day() -> Date {
+        jiff::civil::date(2027, 1, 15)
     }
 
     fn at(ms: u64) -> SystemTime {

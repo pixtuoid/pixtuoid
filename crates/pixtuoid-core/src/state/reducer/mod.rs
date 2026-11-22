@@ -289,7 +289,7 @@ pub struct Reducer {
 
     next_label_n: u32,
     /// What [`Self::counting`] was given; `None` keeps no count.
-    day_of: Option<fn(SystemTime) -> chrono::NaiveDate>,
+    day_of: Option<fn(SystemTime) -> jiff::civil::Date>,
 }
 
 impl Reducer {
@@ -302,7 +302,7 @@ impl Reducer {
     /// date: the host's zone is the host's to give, and an injected `fn` keeps
     /// tests off the runner's.
     #[must_use]
-    pub fn counting(mut self, day_of: fn(SystemTime) -> chrono::NaiveDate) -> Self {
+    pub fn counting(mut self, day_of: fn(SystemTime) -> jiff::civil::Date) -> Self {
         self.day_of = Some(day_of);
         self
     }

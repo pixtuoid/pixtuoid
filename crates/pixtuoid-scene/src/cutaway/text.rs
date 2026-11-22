@@ -357,7 +357,7 @@ mod tests {
                 }
             }
         }
-        let day = chrono::NaiveDate::MIN;
+        let day = jiff::civil::Date::MIN;
         for (tokens, tool_calls) in [(1_234_567, 0), (9_500, 0), (0, 80)] {
             let today = pixtuoid_core::state::Today::new(day, tokens, tool_calls);
             text.extend(crate::tally::today_headline(today));

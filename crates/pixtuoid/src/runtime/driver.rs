@@ -440,8 +440,8 @@ mod tests {
         reduce_saving(events, sink, None).await;
     }
 
-    fn the_day(_: SystemTime) -> chrono::NaiveDate {
-        chrono::NaiveDate::from_ymd_opt(2026, 6, 1).expect("a date")
+    fn the_day(_: SystemTime) -> jiff::civil::Date {
+        jiff::civil::date(2026, 6, 1)
     }
 
     /// [`reduce`], with the day's count in `file`.

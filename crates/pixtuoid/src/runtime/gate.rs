@@ -245,8 +245,11 @@ mod tests {
         assert_eq!(event_source(&scene, &empty), Some("claude-code"));
     }
 
-    fn utc_day(now: SystemTime) -> chrono::NaiveDate {
-        chrono::DateTime::<chrono::Utc>::from(now).date_naive()
+    fn utc_day(now: SystemTime) -> jiff::civil::Date {
+        jiff::Timestamp::try_from(now)
+            .expect("a time inside jiff's range")
+            .to_zoned_datetime(jiff::tz::TimeZone::UTC)
+            .date()
     }
 
     /// Through the gate as the tailer sends it, a declaration passing or falling
@@ -310,7 +313,7 @@ mod tests {
         let mut scene = SceneState::uniform(8);
         let mut reducer = Reducer::new().counting(utc_day);
         let now = SystemTime::now();
-        let yesterday = utc_day(now).pred_opt().expect("a date");
+        let yesterday = utc_day(now).yesterday().expect("a date");
         scene.today = Some(pixtuoid_core::state::Today::new(yesterday, 1, 1));
         reconcile_sweep_tick(&mut reducer, &mut scene, &cs, now);
         assert_eq!(scene.today, None);

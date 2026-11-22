@@ -305,15 +305,7 @@ pub(crate) fn pair(pairing: Pairing) -> Result<()> {
                 writeln!(out, "no device is paired")?;
             }
             for device in devices {
-                #[expect(
-                    clippy::disallowed_types,
-                    reason = "the owner reads when a device paired in their own zone, which no test asserts on"
-                )]
-                let paired_at = chrono::DateTime::<chrono::Local>::from(device.paired_at);
-                let at = paired_at.format("%Y-%m-%d %H:%M");
-                // The id first, as `--forget` takes it, and the name, the one
-                // column of no fixed width, last.
-                writeln!(out, "{}  {at}  {}", device.hash.short(), device.name)?;
+                writeln!(out, "{}", listed(&device)?)?;
             }
         }
         Pairing::Forget(id) => {
@@ -326,6 +318,20 @@ pub(crate) fn pair(pairing: Pairing) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `device`'s `--list` row: its id first, as `--forget` takes it, and its
+/// name, the one column of no fixed width, last.
+fn listed(device: &store::Paired) -> Result<String> {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the owner reads when a device paired in their own zone, which no test asserts on"
+    )]
+    let paired_at = jiff::Timestamp::try_from(device.paired_at)
+        .context("a device's pairing time is past the calendar")?
+        .to_zoned_datetime(jiff::tz::TimeZone::system());
+    let at = paired_at.strftime("%Y-%m-%d %H:%M");
+    Ok(format!("{}  {at}  {}", device.hash.short(), device.name))
 }
 
 /// Print the QR and link that pair a device reaching this machine at
@@ -428,6 +434,19 @@ fn source_toward(target: Ipv4Addr) -> std::io::Result<IpAddr> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The pairing state is a file anyone with the user's rights can edit: a
+    /// time past jiff's calendar is an error to report, not a panic.
+    #[test]
+    fn a_pairing_time_past_the_calendar_is_an_error() {
+        const PAST_YEAR_9999_SECS: u64 = 400_000_000_000;
+        let device = store::Paired {
+            hash: store::Hashed::of("token"),
+            name: "iPhone".to_owned(),
+            paired_at: SystemTime::UNIX_EPOCH + Duration::from_secs(PAST_YEAR_9999_SECS),
+        };
+        assert!(listed(&device).is_err());
+    }
 
     #[test]
     fn only_the_local_network_is_served() {

@@ -690,7 +690,7 @@ mod recorder {
         run: &Path,
         root: &Path,
         needles: &BTreeSet<String>,
-        captured: chrono::NaiveDate,
+        captured: jiff::civil::Date,
         notices: &mut impl Write,
     ) -> Result<std::io::Result<()>, &'static str> {
         promote_unless_refused(corpus_refusal(true), run, root, needles, captured, notices)
@@ -703,7 +703,7 @@ mod recorder {
         run: &Path,
         root: &Path,
         needles: &BTreeSet<String>,
-        captured: chrono::NaiveDate,
+        captured: jiff::civil::Date,
         notices: &mut impl Write,
     ) -> Result<std::io::Result<()>, &'static str> {
         match refusal {
@@ -720,7 +720,7 @@ mod recorder {
         run: &Path,
         root: &Path,
         needles: &BTreeSet<String>,
-        captured: chrono::NaiveDate,
+        captured: jiff::civil::Date,
         notices: &mut impl Write,
     ) -> std::io::Result<()> {
         let manifest: Manifest =
@@ -1331,7 +1331,7 @@ mod recorder {
     fn record(
         cli: &str,
         version: &str,
-        captured: chrono::NaiveDate,
+        captured: jiff::civil::Date,
         command: &str,
         deidentified: Deidentified,
     ) -> std::io::Result<Recorded> {
@@ -1363,13 +1363,10 @@ mod recorder {
         Ok(at)
     }
 
-    fn today() -> chrono::NaiveDate {
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .ok()
-            .and_then(|d| chrono::DateTime::from_timestamp(i64::try_from(d.as_secs()).ok()?, 0))
-            .expect("clock is after 1970 and in chrono's range")
-            .date_naive()
+    fn today() -> jiff::civil::Date {
+        jiff::tz::TimeZone::UTC
+            .to_datetime(jiff::Timestamp::now())
+            .date()
     }
 
     /// Strings this machine would leak into a capture, the git identity included:
@@ -1539,7 +1536,7 @@ mod recorder {
         /// stamp read off the clock never matches it.
         const CAPTURED: &str = "2026-06-01";
 
-        fn captured() -> chrono::NaiveDate {
+        fn captured() -> jiff::civil::Date {
             CAPTURED.parse().expect("an ISO date")
         }
 

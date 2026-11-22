@@ -1,6 +1,5 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::NaiveDate;
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::{AgentEvent, CopyId, Transport};
 use pixtuoid_core::state::reducer::{COPY_RETENTION, EXIT_GRACE_WINDOW, Reducer};
@@ -23,11 +22,9 @@ fn t0() -> SystemTime {
 }
 
 /// UTC, so nothing here reads the runner's zone.
-fn utc_day(now: SystemTime) -> NaiveDate {
-    let secs = now.duration_since(UNIX_EPOCH).unwrap().as_secs();
-    chrono::DateTime::from_timestamp(secs as i64, 0)
-        .unwrap()
-        .date_naive()
+fn utc_day(now: SystemTime) -> jiff::civil::Date {
+    let instant = jiff::Timestamp::try_from(now).expect("inside jiff's range");
+    jiff::tz::TimeZone::UTC.to_datetime(instant).date()
 }
 
 fn counting() -> (Reducer, SceneState) {

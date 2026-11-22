@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use serde::{Deserialize, Serialize};
 
 use crate::id::AgentId;
@@ -442,7 +442,7 @@ impl UsageObservation {
 #[non_exhaustive]
 pub struct Today {
     /// The date the count is for, on the counting reducer's own calendar.
-    pub day: NaiveDate,
+    pub day: Date,
     /// Fresh tokens, the [`AgentSlot::tokens_used`] measure.
     pub tokens: u64,
     /// Tool calls, the only number a CLI with no [`Usage`](crate::AgentEvent::Usage) has.
@@ -451,7 +451,7 @@ pub struct Today {
 
 impl Today {
     /// A count for `day`.
-    pub fn new(day: NaiveDate, tokens: u64, tool_calls: u64) -> Self {
+    pub fn new(day: Date, tokens: u64, tool_calls: u64) -> Self {
         Self {
             day,
             tokens,
