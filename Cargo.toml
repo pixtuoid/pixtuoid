@@ -82,13 +82,19 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 # Dependencies never need debuginfo for our own backtraces.
 debug = false
+# The tests spend much of their time in dependency code, which rust-cache keeps
+# compiled across CI runs while every run executes it. 1 ran them as fast as 2,
+# and compiles a cold build faster.
+opt-level = 1
 
 [profile.dev.package.pixtuoid-scene]
 # The layout and pathfinding sweeps and the cutaway, cloud and outside paint
-# tests are the workspace's compute-bound tests, and `test` inherits `dev`.
+# tests are compute-bound in this crate's code, and `test` inherits `dev`.
 # Debug assertions stay ON. This cannot perturb foley's spectral pins: they
 # compare centroid and band-energy shares within tolerances orders of magnitude
-# wider than any codegen-level float difference.
+# wider than any codegen-level float difference. No other member is optimized:
+# a small function called only from other crates loses its coverage once its
+# crate and those callers are all optimized.
 opt-level = 2
 
 # Opt-in full debuginfo for an actual debugger session:

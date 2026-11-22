@@ -38,11 +38,12 @@ runs:
     - if: ${{ inputs.enable-cache == 'true' }}
       uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
-        prefix-key: v1-rust
+        prefix-key: v2-rust
         shared-key: ${{ inputs.shared-key }}
-        # Main's caches are what every ref restores, and the 10 GB quota evicts
-        # the least recently used first, so another ref's copy only pushes
-        # main's full-tier entries out.
+        # Main's caches are what every ref restores, and the cache quota evicts
+        # the least recently used first
+        # (docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching),
+        # so another ref's copy only pushes main's full-tier entries out.
         save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - uses: pixtuoid/.github/.github/actions/setup-tools@main

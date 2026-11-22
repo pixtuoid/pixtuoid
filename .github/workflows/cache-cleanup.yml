@@ -7,8 +7,8 @@ on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout or PR-code execution; policy pins the cache-only job
     types: [closed]
   # A lockfile bump strands the previous rust cache generation on the main
-  # ref; deleting it deterministically beats the LRU lottery at the 10 GB
-  # ceiling. Toolchain bumps are out of scope in both directions: they don't
+  # ref; deleting it deterministically beats the LRU lottery at the cache
+  # quota. Toolchain bumps are out of scope in both directions: they don't
   # touch Cargo.lock, and the rustc hash is inside the family key, so a bump
   # forks a NEW family rather than superseding the old one.
   push:
@@ -67,11 +67,11 @@ jobs:
           # invariant is at most two generations per family, not one.
           # An assignment propagates a pipeline failure under pipefail (a
           # process substitution would swallow it); --limit 300 is an order
-          # of magnitude past what the 10 GB ceiling can hold.
+          # of magnitude past what the cache quota can hold
+          # (docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching).
           ids=$(
-            gh cache list --ref refs/heads/main --limit 300 --json id,key,createdAt \
-              | jq -r '[.[] | select(.key | startswith("v1-rust-"))]
-                  | group_by(.key | sub("-[0-9a-f]+$"; ""))
+            gh cache list --ref refs/heads/main --key v2-rust- --limit 300 --json id,key,createdAt \
+              | jq -r 'group_by(.key | sub("-[0-9a-f]+$"; ""))
                   | map(sort_by(.createdAt) | .[:-1][])
                   | .[].id'
           )

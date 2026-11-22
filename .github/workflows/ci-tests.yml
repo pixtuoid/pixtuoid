@@ -25,23 +25,20 @@ jobs:
           - platform: linux
             runner: ubuntu-latest
             flag: unit
-            timeout: 25
           # Track windows-latest deliberately: this gate catches hosted-image
           # changes. It runs the Windows pipes the Linux entry compiles out, and
           # the full tier uploads their coverage.
           - platform: windows
             runner: windows-latest
             flag: windows
-            timeout: 25
           # macos-latest is Apple Silicon, so it exercises that build; macOS diverges on BSD
           # CLI, launchd, and config paths, which the Linux entry compiles out.
           - platform: macos
             runner: macos-latest
             flag: macos
-            timeout: 20
     runs-on: ${{ matrix.runner }}
     # nextest owns per-test hang limits.
-    timeout-minutes: ${{ matrix.timeout }}
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
