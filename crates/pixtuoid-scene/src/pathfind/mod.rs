@@ -164,7 +164,8 @@ pub fn find_path(
         cell_near(aim).filter(|&(cx, cy)| segment_clear(mask, cell_anchor(mask, cx, cy), to));
     let (goal, came_from) = match aimed.and_then(search) {
         Some(reached) => reached,
-        None => search(cell_near(to)?)?,
+        // A search toward the aimed cell has failed already.
+        None => search(cell_near(to).filter(|&goal| aimed != Some(goal))?)?,
     };
     Some(reconstruct(mask, &came_from, goal, from, to))
 }
