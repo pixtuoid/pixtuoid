@@ -71,8 +71,8 @@ pub(crate) const PROFILE: Profile = Profile {
             surface: Surface::Headless,
             // No Stop: the Stop hook runs off the ended turn
             // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:429-433`),
-            // and `-p` disposes the agent once its loop settles, which aborts it
-            // (`:92-99`, `apps/kimi-code/src/cli/v2/run-v2-print.ts:177-189`),
+            // and `-p` disposes the agent once its loop settles, which can abort it
+            // first (`:93-99`, `apps/kimi-code/src/cli/v2/run-v2-print.ts:177-189`),
             // at `@moonshot-ai/kimi-code@2.7.2`.
             expects: &["SessionStart", "PreToolUse", "PostToolUse"],
             turn: Turn::PROFILE,
