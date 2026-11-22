@@ -256,63 +256,66 @@ pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
     rfc3339_to_epoch(s).map(|d| d.as_secs())
 }
 
-/// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond, by
-/// [`Timestamp`'s RFC 3339 parser](https://docs.rs/jiff/1.0.2/jiff/struct.Timestamp.html#impl-FromStr-for-Timestamp).
+/// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond.
 #[cfg(any(feature = "native", feature = "harness", test))]
 pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
-    let cut = cut_fraction(s);
-    let t: jiff::Timestamp = cut.parse().ok()?;
-    if !offset_is_strict(&cut) {
-        return None;
-    }
+    let t: jiff::Timestamp = rfc3339_date_time(s)?.parse().ok()?;
     Some(std::time::Duration::new(
         u64::try_from(t.as_second()).ok()?,
         u32::try_from(t.subsec_nanosecond()).ok()?,
     ))
 }
 
-/// The fraction cut to nine digits: jiff's parser rejects a digit past the
-/// nanosecond, where chrono cut it, and a stamp's extra digit is not "no
-/// information" to the callers above. The tail past the fraction — the offset —
-/// is kept.
+/// `s` for jiff's parser when it has RFC 3339's `date-time` shape: that parser
+/// reads [Temporal's wider grammar](https://docs.rs/jiff/1.0.2/jiff/fmt/temporal/index.html)
+/// (no seconds, a comma fraction, a `[zone]` annotation, `+0200`, `+02:00:30`),
+/// so the shape is held here and jiff checks the ranges.
 #[cfg(any(feature = "native", feature = "harness", test))]
-fn cut_fraction(s: &str) -> std::borrow::Cow<'_, str> {
-    use std::borrow::Cow;
-    let Some(dot) = s.find('.') else {
-        return Cow::Borrowed(s);
-    };
-    let digits = s[dot + 1..]
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .count();
-    if digits <= 9 {
-        Cow::Borrowed(s)
-    } else {
-        Cow::Owned(format!("{}{}", &s[..dot + 1 + 9], &s[dot + 1 + digits..]))
+fn rfc3339_date_time(s: &str) -> Option<std::borrow::Cow<'_, str>> {
+    /// `full-date`, the separator and `partial-time` up to its seconds: `9` is
+    /// any digit, and §5.6's NOTE lets a space stand for the `T`.
+    const HEAD: &[u8] = b"9999-99-99T99:99:99";
+    /// jiff refuses a fraction digit past the nanosecond, which is cut instead:
+    /// it is no reason to drop the stamp.
+    const NANOSECOND_DIGITS: usize = 9;
+    let head = s.as_bytes().get(..HEAD.len())?;
+    let head_fits = HEAD.iter().zip(head).all(|(&want, &got)| match want {
+        b'9' => got.is_ascii_digit(),
+        b'T' => matches!(got, b'T' | b't' | b' '),
+        _ => got == want,
+    });
+    if !head_fits {
+        return None;
     }
-}
-
-/// Whether the stamp's offset is RFC 3339's `Z` or `±HH:MM` with the hour
-/// under 24: jiff's offset runs to ±25:59:59 and its parser takes a colon-less
-/// `+0200`, where chrono's grammar — the contract the tests pin — takes
-/// neither. Only the offset is checked; the rest already parsed.
-#[cfg(any(feature = "native", feature = "harness", test))]
-fn offset_is_strict(s: &str) -> bool {
-    let Some(t) = s.find(['T', 't']) else {
-        return false;
+    let rest = &s[HEAD.len()..];
+    let (digits, offset) = match rest.strip_prefix('.') {
+        Some(fraction) => {
+            let digits = fraction.bytes().take_while(u8::is_ascii_digit).count();
+            if digits == 0 {
+                return None;
+            }
+            (digits, &fraction[digits..])
+        }
+        None => (0, rest),
     };
-    let after_t = &s[t + 1..];
-    let Some(sign) = after_t.find(['+', '-']) else {
-        return after_t.ends_with(['Z', 'z']);
+    /// RFC 3339's `time-hour` ends at 23, where jiff's offset hours run to 25.
+    const OFFSET_HOUR_END: [u8; 2] = *b"24";
+    let offset_fits = match *offset.as_bytes() {
+        [b'Z' | b'z'] => true,
+        [b'+' | b'-', h1, h2, b':', m1, m2] => {
+            [h1, h2, m1, m2].iter().all(u8::is_ascii_digit) && [h1, h2] < OFFSET_HOUR_END
+        }
+        _ => false,
     };
-    let mut parts = after_t[sign + 1..].split(':');
-    let (Some(hours), Some(minutes)) = (parts.next(), parts.next()) else {
-        return false;
-    };
-    hours.len() == 2
-        && minutes.len() == 2
-        && hours.parse::<u32>().is_ok_and(|h| h < 24)
-        && minutes.parse::<u32>().is_ok_and(|m| m < 60)
+    if !offset_fits {
+        return None;
+    }
+    Some(if digits <= NANOSECOND_DIGITS {
+        std::borrow::Cow::Borrowed(s)
+    } else {
+        let kept = HEAD.len() + ".".len() + NANOSECOND_DIGITS;
+        std::borrow::Cow::Owned(format!("{}{offset}", &s[..kept]))
+    })
 }
 
 /// The key the shim stamps with the CLI whose hook ran it. Pinned by
@@ -907,6 +910,24 @@ mod tests {
             rfc3339_to_epoch_secs("2026-07-16t12:00:05Z"),
             Some(1_784_203_205)
         );
+        assert_eq!(
+            rfc3339_to_epoch_secs("2026-07-16 12:00:05Z"),
+            Some(1_784_203_205),
+            "RFC 3339 §5.6's NOTE lets a space stand for the `T`"
+        );
+    }
+
+    #[test]
+    fn rfc3339_refuses_the_wider_grammar_its_parser_reads() {
+        for bad in [
+            "2026-07-16T12:00Z",
+            "2026-07-16T12:00:05,5Z",
+            "2026-07-16T12:00:05Z[UTC]",
+            "20260716T120005Z",
+            "+002026-07-16T12:00:05Z",
+        ] {
+            assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
+        }
     }
 
     #[test]
@@ -942,6 +963,7 @@ mod tests {
             "2026-07-16T12:00:05+02-00",
             "2026-07-16T12:00:05+02:00extra",
             "2026-07-16T12:00:05+0200",
+            "2026-07-16T12:00:05+02:00:30",
         ] {
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
         }
