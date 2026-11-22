@@ -2578,17 +2578,51 @@ mod recorder {
             assert_eq!(got, vec!["CLAUDECODE", "CLAUDE_CODE_CHILD_SESSION"]);
         }
 
+        /// How often a wait on a clock looks again.
+        const TICK: Duration = Duration::from_millis(5);
+
+        /// `path` written, and its birth time.
+        fn born(path: &Path) -> SystemTime {
+            std::fs::write(path, "{}").expect("write");
+            std::fs::metadata(path)
+                .and_then(|m| m.created())
+                .expect("a birth time")
+        }
+
+        /// `path` written once its birth time sorts after `after`, and that
+        /// time: a filesystem stamps a birth at its own granularity, on some
+        /// coarser than `SystemTime`'s, so a file written just after an instant
+        /// can be born before it.
+        fn born_past(path: &Path, after: SystemTime) -> SystemTime {
+            loop {
+                let at = born(path);
+                if at > after {
+                    return at;
+                }
+                std::fs::remove_file(path).expect("remove");
+                std::thread::sleep(TICK);
+            }
+        }
+
+        /// The first instant past `at`.
+        fn past(at: SystemTime) -> SystemTime {
+            loop {
+                let now = SystemTime::now();
+                if now > at {
+                    return now;
+                }
+                std::thread::sleep(TICK);
+            }
+        }
+
         #[test]
         fn birth_time_selection_ignores_a_file_that_predates_the_run() {
             let d = tempfile::tempdir().expect("tempdir");
             let (old, new) = (d.path().join("old.jsonl"), d.path().join("new.jsonl"));
-            std::fs::write(&old, "{}").expect("write");
-            let started = SystemTime::now();
-            std::thread::sleep(Duration::from_millis(1100));
-            std::fs::write(&new, "{}").expect("write");
-            std::thread::sleep(Duration::from_millis(1100));
+            let started = past(born(&old));
+            let new_born = born_past(&new, started);
             let newer = d.path().join("newer.jsonl");
-            std::fs::write(&newer, "{}").expect("write");
+            born_past(&newer, new_born);
             // Listed newest first, returned oldest first.
             let candidates = vec![newer.clone(), old.clone(), new.clone()];
             assert_eq!(
@@ -2613,9 +2647,8 @@ mod recorder {
         fn no_candidate_born_after_the_run_is_nothing_not_a_panic() {
             let d = tempfile::tempdir().expect("tempdir");
             let old = d.path().join("old.jsonl");
-            std::fs::write(&old, "{}").expect("write");
-            std::thread::sleep(Duration::from_millis(1100));
-            assert!(born_after(&[old], SystemTime::now()).is_empty());
+            let started = past(born(&old));
+            assert!(born_after(&[old], started).is_empty());
         }
 
         #[test]
