@@ -211,7 +211,7 @@
     - .github/workflows/ci-lint.yml
   expected: ${{ github.ref == 'refs/heads/main' }}
   why: >-
-    Every ref restores main's rust-cache, and the 10 GB quota evicts by last
+    Every ref restores main's rust-cache, and the cache quota evicts by last
     access (docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching),
     so a step that saves on other refs pushes main's full-tier entries out and
     they rebuild cold, with nothing red.
@@ -222,6 +222,44 @@
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then del(.with["save-if"]) else . end)
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .with["save-if"] = "true" else . end)
     - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .uses = "actions/cache@v5" else . end)
+
+- id: every-rust-cache-step-shares-one-prefix
+  covers: Swatinem/rust-cache@
+  file:
+    - .github/actions/setup-cargo-just/action.yml
+    - .github/workflows/ci-builds.yml
+    - .github/workflows/ci-lint.yml
+  against: .github/actions/setup-cargo-just/action.yml
+  why: >-
+    setup-cargo-just's `prefix-key` names the namespace every Rust job restores
+    from main, so a bump that misses a job's own rust-cache step leaves that job
+    in the old namespace, restoring stale builds, with nothing red.
+  assert: |
+    ($against.runs.steps[] | select((.uses // "") | startswith("Swatinem/rust-cache@")) | .with["prefix-key"]) as $prefix
+    | all((.jobs[]?.steps[]?, .runs.steps[]?) | select((.uses // "") | startswith("Swatinem/rust-cache@")); .with["prefix-key"] == $prefix)
+  break:
+    - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then .with["prefix-key"] += "x" else . end)
+    - (.jobs[]?.steps[]?, .runs.steps[]?) |= (if (.uses // "") | startswith("Swatinem/rust-cache@") then del(.with["prefix-key"]) else . end)
+
+- id: cache-cleanup-prunes-the-rust-cache-prefix
+  file: .github/workflows/cache-cleanup.yml
+  against: .github/actions/setup-cargo-just/action.yml
+  why: >-
+    The prune lists main's rust caches by setup-cargo-just's `prefix-key`
+    (`--key`), so a bump that misses it leaves the step deleting nothing while
+    it still succeeds, and superseded generations fill the cache quota.
+  assert: |
+    ($against.runs.steps[] | select((.uses // "") | startswith("Swatinem/rust-cache@")) | .with["prefix-key"]) as $prefix
+    | [.jobs[].steps[]?.run | strings | select(contains("gh cache list"))] as $prunes
+    | ($prunes | length > 0)
+      and all($prunes[] | [splits("gh cache list")][1:][] | [splits("\\s+")] | .[:(index("|") // length)];
+              indices("--key") as $at | ($at | length) == 1 and .[$at[0] + 1] == $prefix + "-")
+  break:
+    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key (?<k>[^ ]*)"; "--key x\(.k)")
+    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key (?<k>[^ ]*)"; "--key \(.k)-")
+    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("--key (?<k>[^ ]*)"; "--key \(.k) --key \(.k)")
+    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= . + "\ngh cache list --ref refs/heads/main --json id\n"
+    - (.jobs[].steps[]? | select(.run | strings | contains("gh cache list")) | .run) |= sub("gh cache list"; "gh api repos/{owner}/{repo}/actions/caches")
 
 - id: only-main-saves-the-binaryen-tarball
   covers: actions/cache/save@
