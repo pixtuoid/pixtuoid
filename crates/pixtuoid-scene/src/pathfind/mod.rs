@@ -235,11 +235,7 @@ fn a_star(
 /// or a transient diagonal corner-graze — yet still be in a walkable routing
 /// cell, exactly like every agent sprite.
 pub fn point_in_walkable_cell(mask: &WalkableMask, p: Point) -> bool {
-    let Some((cell_w, cell_h)) = grid_dims(mask) else {
-        return false;
-    };
-    cell_holding(grid_origin(mask), p)
-        .is_some_and(|(cx, cy)| cx < cell_w && cy < cell_h && cell_walkable(mask, cx, cy))
+    cell_holding(grid_origin(mask), p).is_some_and(|(cx, cy)| cell_walkable(mask, cx, cy))
 }
 
 /// Snap a pixel-space `Point` into the nearest walkable coarse CELL. `None` when the grid is degenerate or no walkable cell exists

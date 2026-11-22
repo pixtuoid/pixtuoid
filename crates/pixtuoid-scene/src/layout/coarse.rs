@@ -278,7 +278,6 @@ impl CoarseGraph {
         let (w, h) = cell_dims(mask);
         let pieces = Grid::from_fn(w, h, |cx, cy| walk_piece(mask, cx, cy));
         let piece = |c: (u16, u16)| pieces.get_or(c.0, c.1, 0);
-        // An orthogonal step needs the neighbour walkable and `crossable`.
         let orthogonal = |from: (u16, u16), d| {
             offset(from, d).is_some_and(|to| {
                 piece_walkable(piece(to)) && crossable((from, piece(from)), (to, piece(to)))

@@ -14,7 +14,7 @@ use pixtuoid_scene::pathfind::find_path;
 /// A compact and a wide classic office.
 const SIZES: [Size; 2] = [Size { w: 192, h: 160 }, Size { w: 360, h: 240 }];
 /// The office `find_path` routes over: the most desks, so the longest routes.
-const WIDE: Size = SIZES[1];
+const CLASSIC_WIDE: Size = SIZES[1];
 
 fn layout(size: Size) -> Option<SceneLayout> {
     SceneLayout::compute(Viewport::from(size), None, floor_seed(0))
@@ -31,7 +31,7 @@ fn layout_compute(c: &mut Criterion) {
 }
 
 fn find_path_group(c: &mut Criterion) {
-    let l = layout(WIDE).expect("the wide office lays out");
+    let l = layout(CLASSIC_WIDE).expect("the wide office lays out");
     let route = |from: Point, to: Point| find_path(&l.walkable, None, from, to, to);
     let door = l.door_threshold;
     let desks: Vec<Point> = l.home_desks.iter().map(|d| d.at).collect();
@@ -51,7 +51,7 @@ fn find_path_group(c: &mut Criterion) {
         "{farthest:?} routes"
     );
 
-    let Size { w, h } = WIDE;
+    let Size { w, h } = CLASSIC_WIDE;
     let mut group = c.benchmark_group("find_path");
     group.bench_function(format!("door_to_every_desk_{w}x{h}"), |b| {
         b.iter(|| desks.iter().filter_map(|&d| route(door, d)).count());
