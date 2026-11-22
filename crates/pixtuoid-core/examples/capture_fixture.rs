@@ -1052,9 +1052,6 @@ mod recorder {
         }
     }
 
-    /// A per-CLI ask rule (CC's `.claude/settings.json`, opencode's
-    /// `opencode.json`) is what makes a gate fire at all, so it seeds the
-    /// sandbox rather than the user's own config.
     fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
         for entry in std::fs::read_dir(from)? {
             let entry = entry?;
