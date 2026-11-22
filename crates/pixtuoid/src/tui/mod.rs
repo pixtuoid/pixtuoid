@@ -1321,7 +1321,7 @@ mod apply_key_action_tests {
                     Err(tokio::sync::mpsc::error::TryRecvError::Empty)
                         if std::time::Instant::now() < deadline =>
                     {
-                        std::thread::sleep(std::time::Duration::from_millis(5));
+                        std::thread::sleep(crate::panels::noted::POLL);
                     }
                     Err(e) => panic!("nothing landed: {e}"),
                 }
@@ -1712,17 +1712,13 @@ mod apply_key_action_tests {
         ];
         for (save, make) in saves {
             let mut h = Harness::new();
-            let release = crate::panels::noted::stall(&h.config_path);
-            let started = std::time::Instant::now();
+            let stall = crate::panels::noted::stall(&h.config_path);
             make(&mut h);
-            assert!(
-                started.elapsed() < crate::panels::noted::STALL,
-                "the loop waited on a stalled save: {save}"
-            );
+            assert!(stall.holds(), "the loop waited on a stalled save: {save}");
+            stall.release();
             h.settle();
             let footer = h.footer();
             assert!(!footer.contains("not saved"), "{save}: {footer}");
-            release.join().expect("the stall ends");
         }
     }
 

@@ -2363,7 +2363,7 @@ pub(crate) mod noted {
         let fails = loop {
             match std::fs::read_to_string(&gate) {
                 Ok(held) => break held == FAILS,
-                Err(_) => std::thread::sleep(std::time::Duration::from_millis(5)),
+                Err(_) => std::thread::sleep(POLL),
             }
         };
         let done = |id, on| {
@@ -2421,6 +2421,9 @@ pub(crate) mod noted {
     /// Far past a job's or a save's own time on a loaded machine.
     pub(crate) const SETTLES_WITHIN: std::time::Duration = std::time::Duration::from_secs(30);
 
+    /// How often a wait on another thread looks again.
+    pub(crate) const POLL: std::time::Duration = std::time::Duration::from_millis(5);
+
     /// The outcomes of every save `saves` had queued, landed.
     pub(crate) fn saved(
         saves: &super::Saves,
@@ -2435,28 +2438,94 @@ pub(crate) mod noted {
             .collect()
     }
 
-    /// How long [`stall`] holds a read: far past a call that returns at once.
+    /// A stalled disk under a test's config, held until the test releases it.
     #[cfg(unix)]
-    pub(crate) const STALL: std::time::Duration = std::time::Duration::from_secs(2);
+    #[must_use]
+    pub(crate) struct Stall {
+        path: std::path::PathBuf,
+        release: std::sync::mpsc::Sender<()>,
+        guard: std::thread::JoinHandle<()>,
+    }
 
     /// Make `path` a FIFO whose opens for reading wait, as a stalled disk's
-    /// reads do, until the returned thread opens it for writing [`STALL`] from
-    /// now (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html>,
-    /// "When opening a FIFO"); its close then ends their reads empty
-    /// (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html>,
+    /// reads do, until a writer opens it
+    /// (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/open.html>,
+    /// "When opening a FIFO"), and whose writer's close then ends their reads
+    /// empty (<https://pubs.opengroup.org/onlinepubs/9799919799/functions/read.html>,
     /// "an empty pipe or FIFO").
     #[cfg(unix)]
-    pub(crate) fn stall(path: &std::path::Path) -> std::thread::JoinHandle<()> {
+    pub(crate) fn stall(path: &std::path::Path) -> Stall {
         use std::os::unix::ffi::OsStrExt;
         let _ = std::fs::remove_file(path);
         let at = std::ffi::CString::new(path.as_os_str().as_bytes()).expect("no NUL");
         // SAFETY: `at` is a NUL-terminated path the test owns.
         assert_eq!(unsafe { libc::mkfifo(at.as_ptr(), 0o600) }, 0, "mkfifo");
-        let path = path.to_path_buf();
-        std::thread::spawn(move || {
-            std::thread::sleep(STALL);
-            drop(std::fs::OpenOptions::new().write(true).open(&path));
-        })
+        let (release, released) = std::sync::mpsc::channel();
+        let held = path.to_path_buf();
+        let guard = std::thread::spawn(move || {
+            // Unreleased, the disk answers anyway, so a loop that waited on it
+            // returns to fail its test instead of hanging it.
+            let _ = released.recv_timeout(SETTLES_WITHIN);
+            end_reads(&held);
+        });
+        Stall {
+            path: path.to_path_buf(),
+            release,
+            guard,
+        }
+    }
+
+    #[cfg(unix)]
+    impl Stall {
+        /// Whether the disk still holds: nothing has replaced the FIFO, as a
+        /// save it let through would.
+        pub(crate) fn holds(&self) -> bool {
+            use std::os::unix::fs::FileTypeExt;
+            std::fs::symlink_metadata(&self.path).is_ok_and(|m| m.file_type().is_fifo())
+        }
+
+        /// Let the disk answer, returning once the save it held has replaced
+        /// the FIFO.
+        pub(crate) fn release(self) {
+            let _ = self.release.send(());
+            self.guard.join().expect("the stall ends");
+        }
+    }
+
+    /// Once a quit's [`join_off_loop_threads`](super::join_off_loop_threads)
+    /// has taken every thread queued for it, the caller having queued one.
+    #[cfg(unix)]
+    pub(crate) fn until_joining() {
+        let deadline = std::time::Instant::now() + SETTLES_WITHIN;
+        while !super::off_loop_threads().is_empty() {
+            assert!(std::time::Instant::now() < deadline, "no join took them");
+            std::thread::sleep(POLL);
+        }
+    }
+
+    /// End the reads a [`stall`] holds by opening its FIFO for writing and
+    /// closing it, again until a save has replaced it: macOS can lose that EOF
+    /// for a read whose open the writer woke, leaving it blocked for good
+    /// (seen with a plain C reader and writer, and undocumented), and a later
+    /// writer's close still ends it.
+    #[cfg(unix)]
+    fn end_reads(fifo: &std::path::Path) {
+        use std::os::unix::fs::{FileTypeExt, OpenOptionsExt};
+        let deadline = std::time::Instant::now() + SETTLES_WITHIN;
+        while std::time::Instant::now() < deadline {
+            let writer = std::fs::OpenOptions::new()
+                .write(true)
+                .custom_flags(libc::O_NONBLOCK)
+                .open(fifo);
+            match writer {
+                // Dropped at once: its close is the EOF.
+                Ok(file) if file.metadata().is_ok_and(|m| m.file_type().is_fifo()) => {}
+                Ok(_) => return,
+                // ENXIO: no read waits on it yet.
+                Err(_) => {}
+            }
+            std::thread::sleep(POLL);
+        }
     }
 }
 
@@ -2469,28 +2538,26 @@ mod saves_tests {
     /// teardown neither loses its last saves nor hangs on them.
     #[test]
     fn a_flush_waits_for_the_queue_up_to_its_bound() {
+        /// Any bound: the stall holds the save until its release.
+        const BOUND: std::time::Duration = std::time::Duration::from_millis(50);
         let tmp = tempfile::tempdir().expect("tempdir");
         let path = tmp.path().join("config.toml");
         let landing = tokio::sync::mpsc::unbounded_channel().0;
         let saves = Saves::spawn(path.clone(), landing).expect("a save thread");
-        let release = noted::stall(&path);
+        let stall = noted::stall(&path);
         saves.save(|path| {
             let _ = crate::config::save_audio_muted(path, true);
             None
         });
-        let started = std::time::Instant::now();
-        assert!(!saves.flush(noted::STALL / 4), "a stalled save outlasts it");
-        assert!(
-            started.elapsed() < noted::STALL,
-            "the flush went on at its bound"
-        );
+        assert!(!saves.flush(BOUND), "a stalled save outlasts it");
+        assert!(stall.holds(), "the flush went on at its bound");
+        stall.release();
         assert!(
             saves.flush(noted::SETTLES_WITHIN),
             "the save is written once the disk answers"
         );
         let saved = std::fs::read_to_string(&path).expect("the config");
         assert!(saved.contains("muted = true"), "{saved:?}");
-        release.join().expect("the stall ends");
     }
 }
 
