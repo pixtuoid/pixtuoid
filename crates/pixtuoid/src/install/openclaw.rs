@@ -20,6 +20,7 @@ use crate::install::merge::{emit_json, parse_json_or_empty, prune_empty, prune_e
 use crate::install::target::MergeOutcome;
 
 const PLUGIN_ID: &str = "pixtuoid";
+const PLUGIN_NAME: &str = "Pixtuoid";
 
 const STATE_DIR: &str = ".openclaw";
 const CONFIG_FILE: &str = "openclaw.json";
@@ -43,24 +44,6 @@ pub(crate) const OPENCLAW_EVENTS: &[&str] = &[
 /// The hooks the plugin registers only to stamp `agent_end`'s verdict.
 #[cfg(test)]
 pub(crate) const OPENCLAW_VERDICT_EVENTS: &[&str] = &["model_call_ended"];
-
-const MANIFEST: &str = r#"{
-  "id": "pixtuoid",
-  "name": "Pixtuoid",
-  "description": "Forwards OpenClaw gateway daemon-presence signals to pixtuoid.",
-  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} },
-  "activation": { "onStartup": true }
-}
-"#;
-
-const PACKAGE: &str = r#"{
-  "name": "pixtuoid",
-  "version": "0.0.0",
-  "type": "module",
-  "private": true,
-  "openclaw": { "extensions": ["./index.js"], "runtimeExtensions": ["./index.js"] }
-}
-"#;
 
 /// OpenClaw's state dir (holds `openclaw.json` + `plugins/`), mirroring its own
 /// `resolveStateDir` (openclaw `src/config/state-dir.ts` @ v2026.11.2): the
@@ -157,10 +140,26 @@ pub(crate) fn hook_command(resolved: &Path, _explicit: bool) -> Result<String> {
 
 pub(crate) fn plugin_artifacts(hook_path: &str) -> Result<Vec<(PathBuf, String)>> {
     let dir = plugin_dir()?;
+    let manifest = json!({
+        "id": PLUGIN_ID,
+        "name": PLUGIN_NAME,
+        "description": "Forwards OpenClaw gateway daemon-presence signals to pixtuoid.",
+        "configSchema": { "type": "object", "additionalProperties": false, "properties": {} },
+        "activation": { "onStartup": true },
+    });
+    let package = json!({
+        "name": PLUGIN_ID,
+        "version": "0.0.0",
+        "type": "module",
+        "private": true,
+        "openclaw": { "extensions": ["./index.js"], "runtimeExtensions": ["./index.js"] },
+    });
+    let pretty =
+        |v: &Value| -> Result<String> { Ok(format!("{}\n", serde_json::to_string_pretty(v)?)) };
     Ok(vec![
         (dir.join("index.js"), render_plugin(hook_path)?),
-        (dir.join("openclaw.plugin.json"), MANIFEST.to_string()),
-        (dir.join("package.json"), PACKAGE.to_string()),
+        (dir.join("openclaw.plugin.json"), pretty(&manifest)?),
+        (dir.join("package.json"), pretty(&package)?),
     ])
 }
 
@@ -659,15 +658,21 @@ mod tests {
         });
     }
 
-    /// pixtuoid's own tagline is the workspace `Cargo.toml` `description`; a copy here
-    /// drifts from it.
+    /// The entry module's `id` and `name` stay literals, since its selftest runs the
+    /// template as is, so this pins them to the manifest's source.
     #[test]
-    fn the_manifest_says_only_what_the_plugin_does() {
-        let manifest: Value = serde_json::from_str(MANIFEST).unwrap();
-        assert_eq!(
-            manifest["description"],
-            json!("Forwards OpenClaw gateway daemon-presence signals to pixtuoid.")
-        );
+    fn the_entry_module_names_the_plugin_as_the_manifest_does() {
+        let (_, export) = PLUGIN_TEMPLATE.split_once("export default {").unwrap();
+        let field = |key: &str| {
+            let prefix = format!("{key}: ");
+            let value = export
+                .lines()
+                .find_map(|l| l.trim_start().strip_prefix(prefix.as_str()))
+                .unwrap();
+            serde_json::from_str::<String>(value.strip_suffix(',').unwrap()).unwrap()
+        };
+        assert_eq!(field("id"), PLUGIN_ID);
+        assert_eq!(field("name"), PLUGIN_NAME);
     }
 
     #[test]
