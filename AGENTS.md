@@ -244,10 +244,10 @@ Repo skills (committed): `beautify-decoration`, `add-source`.
 - **panels**: what both painters' panels share (their key dispatch and mouse
   ladder).
 
-Terminal cell aspect drives sprite design. The half-block ▀ technique assumes
-~1:2 cells, so sprites past ~16×16 px break on taller-cell terminals. Bundled
-base character sprites max at 8×12 px; their `@Nx` variants are cutaway art the
-half-block painter never draws.
+Terminal cell aspect drives sprite design: the half-block ▀ technique assumes
+~1:2 cells. Bundled base character poses fit `layout::CHARACTER_SPRITE_W` ×
+`CHARACTER_SPRITE_H` (`every_character_pose_fits_the_half_block_sprite` holds
+it); their `@Nx` variants are cutaway art the half-block painter never draws.
 
 ## Things not to do
 
