@@ -374,12 +374,12 @@ fn path_cache_is_bounded_and_still_routes_after_the_clear() {
 fn snap_to_walkable_returns_cell_when_already_walkable() {
     let l = make_layout();
     let corridor = l.corridor;
-    let (cell_w, cell_h) = cell_dims(l.walkable.routed());
+    let (cell_w, cell_h) = cell_dims(&l.walkable);
     let centre = Point {
         x: corridor.x + corridor.width / 2,
         y: corridor.y + corridor.height / 2,
     };
-    let cell = crate::layout::cell_holding(grid_origin(l.walkable.routed()), centre)
+    let cell = crate::layout::cell_holding(grid_origin(&l.walkable), centre)
         .expect("the corridor is on the grid");
     let result = snap(&l.walkable, cell, cell_w, cell_h, MAX_SNAP_RADIUS);
     assert_eq!(result, Some(cell));
@@ -388,8 +388,8 @@ fn snap_to_walkable_returns_cell_when_already_walkable() {
 #[test]
 fn snap_to_walkable_finds_nearby_cell_when_blocked() {
     let l = make_layout();
-    let (cell_w, cell_h) = cell_dims(l.walkable.routed());
-    let origin = grid_origin(l.walkable.routed());
+    let (cell_w, cell_h) = cell_dims(&l.walkable);
+    let origin = grid_origin(&l.walkable);
     // The wall band's last row, which nothing walks.
     let band_foot = Point {
         x: origin.x,
@@ -444,7 +444,7 @@ fn offset_field() -> WalkableMask {
 #[test]
 fn cell_holding_maps_pixel_to_cell() {
     use crate::layout::cell_holding;
-    let origin = grid_origin(offset_field().routed());
+    let origin = grid_origin(&offset_field());
     let at = |dx, dy| Point {
         x: origin.x + dx,
         y: origin.y + dy,
@@ -467,13 +467,13 @@ fn cell_holding_maps_pixel_to_cell() {
 #[test]
 fn cell_center_is_midpoint_of_cell() {
     let field = offset_field();
-    let origin = grid_origin(field.routed());
+    let origin = grid_origin(&field);
     let at = |dx, dy| Point {
         x: origin.x + dx,
         y: origin.y + dy,
     };
-    assert_eq!(cell_center(field.routed(), 0, 0), at(2, 2));
-    assert_eq!(cell_center(field.routed(), 3, 5), at(14, 22));
+    assert_eq!(cell_center(&field, 0, 0), at(2, 2));
+    assert_eq!(cell_center(&field, 3, 5), at(14, 22));
 }
 
 #[test]
@@ -488,7 +488,7 @@ fn cell_in_zone_false_when_none() {
 #[test]
 fn cell_in_zone_false_on_exclusive_edges() {
     let field = offset_field();
-    let right_edge = cell_center(field.routed(), 2, 1).x;
+    let right_edge = cell_center(&field, 2, 1).x;
     let zone_x = Bounds {
         x: 0,
         y: 0,
@@ -497,7 +497,7 @@ fn cell_in_zone_false_on_exclusive_edges() {
     };
     assert!(!cell_in_zone(&field, Some(zone_x), 2, 1));
 
-    let bottom_edge = cell_center(field.routed(), 1, 2).y;
+    let bottom_edge = cell_center(&field, 1, 2).y;
     let zone_y = Bounds {
         x: 0,
         y: 0,
@@ -514,7 +514,7 @@ fn cell_in_zone_false_on_exclusive_edges() {
 #[test]
 fn cell_in_zone_false_when_outside_on_one_axis_only() {
     let field = offset_field();
-    let inside = cell_center(field.routed(), 1, 1);
+    let inside = cell_center(&field, 1, 1);
     let zone = Bounds {
         x: 0,
         y: 0,
@@ -532,7 +532,7 @@ fn cell_in_zone_false_when_outside_on_one_axis_only() {
 #[test]
 fn cell_in_zone_true_on_inclusive_lower_edges() {
     let field = offset_field();
-    let near = cell_center(field.routed(), 1, 1);
+    let near = cell_center(&field, 1, 1);
     let zone = Bounds {
         x: near.x,
         y: near.y,
@@ -677,7 +677,7 @@ fn snap_lands_on_an_open_pixel_when_the_cell_centre_itself_is_blocked() {
     // 16 px open, so the cell it snaps to can have a BLOCKED centre.
     let field = || WalkableMaskBuilder::new_open(64, 64);
     let cell = (4u16, 4u16);
-    let centre = cell_center(field().freeze().routed(), cell.0, cell.1);
+    let centre = cell_center(&field().freeze(), cell.0, cell.1);
     // 2x2 leaves 12 of the cell's 16 px open — walkable to the coarse grid, centre blocked.
     let mut mask = field();
     mask.mark_blocked(centre.x, centre.y, 2, 2, 0);
@@ -703,7 +703,7 @@ fn snap_lands_on_an_open_pixel_when_the_cell_centre_itself_is_blocked() {
 fn a_route_turns_on_the_open_pixel_nearest_a_blocked_centre() {
     let field = || WalkableMaskBuilder::new_open(64, 64);
     let cell = (4u16, 4u16);
-    let centre = cell_center(field().freeze().routed(), cell.0, cell.1);
+    let centre = cell_center(&field().freeze(), cell.0, cell.1);
     // The cell's south half: still walkable to the coarse grid, centre inside.
     let south_half_blocked = |centre_open: bool| {
         let mut mask = field();

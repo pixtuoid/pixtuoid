@@ -126,14 +126,13 @@ fn cell_in_zone(mask: &WalkableMask, zone: Option<Bounds>, cx: u16, cy: u16) -> 
     let Some(z) = zone else {
         return false;
     };
-    let cp = cell_center(mask.routed(), cx, cy);
-    cp.x >= z.x && cp.x < z.x + z.width && cp.y >= z.y && cp.y < z.y + z.height
+    z.contains(cell_center(mask, cx, cy))
 }
 
 /// Coarse-grid dimensions, or `None` when either axis is 0 — a degenerate grid
 /// the A* loop can't index.
 fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
-    let (cell_w, cell_h) = cell_dims(mask.routed());
+    let (cell_w, cell_h) = cell_dims(mask);
     if cell_w == 0 || cell_h == 0 {
         return None;
     }
@@ -155,15 +154,7 @@ pub fn find_path(
     let Some((cell_w, cell_h)) = grid_dims(mask) else {
         return Some(vec![from, to]);
     };
-    let cell_near = |p: Point| {
-        snap(
-            mask,
-            snap_cell(mask.routed(), p),
-            cell_w,
-            cell_h,
-            MAX_SNAP_RADIUS,
-        )
-    };
+    let cell_near = |p: Point| snap(mask, snap_cell(mask, p), cell_w, cell_h, MAX_SNAP_RADIUS);
     let start = cell_near(from)?;
     let search = |goal| Some((goal, a_star(mask, preferred, start, goal)?));
     // `aim`'s cell stands in for `to`'s own only where A* reaches it and the last step,
@@ -192,7 +183,7 @@ fn a_star(
     const PREFERRED_ZONE_COST_NUM: u32 = 7;
     const PREFERRED_ZONE_COST_DEN: u32 = 10;
 
-    let (cell_w, cell_h) = cell_dims(mask.routed());
+    let (cell_w, cell_h) = cell_dims(mask);
     let mut open: BinaryHeap<Node> = BinaryHeap::new();
     // indexed by cell: a cell's lookups run on every expansion
     let mut came_from: Grid<Option<(u16, u16)>> = Grid::filled(cell_w, cell_h, None);
@@ -243,7 +234,7 @@ fn a_star(
 /// or a transient diagonal corner-graze — yet still be in a walkable routing
 /// cell, exactly like every agent sprite.
 pub fn point_in_walkable_cell(mask: &WalkableMask, p: Point) -> bool {
-    cell_holding(grid_origin(mask.routed()), p).is_some_and(|(cx, cy)| cell_walkable(mask, cx, cy))
+    cell_holding(grid_origin(mask), p).is_some_and(|(cx, cy)| cell_walkable(mask, cx, cy))
 }
 
 /// Snap a pixel-space `Point` into the nearest walkable coarse CELL. `None` when the grid is degenerate or no walkable cell exists
@@ -262,7 +253,7 @@ pub(crate) fn snap_point_where(
 ) -> Option<Point> {
     let (cell_w, cell_h) = grid_dims(mask)?;
     let (cx, cy) = snap_where(
-        snap_cell(mask.routed(), p),
+        snap_cell(mask, p),
         cell_w,
         cell_h,
         MAX_SNAP_RADIUS,

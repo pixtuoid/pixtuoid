@@ -6,7 +6,7 @@
 
 use super::{Bounds, Point};
 use crate::grid::Grid;
-use crate::walkable::WalkableMask;
+use crate::walkable::{WalkableMask, is_open};
 
 /// Coarse-cell edge in px. Smaller = more accurate paths, more work per query.
 /// `pathfind::CELL_SIZE` re-exports this value.
@@ -31,20 +31,16 @@ pub(crate) fn routed_area(inner: Bounds, top_margin: u16) -> Bounds {
     }
 }
 
-/// The coarse grid's size in cells: the whole cells across `routed`.
-pub(crate) fn cell_dims(routed: Bounds) -> (u16, u16) {
-    (
-        routed.width / COARSE_CELL_SIZE,
-        routed.height / COARSE_CELL_SIZE,
-    )
+/// The coarse grid's size in cells: the whole cells across `mask`'s routed area.
+pub(crate) fn cell_dims(mask: &WalkableMask) -> (u16, u16) {
+    let cells = &mask.coarse().cells;
+    (cells.width(), cells.height())
 }
 
-/// The pixel a coarse grid over `routed` tiles from: its north-west corner.
-pub(crate) fn grid_origin(routed: Bounds) -> Point {
-    Point {
-        x: routed.x,
-        y: routed.y,
-    }
+/// The pixel `mask`'s coarse grid tiles from: its routed area's north-west
+/// corner.
+pub(crate) fn grid_origin(mask: &WalkableMask) -> Point {
+    cell_corner(mask.routed(), 0, 0)
 }
 
 /// The coarse cell holding pixel `p` on a grid tiled from `origin`, or `None`
@@ -56,12 +52,12 @@ pub(crate) fn cell_holding(origin: Point, p: Point) -> Option<(u16, u16)> {
     ))
 }
 
-/// The cell of the coarse grid over `routed` a snap toward pixel `p` starts from: the
+/// The cell of `mask`'s coarse grid a snap toward pixel `p` starts from: the
 /// one [`cell_holding`] it, its column or row clamped onto the grid's west or
 /// north edge, and past its east or south edge an index off the grid, which
 /// [`snap_where`] searches back from.
-pub(crate) fn snap_cell(routed: Bounds, p: Point) -> (u16, u16) {
-    let origin = grid_origin(routed);
+pub(crate) fn snap_cell(mask: &WalkableMask, p: Point) -> (u16, u16) {
+    let origin = grid_origin(mask);
     let onto = Point {
         x: p.x.max(origin.x),
         y: p.y.max(origin.y),
@@ -72,16 +68,15 @@ pub(crate) fn snap_cell(routed: Bounds, p: Point) -> (u16, u16) {
 
 /// The north-west pixel of coarse cell `(cx, cy)` over `routed`.
 fn cell_corner(routed: Bounds, cx: u16, cy: u16) -> Point {
-    let origin = grid_origin(routed);
     Point {
-        x: origin.x + cx * COARSE_CELL_SIZE,
-        y: origin.y + cy * COARSE_CELL_SIZE,
+        x: routed.x + cx * COARSE_CELL_SIZE,
+        y: routed.y + cy * COARSE_CELL_SIZE,
     }
 }
 
-/// The centre pixel of coarse cell `(cx, cy)` over `routed`.
-pub(crate) fn cell_center(routed: Bounds, cx: u16, cy: u16) -> Point {
-    let corner = cell_corner(routed, cx, cy);
+/// The centre pixel of `mask`'s coarse cell `(cx, cy)`.
+pub(crate) fn cell_center(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
+    let corner = cell_corner(mask.routed(), cx, cy);
     Point {
         x: corner.x + COARSE_CELL_SIZE / 2,
         y: corner.y + COARSE_CELL_SIZE / 2,
@@ -93,10 +88,9 @@ pub(crate) fn cell_center(routed: Bounds, cx: u16, cy: u16) -> Point {
 /// walkable at half open, so the half holding its centre can be a wall's, and a
 /// walker turning on the centre would stand in it.
 pub(crate) fn cell_anchor(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
-    let routed = mask.routed();
-    let centre = cell_center(routed, cx, cy);
+    let centre = cell_center(mask, cx, cy);
     let piece = mask.coarse().cell((cx, cy)).piece;
-    cell_pixels(routed, cx, cy)
+    cell_pixels(mask.routed(), cx, cy)
         .filter(|&(bit, _)| piece & bit != 0)
         .map(|(_, p)| p)
         .min_by_key(|p| (p.x.abs_diff(centre.x) + p.y.abs_diff(centre.y), p.y, p.x))
@@ -146,7 +140,7 @@ const EAST_COLUMN: CellBits = WEST_COLUMN << (COARSE_CELL_SIZE - 1);
 /// and a walker crossing between them cuts that corner.
 fn walk_piece(open: &Grid<bool>, routed: Bounds, cx: u16, cy: u16) -> CellBits {
     let open_bits = cell_pixels(routed, cx, cy)
-        .filter(|&(_, p)| open.get_or(p.x, p.y, false))
+        .filter(|&(_, p)| is_open(open, p.x, p.y))
         .fold(0, |bits, (bit, _)| bits | bit);
     let mut unseen = open_bits;
     let mut largest: CellBits = 0;
@@ -275,7 +269,10 @@ pub(crate) struct CoarseGraph {
 impl CoarseGraph {
     /// The graph over the open pixels of the coarse grid tiled across `routed`.
     pub(crate) fn new(open: &Grid<bool>, routed: Bounds) -> Self {
-        let (w, h) = cell_dims(routed);
+        let (w, h) = (
+            routed.width / COARSE_CELL_SIZE,
+            routed.height / COARSE_CELL_SIZE,
+        );
         let pieces = Grid::from_fn(w, h, |cx, cy| walk_piece(open, routed, cx, cy));
         let piece = |c: (u16, u16)| pieces.get_or(c.0, c.1, 0);
         let orthogonal = |from: (u16, u16), d| {

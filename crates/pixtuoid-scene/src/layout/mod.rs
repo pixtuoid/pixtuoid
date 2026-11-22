@@ -618,8 +618,6 @@ impl SceneLayout {
     /// GROUND rule (invariant #6), so the cell in front of a desk is legitimately
     /// walkable AND legitimately covered — fine to walk THROUGH, wrong to park in.
     pub(crate) fn is_visually_clear(&self, p: Point) -> bool {
-        let inside =
-            |b: Bounds| p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
         !self.fixtures().any(|f| {
             let covers = match f.kind {
                 FixtureKind::Desk(_)
@@ -659,7 +657,7 @@ impl SceneLayout {
                 | FixtureKind::WaterCooler
                 | FixtureKind::TrashBin => false,
             };
-            covers && inside(f.visual)
+            covers && f.visual.contains(p)
         })
     }
 

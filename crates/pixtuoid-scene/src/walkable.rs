@@ -117,12 +117,17 @@ impl WalkableMask {
         self.open.height()
     }
 
-    /// O(1) walkability lookup. Out-of-bounds queries return `false` so
-    /// routers can probe near the edges without bounds checks.
     #[inline]
     pub(crate) fn is_walkable(&self, x: u16, y: u16) -> bool {
-        self.open.get_or(x, y, false)
+        is_open(&self.open, x, y)
     }
+}
+
+/// O(1) walkability lookup. Out-of-bounds queries return `false` so
+/// routers can probe near the edges without bounds checks.
+#[inline]
+pub(crate) fn is_open(open: &Grid<bool>, x: u16, y: u16) -> bool {
+    open.get_or(x, y, false)
 }
 
 #[cfg(test)]
