@@ -697,7 +697,7 @@ fn long_dwell_never_trips_stale_resume_on_screen() {
 
 use crate::pose::jitter_aim;
 
-/// A trip agent whose [`crate::pose::JITTER_MAX_PX`] goal jitter is nonzero, so the lockstep
+/// A trip agent whose [`jitter_aim`] goal jitter is nonzero, so the lockstep
 /// assertions below have teeth.
 fn jittering_trip_agent(prefix: &str) -> AgentId {
     let probe = Point { x: 50, y: 50 };
