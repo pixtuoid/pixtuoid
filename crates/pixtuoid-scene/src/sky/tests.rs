@@ -464,7 +464,6 @@ fn solar_noon_outshines_the_brightest_night() {
 }
 
 /// `y-mo-d h:mi` UTC.
-#[expect(clippy::disallowed_methods, reason = "UTC, not the viewer's zone")]
 fn utc(y: i32, mo: u32, d: u32, h: u32, mi: u32) -> SystemTime {
     let dt = jiff::civil::Date::new(
         i16::try_from(y).expect("a year"),

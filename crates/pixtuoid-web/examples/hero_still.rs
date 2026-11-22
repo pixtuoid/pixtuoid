@@ -62,7 +62,6 @@ fn arg<T: std::str::FromStr>(args: &[String], name: &str) -> Option<T> {
 /// `hour` (0-23) → epoch millis on the fixed reference date, at `:00:00` UTC.
 /// The office's sky decodes `t0_ms` via `TimeZone::system()`, so this only lands on
 /// the same hour because the gen pipeline pins the process to `TZ=UTC`.
-#[expect(clippy::disallowed_methods, reason = "UTC, not the viewer's zone")]
 fn hour_to_t0_ms(hour: u32) -> Option<f64> {
     let (y, m, d) = T0_REFERENCE_YMD;
     let dt = jiff::civil::Date::new(
