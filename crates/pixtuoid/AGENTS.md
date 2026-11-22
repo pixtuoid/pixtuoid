@@ -3,7 +3,7 @@
 The **binary**: it wires sources → reducer → renderer and owns the CLI
 subcommands, hook installation, config persistence and multi-floor
 orchestration. Module map: `ls src/`; each file's `//!` header annotates it.
-Cross-cutting rules: the root [`AGENTS.md`](../../AGENTS.md).
+Cross-cutting rules: the workspace [`AGENTS.md`](../../AGENTS.md).
 
 ## The painters
 

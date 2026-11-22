@@ -5,7 +5,7 @@ pose/walk/pathfinding, the frame entry every painter calls (`look::render`),
 the color-theme model, pets, chitchat, the frame cache, the sprite format and
 bundled pack, and the grid/walkable mask. The three painters (`tui`,
 `floating`, `pixtuoid-web`) sit on top. Module map: `ls src/`; each file's
-`//!` header annotates it. Cross-cutting rules: the root
+`//!` header annotates it. Cross-cutting rules: the workspace
 [`AGENTS.md`](../../AGENTS.md).
 
 ## Screen-space compass
@@ -156,22 +156,10 @@ The rules the bundled pack (`sprites/default/`) is drawn to.
 - Every window looks out on one city: the pack's buildings standing in front
   of plain blocks on the horizon.
 
-## Drawing sprites
-
-- Chibi figures and pets stay round, the head flowing into the body.
-- A bundled character pose's base art fits within `layout::CHARACTER_SPRITE_W`
-  × `CHARACTER_SPRITE_H` (`every_character_pose_fits_the_half_block_sprite`):
-  the half-block painter assumes cells about 1:2, so a taller pose breaks on
-  terminals whose cells are taller. Its `@Nx` variants are cutaway art the
-  half-block painter never draws.
-- Check a sprite change by eye: render a snapshot, crop it and read the PNG,
-  by the loop in the
-  [beautify-decoration skill](../../.claude/skills/beautify-decoration/SKILL.md).
-
 ## When refactoring
 
 - A change to `derive_with_routing`, `WalkState` or a pixel pass
   (`pixel_painter`, `cutaway/paint.rs`) adds or updates a frame-by-frame
   continuity guard: `walk/tests.rs`, `pose/tests.rs`, or the binary's
-  `tui/tui_renderer/harness`. Each past
-  flash, teleport and replay regression came back as a failing guard first.
+  `tui/tui_renderer/harness`. Each past flash, teleport and replay regression
+  came back as a failing guard first.

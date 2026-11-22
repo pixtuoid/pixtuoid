@@ -5,7 +5,7 @@ TypeScript/Node project, not Rust, and a thin presenter over the
 `pixtuoid … --json` CLI contract. Its two commands, `package.json`'s
 `commands`, are Manage Sources (connect/disconnect over
 `pixtuoid sources|connect|disconnect --json`) and Start Floating Window.
-Cross-cutting rules: the root [`AGENTS.md`](../AGENTS.md). This guide sits
+Cross-cutting rules: the workspace [`AGENTS.md`](../AGENTS.md). This guide sits
 here, not in `raycast/`, because the Store review rejects an extension folder
 that ships an `AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
 [`.greptile/config.json`](https://github.com/raycast/extensions/blob/main/.greptile/config.json)).
@@ -33,8 +33,9 @@ that ships an `AGENTS.md` (`no-agent-scaffolding` in raycast/extensions'
 3. `raycast/src/pixtuoid.ts` re-exports the generated types.
 
 - Never hand-edit `contract.ts` or `contract-outcome.ts`; eslint and Prettier
-  ignore them. The root guide's [Build & test](../AGENTS.md#build--test) says
-  when to regenerate them; commit every file the regeneration rewrites.
+  ignore them. The workspace `AGENTS.md`'s
+  [Build & test](../AGENTS.md#build--test) says when to regenerate them;
+  commit every file the regeneration rewrites.
 - A producer shape change can't drift by hand, because three gates catch it:
   - the struct↔schema golden tests, `*_schema_matches_the_committed_contract`
     (`just test`);

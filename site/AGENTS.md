@@ -3,7 +3,7 @@
 The **landing page**: a self-contained Astro static site, not Rust, deployed
 to GitHub Pages. It consumes the Rust workspace's outputs: the version, the
 rendered docs and the demo media all come from outside `site/`.
-Cross-cutting rules: the root [`AGENTS.md`](../AGENTS.md). Read these two
+Cross-cutting rules: the workspace [`AGENTS.md`](../AGENTS.md). Read these two
 before changing the site:
 
 - [`README.md`](README.md): developing, the dev server, the demo art and the

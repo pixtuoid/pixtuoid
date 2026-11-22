@@ -7,7 +7,7 @@ are `crate::panels`, which the window shares. Every N/S claim here rests on
 the scene guide's
 [screen-space compass](../../../pixtuoid-scene/AGENTS.md#screen-space-compass).
 Module map: `ls` this directory; each file's `//!` header annotates it.
-Cross-cutting rules: the root [`AGENTS.md`](../../../../AGENTS.md).
+Cross-cutting rules: the workspace [`AGENTS.md`](../../../../AGENTS.md).
 
 ## When refactoring
 
