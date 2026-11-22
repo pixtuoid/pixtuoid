@@ -132,6 +132,7 @@ tracing-subscriber = { workspace = true }
 signal-hook = { workspace = true }
 
 # Without this `cargo test` only builds an example, so its `#[test]`s never run
+# (https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-test-field)
 # — the same wiring `pixtuoid`'s `snapshot` example already carries.
 [[example]]
 name = "capture_fixture"

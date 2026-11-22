@@ -1052,7 +1052,6 @@ mod recorder {
         }
     }
 
-    /// Copies `from`'s tree into `to`.
     fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
         for entry in std::fs::read_dir(from)? {
             let entry = entry?;

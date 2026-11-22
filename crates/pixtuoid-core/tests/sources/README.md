@@ -200,8 +200,7 @@ semantics, not recording logic:
 - `pipefail` swallowing a lister's exit 3 after the turn was billed;
 - `head -1` taking SIGPIPE once a corpus passed ~700 files (the same failure,
   in the same place, found later);
-- `stat -f %B`, BSD stat's birth time, which GNU stat reads as
-  `--file-system`
+- `stat -f %B`, which GNU stat reads as `--file-system`
   ([GNU stat](https://www.gnu.org/software/coreutils/manual/html_node/stat-invocation.html));
 - three world-writable temp paths.
 
@@ -209,10 +208,10 @@ None of them could fail in a selftest small enough to run in CI, which is the
 argument, not the count. In Rust they are absent by construction: no arrays,
 no pipelines,
 [`Metadata::created()`](https://doc.rust-lang.org/std/fs/struct.Metadata.html#method.created)
-for birth time, and `TempDir` in place of fixed temp paths. And the decisions are ordinary `#[test]`s that `just test`
-already runs, not a bespoke `--selftest` wired into two gates.
+for birth time, and a fresh 0700 sandbox (`HeldDir::capture_sandbox`) with
+`TempDir` scratch in place of fixed temp paths. And the decisions are ordinary
+`#[test]`s that `just test` already runs, not a bespoke `--selftest` wired into
+two gates.
 
-That holds only because `Cargo.toml` declares `[[example]] test = true`.
-Without it `cargo test` only builds the example, so its `#[test]`s never run
-([Cargo: the `test` field](https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-test-field)),
-which is how they first shipped.
+That holds only because `Cargo.toml` declares `[[example]] test = true`,
+whose comment says why; the tests first shipped without it.
