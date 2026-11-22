@@ -772,6 +772,28 @@ mod tests {
         }
     }
 
+    /// SECURITY.md names the CLIs pixtuoid installs as a plugin, in whose own
+    /// config connect and disconnect sweep every hook running the shim, as text
+    /// no build reaches.
+    #[test]
+    fn the_security_policy_names_each_plugin_cli() {
+        let policy = crate::test_io::repo_prose("SECURITY.md");
+        let section = crate::test_io::doc_section(&policy, "Hook installation");
+        for t in TARGETS {
+            let name = t.display_name();
+            assert_eq!(
+                section.contains(name),
+                t.host().is_some(),
+                "SECURITY.md's Hook installation must name {name} exactly when it is a plugin CLI"
+            );
+            assert!(
+                t.host().is_none_or(|h| h.shim_hooks.is_some()),
+                "{name} is a plugin CLI whose config connect and disconnect don't sweep, \
+                 which SECURITY.md says they do"
+            );
+        }
+    }
+
     // Transcript-bearing sources may legitimately have no target, so the rule is
     // derived from `line_decoder().is_none()` — no exemption list to drift.
     #[test]

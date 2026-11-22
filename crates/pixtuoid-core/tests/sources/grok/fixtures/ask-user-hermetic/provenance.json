@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "grok",
-  "version": "grok 1.0.77 (50ca579fa996)",
-  "captured": "2026-11-06",
+  "version": "grok 1.0.92 (b06756fd6256)",
+  "captured": "2026-11-21",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 117
+    "blanked": 122
   },
-  "aimock": "1.47.0",
+  "aimock": "1.48.0",
   "script": "tests/sources/grok/hermetic/ask-user.json",
   "dropped": {
     "os": "macos",

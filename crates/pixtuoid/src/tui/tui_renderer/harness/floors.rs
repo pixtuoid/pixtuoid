@@ -39,9 +39,10 @@ fn offscreen_floor_freezes_and_resyncs_on_return() {
         .map(|walk| walk.wander().last_advanced_at())
         .expect("floor-0 walks present");
 
-    // ~30 s on floor 1.
-    for _ in 0..900 {
-        now += PAINT_FRAME;
+    // ~30 s on floor 1, a render a second: any render that moved floor 0
+    // would move its last advance.
+    for _ in 0..30 {
+        now += PAINT_FRAME * pixtuoid_scene::anim::PAINT_FPS;
         r.render(&scene, now).expect("render");
     }
     let still_frozen = r

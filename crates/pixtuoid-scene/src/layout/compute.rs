@@ -1337,7 +1337,7 @@ impl FloorVariant {
     /// variants, which `floor_variant_hash_gives_unique_layouts_per_floor` pins.
     const HASH_MULT: u64 = 0x4737_8190_96da_1dad;
 
-    fn from_seed(floor_seed: u64) -> Self {
+    pub(super) fn from_seed(floor_seed: u64) -> Self {
         Self::ALL[(floor_seed.wrapping_mul(Self::HASH_MULT) % Self::COUNT) as usize]
     }
 
