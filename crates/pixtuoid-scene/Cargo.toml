@@ -75,7 +75,7 @@ proc-macro2 = { workspace = true }
 toml       = { workspace = true }
 # The tests' manifest edits (`pack::density_art`, `test_office_with`).
 toml_edit  = { workspace = true }
-# Statistical render-path benchmarks (`just bench`). The CodSpeed compat
+# Statistical benchmarks (`just bench`). The CodSpeed compat
 # package is a documented passthrough to real criterion when CodSpeed is
 # inactive, so local `cargo bench` behaves as plain criterion; codspeed.yml
 # instruments the same benches in CI. Lean feature set: no plotters/rayon.

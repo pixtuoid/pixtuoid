@@ -72,13 +72,12 @@ impl WalkableMaskBuilder {
     }
 
     pub(crate) fn freeze(self) -> WalkableMask {
-        let mut mask = WalkableMask {
+        let coarse = CoarseGraph::new(&self.open, self.routed);
+        WalkableMask {
             open: self.open,
             routed: self.routed,
-            coarse: CoarseGraph::default(),
-        };
-        mask.coarse = CoarseGraph::new(&mask);
-        mask
+            coarse,
+        }
     }
 }
 

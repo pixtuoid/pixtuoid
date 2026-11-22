@@ -31,13 +31,13 @@ impl ReachSet {
     /// nearest walkable cell when `seed` lands on a blocked one). An
     /// empty/degenerate mask yields an all-unreachable set.
     pub(crate) fn from_mask(mask: &WalkableMask, seed: Point) -> ReachSet {
-        let (cell_w, cell_h) = cell_dims(mask);
-        let origin = grid_origin(mask);
+        let (cell_w, cell_h) = cell_dims(mask.routed());
+        let origin = grid_origin(mask.routed());
         let mut grid = Grid::filled(cell_w, cell_h, false);
         if cell_w == 0 || cell_h == 0 {
             return ReachSet { grid, origin };
         }
-        let seed_cell = snap_cell(mask, seed);
+        let seed_cell = snap_cell(mask.routed(), seed);
         if let Some(start) = snap(mask, seed_cell, cell_w, cell_h, SEED_SNAP_CELLS) {
             let mut q = VecDeque::new();
             grid.set(start.0, start.1, true);

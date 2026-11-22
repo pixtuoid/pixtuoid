@@ -2258,7 +2258,7 @@ fn the_routing_grid_tiles_from_the_floors_origin() {
              so a grid tiled from inner.y would pass too; the fixture must be off-pitch \
              to pin the origin"
         );
-        let origin = grid_origin(&l.walkable);
+        let origin = grid_origin(l.walkable.routed());
         assert_eq!(origin.x, inner.x, "{viewport:?}");
         assert_eq!(
             (top_margin - origin.y) % COARSE_CELL_SIZE,
