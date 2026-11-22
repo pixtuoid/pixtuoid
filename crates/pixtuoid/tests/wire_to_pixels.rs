@@ -1,6 +1,6 @@
 //! TRUE end-to-end: real wire bytes → the production decoder → a real
 //! `Reducer` → a `SceneState` → the REAL `TuiRenderer` (ratatui `TestBackend`)
-//! → an actual pixel buffer, asserting a sprite was PAINTED.
+//! → an actual pixel buffer, asserting the agent occupies a desk on screen.
 //!
 //! Three transport classes are covered:
 //!   - JSONL transcript  → `Transport::Jsonl` (every transcript-bearing registered source)
@@ -51,7 +51,7 @@ fn new_renderer(cols: u16, rows: u16) -> TuiRenderer<TestBackend> {
 /// Render `scene` through the real renderer for a fixed settle window and return
 /// the final frame's subpixels. The empty baseline and the occupied frame go
 /// through the IDENTICAL sequence, so a later pixel-diff cancels the
-/// (timezone-dependent) sky and isolates the agent's footprint.
+/// (timezone-dependent) sky and isolates what the agent's occupancy paints.
 fn settled_pixels(scene: &SceneState) -> Vec<(u8, u8, u8)> {
     // Bounded on BOTH sides: long enough for the entry walk to finish, and
     // shorter than the vacancy debounce, past which the empty office's floor dim
@@ -79,10 +79,10 @@ fn settled_pixels(scene: &SceneState) -> Vec<(u8, u8, u8)> {
 }
 
 /// The empty→occupied pixel-diff floor: well above the deterministic render's
-/// zero-diff noise floor, and comfortably below a settled character's real
-/// footprint so sprite-art tweaks don't trip it. IMMUNE to the time-of-day sky
+/// zero-diff noise floor, and comfortably below what an occupied desk repaints
+/// so art tweaks don't trip it. IMMUNE to the time-of-day sky
 /// because the diff cancels the (identical) background.
-const MIN_SPRITE_PIXELS: usize = 40;
+const MIN_OCCUPIED_PIXELS: usize = 40;
 
 /// WHICH of a source's two wires this case drives — and, for a transcript,
 /// whether the driver stands in for the watcher's first-sight registration.
@@ -125,7 +125,7 @@ fn fixture_path(case: &WireCase) -> PathBuf {
         .unwrap_or_else(|found| panic!("{}: {found:?} under {path:?}, not one", case.name))
 }
 
-fn assert_renders_a_sprite(case: &WireCase) {
+fn assert_occupies_a_desk_on_screen(case: &WireCase) {
     let path = fixture_path(case);
     let drive = match case.wire {
         Wire::Transcript { seeded } => {
@@ -166,7 +166,9 @@ fn assert_renders_a_sprite(case: &WireCase) {
     }
 
     // Both skies are byte-identical (the agent touches neither weather nor
-    // stars), so the diff is exactly the character's footprint.
+    // stars), so the diff is what the occupancy paints: the agent's figure and
+    // its desk's screen and lights. Whether the figure is drawn is the painter's
+    // to pin (`floor::tests::figure_box`, the TUI's hit tests).
     // The empty baseline, every case's, must be shaped like the driven scene (same
     // desk capacity), or the diff would carry a layout difference as well as the agent.
     static EMPTY: LazyLock<Vec<(u8, u8, u8)>> =
@@ -174,10 +176,10 @@ fn assert_renders_a_sprite(case: &WireCase) {
     let occupied = settled_pixels(&driven.scene);
     let changed = EMPTY.iter().zip(&occupied).filter(|(a, b)| a != b).count();
     assert!(
-        changed >= MIN_SPRITE_PIXELS,
+        changed >= MIN_OCCUPIED_PIXELS,
         "{}: an occupied office (from real {} wire bytes) must repaint materially more \
          pixels than the empty office at the same instant (changed={changed}, \
-         floor={MIN_SPRITE_PIXELS})",
+         floor={MIN_OCCUPIED_PIXELS})",
         case.name,
         case.source
     );
@@ -357,9 +359,9 @@ fn wire_matrix_covers_every_registered_source() {
 }
 
 #[test]
-fn every_agent_source_renders_a_painted_sprite_from_real_wire() {
+fn every_agent_source_occupies_a_desk_on_screen_from_real_wire() {
     for case in agent_cases() {
-        assert_renders_a_sprite(&case);
+        assert_occupies_a_desk_on_screen(&case);
     }
 }
 
