@@ -2867,7 +2867,9 @@ test.describe('the office keeps the visitor’s zone', () => {
   // morning moment as day and the sun-highest one as night. Read with the offset's sign flipped, both are night; read
   // in UTC, the second is the brighter.
   test.use({ timezoneId: 'Asia/Tokyo' });
-  test('Tokyo reads the morning moment as day and the sun-highest one as night', async ({ page }) => {
+  test('Tokyo reads the morning moment as day and the sun-highest one as night', async ({
+    page,
+  }) => {
     test.setTimeout(120_000);
     const [sunHighest, , morning] = OFFICE_MOMENTS;
     const dayInTokyo = await officeLuminanceAt(page, morning.at);
