@@ -113,7 +113,9 @@ async fn a_second_router_receives_the_owners_payloads_in_order() {
     subscriber.abort();
 }
 
-#[tokio::test]
+// Paused: every byte here crosses between this runtime's own tasks, so none is
+// in flight when it idles and the clock jumps to the takeover loser's retry.
+#[tokio::test(start_paused = true)]
 async fn a_subscriber_takes_the_endpoint_when_its_owner_leaves() {
     let (_dir, at) = endpoint("takeover");
     let (owner, mut owner_rx) = spawn_router(&at);
@@ -160,8 +162,9 @@ async fn a_subscriber_receives_daemon_presence() {
 }
 
 // An owner that never acknowledges keeps its hook plane out of reach, so the
-// footer must say so.
-#[tokio::test]
+// footer must say so. Paused: the ack never comes, so the clock jumps through
+// each attempt's timeout and retry.
+#[tokio::test(start_paused = true)]
 async fn a_router_that_cannot_subscribe_reports_a_death() {
     let (_dir, at) = endpoint("refused");
     let _owner = HookSocketListener::bind(at.path()).await.unwrap();
@@ -311,8 +314,9 @@ async fn nothing_listening_is_absent_and_the_next_instance_still_binds() {
 }
 
 // Bound but not reading is what a saturated owner looks like: the connect lands
-// in its backlog, so only the query's own deadline ends the wait.
-#[tokio::test]
+// in its backlog, so only the query's own deadline ends the wait, to which the
+// paused clock jumps.
+#[tokio::test(start_paused = true)]
 async fn an_owner_that_never_reads_is_silent() {
     let (_dir, at) = endpoint("silent");
     let _owner = HookSocketListener::bind(at.path()).await.unwrap();

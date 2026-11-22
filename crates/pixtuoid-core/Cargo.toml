@@ -113,7 +113,8 @@ winapi-util = { workspace = true }
 # dev-dependency features out of a normal build (under v1 they would unify in
 # and `harness` would ship).
 pixtuoid-core = { path = ".", features = ["harness"] }
-tokio = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util", "rt-multi-thread"] }
+# test-util: `start_paused`, for tests whose only wait is a timeout their IO never beats.
+tokio = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util", "rt-multi-thread", "test-util"] }
 proptest = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }
