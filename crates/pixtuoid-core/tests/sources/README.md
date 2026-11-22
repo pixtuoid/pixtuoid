@@ -81,10 +81,12 @@ The recorder is `pixtuoid-core/examples/capture_fixture.rs` (why it is Rust:
     over the committed corpus, offline and unbilled, so a field a decoder
     STOPPED reading is one pass from gone.
 - **A gate needs its own sandbox and its own prompt.** `CAPTURE_SEED=<dir>` is
-  copied into the sandbox's workspace before the run. That is where a per-CLI
-  ask rule belongs, since Claude Code fires `PermissionRequest` only when a
-  project rule makes the tool ask. `CAPTURE_PROMPT` replaces the shared prompt
-  for a scenario it can't reach. Neither touches your own config.
+  copied into the sandbox's workspace before the run, which is where a per-CLI
+  ask rule belongs. `CAPTURE_PROMPT` replaces the shared prompt for a scenario
+  it can't reach. Neither touches your own config. Claude Code's headless mode
+  refuses a tool without firing `PermissionRequest`
+  (`harness/hermetic/tui/mod.rs`), so its gate records through its TUI:
+  `just hermetic --record claude-code`.
 - **A scenario records into its source's one home**,
   `<module>/fixtures/<scenario>/`.
 - **Re-recording a scenario that exists needs a hand**, unless the hermetic
