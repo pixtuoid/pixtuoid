@@ -31,7 +31,7 @@ const UNREACHED_VOUCH_SPAN: Duration = Duration::from_secs(3600);
 /// so by an ask, the pass before it has sent all it caused: a wait ends on an
 /// ask, never on a sleep.
 #[derive(Clone)]
-struct Probe(Arc<watch::Sender<Asked>>);
+struct Probe(watch::Sender<Asked>);
 
 struct Asked {
     answer: Option<ProbeSnapshot>,
@@ -40,10 +40,10 @@ struct Asked {
 
 impl Probe {
     fn new(answer: Option<ProbeSnapshot>) -> Self {
-        Self(Arc::new(watch::Sender::new(Asked {
+        Self(watch::Sender::new(Asked {
             answer,
             at: Vec::new(),
-        })))
+        }))
     }
 
     /// One ask, as the watcher makes it.
@@ -76,7 +76,7 @@ impl Probe {
         self.0.borrow().at.len()
     }
 
-    /// Once the watcher has asked `n` times since the `from`th ask, leaving
+    /// Once the watcher has made `n` asks counting from the `from`th, leaving
     /// what it sent queued.
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     async fn until_asked(&self, from: usize, n: usize) {
