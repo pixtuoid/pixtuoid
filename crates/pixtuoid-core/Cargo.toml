@@ -113,7 +113,9 @@ winapi-util = { workspace = true }
 # dev-dependency features out of a normal build (under v1 they would unify in
 # and `harness` would ship).
 pixtuoid-core = { path = ".", features = ["harness"] }
-# test-util: `start_paused`, for tests whose only wait is a timeout their IO never beats.
+# test-util: `start_paused`. A paused park that wakes a task doesn't advance the
+# clock (tokio's `runtime/time/mod.rs`, `did_wake`), so what this runtime's own
+# tasks wrote is read before any jump to a timer.
 tokio = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util", "rt-multi-thread", "test-util"] }
 proptest = { workspace = true }
 tempfile = { workspace = true }

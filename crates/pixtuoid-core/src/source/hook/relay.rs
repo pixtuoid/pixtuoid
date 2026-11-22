@@ -617,10 +617,8 @@ mod tests {
     }
 
     // Only a connection's first line subscribes, so the listener must not write
-    // back to a shim. The read ends at the listener's budget, to which the paused
-    // clock jumps: a `Timeout` polls its future before its delay (tokio's
-    // `time/timeout.rs`), and each one here wraps its IO in its own task, so a
-    // jump past it still reads what this runtime's tasks wrote.
+    // back to a shim. Paused, so the read ends at the listener's budget, to which
+    // the clock jumps.
     #[tokio::test(start_paused = true)]
     async fn a_subscribe_line_after_a_payload_gets_no_answer() {
         let (_dir, path) = endpoint("second-line");
