@@ -113,7 +113,10 @@ winapi-util = { workspace = true }
 # dev-dependency features out of a normal build (under v1 they would unify in
 # and `harness` would ship).
 pixtuoid-core = { path = ".", features = ["harness"] }
-tokio = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util", "rt-multi-thread"] }
+# test-util: `start_paused`. A paused park that wakes a task doesn't advance the
+# clock (tokio's `runtime/time/mod.rs`, `did_wake`), so what this runtime's own
+# tasks wrote is read before any jump to a timer.
+tokio = { workspace = true, features = ["sync", "rt", "macros", "fs", "net", "time", "io-util", "rt-multi-thread", "test-util"] }
 proptest = { workspace = true }
 tempfile = { workspace = true }
 toml = { workspace = true }
@@ -131,8 +134,9 @@ tracing-subscriber = { workspace = true }
 # `examples/support/bounded.rs`'s `kill_child_on_signal`.
 signal-hook = { workspace = true }
 
-# Without this an example is not a test target, so its `#[test]`s build and
-# never run — the same wiring `pixtuoid`'s `snapshot` example already carries.
+# Without this `cargo test` only builds an example, so its `#[test]`s never run
+# (https://doc.rust-lang.org/cargo/reference/cargo-targets.html#the-test-field)
+# — the same wiring `pixtuoid`'s `snapshot` example already carries.
 [[example]]
 name = "capture_fixture"
 test = true

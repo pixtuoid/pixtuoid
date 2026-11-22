@@ -88,9 +88,9 @@ squatted port).
 
 ## Gates
 
-`just site-check` = `npm run verify` (format:check → lint → check → knip →
-test:unit → test:demos → build → check:docs → audit). `just site-e2e` = Playwright vs the
-PRODUCTION build — the runtime-contract tier (`__pixLights`/`pix:onair`/
+`just site-check` runs the site's static tier (`package.json`'s `verify`
+script owns its steps). `just site-e2e` = Playwright vs the PRODUCTION build — the
+runtime-contract tier (`__pixLights`/`pix:onair`/
 `data-lit` seams, scrollspy keys, docs-nav variant, reduced-motion, console
 watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 
@@ -107,7 +107,7 @@ watchdog) that tsc/knip/build are blind to. CI: `site.yml` / `pages.yml`.
 - **npm**: `audit` runs LAST in `verify` (a live advisory would short-circuit
   the checks below it — #847/#849); CI runs it when a PR changes
   `package.json` or `package-lock.json`, and daily in `audit.yml`.
-  npm pinned (`packageManager` + `engine-strict`); install scripts
+  npm held to `engines.npm` by `engine-strict`; install scripts
   fail-closed (`strict-allow-scripts`, exact-version `allowScripts`, explicit
   `fsevents` denial) — review with `npm install-scripts ls`.
 - **Nothing gates a STALE `overrides` entry**: to retire one, fresh-resolve

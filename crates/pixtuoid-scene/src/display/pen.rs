@@ -106,7 +106,7 @@ impl Pen {
 
     /// The art pixel buffer pixel `b` lies in.
     pub(crate) fn art_of_buffer(self, b: BufferPx) -> ArtPx {
-        ArtPx(b.0 / self.k.get())
+        ArtPx(b.0 / self.k)
     }
 
     /// How many art columns it takes to cover `b` buffer pixels: the last one

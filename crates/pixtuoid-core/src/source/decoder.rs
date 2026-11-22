@@ -319,6 +319,16 @@ fn offset_is_strict(s: &str) -> bool {
 /// `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
 pub const SOURCE_STAMP: &str = "_pixtuoid_source";
 
+/// The key the shim stamps with when it forwarded the envelope, in
+/// milliseconds since the epoch. Pinned by
+/// `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
+#[doc(hidden)]
+pub const FORWARDED_AT_STAMP: &str = "_shim_ts_ms";
+
+/// Every key the shim stamps on a hook envelope.
+#[doc(hidden)]
+pub const SHIM_STAMPS: [&str; 4] = [FORWARDED_AT_STAMP, SOURCE_STAMP, EVENT_STAMP, PID_STAMP];
+
 /// The CLI a hook envelope belongs to — read ONLY from the shim-owned
 /// [`SOURCE_STAMP`]. CC's public `source` field carries the SessionStart REASON
 /// (startup/resume/clear/compact), so reading it would namespace the agent under

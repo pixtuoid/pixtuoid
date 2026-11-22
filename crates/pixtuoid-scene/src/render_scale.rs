@@ -110,7 +110,7 @@ impl RenderScale {
     /// a buffer that is not a whole multiple of the scale leaves a sub-unit
     /// remainder that no layout unit could occupy anyway.
     pub fn logical(self, buf_px: u16) -> u16 {
-        buf_px / self.0.get()
+        buf_px / self.0
     }
 
     /// The buffer pixel a layout unit paints at. Saturates rather than wrapping

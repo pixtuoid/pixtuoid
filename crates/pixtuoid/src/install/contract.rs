@@ -1,5 +1,5 @@
-//! What each plugin must register and send, written from the Rust authorities
-//! into the `plugin-contract.json` its selftest executes it against
+//! What each plugin must declare, register and send, written from the Rust
+//! authorities into the `plugin-contract.json` its selftest executes it against
 //! (`scripts/lib/plugin-harness.mjs`), so neither language reads the other's
 //! source text, except dsh's `registers`, which `dsh::plugin_events` scans from
 //! its template. `SNAPSHOTS=overwrite just test -p pixtuoid --lib plugin_contract`
@@ -29,6 +29,9 @@ fn the_plugin_contract_is_the_committed_file() {
     hermes["fields"] = json!(pixtuoid_core::source::hermes::DECODED_FIELDS);
     hermes["detail_keys"] = json!(pixtuoid_core::source::hermes::DETAIL_KEYS);
     hermes["outside_a_turn"] = json!(pixtuoid_core::source::hermes::OUTSIDE_A_TURN);
+    let mut openclaw = row(&OPENCLAW, "openclaw_plugin.js");
+    openclaw["id"] = json!(super::openclaw::PLUGIN_ID);
+    openclaw["name"] = json!(super::openclaw::PLUGIN_NAME);
     let contract = json!({
         "pid_key": pixtuoid_core::source::decoder::PID_STAMP,
         "source_flag": super::hook_cmd::SOURCE_FLAG.trim(),
@@ -37,7 +40,7 @@ fn the_plugin_contract_is_the_committed_file() {
             row(&DSH, "dsh_plugin.mjs"),
             hermes,
             row(&OMP, "omp_extension.ts"),
-            row(&OPENCLAW, "openclaw_plugin.js"),
+            openclaw,
             opencode,
         ],
     });

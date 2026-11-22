@@ -1,8 +1,10 @@
 ---
-import { asset } from '../consts';
+import { asset, DOCS } from '../consts';
 import { floorById, floorName } from '../../config/floors.mjs';
 
 const floor = floorById('how');
+const underTheHood = DOCS.find((d) => d.file === 'ARCHITECTURE.md');
+if (!underTheHood) throw new Error('Quickstart.astro: src/docs.json renders no ARCHITECTURE.md');
 const steps = [
   {
     n: '01',
@@ -44,7 +46,7 @@ const steps = [
       </li>)}
     </ol>
     <p class="how__more reveal">
-      <a href={asset('architecture/')}
+      <a href={asset(underTheHood.route)}
         >see how it works under the hood <span class="how__arrow" aria-hidden="true">→</span></a
       >
     </p>

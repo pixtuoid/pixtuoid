@@ -396,7 +396,7 @@ mod tests {
         assert_eq!(lines_of(&out), [SUBSCRIBED_LINE.trim_end(), "one", "two"]);
     }
 
-    #[tokio::test]
+    #[tokio::test(start_paused = true)]
     async fn a_subscriber_that_stopped_reading_loses_its_feed() {
         const SMALLER_THAN_THE_ACK: usize = 4;
         let (conn, _stalled) = tokio::io::duplex(SMALLER_THAN_THE_ACK);
@@ -617,8 +617,9 @@ mod tests {
     }
 
     // Only a connection's first line subscribes, so the listener must not write
-    // back to a shim. The read ends at the listener's budget.
-    #[tokio::test]
+    // back to a shim. Paused, so the read ends at the listener's budget, to which
+    // the clock jumps.
+    #[tokio::test(start_paused = true)]
     async fn a_subscribe_line_after_a_payload_gets_no_answer() {
         let (_dir, path) = endpoint("second-line");
         let (task, mut rx) = listen(&path);

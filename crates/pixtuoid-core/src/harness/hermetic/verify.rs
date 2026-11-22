@@ -3562,11 +3562,11 @@ mod tests {
 
     #[test]
     fn a_stamped_envelope_drops_its_top_level_shim_stamps_only() {
-        use crate::harness::merge::SHIM_STAMP;
-        use crate::source::decoder::PID_STAMP;
-        let v = serde_json::json!({SHIM_STAMP: 5, PID_STAMP: 7, "a": {"_k": 1}});
-        assert_eq!(leaves(&v, true), ["/a/_k"]);
-        assert_eq!(leaves(&v, false).len(), 3);
+        use crate::source::decoder::{FORWARDED_AT_STAMP, PID_STAMP};
+        let v =
+            serde_json::json!({FORWARDED_AT_STAMP: 5, PID_STAMP: 7, "_x": 3, "a": {PID_STAMP: 1}});
+        assert_eq!(leaves(&v, true), ["/_x", "/a/_pid"]);
+        assert_eq!(leaves(&v, false).len(), 4);
     }
 
     fn fields(kinds: &[(&str, &[&str])], lines: &[&[&str]]) -> Fields {

@@ -1,5 +1,7 @@
 //! One session's two streams folded in every order they can reach the reducer
-//! in: a hook at its shim stamp, and a transcript line no sooner than its write
+//! in: a hook at its forwarded-at stamp
+//! ([`FORWARDED_AT_STAMP`](crate::source::decoder::FORWARDED_AT_STAMP)), and a
+//! transcript line no sooner than its write
 //! stamp and at most the watcher's `DEFAULT_POLL_INTERVAL` after it, behind
 //! every line above it, since the watcher reads a file in order.
 
@@ -10,14 +12,9 @@ use serde_json::Value;
 use super::reads::{Spelling, WRITE_STAMPS};
 use super::{BreadcrumbSink, CASCADE_TICK, Decode, Delivered, Drive, Driven, Fold};
 use crate::source::DEFAULT_POLL_INTERVAL;
-use crate::source::decoder::rfc3339_to_epoch;
+use crate::source::decoder::{FORWARDED_AT_STAMP, rfc3339_to_epoch};
 use crate::state::ActivityState;
 use crate::{AgentEvent, Transport};
-
-/// What the shim stamps on every envelope: when it forwarded it, in
-/// milliseconds since the epoch. Pinned by
-/// `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
-pub const SHIM_STAMP: &str = "_shim_ts_ms";
 
 /// One event a merge applied.
 #[derive(Debug, Clone)]
@@ -110,7 +107,7 @@ impl Drive {
                 |_, e| e.into_iter().map(Delivered::Wire).collect(),
                 &mut decoded,
                 |v| {
-                    let ms = v.get(SHIM_STAMP)?.as_u64()?;
+                    let ms = v.get(FORWARDED_AT_STAMP)?.as_u64()?;
                     Some((Duration::from_millis(ms), Duration::ZERO))
                 },
             );
@@ -364,7 +361,7 @@ mod tests {
             "tool_name": "Bash",
             "tool_input": {"command": "ls"},
             "tool_use_id": "call_1",
-            SHIM_STAMP: ms,
+            FORWARDED_AT_STAMP: ms,
         })
         .to_string()
     }
@@ -594,14 +591,17 @@ mod tests {
     /// The shim (`pixtuoid-hook`) is the key's one writer, a crate this one
     /// cannot import from, so its own recorded output pins the spelling.
     #[test]
-    fn a_recorded_envelope_carries_the_shim_stamp_by_this_key() {
+    fn a_recorded_envelope_carries_the_forwarded_at_stamp_by_this_key() {
         let hooks = crate::harness::sources_root()
             .join("codex/fixtures/tool-run-hermetic")
             .join(crate::harness::HOOK_PAYLOADS);
         let text = std::fs::read_to_string(&hooks).expect("a recorded hook capture");
         for line in text.lines() {
             let v: Value = serde_json::from_str(line).expect("json");
-            assert!(v[SHIM_STAMP].as_u64().is_some_and(|ms| ms > 0), "{line}");
+            assert!(
+                v[FORWARDED_AT_STAMP].as_u64().is_some_and(|ms| ms > 0),
+                "{line}"
+            );
         }
     }
 

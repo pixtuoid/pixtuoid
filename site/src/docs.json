@@ -6,11 +6,11 @@
     "description": "Configure pixtuoid: config.toml keys, themes, logging and troubleshooting."
   },
   {
-    "route": "architecture/",
-    "label": "Architecture",
+    "route": "how-it-works/",
+    "label": "How it works",
     "file": "ARCHITECTURE.md",
-    "description": "How pixtuoid turns a running coding-agent session into a moving sprite: the producer → reducer → renderer pipeline across its Rust crates.",
-    "sourceNote": "the diagram is the same Mermaid block GitHub shows"
+    "description": "Follow one Claude Code hook to the sprite at its desk, through pixtuoid's own decoder, reducer and engine running in your browser.",
+    "sourceNote": "each figure is drawn from the table or Mermaid block GitHub shows"
   },
   {
     "route": "contributing/",

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Pre-push hook: runs `just preflight` (lint + clippy) before pushing; CI runs
-# the tests. Pre-commit only checks formatting.
+# Pre-push hook: runs `just preflight` before pushing; CI runs the tests.
+# Pre-commit only checks formatting.
 #
 # Set up once per clone with:
 #   git config core.hooksPath .githooks
