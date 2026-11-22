@@ -1,6 +1,8 @@
 //! Walkability primitives — pure data, no terminal deps. Coordinates are
 //! `(x, y)` u16 pixel positions; origin top-left.
 
+use std::ops::Range;
+
 use crate::grid::Grid;
 use crate::layout::{Bounds, CoarseGraph};
 
@@ -52,11 +54,7 @@ impl WalkableMaskBuilder {
             .saturating_add(h)
             .saturating_add(pad)
             .min(self.open.height());
-        for yy in min_y..max_y {
-            for xx in min_x..max_x {
-                self.open.set(xx, yy, false);
-            }
-        }
+        self.fill(min_x..max_x, min_y..max_y, false);
     }
 
     /// Carve `true` back into a rect.
@@ -64,9 +62,14 @@ impl WalkableMaskBuilder {
     pub(crate) fn mark_walkable(&mut self, x: u16, y: u16, w: u16, h: u16) {
         let max_x = x.saturating_add(w).min(self.open.width());
         let max_y = y.saturating_add(h).min(self.open.height());
-        for yy in y..max_y {
-            for xx in x..max_x {
-                self.open.set(xx, yy, true);
+        self.fill(x..max_x, y..max_y, true);
+    }
+
+    /// Sets every pixel of `xs` × `ys`, already clipped to the canvas, to `open`.
+    fn fill(&mut self, xs: Range<u16>, ys: Range<u16>, open: bool) {
+        for y in ys {
+            for x in xs.clone() {
+                self.open.set(x, y, open);
             }
         }
     }

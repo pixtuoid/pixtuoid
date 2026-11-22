@@ -110,6 +110,15 @@ impl Bounds {
         }
     }
 
+    /// Whether half-open box `self` holds pixel `p`.
+    pub(crate) fn contains(self, p: Point) -> bool {
+        let end = exclusive_end;
+        p.x >= self.x
+            && u32::from(p.x) < end(self.x, self.width)
+            && p.y >= self.y
+            && u32::from(p.y) < end(self.y, self.height)
+    }
+
     /// Whether the two half-open boxes share a column, whatever their rows.
     pub(crate) fn shares_columns(self, other: Bounds) -> bool {
         Bounds {

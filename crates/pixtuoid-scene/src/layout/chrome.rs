@@ -101,16 +101,6 @@ impl Bounds {
             && u32::from(self.y) < end(other.y, other.height)
             && u32::from(other.y) < end(self.y, self.height)
     }
-
-    /// Whether half-open box `self` holds pixel `p`, its far edges in u32 so
-    /// they can't wrap.
-    pub(crate) fn contains(self, p: super::Point) -> bool {
-        let end = super::exclusive_end;
-        p.x >= self.x
-            && u32::from(p.x) < end(self.x, self.width)
-            && p.y >= self.y
-            && u32::from(p.y) < end(self.y, self.height)
-    }
 }
 
 impl crate::look::Hits {
