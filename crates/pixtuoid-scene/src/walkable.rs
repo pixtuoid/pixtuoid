@@ -83,8 +83,7 @@ impl WalkableMaskBuilder {
 }
 
 /// Static obstacle mask over a `width × height` canvas (`true` = open floor,
-/// `false` = obstacle), the area its coarse routing grid tiles from that
-/// area's north-west corner, and that grid's graph.
+/// `false` = obstacle), frozen with the graph of its coarse routing grid.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WalkableMask {
     open: Grid<bool>,
