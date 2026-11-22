@@ -4,7 +4,7 @@ Integration tests are organized by capability or layer; the per-CLI dimension
 lives where the variation is, in the source fixtures.
 
 - Each top-level `tests/*.rs` or `tests/<area>/main.rs` is one test binary.
-- A multi-file area is `<area>/main.rs`: a top-level `<area>.rs` is a crate
+- Make a multi-file area `<area>/main.rs`: a top-level `<area>.rs` is a crate
   root, so its `mod foo;` resolves to a sibling `tests/foo.rs`.
 - Data scopes to the source it describes: a CLI's captures share its home,
   whichever test reads them.
@@ -42,7 +42,7 @@ tests/
 │                        (tailing · first_sight · liveness · reregister · attach ·
 │                        wait, the waits shared with native_watch.rs ·
 │                        sources.rs: every transcript-bearing source binds and spawns,
-│                        one test per source (#828), plus a fixture through the Reducer ·
+│                        keep a test for each (#828), plus a fixture through the Reducer ·
 │                        today.rs: the day's count per source through the real
 │                        `Source::run`, which `harness::Drive`, with no tailer, can't see)
 ├── native_watch.rs      tests needing the native watch backend: their own process, so
@@ -80,7 +80,6 @@ which holds every other step.
      `claude`).
    - `conformance.rs` auto-discovers the dir, and `cargo insta review` accepts
      the snapshot.
-   - `supported_sources_manifest` forces the manifest row.
    - A transcript-bearing fixture is driven with the first-sight seed, so a
      wrong `id_from_path` fails here instead of shipping two sprites for one
      session.

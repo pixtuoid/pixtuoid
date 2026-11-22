@@ -1,9 +1,11 @@
 # AGENTS.md
 
-Instructions for any AI coding agent in this repo. Every agent reads these
-`AGENTS.md` files natively, Claude Code from v2.1.277
-([code.claude.com/docs/en/memory](https://code.claude.com/docs/en/memory#agents-md)).
-This file is the workspace map; per-crate detail lives in the nested guides:
+Instructions for any AI coding agent in this repo, read natively from these
+`AGENTS.md` files. Claude Code reads them from v2.1.277, unless a `CLAUDE.md` or
+`CLAUDE.local.md` sits in or above the working directory
+([code.claude.com/docs/en/memory](https://code.claude.com/docs/en/memory#agents-md));
+`.gitignore` keeps both out of the repo. This file is the workspace map;
+per-crate detail lives in the nested guides:
 
 - [`crates/pixtuoid-core/AGENTS.md`](crates/pixtuoid-core/AGENTS.md) — headless lib: sources/decoders, reducer/state.
   - [`tests/AGENTS.md`](crates/pixtuoid-core/tests/AGENTS.md) — the test-binary layout and the add-a-CLI test steps.
@@ -24,8 +26,8 @@ This file is the workspace map; per-crate detail lives in the nested guides:
 
 **A third consumer lives outside this repo.** homebrew-core's `pixtuoid`
 formula asserts exact CLI output in its `test do`, and needs `pixtuoid man` and
-`completions <shell>` on clean stdout. The code behind each asserted row carries
-a "homebrew-core contract" comment. How CI holds this tree to the formula, and
+`completions <shell>` on clean stdout. The code behind its assertions carries
+"homebrew-core contract" comments. How CI holds this tree to the formula, and
 what a release owes it: [CONTRIBUTING's Homebrew](docs/CONTRIBUTING.md#homebrew).
 
 <!-- org-rules:begin -->
@@ -86,9 +88,8 @@ cargo run --release --example snapshot -- /tmp/snap.png   # render TUI to PNG
 cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the same, rebuilt faster; scripts still read target/release
 ```
 
-- Once per clone, run `just setup-tools`. It points git at `.githooks`, then
-  installs `mise.toml`'s tools and rust-analyzer, without which the agent LSP
-  degrades to grep.
+- Once per clone, set up as
+  [CONTRIBUTING's Build & test](docs/CONTRIBUTING.md#build--test) says.
 - Iterate with clippy or test, not both: clippy doesn't warm test's build
   ([why](docs/CONTRIBUTING.md#build--test)).
 - Never pipe preflight through `tail`/`head`: the pipe eats its exit code.
@@ -105,8 +106,10 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
   `scripts/crop-snapshot.py`, then read the PNG. The loop is in
   `.claude/skills/beautify-decoration/SKILL.md`.
 - A green preflight is not a green PR; CI is the gate. A PR's pushes run only
-  the light tier. The full tier runs on `main` and in the merge queue, which
-  [the merge gate](docs/CONTRIBUTING.md#the-merge-gate) details.
+  the light tier. The full tier runs on `main`, and in the merge queue unless
+  Mergify merges an up-to-date PR alone at the front directly
+  ([the merge gate](docs/CONTRIBUTING.md#how-mergify-merges), `ci.yml`'s
+  `tier` job).
 - Advisory, never gating: `just mutants`, `just bench`, `just bench-pacing`,
   CodSpeed, and `fuzz.yml`. A fuzz crash's input is its run's
   `crashes-<target>` artifact, and `just fuzz <target> <file>` replays it.
@@ -134,8 +137,8 @@ cargo run --profile release-local --example snapshot -- /tmp/snap.png   # the sa
   - Until a slot frees, the branch stays pushed with no PR.
 - Open a PR once its branch is ready to merge and its local review is done,
   when one is due. Never open it as a draft.
-- Don't rerun preflight or CI by hand: the pre-push hook runs preflight, and CI
-  runs the rest.
+- Don't run preflight or CI's checks again locally after a push: the pre-push
+  hook ran preflight, and CI runs the rest.
 - Close a PR that stops being ready. Keep its branch, and never force-push it,
   since a force-pushed branch can't reopen.
   - Retarget a stacked PR to `main` before closing it: merging its base
@@ -196,12 +199,11 @@ Repo skills (committed): `beautify-decoration`, `add-source`.
     counts as a source too.
   - The population is the whole upstream repo
     (`gh api .../git/trees/<ref>?recursive=1`), not one plausible file.
-- **Review findings** (org rule):
-  - A refutation adds a code comment only for an external fact (another CLI's
-    wire bytes, an OS semantic), on the narrowest thing it constrains.
-  - Every finding reaches a terminal state before the PR merges.
-    [CONTRIBUTING's Dispositions](docs/CONTRIBUTING.md#dispositions) defines
-    the states and what #N may be.
+- **Review findings** (org rule): every finding reaches a terminal state
+  before the PR merges.
+  [CONTRIBUTING's Dispositions](docs/CONTRIBUTING.md#dispositions) defines the
+  states, how this repo applies the org rule to a refutation, and what #N may
+  be.
 - **Only the latest released version of each agent CLI is supported.**
   - When upstream renames or reshapes a wire name, repoint the decoder and the
     plugin at the current declaration and delete the old one.
@@ -271,8 +273,8 @@ half-block painter never draws.
   - Only a whole-message relay re-emitting an already-sanitized user-facing
     string interpolates (`config::warn_user`, the `read_log` warning in
     `sources_cli`).
-- **No doc generator or cap in place of a proposed diff.** The owner reviews
-  every doc change, so propose the diff.
+- **No doc generator, and no cap on docs, in place of a proposed diff.** The
+  owner reviews every doc change, so propose the diff.
 - **No stale `Closes #N` after a re-scope.** The keyword fires from a commit
   body or the PR text
   ([docs.github.com](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue#linking-a-pull-request-to-an-issue-using-a-keyword)),

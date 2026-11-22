@@ -6,7 +6,7 @@ support yet. The README lists the agent CLIs already wired up, and the OpenClaw
 gateway.
 
 Before you start, read [`AGENTS.md`](../AGENTS.md) at the repo root, and the
-nested `AGENTS.md` of each crate you touch. They hold the load-bearing
+nested `AGENTS.md` of each directory you touch. They hold the load-bearing
 architecture invariants and conventions. Many things that look like bugs are
 documented, intentional design, and AGENTS.md says what to read before
 changing one.
@@ -32,8 +32,9 @@ just test -p <crate> <filter>   # fast loop while iterating on one crate
 > builds carry over only build scripts and proc-macros, so iterate with one of
 > them.
 
-Activate the git hooks once per clone: `git config core.hooksPath .githooks`
-(`pre-commit` runs `just fmt-check`, `pre-push` runs `just preflight`).
+Run `just setup-tools` once per clone. It activates the git hooks (`pre-commit`
+runs `just fmt-check`, `pre-push` runs `just preflight`), then installs the dev
+tools, rust-analyzer included.
 
 `just hermetic [--cli pinned|latest] [--record] [source [scenario]]` runs each
 profiled CLI against a scripted model (aimock), then its install's lifecycle
@@ -219,9 +220,8 @@ itself:
 - **Add to an open PR first.** A change to a surface an open PR already
   touches goes into that PR.
 - **Keep the queue busy.** It checks one batch at a time (the org queue's
-  `max_parallel_checks`), so queue every PR as soon as what no check can
-  confirm holds ([the merge gate](#the-merge-gate)). Dequeue one only when it
-  would jump a green priority PR.
+  `max_parallel_checks`), so queue every PR as soon as [Queueing](#queueing)
+  allows. Dequeue one only when it would jump a green priority PR.
 
 ## Pull requests
 
@@ -239,7 +239,7 @@ A PR merges only when, at its final head:
 
 Two special cases:
 
-- A bot's finding posted only in its review body gets a thread.
+- Open a thread for a bot's finding posted only in its review body.
 - A refuted blocking finding needs no push. Resolve its thread with the
   disposition and re-run the review (`gh run rerun <id> --failed`); its
   verifier judges the refutation once.
@@ -260,7 +260,8 @@ Two special cases:
   (`mergify/merge-queue/…`) running the full tier, then merges the PRs
   themselves.
 - An up-to-date PR alone at the front merges on its own CI instead
-  ([direct merge](https://docs.mergify.com/merge-queue/direct-merge/)).
+  ([direct merge](https://docs.mergify.com/merge-queue/direct-merge/)), so it
+  skips the full tier (`ci.yml`'s `tier` job).
 - It never updates a PR's own branch
   ([batches](https://docs.mergify.com/merge-queue/batches/): "the original PRs
   are the ones merged"), so the bots' statuses on the PR's head are the ones
@@ -293,7 +294,7 @@ the reply that resolves it, and the reply starts with its state:
 | State | Rule | Reply starts with |
 | --- | --- | --- |
 | FIXED | Fixed in this PR. | `FIXED: …` |
-| REFUTED | Cite the mechanism, per AGENTS.md; add one where none exists. | `REFUTED: … — <mechanism>` |
+| REFUTED | Its premise fails. As this repo applies [the org rules' Review findings](../AGENTS.md#org-rules): cite the mechanism, adding one where none exists, and add a code comment only for an external fact (another CLI's wire bytes, an OS semantic), on the narrowest thing it constrains. | `REFUTED: … — <mechanism>` |
 | RE-SCOPED → #N | Real, introduced or first made reachable by this change, and bigger than the PR: split it off into #N. | `RE-SCOPED → #N: …` |
 | FOLLOW-UP → #N | Real and reachable at the base, and not fixed in place: fixed in #N. | `FOLLOW-UP → #N: …` |
 
@@ -312,8 +313,8 @@ the reply that resolves it, and the reply starts with its state:
 - **A re-flag** of an already-dispositioned finding replies with the
   original's disposition, linked.
 - "Acknowledged" and "surfaced" are not states.
-- Sweep at the final merge head. Before re-litigating a bot's re-flag, check
-  which commit it was raised against.
+- At the final merge head, sweep every finding for its disposition. Before
+  re-litigating a bot's re-flag, check which commit it was raised against.
 
 ### Convergence contract
 
@@ -330,9 +331,11 @@ A **fold** is the one commit that takes a review round's accepted findings.
   - A defect this change introduced is FIXED in it, since a clean-up left for
     later rarely lands
     ([Google](https://google.github.io/eng-practices/review/reviewer/pushback.html#cleaning-it-up-later)).
+    Only one bigger than the PR is RE-SCOPED instead
+    ([Dispositions](#dispositions)).
   - The loop converges because a re-review judges only the PR's own change
     since the last reviewed head (the
-    [shared review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)'s
+    [CI review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)'s
     scope), so a fold's findings are the fold's.
   - A blocking issue confirmed in a fold stops the loop: revert the fold and
     re-land smaller, or re-scope.
@@ -348,8 +351,8 @@ A **fold** is the one commit that takes a review round's accepted findings.
 
 ## Adding a new agent CLI
 
-No test forces steps 1–3; they are on you. A check fails without each later
-step, and the step names it.
+No test forces steps 1–3; they are on you. Each later step names the check
+that fails without it; step 8 has one only for a hook-only source.
 
 1. **Verify the wire format against the CLI's actual source and releases
    first**: transcript location, line shape, hooks, session identity. Pin
@@ -392,8 +395,8 @@ step, and the step names it.
    - The label prefix, the decoder, and `HookDecoding`. Verify a `Shared`
      row's `tool_id_key` against a captured tool call: kimi's `ToolCall` cost
      a source its tool ids.
-   - Truthful capability flags. Lifecycle policy derives from them; you do
-     **not** edit the reducer.
+   - Truthful capability flags. Lifecycle policy derives from them, so don't
+     edit the reducer.
    - `verified_version` and `version_probe`.
 5. **The descriptor's `name` is the roster**: `registered_source_names()`
    projects `REGISTRY`. `just test` then requires:

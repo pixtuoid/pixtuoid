@@ -5,7 +5,7 @@ directory the diff touches. These rules add to generic defect hunting.
 
 ## Scope
 
-The org's [shared review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)
+The org's [CI review](https://github.com/pixtuoid/.github/blob/main/.github/workflows/claude-review.yml)
 runs two reviewers over this file, each with its contract's lenses:
 
 - the correctness reviewer applies all of it but [Design](#design);
@@ -55,8 +55,8 @@ skipping one is not partial coverage.
   (`not_yet*`), or exempt with its reason (`hermetic::literals`'s census).
 - **Manifest bridge**: check `site/src/*.json` and the generated schemas
   against their Rust source of truth.
-- **Unwired additions**: the contract's Wiring lens covers new flags and
-  assets too. `_x` bindings and `pub` fields evade the lints.
+- **Wiring** (the contract's lens), here: new flags and assets too; `_x`
+  bindings and `pub` fields evade the lints.
 - **Population**: for a gate, build flag or config key that selects a set
   (crates, features, targets, jobs, a gate's own tests), name the set before
   and after. A silent shrink is a defect (#1012, #1101, #1103, #1123).
@@ -212,9 +212,10 @@ the PR body.
 The items:
 
 - **Render and look**:
-  - generated art and clips: extract frames and read them, and census the key
-    frame, the one that shows what the change is for. A PR's media diff is the
-    overlays `just gen-media-check` writes to `target/gen-check-diff/`;
+  - generated art and clips: extract frames and read them, and census each
+    clip's money shot, the action it is staged for (`scripts/gen-media.py`'s
+    `poster_frame`). A PR's media diff is the overlays `just gen-media-check`
+    writes to `target/gen-check-diff/`;
   - motion, pose and walk legs (under `crates/pixtuoid-scene/src/`: `walk/`,
     `pose/`, `pathfind/`, `physics.rs`): the snapshot example, or for
     lifecycle a `just hermetic` run's scene log (#61);
