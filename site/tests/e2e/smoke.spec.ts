@@ -2583,7 +2583,7 @@ test('nav menus + docs: dropdown, TOC scrollspy, 404, mobile burger', async ({ p
     .toBeLessThan(1);
   const nav = (await page.locator('.nav').boundingBox())!;
   expect((await anchored.boundingBox())!.y).toBeGreaterThan(nav.y + nav.height);
-  // Park a heading at 20% viewport, inside the scrollspy's rootMargin band (Wing.astro).
+  // Park a heading at 20% viewport, inside the scrollspy's reading band (Wing.astro's rootMargin).
   await page.evaluate(() => {
     const h = document.getElementById('themes')!;
     window.scrollTo({
