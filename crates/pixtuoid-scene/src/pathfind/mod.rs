@@ -144,7 +144,8 @@ fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
 const MAX_SNAP_RADIUS: u16 = 12;
 
 /// Run A* on the layout's walkability mask.
-pub(crate) fn find_path(
+#[doc(hidden)]
+pub fn find_path(
     mask: &WalkableMask,
     preferred: Option<Bounds>,
     from: Point,
