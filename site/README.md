@@ -14,13 +14,13 @@ each piece comes from.
 
 ```sh
 npm install        # or, from the repo root: just site-setup
-npm run dev        # http://localhost:4321/, or: just site-dev
+npm run dev        # or, from the repo root: just site-dev
 just site-dev-bg   # the dev server in the background, for an agent; just site-dev-stop ends it
 ```
 
 `just site-dev-bg` waits until the dev server answers on its dev-only
 `/_astro/status` endpoint. Stop it before `just site-e2e`: the dev server and
-the e2e's preview server share port 4321.
+the e2e's preview server share one port.
 
 The live office runs from `public/wasm/`, which `just gen-wasm` builds (it
 needs Rust) and git ignores. Without it, `dev` and `verify` still work, and
@@ -39,7 +39,7 @@ and `just site-e2e` runs the Playwright smoke suite. Use `just site-e2e`, not
 
 - **`audit` runs last** on purpose: it reads advisories live, so a stranger's
   publish would otherwise stop every check after it.
-- **npm 12 is required** (`packageManager`, with `engine-strict`).
+- **The npm `packageManager` names is required** (`engine-strict`).
   Dependencies' install scripts don't run unless `allowScripts` lists them
   (`.npmrc`); `npm install-scripts ls` shows what a change would run.
 
@@ -55,7 +55,7 @@ deploys.
   captions. ASCII dividers, a blinking cursor and CRT scanlines.
 - **Palette.** A warm "Coworking" palette, cream with Claude coral. Day is
   cream and night is after hours. Until the visitor picks one, the site
-  follows their local time, night from 19:00 to 07:00, and a system that
+  follows their local time by `window.__pixNight()`, and a system that
   prefers dark keeps night at noon too. `dracula` is a hidden easter egg:
   type it, or open `?theme=dracula`.
 - **The building.** The home page is one continuous shot of the real office.
@@ -103,8 +103,9 @@ change, and `just gen-media --only site` renders it again after a change to
 the look. Both run `scripts/gen-media.py` over `scripts/media.json`, through
 the real TuiRenderer; a clip is encoded to `.mp4` and `.webm` with a poster.
 
-Pixel art lives in `public/`, not `src/assets/`, whose optimizer would resize
-and blur it.
+Pixel art lives in `public/`, which Astro leaves unprocessed
+([Images](https://docs.astro.build/en/guides/images/)), not in `src/assets/`,
+whose optimizer would resize and blur it.
 
 ## The showcase (Studio Wall)
 
@@ -134,7 +135,8 @@ The site is served at **pixtuoid.dev** (`base: '/'`; `site` is the
 workspace's `homepage` in `Cargo.toml`).
 
 - The domain is set in the repository's **Settings → Pages**. A deploy from
-  Actions needs no `CNAME` file.
+  Actions needs no `CNAME` file
+  ([GitHub Pages](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site)).
 - DNS: the apex's A and AAAA records point at GitHub Pages, and `www` is a
   CNAME to `pixtuoid.github.io`.
 - `robots.txt` and the sitemap derive from the config.
