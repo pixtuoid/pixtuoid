@@ -1654,6 +1654,12 @@ mod tests {
             "and reads again"
         );
         assert!(again[3]["agents"][0]["exiting_at"].is_object());
+        // The page's still a jump after the last hook is what empties the office there.
+        o.step(t + Office::journey_jump_ms(), 160, 96);
+        assert!(
+            o.scene.agents.is_empty(),
+            "the still after the last hook sweeps the ended session"
+        );
     }
 
     #[test]

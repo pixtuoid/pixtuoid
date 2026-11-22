@@ -277,8 +277,11 @@ async function paintedContrast(
   }
   return worst;
 }
-/** That `selector`'s first match shows a focus ring that clears WCAG 1.4.11 against what it lies on. */
-async function ringClears(page: Page, selector: string, where: string): Promise<void> {
+/**
+ * That `selector`'s first match shows a focus ring that clears WCAG 1.4.11 against what it lies on. `label`
+ * prefixes each failure message: give it the theme, the moment and the place, so a failure names its case.
+ */
+async function ringClears(page: Page, selector: string, label: string): Promise<void> {
   const ringShown = await page
     .locator(selector)
     .first()
@@ -286,11 +289,11 @@ async function ringClears(page: Page, selector: string, where: string): Promise<
       (el as HTMLElement).focus({ focusVisible: true } as FocusOptions);
       return getComputedStyle(el).outlineStyle !== 'none';
     });
-  expect(ringShown, `${where} ${selector}: no focus ring`).toBe(true);
+  expect(ringShown, `${label} ${selector}: no focus ring`).toBe(true);
   const ring = await paintedContrast(page, selector, 0, 'outlineColor');
   expect(
     ring,
-    `${where} ${selector} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
+    `${label} ${selector} focus ring: WCAG 1.4.11 floor is ${AA_NON_TEXT}:1; measured ${ring.toFixed(2)}:1`
   ).toBeGreaterThanOrEqual(AA_NON_TEXT);
 }
 
@@ -309,17 +312,22 @@ async function settledShot(shot: () => Promise<string>): Promise<string> {
   return last;
 }
 
-/** Whether the canvas `selector` names shows a painted pixel, read through a copy: the office host holds its drawing. */
-async function canvasPainted(page: Page, selector: string): Promise<boolean> {
+/**
+ * How many colours the canvas `selector` names shows, transparent black aside, so 0 is unpainted; read through a
+ * copy: the office host holds its drawing.
+ */
+async function canvasColours(page: Page, selector: string): Promise<number> {
   return page.evaluate((sel) => {
     const c = document.querySelector(sel) as HTMLCanvasElement | null;
-    if (!c) return false;
+    if (!c) return 0;
     const copy = document.createElement('canvas');
     copy.width = c.width;
     copy.height = c.height;
     const ctx = copy.getContext('2d')!;
     ctx.drawImage(c, 0, 0);
-    return ctx.getImageData(0, 0, c.width, c.height).data.some((v) => v !== 0);
+    const seen = new Set(new Uint32Array(ctx.getImageData(0, 0, c.width, c.height).data.buffer));
+    seen.delete(0);
+    return seen.size;
   }, selector);
 }
 
@@ -379,6 +387,21 @@ async function gotoLive(page: Page): Promise<void> {
   await page.goto('./');
   // A timeout here is the ABI-mismatch / loader-regression signal.
   await expect(page.locator('.backdrop.is-live')).toBeAttached({ timeout: 15_000 });
+}
+
+/** Whether the journey's office puts every art pixel on whole device pixels: on both axes, a whole CSS box that is the frame at its whole upscale. */
+async function journeyWhole(page: Page): Promise<boolean> {
+  return page.locator('.fig-journey__office').evaluate((c: HTMLCanvasElement) => {
+    const css = [parseFloat(c.style.width), parseFloat(c.style.height)];
+    const frame = [c.width, c.height];
+    const upscale = Number(c.dataset.upscale);
+    return (
+      upscale % 1 === 0 &&
+      [0, 1].every(
+        (axis) => css[axis] % 1 === 0 && css[axis] * devicePixelRatio === frame[axis] * upscale
+      )
+    );
+  });
 }
 
 /** How it works at `query`, once its journey's hooks are ready, which it returns. */
@@ -828,7 +851,7 @@ test('the hero pause switch freezes the office and resumes it seamlessly', async
   await page.setViewportSize({ width: 500, height: 900 });
   await expect.poll(frameW).not.toBe(frozenW);
   expect(await btn.getAttribute('aria-pressed')).toBe('true');
-  expect(await canvasPainted(page, '#office-live')).toBe(true);
+  expect(await canvasColours(page, '#office-live')).toBeGreaterThan(0);
   const frozen2 = await shot();
   await page.waitForTimeout(400);
   expect(await shot()).toBe(frozen2);
@@ -1597,19 +1620,8 @@ test('how it works: every recorded hook fills each stop through the real decoder
         expect(slots[0].desk, `hook ${i}: the session sits at a desk`).not.toBeNull();
       if (i === count - 1) expect(slots[0].exiting_at, 'the last hook ends it').not.toBeNull();
       if (i === 0) {
-        expect(await canvasPainted(page, '.fig-journey__office')).toBe(true);
-        // Every art pixel on whole device pixels: a whole CSS box that is the frame at its whole upscale.
-        const box = await page.locator('.fig-journey__office').evaluate((c: HTMLCanvasElement) => ({
-          css: [parseFloat(c.style.width), parseFloat(c.style.height)],
-          frame: [c.width, c.height],
-          upscale: Number(c.dataset.upscale),
-          dpr: devicePixelRatio,
-        }));
-        expect(box.upscale % 1).toBe(0);
-        for (const axis of [0, 1]) {
-          expect(box.css[axis] % 1, 'a whole CSS px').toBe(0);
-          expect(box.css[axis] * box.dpr).toBe(box.frame[axis] * box.upscale);
-        }
+        expect(await canvasColours(page, '.fig-journey__office')).toBeGreaterThan(0);
+        expect(await journeyWhole(page), 'every art pixel on whole device pixels').toBe(true);
         await page.locator('.fig-journey__why summary').first().click();
         for (const selector of [
           '.fig-journey__hook:not(:disabled)',
@@ -1651,19 +1663,7 @@ test('how it works on a 320px-wide 1x screen: the office still lays out', async 
   const office = page.locator('.fig-journey__office');
   await office.scrollIntoViewIfNeeded();
   // An office too small to lay out is one fill; a laid-out one has many colours.
-  const colours = () =>
-    office.evaluate((c: HTMLCanvasElement) => {
-      const copy = document.createElement('canvas');
-      copy.width = c.width;
-      copy.height = c.height;
-      const ctx = copy.getContext('2d')!;
-      ctx.drawImage(c, 0, 0);
-      const d = ctx.getImageData(0, 0, c.width, c.height).data;
-      const seen = new Set<number>();
-      for (let i = 0; i < d.length; i += 4) seen.add((d[i] << 16) | (d[i + 1] << 8) | d[i + 2]);
-      return seen.size;
-    });
-  await expect.poll(colours).toBeGreaterThan(1);
+  await expect.poll(() => canvasColours(page, '.fig-journey__office')).toBeGreaterThan(1);
   await context.close();
 });
 
@@ -1703,12 +1703,7 @@ test('how it works: a change of device-pixel ratio refits the office to whole de
   });
   await page.setViewportSize({ width: 1280, height: 720 });
   await gotoJourney(page);
-  const whole = () =>
-    page.locator('.fig-journey__office').evaluate((c: HTMLCanvasElement) => {
-      const css = parseFloat(c.style.width);
-      return css * devicePixelRatio === c.width * Number(c.dataset.upscale);
-    });
-  await expect.poll(whole, { message: 'at 1x' }).toBe(true);
+  await expect.poll(() => journeyWhole(page), { message: 'at 1x' }).toBe(true);
   await page.evaluate(() => {
     Object.defineProperty(window, 'devicePixelRatio', { value: 2, configurable: true });
     // Each change asks for the next ratio's query, so only the lists asked so far fire.
@@ -1716,7 +1711,7 @@ test('how it works: a change of device-pixel ratio refits the office to whole de
       list.dispatchEvent(new Event('change'));
     }
   });
-  await expect.poll(whole, { message: 'at 2x' }).toBe(true);
+  await expect.poll(() => journeyWhole(page), { message: 'at 2x' }).toBe(true);
 });
 
 test('how it works: a hook sent from the keyboard leaves focus on the next one', async ({
@@ -1991,8 +1986,8 @@ test('#671 cross-trigger recovery: after the hero exhausts its retries, a later 
     document.getElementById('studio')!.scrollIntoView({ block: 'center', behavior: 'instant' })
   );
   await expect
-    .poll(() => canvasPainted(page, '[data-vibing-canvas]'), { timeout: 15_000 })
-    .toBe(true);
+    .poll(() => canvasColours(page, '[data-vibing-canvas]'), { timeout: 15_000 })
+    .toBeGreaterThan(0);
   expect(await page.evaluate(() => window.__pixOfficeHost !== null)).toBe(true);
   expect(wasmHits).toBeGreaterThan(3);
   expect(errors().filter((e) => !e.includes('Failed to load resource'))).toEqual([]);
@@ -2507,8 +2502,8 @@ test('VIBING channel: live office paints, is pause-gated, chips drive it', async
       (document.querySelector('[data-vibing-canvas]') as HTMLCanvasElement).toDataURL()
     );
   await expect
-    .poll(() => canvasPainted(page, '[data-vibing-canvas]'), { timeout: 15_000 })
-    .toBe(true);
+    .poll(() => canvasColours(page, '[data-vibing-canvas]'), { timeout: 15_000 })
+    .toBeGreaterThan(0);
 
   const beforeWeather = await vibingShot();
   const stormChip = page.locator('[data-stage="vibing"] .osd__chip[data-weather="storm"]');
