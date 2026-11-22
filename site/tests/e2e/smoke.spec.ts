@@ -2863,17 +2863,17 @@ test.describe('the office moments still span the light range', () => {
 });
 
 test.describe('the office keeps the visitor’s zone', () => {
-  // UTC+09:00 all year (tzdb `asia:2169-2170`, eggert/tz 8fbf8fe643d2, its last DST rule 1951): the morning moment
-  // reads 17:00 here, still day, and the sun-highest one 21:30, night. Read with the offset's sign flipped, both are
-  // night; read in UTC, the second is noon.
+  // UTC+09:00 all year (tzdb `asia:2169-2170`, eggert/tz 8fbf8fe643d2, its last DST rule 1951): Tokyo reads the
+  // morning moment as day and the sun-highest one as night. Read with the offset's sign flipped, both are night; read
+  // in UTC, the second is the brighter.
   test.use({ timezoneId: 'Asia/Tokyo' });
-  test('Tokyo’s 17:00 is far brighter than its 21:30', async ({ page }) => {
+  test('Tokyo reads the morning moment as day and the sun-highest one as night', async ({ page }) => {
     test.setTimeout(120_000);
     const [sunHighest, , morning] = OFFICE_MOMENTS;
-    const evening = await officeLuminanceAt(page, morning.at);
-    const night = await officeLuminanceAt(page, sunHighest.at);
-    expect(evening, 'the office did not read the browser’s zone').toBeGreaterThan(
-      FAR_BRIGHTER * night
+    const dayInTokyo = await officeLuminanceAt(page, morning.at);
+    const nightInTokyo = await officeLuminanceAt(page, sunHighest.at);
+    expect(dayInTokyo, 'the office did not read the browser’s zone').toBeGreaterThan(
+      FAR_BRIGHTER * nightInTokyo
     );
   });
 });
