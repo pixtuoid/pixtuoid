@@ -114,9 +114,10 @@ impl Probe {
         events
     }
 
-    /// [`Self::listen_until`] three asks at or past `span` after the `from`th:
-    /// the first may fold a hair inside the span, the second folds past it,
-    /// and the third has the second's pass sent.
+    /// [`Self::listen_until`] three asks at or past `span` after the one that
+    /// follows the `from`th, which starts once the `from`th pass has answered,
+    /// where the watcher times a miss: the first may fold a hair inside the
+    /// span, the second folds past it, and the third has the second's pass sent.
     async fn listen_past(
         &self,
         rx: &mut mpsc::Receiver<(Transport, AgentEvent)>,
@@ -125,8 +126,8 @@ impl Probe {
         what: &str,
     ) -> Vec<(Transport, AgentEvent)> {
         self.listen_until(rx, what, |at| {
-            at.get(from)
-                .is_some_and(|first| at.iter().filter(|a| **a >= *first + span).count() >= 3)
+            at.get(from + 1)
+                .is_some_and(|answered| at.iter().filter(|a| **a >= *answered + span).count() >= 3)
         })
         .await
     }

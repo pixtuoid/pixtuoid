@@ -1710,11 +1710,19 @@ mod apply_key_action_tests {
                 h.audio_ctl.tick(std::time::Instant::now() + faded);
             }),
         ];
+        // A loop action's own work takes milliseconds; one that waits on the disk,
+        // even for a bound, takes it from the loop.
+        const RETURNS_WITHIN: std::time::Duration = std::time::Duration::from_secs(2);
         for (save, make) in saves {
             let mut h = Harness::new();
             let stall = crate::panels::noted::stall(&h.config_path);
+            let started = std::time::Instant::now();
             make(&mut h);
-            assert!(stall.holds(), "the loop waited on a stalled save: {save}");
+            let took = started.elapsed();
+            assert!(
+                stall.holds() && took < RETURNS_WITHIN,
+                "the loop waited on a stalled save: {save} took {took:?}"
+            );
             stall.release();
             h.settle();
             let footer = h.footer();
