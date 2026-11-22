@@ -675,15 +675,12 @@ mod tests {
 
         cli.kill().expect("kill the cli");
         let _ = cli.wait();
-        tokio::time::timeout(PATIENCE, async {
-            while let Some((_, ev)) = rx.recv().await {
-                if matches!(ev, AgentEvent::SessionEnd { .. }) {
-                    return;
-                }
-            }
-        })
-        .await
-        .expect("a SessionEnd once the watched pid dies");
+        let expected = crate::AgentId::from_parts("kimi", "sess-K");
+        assert_eq!(
+            super::super::pid_watch::ended_through(&mut rx, expected).await,
+            [expected],
+            "no agent but the subscriber's ends with its pid"
+        );
         owner.abort();
         subscriber.abort();
     }

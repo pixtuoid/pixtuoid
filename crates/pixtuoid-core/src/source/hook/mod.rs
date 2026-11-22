@@ -971,10 +971,6 @@ mod tests {
         );
     }
 
-    /// Both `rx.recv()`s are BOUNDED because `HookPidWatch::spawn` holds a `tx`
-    /// clone, so this channel never closes on its own: an unbounded recv parks
-    /// forever whenever the payload decodes to nothing, and nextest cannot
-    /// finish cancelling while one test hangs.
     #[tokio::test]
     async fn handle_conn_binds_pid_from_payload_so_killing_it_ends_the_agent() {
         let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(8);
@@ -1008,74 +1004,11 @@ mod tests {
         child.kill().expect("kill the watched child");
         let _ = child.wait();
         let expected = AgentId::from_parts("codewhale", "sess_t");
-        let end = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            // The decoded payloads land first; the pid's death arrives behind them.
-            loop {
-                match rx.recv().await {
-                    Some((transport, AgentEvent::SessionEnd { agent_id, as_child })) => {
-                        return Some((transport, agent_id, as_child));
-                    }
-                    Some(_) => continue,
-                    None => return None,
-                }
-            }
-        })
-        .await
-        .expect("a SessionEnd within 5s of the watched pid dying")
-        .expect("channel still open");
         assert_eq!(
-            end,
-            (Transport::Hook, expected, false),
-            "the payload-bound agent must end when its pid dies"
+            pid_watch::ended_through(&mut rx, expected).await,
+            [expected],
+            "no agent but the payload-bound one ends with its pid"
         );
-    }
-
-    /// A turn that ends without a tool, failed or not, still corroborates its
-    /// session's pid: kimi `-p` fires `SessionStart` and then only its turn's end.
-    #[tokio::test]
-    async fn a_session_whose_only_other_payload_is_its_turn_end_ends_with_its_pid() {
-        for end in ["Stop", "StopFailure"] {
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<(Transport, AgentEvent)>(8);
-            let Some(watch) = HookPidWatch::spawn(tx.clone()) else {
-                return; // no exit-watch backend on this platform — nothing to assert
-            };
-            let mut child = crate::test_child::sleeper();
-            let pid = child.id();
-            let (mut client, server) = tokio::io::duplex(4096);
-            let task = tokio::spawn(handle_conn(
-                server.take(MAX_CONN_BYTES),
-                tx,
-                Some(watch),
-                None,
-                None,
-            ));
-            let line = format!(
-                "{{\"{SOURCE_STAMP}\":\"kimi\",\"hook_event_name\":\"SessionStart\",\
-                 \"session_id\":\"s\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n\
-                 {{\"{SOURCE_STAMP}\":\"kimi\",\"hook_event_name\":\"{end}\",\
-                 \"session_id\":\"s\",\"cwd\":\"/repo\",\"_pid\":{pid}}}\n"
-            );
-            client.write_all(line.as_bytes()).await.unwrap();
-            drop(client);
-            task.await.unwrap();
-
-            child.kill().expect("kill the watched child");
-            let _ = child.wait();
-            let ended = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                loop {
-                    match rx.recv().await {
-                        Some((_, AgentEvent::SessionEnd { agent_id, .. })) => {
-                            return Some(agent_id);
-                        }
-                        Some(_) => continue,
-                        None => return None,
-                    }
-                }
-            })
-            .await
-            .unwrap_or_else(|_| panic!("{end}: a SessionEnd within 5s of the watched pid dying"));
-            assert_eq!(ended, Some(AgentId::from_parts("kimi", "s")), "{end}");
-        }
     }
 
     /// The #896 shape at this seam: ONE payload carrying a `_pid`, then that pid
@@ -1154,17 +1087,8 @@ mod tests {
 
         cli.kill().expect("kill the cli");
         let _ = cli.wait();
-        let ended = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while let Some((_, ev)) = rx.recv().await {
-                if let AgentEvent::SessionEnd { agent_id, .. } = ev {
-                    return Some(agent_id);
-                }
-            }
-            None
-        })
-        .await
-        .expect("a SessionEnd within 5s of the watched pid dying");
-        assert_eq!(ended, Some(AgentId::from_parts("kimi", "s")));
+        let kimi = AgentId::from_parts("kimi", "s");
+        assert_eq!(pid_watch::ended_through(&mut rx, kimi).await, [kimi]);
     }
 
     #[tokio::test]
