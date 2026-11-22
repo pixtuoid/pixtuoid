@@ -122,14 +122,14 @@ whose optimizer would resize and blur it.
 The `Showcase` and `ChannelStage` components draw what **`src/showcase.json`**
 lists, beside `src/themes.json`, `src/weather.json`, `src/features.json` and
 `src/install.json`. A channel's kinds and fields are `ShowcaseChannel` in
-`src/consts.ts`, and `astro.config.mjs` checks the file when the site builds
-or the dev server starts.
+`src/consts.ts`. `astro.config.mjs` checks `showcase.json`, and its pairing
+with `features.json`, whenever Astro loads the config.
 
-- **A new demo channel** is one `showcase.json` entry, its assets from
-  `just gen-media --only site`, and a `src/features.json` row whose `channel`
-  is the entry's id. A `clip` channel also adds its
-  `"kind": "clip"` job, named by the channel's `asset`, to
-  `scripts/media.json`. No component changes.
+- **A new demo channel** is one `showcase.json` entry, a `src/features.json`
+  row whose `channel` is the entry's id, and a `scripts/media.json` job
+  targeting `site` for each asset it shows, which `just gen-media --only site`
+  renders. A `clip` channel's job is `"kind": "clip"`, named by its `asset`.
+  No component changes.
 - **A new theme** is one row in `src/themes.json` and
   `just gen-media --only site`. The chips, the counts, the retint and the
   renders all pick it up.

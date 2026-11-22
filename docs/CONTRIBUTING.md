@@ -21,7 +21,7 @@ tests (`apt install mesa-vulkan-drivers`).
 
 ```bash
 just              # list recipes
-just preflight    # pre-push gate: lint → clippy; `just preflight full` adds hack → test (CI's Rust recipes)
+just preflight    # the pre-push gate; `just preflight full` is CI's Rust tier (the recipe lists the steps)
 just fmt          # auto-format
 just test         # the suite, under cargo-nextest (`just setup-tools`)
 just test -p <crate> <filter>   # fast loop while iterating on one crate
