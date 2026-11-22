@@ -244,7 +244,7 @@ fn a_replayed_loop_counts_its_work_again() {
     cues.extend(lead().spell(ms(1_000), 3, &["Bash: cargo test"]));
     let mut host = Host {
         playhead: Playhead::new(Script::new(PERIOD, cues), t0()),
-        reducer: Reducer::new().counting(|_| chrono::NaiveDate::MIN),
+        reducer: Reducer::new().counting(|_| jiff::civil::Date::MIN),
         scene: SceneState::uniform(8),
     };
     for lap in 1..=3u32 {

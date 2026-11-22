@@ -202,21 +202,22 @@ fn ts_ms(v: &serde_json::Value) -> Result<i64> {
         .get("timestamp")
         .and_then(|s| s.as_str())
         .ok_or_else(|| anyhow!("session line missing timestamp"))?;
-    Ok(chrono::DateTime::parse_from_rfc3339(ts)
+    Ok(ts
+        .parse::<jiff::Timestamp>()
         .with_context(|| format!("bad session timestamp {ts:?}"))?
-        .timestamp_millis())
+        .as_millisecond())
 }
 
-/// The session's date (`YYYY-MM-DD`), from its first line's timestamp.
+/// The session's date (`YYYY-MM-DD`), from its first line's timestamp, in
+/// the stamp's own offset: a civil date, not a UTC one.
 fn capture_date_str(v: &serde_json::Value) -> Result<String> {
     let ts = v
         .get("timestamp")
         .and_then(|s| s.as_str())
         .ok_or_else(|| anyhow!("session line missing timestamp"))?;
-    Ok(chrono::DateTime::parse_from_rfc3339(ts)
-        .with_context(|| format!("bad session timestamp {ts:?}"))?
-        .format("%Y-%m-%d")
-        .to_string())
+    let pieces = jiff::fmt::temporal::Pieces::parse(ts)
+        .with_context(|| format!("bad session timestamp {ts:?}"))?;
+    Ok(pieces.date().to_string())
 }
 
 /// First human-meaningful arg of a tool_use input, for the panel line.

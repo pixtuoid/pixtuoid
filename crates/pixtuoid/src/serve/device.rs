@@ -783,7 +783,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn changes_inside_a_frame_gap_reach_a_device_as_one_frame() {
         const CHANGES: u32 = 4;
-        let day = chrono::NaiveDate::from_ymd_opt(2026, 6, 1).expect("a date");
+        let day = jiff::civil::date(2026, 6, 1);
         // Told apart by `today`: a line carries it, and no desk capacity.
         let counted = |calls: u32| Some(Today::new(day, 0, u64::from(calls)));
         let fixture = fixture();

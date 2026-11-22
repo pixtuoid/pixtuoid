@@ -4,7 +4,7 @@
 
 use std::time::SystemTime;
 
-use chrono::NaiveDate;
+use jiff::civil::Date;
 use pixtuoid_core::state::{ActivityState, DaemonPresence, DaemonState, MAX_FLOORS, Today};
 use pixtuoid_core::{AgentSlot, SceneState};
 
@@ -103,7 +103,7 @@ pub fn office_gateway(scene: &SceneState) -> Option<DaemonState> {
 
 /// `now`'s local date, what a host's reducer dates [`Today::day`] by.
 #[doc(hidden)]
-pub fn local_day(now: SystemTime) -> NaiveDate {
+pub fn local_day(now: SystemTime) -> Date {
     crate::localclock::local_time(now).date()
 }
 
@@ -148,7 +148,7 @@ mod tests {
             (0, 1_500, Some("1.5K tool calls")),
         ];
         for (tokens, tool_calls, words) in rows {
-            let today = Today::new(NaiveDate::MIN, tokens, tool_calls);
+            let today = Today::new(Date::MIN, tokens, tool_calls);
             assert_eq!(today_headline(today).as_deref(), words);
         }
     }

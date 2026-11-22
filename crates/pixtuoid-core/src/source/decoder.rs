@@ -256,15 +256,67 @@ pub(crate) fn rfc3339_to_epoch_secs(s: &str) -> Option<u64> {
     rfc3339_to_epoch(s).map(|d| d.as_secs())
 }
 
-/// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond, by
-/// [`DateTime::parse_from_rfc3339`](chrono::DateTime::parse_from_rfc3339).
+/// [`rfc3339_to_epoch_secs`] with the fraction kept, to the nanosecond.
 #[cfg(any(feature = "native", feature = "harness", test))]
 pub(crate) fn rfc3339_to_epoch(s: &str) -> Option<std::time::Duration> {
-    let t = chrono::DateTime::parse_from_rfc3339(s).ok()?;
+    let t: jiff::Timestamp = rfc3339_date_time(s)?.parse().ok()?;
     Some(std::time::Duration::new(
-        u64::try_from(t.timestamp()).ok()?,
-        t.timestamp_subsec_nanos(),
+        u64::try_from(t.as_second()).ok()?,
+        u32::try_from(t.subsec_nanosecond()).ok()?,
     ))
+}
+
+/// `s` for jiff's parser when it has RFC 3339's `date-time` shape: that parser
+/// reads Temporal's wider grammar (jiff 1.0.2 `src/fmt/temporal/mod.rs:1-56`)
+/// (no seconds, a comma fraction, a `[zone]` annotation, `+0200`, `+02:00:30`),
+/// so the shape is held here and jiff checks the ranges.
+#[cfg(any(feature = "native", feature = "harness", test))]
+fn rfc3339_date_time(s: &str) -> Option<std::borrow::Cow<'_, str>> {
+    /// `full-date`, the separator and `partial-time` up to its seconds: `9` is
+    /// any digit, and §5.6's NOTE lets a space stand for the `T`.
+    const HEAD: &[u8] = b"9999-99-99T99:99:99";
+    /// jiff refuses a fraction digit past the nanosecond (`src/fmt/util.rs:761-765`),
+    /// which is cut instead: it is no reason to drop the stamp.
+    const NANOSECOND_DIGITS: usize = 9;
+    let head = s.as_bytes().get(..HEAD.len())?;
+    let head_fits = HEAD.iter().zip(head).all(|(&want, &got)| match want {
+        b'9' => got.is_ascii_digit(),
+        b'T' => matches!(got, b'T' | b't' | b' '),
+        _ => got == want,
+    });
+    if !head_fits {
+        return None;
+    }
+    let rest = &s[HEAD.len()..];
+    let (digits, offset) = match rest.strip_prefix('.') {
+        Some(fraction) => {
+            let digits = fraction.bytes().take_while(u8::is_ascii_digit).count();
+            if digits == 0 {
+                return None;
+            }
+            (digits, &fraction[digits..])
+        }
+        None => (0, rest),
+    };
+    /// RFC 3339's `time-hour` ends at 23, where jiff's offset hours run to 25
+    /// (jiff-core 1.0.1 `src/bounds.rs:277`).
+    const OFFSET_HOUR_END: [u8; 2] = *b"24";
+    let offset_fits = match *offset.as_bytes() {
+        [b'Z' | b'z'] => true,
+        [b'+' | b'-', h1, h2, b':', m1, m2] => {
+            [h1, h2, m1, m2].iter().all(u8::is_ascii_digit) && [h1, h2] < OFFSET_HOUR_END
+        }
+        _ => false,
+    };
+    if !offset_fits {
+        return None;
+    }
+    Some(if digits <= NANOSECOND_DIGITS {
+        std::borrow::Cow::Borrowed(s)
+    } else {
+        let kept = HEAD.len() + ".".len() + NANOSECOND_DIGITS;
+        std::borrow::Cow::Owned(format!("{}{offset}", &s[..kept]))
+    })
 }
 
 /// The key the shim stamps with the CLI whose hook ran it. Pinned by
@@ -807,7 +859,7 @@ mod tests {
     }
 
     #[test]
-    fn rfc3339_parses_chrono_utc_shapes_and_rejects_garbage() {
+    fn rfc3339_parses_utc_shapes_and_rejects_garbage() {
         assert_eq!(
             rfc3339_to_epoch_secs("2026-07-16T12:00:05Z"),
             Some(1_784_203_205)
@@ -859,6 +911,24 @@ mod tests {
             rfc3339_to_epoch_secs("2026-07-16t12:00:05Z"),
             Some(1_784_203_205)
         );
+        assert_eq!(
+            rfc3339_to_epoch_secs("2026-07-16 12:00:05Z"),
+            Some(1_784_203_205),
+            "RFC 3339 §5.6's NOTE lets a space stand for the `T`"
+        );
+    }
+
+    #[test]
+    fn rfc3339_refuses_the_wider_grammar_its_parser_reads() {
+        for bad in [
+            "2026-07-16T12:00Z",
+            "2026-07-16T12:00:05,5Z",
+            "2026-07-16T12:00:05Z[UTC]",
+            "20260716T120005Z",
+            "+002026-07-16T12:00:05Z",
+        ] {
+            assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
+        }
     }
 
     #[test]
@@ -875,6 +945,11 @@ mod tests {
             assert!(rfc3339_to_epoch_secs(ok).is_some(), "{ok:?} must parse");
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?} must not");
         }
+        assert_eq!(
+            rfc3339_to_epoch_secs("2026-07-16T12:00:60Z"),
+            rfc3339_to_epoch_secs("2026-07-16T12:00:59Z"),
+            "the leap second lands on :59"
+        );
         for bad in [
             "2026-07-00T12:00:05Z",
             "2026-02-31T12:00:05Z",
@@ -894,6 +969,8 @@ mod tests {
             "2026-07-16T12:00:05+02-00",
             "2026-07-16T12:00:05+02:00extra",
             "2026-07-16T12:00:05+0200",
+            "2026-07-16T12:00:05+02:00:30",
+            "2026-07-16T12:00:05\u{2212}02:00",
         ] {
             assert_eq!(rfc3339_to_epoch_secs(bad), None, "{bad:?}");
         }
