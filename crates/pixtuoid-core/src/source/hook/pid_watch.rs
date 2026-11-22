@@ -102,6 +102,51 @@ impl HookPidWatch {
     }
 }
 
+/// `corroborate` as a test passes it: a pid the shim guessed, and one the
+/// source stamped.
+#[cfg(test)]
+pub(super) const GUESS: bool = true;
+#[cfg(test)]
+pub(super) const FACT: bool = false;
+
+/// The agents ended through `witness`'s `SessionEnd`, `witness` being armed on
+/// the pid whose death a test awaits: one death ends every agent armed on its
+/// pid at once ([`Bindings::take`]), so an agent missing here was never armed.
+#[cfg(test)]
+pub(super) async fn ended_through(
+    rx: &mut crate::source::TaggedReceiver,
+    witness: AgentId,
+) -> Vec<AgentId> {
+    /// A hang guard, never a verdict.
+    const PATIENCE: std::time::Duration = std::time::Duration::from_secs(5);
+    let mut ended = Vec::new();
+    let receipt = tokio::time::timeout(PATIENCE, async {
+        while let Some((_, event)) = rx.recv().await {
+            if let AgentEvent::SessionEnd { agent_id, .. } = event {
+                ended.push(agent_id);
+                if agent_id == witness {
+                    return true;
+                }
+            }
+        }
+        false
+    })
+    .await;
+    assert!(
+        matches!(receipt, Ok(true)),
+        "the witness's SessionEnd, got {ended:?}"
+    );
+    // The drain sends one death's ends in one poll of its task, which a
+    // current-thread test cannot interleave, so any after the witness's are
+    // queued by now.
+    while let Ok((_, event)) = rx.try_recv() {
+        if let AgentEvent::SessionEnd { agent_id, .. } = event {
+            ended.push(agent_id);
+        }
+    }
+    ended
+}
+
 /// Split from the [`ExitWatch`] side so it is unit-testable without spawning the
 /// platform watcher thread.
 impl Bindings {
@@ -157,9 +202,6 @@ mod tests {
             crate::source::exit_watch::HAS_BACKEND
         );
     }
-
-    const GUESS: bool = true;
-    const FACT: bool = false;
 
     /// Two sightings each, so both agents are ARMED on the shared pid.
     #[test]
@@ -332,14 +374,16 @@ mod tests {
         };
         let mut wrapper = crate::test_child::sleeper();
         let pid = i32::try_from(wrapper.id()).expect("pid fits i32");
-        watch.note(pid, AgentId::from_parts("cursor", "sess-A"), true);
+        let once_seen = AgentId::from_parts("cursor", "sess-A");
+        watch.note(pid, once_seen, GUESS);
+        let witness = AgentId::from_parts("opencode", "ses_witness");
+        watch.note(pid, witness, FACT);
         wrapper.kill().expect("kill the wrapper");
         let _ = wrapper.wait();
 
-        assert!(
-            tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
-                .await
-                .is_err(),
+        assert_eq!(
+            ended_through(&mut rx, witness).await,
+            [witness],
             "an uncorroborated pid's death must not end the session"
         );
     }

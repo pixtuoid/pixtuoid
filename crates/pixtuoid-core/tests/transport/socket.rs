@@ -81,7 +81,9 @@ async fn listener_skips_malformed_line_and_keeps_going() {
     handle.abort();
 }
 
-#[tokio::test]
+// Paused: the slow client sends nothing, so the clock jumps to the listener's
+// budget.
+#[tokio::test(start_paused = true)]
 async fn listener_drops_slow_connection_via_timeout() {
     let dir = TempDir::new_in(socket_root()).unwrap();
     let path = dir.path().join("pixtuoid.sock");

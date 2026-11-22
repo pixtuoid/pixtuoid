@@ -235,7 +235,7 @@ mod tests {
 
     /// `bytes` to `at` on a runtime that ends with the call: a Windows pipe
     /// client's handle closes only while its runtime runs, and a test that then
-    /// blocks in `settle` would hold it open past the tap's budget.
+    /// blocks in [`arrived`] would hold it open past the tap's budget.
     fn deliver(at: &Endpoint, bytes: &str) {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -243,6 +243,16 @@ mod tests {
             .expect("runtime")
             .block_on(at.send(bytes.as_bytes()))
             .expect("send");
+    }
+
+    /// `tap`'s payloads once it holds `n`: a test knows what it sent, so it
+    /// needs none of [`Tap::settle`]'s quiet rounds.
+    fn arrived(tap: &Tap, n: usize) -> Vec<String> {
+        let started = std::time::Instant::now();
+        while tap.len() < n && started.elapsed() < PATIENCE {
+            std::thread::sleep(POLL);
+        }
+        tap.payloads()
     }
 
     #[test]
@@ -253,10 +263,8 @@ mod tests {
         let at = Endpoint::in_dir(d.path(), "tap");
         let tap = Tap::bind(&at, Some(tee_at)).expect("tap");
         deliver(&at, LINE);
-        tap.settle();
-        tee.settle();
-        assert_eq!(tap.payloads(), [LINE]);
-        assert_eq!(tee.payloads(), [LINE]);
+        assert_eq!(arrived(&tap, 1), [LINE]);
+        assert_eq!(arrived(&tee, 1), [LINE]);
     }
 
     #[test]
@@ -271,8 +279,7 @@ mod tests {
             "a probe leaves the instance for the next one"
         );
         deliver(&at, LINE);
-        tap.settle();
-        assert_eq!(tap.payloads(), [LINE]);
+        assert_eq!(arrived(&tap, 1), [LINE]);
     }
 
     #[test]
@@ -296,9 +303,8 @@ mod tests {
             .build()
             .expect("runtime")
             .block_on(at.send("x".repeat(cap + 1).as_bytes()));
-        tap.settle();
         assert_eq!(
-            tap.payloads().iter().map(String::len).collect::<Vec<_>>(),
+            arrived(&tap, 1).iter().map(String::len).collect::<Vec<_>>(),
             [cap]
         );
     }
@@ -328,8 +334,7 @@ mod tests {
         let at = Endpoint::in_dir(d.path(), "tap");
         let tap = Tap::bind(&at, Some(Endpoint::in_dir(d.path(), "absent"))).expect("tap");
         deliver(&at, LINE);
-        tap.settle();
-        assert_eq!(tap.payloads(), [LINE]);
+        assert_eq!(arrived(&tap, 1), [LINE]);
     }
 
     /// The hook server always pre-creates its next instance, so only a server
