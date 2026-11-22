@@ -176,7 +176,8 @@ Repo skills (committed): `beautify-decoration`, `add-source`.
   - A change leaves the net comment volume of what it touches no larger,
     unless each added line earns its place.
   - An intra-doc link to the authority also turns a rename into a `doc-check`
-    red, private items included.
+    red, private items included. `doc-check` never builds `#[cfg(test)]`
+    code, `tests/` or `benches/`, so grep those for a renamed item's links.
 - **DRY.** One implementation per piece of logic and one source per value: two
   copies are a latent drift bug.
 - **Magic numbers** (org rule): prefer a type (enum/newtype) for a related set.
