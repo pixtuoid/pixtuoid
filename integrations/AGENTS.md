@@ -17,7 +17,7 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
 - `raycast/src/pixtuoid.ts` is the CLI bridge; `raycast/src/manage-sources.tsx`
   and `raycast/src/start-floating.tsx` are the command UIs.
 - No server and no state of its own: every fact comes from the CLI, its
-  `--json` rows, and Start Floating Window's ready line, exit code and stderr.
+  `--json` rows, and Start Floating's ready line, exit code and stderr.
 
 ## The wire types are generated
 
@@ -53,7 +53,7 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
   wire JSON; `crates/pixtuoid/tests/cli_json.rs`'s `sources --json` golden and
   the schema test pin `SourceStatus`'s. `OutcomeRow`'s doc comment in
   `sources.rs` owns the published-wire rule.
-- `raycast/contract/floating-launch.json`, Start Floating Window's args, usage
+- `raycast/contract/floating-launch.json`, Start Floating's args, usage
   exit and error prefix, is hand-written; `cli_packaging`'s
   `the_floating_launch_contract_holds` pins it against the binary.
 
@@ -96,7 +96,7 @@ the Store review rejects an extension folder that ships an `AGENTS.md`
   code" ([npm-audit](https://docs.npmjs.com/cli/v12/commands/npm-audit)). So
   if an unfixable advisory recurs here, restore the per-advisory allow-list
   script (`raycast/scripts/audit-adjudicated.mjs`, deleted in #856) rather
-  than loosen `--audit-level`, which stops a whole severity band from failing
-  to hide one advisory.
+  than loosen `--audit-level`: hiding one advisory that way stops its whole
+  severity band from failing the audit.
   - Unfixable is realistic: a transitive chain we own no link of.
   - An `overrides` patch can green the audit over code that throws (#792).
