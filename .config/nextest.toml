@@ -31,10 +31,11 @@ threads-required = "num-cpus"
 filter = 'test(no_route_on_a_short_floor_passes_through_a_wall) | test(the_route_sweeps_hold_inside_insets) | test(no_jittered_leg_crosses_blocked_floor)'
 threads-required = "num-test-threads"
 
-# Instrumented, it runs long: it starts first, so it never trails the run, and
-# its bound leaves room for a runner that slows several-fold under load before
-# it counts as hung. Uninstrumented runs keep the default's.
+# These run long, the sweep instrumented and the merge oracle (every order of
+# every recorded two-transport run) anywhere: each starts first, so it never
+# trails the run, and its bound leaves room for a runner that slows several-fold
+# under load before it counts as hung. Local runs keep the default's.
 [[profile.ci.overrides]]
-filter = 'test(every_swept_office_holds_its_invariants)'
+filter = 'test(every_swept_office_holds_its_invariants) | test(every_order_of_a_two_transport_run_ends_alike)'
 priority = 100
 slow-timeout = { period = "60s", terminate-after = 8 }
