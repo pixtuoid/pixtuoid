@@ -6,14 +6,16 @@ name: cache cleanup
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout or PR-code execution; policy pins the cache-only job
     types: [closed]
-  # A lockfile bump strands the previous rust cache generation on the main
+  # A main push can strand the previous rust cache generation on the main
   # ref; deleting it deterministically beats the LRU lottery at the cache
-  # quota. Toolchain bumps are out of scope in both directions: they don't
-  # touch Cargo.lock, and the rustc hash is inside the family key, so a bump
-  # forks a NEW family rather than superseding the old one.
+  # quota. Every push, not a path filter: the generation hash covers every
+  # member's Cargo.toml, Cargo.lock, the rust-toolchain files and
+  # .cargo/config.toml (Swatinem/rust-cache v2.9.3 `src/config.ts:155-260`),
+  # and a push that strands nothing deletes nothing. A toolchain bump forks a
+  # NEW family instead (the rustc version is hashed before the family
+  # boundary, `:98-133`), which this never prunes.
   push:
     branches: [main]
-    paths: [Cargo.lock]
 
 # Per-job grants: with more than one job, a workflow-level write is
 # zizmor's excessive-permissions class.
@@ -58,12 +60,12 @@ jobs:
           set -euo pipefail
           # Stripping the last segment reproduces rust-cache's own restoreKey
           # boundary (key = prefix-sharedkey-OS-arch-envhash-LOCKHASH), so a
-          # family is (job, OS, toolchain) and only lockfile generations
-          # compete inside it. A key with a non-hex tail becomes its own
+          # family is (job, OS, toolchain) and only generations of the hashed
+          # files compete inside it. A key with a non-hex tail becomes its own
           # one-element family and is never deleted — the failure direction
           # is under-prune, never over-prune. Keep each family's newest
           # entry; this run races the build creating its successor, so the
-          # superseded generation survives until the NEXT bump — the
+          # superseded generation survives until the NEXT main push — the
           # invariant is at most two generations per family, not one.
           # An assignment propagates a pipeline failure under pipefail (a
           # process substitution would swallow it); --limit 300 is an order
