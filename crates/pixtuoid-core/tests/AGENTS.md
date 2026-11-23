@@ -84,9 +84,9 @@ which holds every other step.
      wrong `id_from_path` fails here instead of shipping two sprites for one
      session.
    - A source with both a transcript and hooks needs a scenario recording
-     both streams, once CONTRIBUTING step 8's install target exists, and its
-     `harness::reads::WRITE_STAMPS` row in place before recording
-     (`sources/merge.rs`; CONTRIBUTING step 5 says why).
+     both streams, which only CONTRIBUTING step 8's install target can
+     record, and its `harness::reads::WRITE_STAMPS` row in place before
+     recording (`sources/merge.rs`; CONTRIBUTING step 5 says why).
 2. **Only for unique behavior** (subagent hooks, custom lifecycle): a
    `tests/sources/<module>.rs`, registered in `sources/main.rs`. A plain CLI
    (antigravity) needs none.

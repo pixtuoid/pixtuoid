@@ -59,10 +59,10 @@ impl Merged {
 struct Written {
     line: usize,
     at: SystemTime,
-    /// The stamp that bounds its write from above, as `(at, within)`: exactly
-    /// `at` when `within` is zero, else in `at..at + within`. Its own, else the
-    /// next stamped line's, as a file is written in order; `None` past the
-    /// file's last stamp.
+    /// The stamp that bounds its write from above, as `(until, within)`: the
+    /// stamped write is exactly `until` when `within` is zero, else in
+    /// `until..until + within`. Its own, else the next stamped line's, as a
+    /// file is written in order; `None` past the file's last stamp.
     until: Option<(SystemTime, Duration)>,
     events: Vec<Delivered>,
 }
@@ -126,10 +126,16 @@ impl Drive {
                     let ms = v.get(FORWARDED_AT_STAMP)?.as_u64()?;
                     Some((Duration::from_millis(ms), Duration::ZERO))
                 },
+                None,
             );
-            let transcript = written(&self.decode, lines, read, &mut decoded, |v| {
-                stamp_of(v.get(key)?, spelling)
-            });
+            let transcript = written(
+                &self.decode,
+                lines,
+                read,
+                &mut decoded,
+                |v| stamp_of(v.get(key)?, spelling),
+                hooks.iter().map(|h| h.at).min(),
+            );
             (hooks, transcript)
         });
         decoded.breadcrumbs = sink.take();
@@ -158,13 +164,15 @@ fn stamp_of(v: &Value, spelling: Spelling) -> Option<(Duration, Duration)> {
 
 /// `lines`' lines `read` delivers events for, each stamped by `stamp` and
 /// counted in `d`. A line with no stamp of its own was written between the
-/// stamped lines around it, the file's first no sooner than the epoch.
+/// stamped lines around it, and one ahead of the file's first stamp no sooner
+/// than the earliest stamp either stream records, the other's `beside`.
 fn written<S: AsRef<str>>(
     decode: &Decode,
     lines: &[S],
     mut read: impl FnMut(&str, Vec<AgentEvent>) -> Vec<Delivered>,
     d: &mut Driven,
     stamp: impl Fn(&Value) -> Option<(Duration, Duration)>,
+    beside: Option<SystemTime>,
 ) -> Vec<Written> {
     let mut out = Vec::new();
     let mut stamps = Vec::new();
@@ -202,8 +210,13 @@ fn written<S: AsRef<str>>(
         next_after[index] = next;
         next = own.or(next);
     }
+    // Never at the epoch, which would age the slot first sight registers past
+    // every stale threshold by the next arrival: a reap production never makes.
+    let first = stamps.iter().flatten().map(|&(at, _)| at).next();
+    let floor = first.into_iter().chain(beside).min();
     for w in &mut out {
         w.until = w.until.or(next_after[w.line]);
+        w.at = floor.map_or(w.at, |floor| w.at.max(floor));
     }
     out
 }
@@ -416,6 +429,13 @@ mod tests {
         .to_string()
     }
 
+    /// [`call`] with no stamp of its own.
+    fn unstamped_call() -> String {
+        let mut line: Value = serde_json::from_str(&call(0)).expect("json");
+        line.as_object_mut().expect("a line").remove("timestamp");
+        line.to_string()
+    }
+
     /// Each order's [`Merged::arrivals`].
     fn orders(merges: Merges) -> Vec<Vec<(Transport, usize)>> {
         merges.map(|m| m.arrivals()).collect()
@@ -486,21 +506,61 @@ mod tests {
     /// around it, so a hook stamped before the next one may precede it.
     #[test]
     fn an_unstamped_line_may_follow_a_hook_stamped_before_the_next_stamp() {
-        let mut unstamped: Value = serde_json::from_str(&call(0)).expect("json");
-        unstamped
-            .as_object_mut()
-            .expect("a line")
-            .remove("timestamp");
         // Past a poll interval from the epoch, the first line's earliest
         // write, so only the next line's stamp can admit the hook ahead of it.
         let hook_at = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms") * 2;
         let hooks = [hook("SessionStart", hook_at)];
-        let lines = [unstamped.to_string(), output(hook_at + 1_000)];
+        let lines = [unstamped_call(), output(hook_at + 1_000)];
         let merges = drive().merges(&hooks, &lines).expect("codex merges");
         assert_eq!(
             orders(merges),
             [vec![(J, 0), (H, 0), (J, 1)], vec![(H, 0), (J, 0), (J, 1)]]
         );
+    }
+
+    /// A stamped line bounds the unstamped line before it, whether or not it
+    /// decodes to anything: a hook past its stamp's poll interval never
+    /// precedes that line.
+    #[test]
+    fn a_stamped_line_with_no_events_still_bounds_the_unstamped_line_before_it() {
+        let ms = |d: Duration| u64::try_from(d.as_millis()).expect("ms");
+        let poll = ms(DEFAULT_POLL_INTERVAL);
+        let stamped_at = poll;
+        let eventless = json!({"timestamp": iso(stamped_at)}).to_string();
+        let hooks = [
+            hook("SessionStart", stamped_at + poll / 2),
+            hook("PreToolUse", stamped_at + poll + poll / 2),
+        ];
+        let lines = [unstamped_call(), eventless, output(stamped_at + 3 * poll)];
+        let merges = drive().merges(&hooks, &lines).expect("codex merges");
+        assert_eq!(
+            orders(merges),
+            [
+                vec![(J, 0), (H, 0), (H, 1), (J, 2)],
+                vec![(H, 0), (J, 0), (H, 1), (J, 2)],
+            ]
+        );
+    }
+
+    /// A line ahead of the file's first stamp lands no sooner than the earliest
+    /// stamp either stream records: production's watcher reads it at most a
+    /// poll before the first hook, never hours before, where the stale sweep
+    /// would reap its slot.
+    #[test]
+    fn an_unstamped_head_line_lands_within_a_poll_of_the_first_hook() {
+        let hook_at = crate::state::reducer::STALE_BLOCKED_TIMEOUT + DEFAULT_POLL_INTERVAL;
+        let hook_ms = u64::try_from(hook_at.as_millis()).expect("ms");
+        let hooks = [hook("SessionStart", hook_ms)];
+        let lines = [unstamped_call(), output(hook_ms + 1_000)];
+        for merged in drive().merges(&hooks, &lines).expect("codex merges") {
+            let at = |transport| {
+                let step = merged.steps.iter().find(|s| s.transport == transport);
+                step.expect("a step of each stream").at
+            };
+            let (seed, hook) = (at(J), at(H));
+            let ahead = hook.duration_since(seed).unwrap_or_default();
+            assert!(ahead <= DEFAULT_POLL_INTERVAL, "{:?}", merged.arrivals());
+        }
     }
 
     #[test]
