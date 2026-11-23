@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "grok",
   "version": "grok 1.0.92 (b06756fd6256)",
-  "captured": "2026-11-21",
+  "captured": "2026-11-23",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 109
+    "blanked": 82
   },
   "aimock": "1.48.0",
   "script": "tests/sources/grok/hermetic/tool-error.json",
@@ -21,7 +21,6 @@
         "post_tool_use_failure",
         "pre_tool_use",
         "session_start",
-        "stop",
         "user_prompt_submit"
       ],
       "/params/update/sessionUpdate": [

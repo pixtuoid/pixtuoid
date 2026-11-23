@@ -1659,8 +1659,7 @@ mod tests {
 
     /// `SourceCaps::brackets_turns`' conformance: a source brackets its turns
     /// exactly where its profile names a recording of every exit a turn takes,
-    /// each recording closing every turn it opens through its own exit alone,
-    /// and no capture of any other source decodes a turn's start.
+    /// each recording opening a turn and taking its own exit alone.
     #[test]
     fn a_source_brackets_turns_only_where_every_exit_is_recorded() {
         for source in registry::registered_source_names() {
@@ -1687,12 +1686,6 @@ mod tests {
                     "{source}/{}: its recording of {exit} opens no turn",
                     exit.scenario,
                 );
-                let open = verify::unclosed_turns(&events);
-                assert!(
-                    open.is_empty(),
-                    "{source}/{}: its recording of {exit} leaves {open:?} open",
-                    exit.scenario,
-                );
                 let taken: BTreeSet<&TurnExit> = captured_lines(&dir)
                     .iter()
                     .filter_map(|line| exit_of(exits, line))
@@ -1705,18 +1698,18 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Every capture ends each turn it opens by that turn's key, the one its
+    /// requests and calls are scoped by: grok's hook starts a turn under the
+    /// prompt id its transcript ends it by.
+    #[test]
+    fn every_capture_ends_each_turn_it_opens_by_its_key() {
         for capture in crate::harness::captures(&crate::harness::sources_root()) {
-            let brackets =
-                registry::descriptor_for(&capture.source).is_some_and(|d| d.caps().brackets_turns);
-            if brackets {
-                continue;
-            }
-            let starts = captured_events(&capture.source, &capture.dir)
-                .iter()
-                .any(|e| matches!(e, crate::AgentEvent::TurnStart { .. }));
+            let open = verify::unclosed_turns(&captured_events(&capture.source, &capture.dir));
             assert!(
-                !starts,
-                "{}: {} opens a turn, but its source does not bracket its turns",
+                open.is_empty(),
+                "{}: {} leaves {open:?} open",
                 capture.source,
                 capture.dir.display()
             );

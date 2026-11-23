@@ -3,58 +3,60 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 2363113921533922130
-    tool_use_id: call_Z49lZSSS_gTbaDws
+    agent_id: 14730432742626257688
+    tool_use_id: call_zBlKt5MhySOOiBau
     detail:
       Generic:
         display: use_tool
 - ToolUseEnd:
-    agent_id: 2363113921533922130
-    tool_use_id: call_Z49lZSSS_gTbaDws
+    agent_id: 14730432742626257688
+    tool_use_id: call_zBlKt5MhySOOiBau
 - TurnEnd:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
+    turn:
+      Id: 8db1496f-0b93-42be-9521-b441dadfe1ee
 - SessionEnd:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
     as_child: false
 - SessionStart:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
     source: grok
-    session_id: 01a1fed6-2dfe-73f0-bcdd-6e5a49704835
+    session_id: 01a2082a-c51a-78b1-98fe-60327b60fa5f
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
     source: grok
-    session_id: 01a1fed6-2dfe-73f0-bcdd-6e5a49704835
+    session_id: 01a2082a-c51a-78b1-98fe-60327b60fa5f
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
+- TurnStart:
+    agent_id: 14730432742626257688
+    turn:
+      Id: 8db1496f-0b93-42be-9521-b441dadfe1ee
 - Identity:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
     source: grok
-    session_id: 01a1fed6-2dfe-73f0-bcdd-6e5a49704835
+    session_id: 01a2082a-c51a-78b1-98fe-60327b60fa5f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 2363113921533922130
-    tool_use_id: call_Z49lZSSS_gTbaDws
+    agent_id: 14730432742626257688
+    tool_use_id: call_zBlKt5MhySOOiBau
     detail:
       Generic:
         display: hermetic__probe
 - Identity:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
     source: grok
-    session_id: 01a1fed6-2dfe-73f0-bcdd-6e5a49704835
+    session_id: 01a2082a-c51a-78b1-98fe-60327b60fa5f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 2363113921533922130
-    tool_use_id: call_Z49lZSSS_gTbaDws
-- TurnEnd:
-    agent_id: 2363113921533922130
-- TurnEnd:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
+    tool_use_id: call_zBlKt5MhySOOiBau
 - SessionEnd:
-    agent_id: 2363113921533922130
+    agent_id: 14730432742626257688
     as_child: false
