@@ -491,8 +491,8 @@ struct IdFamily {
 }
 
 /// Every family of minted token a tier recording carries, so two recordings
-/// of one turn differ in these alone. Where two match at once, the one that
-/// starts first wins, then the earlier row.
+/// of one turn differ in these and their write stamps ([`MASKS`]) alone. Where
+/// two match at once, the one that starts first wins, then the earlier row.
 const ID_FAMILIES: &[IdFamily] = &[
     // The time-ordered v7 codex and grok mint included.
     IdFamily {
@@ -614,23 +614,6 @@ const ID_FAMILIES: &[IdFamily] = &[
             r#"{"_shim_ts_ms":1792482405228}"#,
         )],
     },
-    // A transcript's write stamps, which the strip keeps for the merge test
-    // (`reads::WRITE_STAMPS`): codex's RFC 3339, grok's epoch seconds.
-    IdFamily {
-        name: "transcript-clock",
-        pattern: r#""timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z)""#,
-        seen_in: "codex/fixtures/tool-run-hermetic",
-        renamed: &[(
-            r#"{"timestamp":"2026-10-27T04:47:02.476Z"}"#,
-            r#"{"timestamp":"2026-10-27T06:40:52.169Z"}"#,
-        )],
-    },
-    IdFamily {
-        name: "transcript-epoch-clock",
-        pattern: r#""timestamp":(\d{10})\b"#,
-        seen_in: "grok/fixtures/tool-run-hermetic",
-        renamed: &[(r#"{"timestamp":1793078269}"#, r#"{"timestamp":1793083460}"#)],
-    },
     // A port the orchestrator picks free.
     IdFamily {
         name: "openclaw-gateway-port",
@@ -640,24 +623,36 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
 ];
 
-static ID_PATTERNS: std::sync::LazyLock<Vec<regex::Regex>> = std::sync::LazyLock::new(|| {
-    ID_FAMILIES
+/// Every token a re-record moves, named: each [`ID_FAMILIES`] row, then each
+/// transcript write stamp the strip keeps
+/// ([`WRITE_STAMPS`](super::reads::WRITE_STAMPS)).
+static MASKS: std::sync::LazyLock<Vec<(String, regex::Regex)>> = std::sync::LazyLock::new(|| {
+    let minted = ID_FAMILIES
         .iter()
-        .map(|f| regex::Regex::new(f.pattern).expect("every ID_FAMILIES pattern compiles"))
+        .map(|f| (f.name.to_owned(), f.pattern.to_owned()));
+    let stamps = super::reads::WRITE_STAMPS
+        .iter()
+        .map(|&(_, key, spelling)| {
+            let pattern = format!(r#""{key}":{}"#, spelling.value_pattern());
+            (format!("{key}:{spelling:?}"), pattern)
+        });
+    minted
+        .chain(stamps)
+        .map(|(name, p)| (name, regex::Regex::new(&p).expect("every mask compiles")))
         .collect()
 });
 
-/// `text` with each of its minted ids replaced by what `name` makes of its
-/// family's row and the token.
+/// `text` with each token a row of `patterns` matches replaced by what `name`
+/// makes of that row and the token.
 fn with_ids_named(
     text: &str,
-    patterns: &[regex::Regex],
+    patterns: &[(String, regex::Regex)],
     mut name: impl FnMut(usize, &str) -> String,
 ) -> String {
     let mut found: Vec<(usize, usize, usize)> = patterns
         .iter()
         .enumerate()
-        .flat_map(|(row, re)| {
+        .flat_map(|(row, (_, re))| {
             re.captures_iter(text).filter_map(move |c| {
                 let token = c.get(1).or_else(|| c.get(0))?;
                 Some((token.start(), row, token.end()))
@@ -679,7 +674,7 @@ fn with_ids_named(
 }
 
 /// A capture's files up to the ids its run minted: each file's path from
-/// `dir` and its text, every `ID_FAMILIES` token in either replaced by
+/// `dir` and its text, every [`MASKS`] token in either replaced by
 /// `⟨name#n⟩`, `n` its family's order of first appearance across the capture,
 /// so one numbering is the one bijection two recordings must share. Files are
 /// walked in the order of their paths, then their texts, with ids masked, as
@@ -696,11 +691,7 @@ pub fn canonical_capture(
     dir: &Path,
     reads: &BTreeMap<String, BTreeSet<String>>,
 ) -> std::io::Result<Option<Canonical>> {
-    let masked = |text: &str| {
-        with_ids_named(text, &ID_PATTERNS, |row, _| {
-            format!("⟨{}⟩", ID_FAMILIES[row].name)
-        })
-    };
+    let masked = |text: &str| with_ids_named(text, &MASKS, |row, _| format!("⟨{}⟩", MASKS[row].0));
     let mut files = Vec::new();
     for file in jsonl_files_under(dir) {
         let path = slashed_under(dir, &file)?;
@@ -712,12 +703,12 @@ pub fn canonical_capture(
         return Ok(None);
     }
     let mut seen: Vec<std::collections::HashMap<String, usize>> =
-        ID_FAMILIES.iter().map(|_| Default::default()).collect();
+        MASKS.iter().map(|_| Default::default()).collect();
     let mut numbered = |text: &str| {
-        with_ids_named(text, &ID_PATTERNS, |row, token| {
+        with_ids_named(text, &MASKS, |row, token| {
             let next = seen[row].len();
             let n = *seen[row].entry(token.to_owned()).or_insert(next);
-            format!("⟨{}#{n}⟩", ID_FAMILIES[row].name)
+            format!("⟨{}#{n}⟩", MASKS[row].0)
         })
     };
     let mut names = BTreeMap::new();
@@ -1041,7 +1032,7 @@ mod tests {
 
     #[test]
     fn each_family_renames_what_two_recordings_minted() {
-        for (family, pattern) in ID_FAMILIES.iter().zip(ID_PATTERNS.iter()) {
+        for (family, (_, pattern)) in ID_FAMILIES.iter().zip(MASKS.iter()) {
             assert!(!family.renamed.is_empty(), "{}: no pair", family.name);
             for (was, now) in family.renamed {
                 assert!(
@@ -1060,13 +1051,48 @@ mod tests {
 
     #[test]
     fn every_id_family_is_carried_by_the_capture_it_cites() {
-        for (family, pattern) in ID_FAMILIES.iter().zip(ID_PATTERNS.iter()) {
+        for (family, (_, pattern)) in ID_FAMILIES.iter().zip(MASKS.iter()) {
             let capture = crate::harness::sources_root().join(family.seen_in);
             let carried = jsonl_files_under(&capture).iter().any(|f| {
                 pattern.is_match(&slashed_under(&capture, f).expect("under"))
                     || pattern.is_match(&std::fs::read_to_string(f).expect("read"))
             });
             assert!(carried, "{}: {} carries none", family.name, family.seen_in);
+        }
+    }
+
+    /// A re-record moves every kept write stamp, so a run that changed only
+    /// its clock reads as one that renamed only its ids.
+    #[test]
+    fn every_kept_write_stamp_is_masked_whole() {
+        let root = crate::harness::sources_root();
+        for &(source, key, _) in crate::harness::reads::WRITE_STAMPS {
+            let mut kept = 0;
+            for capture in captures(&root).into_iter().filter(|c| c.source == source) {
+                let transcripts = jsonl_files_under(&capture.dir).into_iter();
+                for file in transcripts.filter(|f| !f.ends_with(HOOK_PAYLOADS)) {
+                    for line in std::fs::read_to_string(&file).expect("read").lines() {
+                        let v: serde_json::Value = serde_json::from_str(line).expect("json");
+                        let stamp = match &v[key] {
+                            serde_json::Value::String(s) if !s.is_empty() => s.clone(),
+                            serde_json::Value::Number(n) => n.to_string(),
+                            _ => continue,
+                        };
+                        let mut masked = Vec::new();
+                        with_ids_named(line, &MASKS, |_, token| {
+                            masked.push(token.to_owned());
+                            String::new()
+                        });
+                        assert!(
+                            masked.contains(&stamp),
+                            "{}: its {key} {stamp} is not masked whole",
+                            file.display()
+                        );
+                        kept += 1;
+                    }
+                }
+            }
+            assert!(kept > 0, "{source}: no committed capture keeps its {key}");
         }
     }
 

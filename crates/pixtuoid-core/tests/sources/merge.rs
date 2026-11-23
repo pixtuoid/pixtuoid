@@ -32,11 +32,11 @@ impl Run {
     fn of(source: &str, scenario: &str) -> Self {
         let dir = pixtuoid_core::harness::fixtures_dir(&sources_root(), source).join(scenario);
         let transcript = transcript_in(&dir);
-        Self::at(source, &dir, transcript)
+        Self::of_transcript(source, &dir, transcript)
     }
 
     /// The run of `transcript` against every hook its capture `dir` recorded.
-    fn at(source: &str, dir: &Path, transcript: PathBuf) -> Self {
+    fn of_transcript(source: &str, dir: &Path, transcript: PathBuf) -> Self {
         let hooks = fixture_lines(&dir.join(HOOK_PAYLOADS));
         let lines = fixture_lines(&transcript);
         let parsed = |raw: &[String]| -> Vec<Value> {
@@ -67,7 +67,8 @@ impl Run {
     }
 
     /// `check` over every order the run's lines can arrive in, folded one at a
-    /// time: a run has tens of thousands. Returns how many there were.
+    /// time, as a run can have hundreds of thousands. Returns how many there
+    /// were.
     fn each(&self, mut check: impl FnMut(&Merged)) -> usize {
         let merges = self.merges().expect("its transcript carries a write stamp");
         let mut orders = 0;
@@ -483,12 +484,16 @@ fn grok_s_hook_set_item_survives_its_last_turn_s_lagging_end() {
     a_hook_set_item_survives_a_lagging_jsonl_turn_end(&Run::of("grok", "two-turn-hermetic"));
 }
 
-/// What an order leaves of a slot that must not depend on the order: nothing
-/// read off an arrival instant (`running_ms`, any `*_at`), and no fact whose
-/// value is whichever transport's copy landed first or last (label, model,
-/// effort, an item's detail, a request's reason).
+/// What an order leaves of a slot, less any field read off an arrival instant
+/// (`running_ms`, any `*_at`) and any fact whose value is whichever
+/// transport's copy landed first or last (label, model, effort, an item's
+/// detail, a request's reason). Its presence and `exiting` still read the
+/// clock: the fold ends `harness::CASCADE_TICK` past the last arrival, and a
+/// slot goes once its exit is `EXIT_GRACE_WINDOW` old, so two ends of one slot
+/// landing more than `EXIT_GRACE_WINDOW - CASCADE_TICK` apart can leave it
+/// differently whatever the merge does.
 #[derive(Debug, PartialEq)]
-struct Ends {
+struct Final {
     exiting: bool,
     parent_id: Option<AgentId>,
     state: ActivityState,
@@ -497,7 +502,7 @@ struct Ends {
 }
 
 /// Each slot `m` left, by agent: a slot only some orders leave differs too.
-fn ends(m: &Merged) -> BTreeMap<AgentId, Ends> {
+fn finals(m: &Merged) -> BTreeMap<AgentId, Final> {
     let slots = m.driven.scene.agents.iter();
     slots
         .map(|(&agent, slot)| {
@@ -510,14 +515,14 @@ fn ends(m: &Merged) -> BTreeMap<AgentId, Ends> {
                 }
                 ActivityState::Idle => ActivityState::Idle,
             };
-            let ends = Ends {
+            let last = Final {
                 exiting: slot.exiting_at.is_some(),
                 parent_id: slot.parent_id,
                 state,
                 tool_call_count: slot.tool_call_count,
                 tokens_used: slot.tokens_used,
             };
-            (agent, ends)
+            (agent, last)
         })
         .collect()
 }
@@ -541,7 +546,7 @@ fn runs_of(source: &str) -> Vec<Run> {
         .filter(|c| c.source == source && c.dir.join(HOOK_PAYLOADS).is_file())
         .flat_map(|c| {
             let transcripts = transcripts_in(&c.dir).into_iter();
-            transcripts.map(move |t| Run::at(source, &c.dir, t))
+            transcripts.map(move |t| Run::of_transcript(source, &c.dir, t))
         })
         .collect()
 }
@@ -566,11 +571,11 @@ fn every_order_of_a_two_transport_run_ends_alike() {
         for run in &runs {
             let mut first = None;
             let orders = run.each(|m| match &first {
-                None => first = Some((m.arrivals(), ends(m))),
-                Some((order, left)) => assert_eq!(
-                    ends(m),
-                    *left,
-                    "{}: {:?} ends otherwise than {order:?}",
+                None => first = Some((m.arrivals(), finals(m))),
+                Some((order, first_finals)) => assert_eq!(
+                    finals(m),
+                    *first_finals,
+                    "{}: {:?} leaves its slots otherwise than {order:?}",
                     run.name,
                     m.arrivals()
                 ),
