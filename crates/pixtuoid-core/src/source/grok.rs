@@ -451,7 +451,9 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
             }
             // Written on every terminal of a turn (`emit_turn_completed`,
             // `crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn_end.rs:384-416`
-            // at `2bdd1d6a63`), under the prompt id its hook started it by.
+            // at `2bdd1d6a63`), under the prompt id its hook started it by: a
+            // required pairing key, so a blank one is drift, breadcrumbed and
+            // dropped.
             XAI_TURN_COMPLETED => {
                 const PROMPT_ID: &str = "prompt_id";
                 match non_empty(update, PROMPT_ID) {
@@ -461,7 +463,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
                     )],
                     None => {
                         crate::source::drift::missing_field(SOURCE_NAME, tag, PROMPT_ID);
-                        vec![AgentEvent::turn_end(agent_id)]
+                        vec![]
                     }
                 }
             }
@@ -1191,10 +1193,7 @@ mod tests {
         );
         let logs = crate::test_capture::capture_logs(|| {
             let evs = decode_line(xai_line(json!({"sessionUpdate": "turn_completed"})));
-            assert!(
-                matches!(&evs[..], [AgentEvent::TurnEnd { turn: None, .. }]),
-                "got {evs:?}"
-            );
+            assert!(evs.is_empty(), "got {evs:?}");
         });
         assert!(missing("prompt_id", &logs), "{logs}");
     }

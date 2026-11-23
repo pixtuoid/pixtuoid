@@ -928,7 +928,7 @@ impl Reducer {
         SettleCtx {
             in_flight: self.corr.action_requests.newest_in_flight(id),
             task_in_flight: self.corr.any_task_in_flight(id),
-            turn_open: brackets_turns(slot) && self.corr.turns.open(id).is_some(),
+            turn_shown: brackets_turns(slot) && self.corr.turns.open(id).is_some(),
         }
     }
 
@@ -1299,7 +1299,7 @@ impl Reducer {
             // Route through fsm so an in-flight Running span folds into
             // `running_ms` — a direct `state = Idle` here silently dropped it.
             fsm::resurrect_in_place(slot, now);
-            // Evict the dead life's correlation as `sweep_exited` would have;
+            // Retire the dead life's correlation as `sweep_exited` would have;
             // `recent_proof_of_life` deliberately SURVIVES a resurrect.
             self.remove_agent_correlation(&agent_id);
             if let Some(p) = slot.parent_id {
@@ -1681,8 +1681,8 @@ impl Reducer {
         scope::cascade_exit(scene, &stale, scope::StampSeed::Yes, now);
     }
 
-    /// Drop the per-slot correlation a departing agent id owns, reclaimed on
-    /// BOTH a resurrect-in-place and a slot removal. Death-only teardown
+    /// Retire the per-slot correlation a departing life owns, on BOTH a
+    /// resurrect-in-place and a slot removal. Death-only teardown
     /// (`recent_proof_of_life`, the counted ids, [`Correlation::note_removed`])
     /// and the copy-id holders' release deliberately stay at the sweep site —
     /// they must NOT run on a resurrect.

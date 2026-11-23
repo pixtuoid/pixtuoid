@@ -77,9 +77,8 @@ pub(crate) struct SettleCtx {
     pub(crate) in_flight: Option<ToolUse>,
     /// A Task the slot dispatched that still runs.
     pub(crate) task_in_flight: Option<Arc<str>>,
-    /// The slot's turn is still open, on a source that shows it
-    /// (`SourceCaps::brackets_turns`).
-    pub(crate) turn_open: bool,
+    /// The slot's open turn shows it working (`SourceCaps::brackets_turns`).
+    pub(crate) turn_shown: bool,
 }
 
 /// A turn opened on an Idle slot: it works, showing no item yet. The caller's
@@ -93,7 +92,7 @@ pub(crate) fn enter_turn(slot: &mut AgentSlot, now: SystemTime) {
 
 /// The slot's item or wait ended: land on its newest call still in flight,
 /// else on Delegating while a Task it dispatched still runs, else on Running
-/// with no item while its turn is open, else on Idle. Landing on the state the
+/// with no item while its open turn shows, else on Idle. Landing on the state the
 /// slot is already in keeps its clock. The caller owns `last_event_at`.
 pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
     let task = ctx.task_in_flight.map(|task| delegating_item(Some(task)));
@@ -101,11 +100,11 @@ pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
         return show(slot, item, now);
     }
     match slot.state {
-        ActivityState::Running { item: None } if ctx.turn_open => {}
-        ActivityState::Idle if !ctx.turn_open => {}
+        ActivityState::Running { item: None } if ctx.turn_shown => {}
+        ActivityState::Idle if !ctx.turn_shown => {}
         _ => {
             accumulate_running_ms(slot, now);
-            slot.state = if ctx.turn_open {
+            slot.state = if ctx.turn_shown {
                 ActivityState::Running { item: None }
             } else {
                 ActivityState::Idle
@@ -203,11 +202,11 @@ mod tests {
         }
     }
 
-    fn ctx(task_in_flight: Option<&str>, turn_open: bool) -> SettleCtx {
+    fn ctx(task_in_flight: Option<&str>, turn_shown: bool) -> SettleCtx {
         SettleCtx {
             in_flight: None,
             task_in_flight: task_in_flight.map(Arc::from),
-            turn_open,
+            turn_shown,
         }
     }
 
