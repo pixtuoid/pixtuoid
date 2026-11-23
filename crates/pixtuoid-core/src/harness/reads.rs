@@ -376,8 +376,8 @@ pub(crate) fn is_shim_stamp(at: &str, key: &str) -> bool {
 pub(crate) enum Spelling {
     /// An RFC 3339 string.
     Rfc3339,
-    /// An RFC 3339 string cut to the whole second, so the write is anywhere in
-    /// that second.
+    /// An RFC 3339 string to the whole second, cut or rounded, so the write is
+    /// within a second either side of it.
     Rfc3339Secs,
     /// An integer count of seconds since the epoch.
     EpochSecs,

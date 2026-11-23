@@ -154,12 +154,16 @@ impl Drive {
     }
 }
 
-/// The instant `v` spells as `spelling`, and how long after it the write could
-/// have been.
+/// The earliest instant `v`, spelled as `spelling`, admits for its write, and
+/// how long after it the write could have been.
 fn stamp_of(v: &Value, spelling: Spelling) -> Option<(Duration, Duration)> {
     match spelling {
         Spelling::Rfc3339 => Some((rfc3339_to_epoch(v.as_str()?)?, Duration::ZERO)),
-        Spelling::Rfc3339Secs => Some((rfc3339_to_epoch(v.as_str()?)?, Duration::from_secs(1))),
+        Spelling::Rfc3339Secs => {
+            let second = Duration::from_secs(1);
+            let at = rfc3339_to_epoch(v.as_str()?)?.checked_sub(second)?;
+            Some((at, 2 * second))
+        }
         Spelling::EpochSecs => Some((Duration::from_secs(v.as_u64()?), Duration::from_secs(1))),
     }
 }
@@ -553,23 +557,30 @@ mod tests {
     }
 
     /// A line ahead of the file's first stamp lands no sooner than the earliest
-    /// stamp either stream records: production's watcher reads it at most a
-    /// poll before the first hook, never hours before, where the stale sweep
+    /// stamp either stream records, never at the epoch, where the stale sweep
     /// would reap its slot.
     #[test]
-    fn an_unstamped_head_line_lands_within_a_poll_of_the_first_hook() {
-        let hook_at = crate::state::reducer::STALE_BLOCKED_TIMEOUT + DEFAULT_POLL_INTERVAL;
-        let hook_ms = u64::try_from(hook_at.as_millis()).expect("ms");
-        let hooks = [hook("SessionStart", hook_ms)];
-        let lines = [unstamped_call(), output(hook_ms + 1_000)];
-        for merged in drive().merges(&hooks, &lines).expect("codex merges") {
-            let at = |transport| {
-                let step = merged.steps.iter().find(|s| s.transport == transport);
-                step.expect("a step of each stream").at
-            };
-            let (seed, hook) = (at(J), at(H));
-            let ahead = hook.duration_since(seed).unwrap_or_default();
-            assert!(ahead <= DEFAULT_POLL_INTERVAL, "{:?}", merged.arrivals());
+    fn an_unstamped_head_line_lands_no_sooner_than_the_earliest_stamp_either_stream_records() {
+        let earliest = crate::state::reducer::STALE_BLOCKED_TIMEOUT + DEFAULT_POLL_INTERVAL;
+        let ms = u64::try_from(earliest.as_millis()).expect("ms");
+        // The hook's stamp first, then the transcript's, with and without a
+        // hook after it.
+        for (hooks, first_stamp) in [
+            (vec![hook("SessionStart", ms)], ms + 1_000),
+            (vec![], ms),
+            (vec![hook("SessionStart", ms + 500)], ms),
+        ] {
+            let lines = vec![unstamped_call(), output(first_stamp)];
+            let mut led = 0;
+            for merged in drive().merges(&hooks, &lines).expect("codex merges") {
+                let first = merged.steps.first().expect("a step");
+                if (first.transport, first.line) == (J, 0) {
+                    led += 1;
+                    let at = SystemTime::UNIX_EPOCH + earliest;
+                    assert_eq!(first.at, at, "{:?}", merged.arrivals());
+                }
+            }
+            assert!(led > 0, "{hooks:?}: no order leads with the head line");
         }
     }
 
@@ -703,11 +714,11 @@ mod tests {
     }
 
     #[test]
-    fn a_whole_second_rfc3339_stamp_spans_its_second() {
+    fn a_whole_second_rfc3339_stamp_spans_a_second_either_side() {
         let (at, within) =
             stamp_of(&json!("2026-11-23T04:47:14Z"), Spelling::Rfc3339Secs).expect("a stamp");
-        assert_eq!(at, Duration::from_secs(1_795_409_234));
-        assert_eq!(within, Duration::from_secs(1));
+        assert_eq!(at, Duration::from_secs(1_795_409_233));
+        assert_eq!(within, Duration::from_secs(2));
         assert_eq!(
             stamp_of(&json!(1_795_409_234_u64), Spelling::Rfc3339Secs),
             None
