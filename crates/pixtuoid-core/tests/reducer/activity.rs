@@ -990,8 +990,7 @@ fn parallel_approvals_resolve_on_the_last_member() {
 /// child's on either side of its gate, so the round ends alike whichever lands
 /// first, and its end, a member's, still answers the wait.
 #[test]
-fn a_delegating_parents_own_approval_round_ends_alike_whichever_of_its_gate_and_start_lands_first()
-{
+fn a_delegating_parents_own_approval_round_ends_alike_in_either_order() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let mut ends = Vec::new();
     for gate_first in [false, true] {
@@ -1195,7 +1194,7 @@ fn an_approval_resume_shows_its_calls_own_start() {
     }
 }
 
-/// The CC shape, not omp's: a hook Start whose JSONL twin lands however late
+/// The CC shape: a hook Start whose JSONL twin lands however late
 /// (an FSEvents-coalesced poll) counts once.
 #[test]
 fn a_transcript_twin_counts_once_at_any_lag() {

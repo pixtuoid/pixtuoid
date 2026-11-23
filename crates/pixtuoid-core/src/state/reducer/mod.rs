@@ -262,7 +262,7 @@ impl Refusal {
 #[must_use]
 enum Preprocessed {
     /// An unnamed child's hook activity, or a call's fact for an id no slot
-    /// holds, whose record would outlive any slot to forget it with.
+    /// holds.
     Drop,
     /// Survived the pre-pass, with what its call's record made of it, for a
     /// fact naming a call, and whether the Task tracker applied it.
@@ -579,6 +579,7 @@ impl Reducer {
 
         let observed = match Fact::of(event) {
             Some((call, fact)) => {
+                // Its record would outlive any slot to forget it with.
                 if !scene.agents.contains_key(&id) {
                     return Preprocessed::Drop;
                 }
@@ -648,7 +649,8 @@ impl Reducer {
     /// Count a tool call at its record's first start (`counts`), a start after
     /// its end included, and under a copy id only for the agent that counts it
     /// ([`CopyHolders::claim`](crate::state::correlation::CopyHolders::claim)),
-    /// which every start claims; a start naming no call counts every time.
+    /// which every start but a Task's claims; a start naming no call counts
+    /// every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,
@@ -908,9 +910,7 @@ impl Reducer {
     }
 
     /// The `UserActionResolved` arm: it settles a slot it answers, and ends no
-    /// item. An approval shows the call it resumes, whatever started since: omp
-    /// writes a gated call's block before its approval request (the
-    /// `approve-hermetic` recording, lines 8 and 10), so the call is in flight.
+    /// item; an approval shows the call it resumes, whatever started since.
     fn apply_user_action_resolved(
         &mut self,
         scene: &mut SceneState,
@@ -925,6 +925,8 @@ impl Reducer {
         if !resolved {
             return;
         }
+        // omp writes a gated call's block before its approval request (the
+        // `approve-hermetic` recording, lines 8 and 10), so the call is in flight.
         if let Resolution::Approved(call) = by
             && let Some(item) = self.corr.action_requests.in_flight(&agent_id, call)
             && let Some(slot) = scene.agents.get_mut(&agent_id)
@@ -1352,12 +1354,7 @@ impl Reducer {
     /// Hook transport only, on a source whose child hooks arrive unnamed under
     /// the parent's key: with any Task in flight, a hook ToolUseStart/End, its
     /// pre-use or a turn bracket for this AgentId is the child's work, so it is
-    /// dropped. Two ends are exempt: the Task's own PostToolUse (its
-    /// tool_use_id matches), and a request member's, the outcome of the wait the
-    /// parent shows (#951), which eating would strand in RequiresAction until
-    /// the parent's next own event or the stale sweep. A member's start or
-    /// pre-use is dropped like any other, so it counts alike whichever side of
-    /// its gate it lands.
+    /// dropped, but for the Task's own PostToolUse and a request member's end.
     fn suppress_subagent_leak(
         &mut self,
         scene: &mut SceneState,
@@ -1370,7 +1367,13 @@ impl Reducer {
         let is_member =
             |call: Option<&str>| call.is_some_and(|t| self.corr.action_requests.is_member(&id, t));
         let suppress = match event {
+            // A member's start or pre-use too, so it counts alike whichever side
+            // of its gate it lands.
             AgentEvent::ToolUseStart { .. } | AgentEvent::ToolUsePending { .. } => in_task,
+            // The Task's own end (its tool_use_id matches) drains it, and a
+            // member's is the outcome of the wait the parent shows (#951), which
+            // eating would strand in RequiresAction until the parent's next own
+            // event or the stale sweep.
             AgentEvent::ToolUseEnd { tool_use_id, .. } => {
                 let is_task_self_end = tool_use_id
                     .as_ref()
@@ -1405,9 +1408,9 @@ impl Reducer {
         suppress
     }
 
-    /// Tracks Task tool_use_ids from either transport, on their records'
-    /// transitions, marking a parent that gains one Running("Delegating") so it
-    /// doesn't look asleep while subagents work. b1 subagent-completion
+    /// Tracks Task tool_use_ids from either transport while their calls are
+    /// open, marking a parent whose Task first starts Running("Delegating") so
+    /// it doesn't look asleep while subagents work. b1 subagent-completion
     /// inference, where [`ChildEndInference`] says so: a drained parent Task
     /// means the subtree returned — cascade EXIT to the DESCENDANTS, not the
     /// parent, so they leave before [`STALE_IDLE_TIMEOUT`]. Returns whether it
@@ -1427,7 +1430,10 @@ impl Reducer {
                 detail: Some(d),
                 ..
             } if d.is_task() => {
-                if observed.is_some_and(|o| o.rose_into(Transition::Started)) {
+                // A start decoded after its gate (#242) rises into nothing, yet
+                // its Task runs: the child's hooks are its, and its approval
+                // shows it.
+                if observed.is_some_and(|o| !o.ended) {
                     let item = fsm::delegating_item(Some(Arc::from(tuid.as_str())));
                     self.corr
                         .tasks_in_flight
@@ -1435,14 +1441,15 @@ impl Reducer {
                         .or_default()
                         .insert(tuid.clone());
                     self.register_pending(*agent_id, tuid, None, None, from, Some(item));
-                    if let Some(slot) = scene.agents.get_mut(agent_id)
-                        && (self.corr.action_requests).start(
-                            *agent_id,
-                            matches!(slot.state, ActivityState::RequiresAction { .. }),
-                        )
-                    {
-                        fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
-                    }
+                }
+                if observed.is_some_and(|o| o.rose_into(Transition::Started))
+                    && let Some(slot) = scene.agents.get_mut(agent_id)
+                    && (self.corr.action_requests).start(
+                        *agent_id,
+                        matches!(slot.state, ActivityState::RequiresAction { .. }),
+                    )
+                {
+                    fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
                 }
                 true
             }

@@ -36,8 +36,8 @@ pub(crate) enum Fact<'a> {
 
 impl<'a> Fact<'a> {
     /// The call `event` names and what it says of it; `None` for an event
-    /// naming no call. Every variant is sorted here, so a new one fails to
-    /// compile until it is.
+    /// that moves no call's phase. Every variant is sorted here, so a new one
+    /// fails to compile until it is.
     pub(crate) fn of(event: &'a AgentEvent) -> Option<(&'a str, Self)> {
         let fact = match event {
             AgentEvent::ToolUseStart {
@@ -117,7 +117,7 @@ impl Phase {
         }
     }
 
-    fn into_transition(self) -> Transition {
+    fn to_transition(self) -> Transition {
         match self {
             Self { ended: true, .. } => Transition::Ended,
             Self { step, .. } => match step {
@@ -177,11 +177,8 @@ pub(crate) struct CallLedger {
 
 impl CallLedger {
     /// `agent`'s `call` met `fact`. A start under a copy id its ended record
-    /// never held, while it holds another, opens the call's next generation:
-    /// a provider reusing an id names a new call (`source/omp.rs`'s
-    /// `entry_copy`), and a held copy id is that call's replay. Only omp's
-    /// copy ids can differ for one call id, and every fact of its calls rides
-    /// its one transcript; claude-code's copy id is the call id itself.
+    /// never held, while it holds another, opens the call's next generation,
+    /// and a held copy id is that call's replay.
     pub(crate) fn observe(&mut self, agent: AgentId, call: &str, fact: Fact<'_>) -> Observed {
         let into = Phase::of(fact);
         let (starts, copy) = match fact {
@@ -199,11 +196,15 @@ impl CallLedger {
                 },
             );
             return Observed {
-                transition: Some(into.into_transition()),
+                transition: Some(into.to_transition()),
                 counts: starts,
                 ended: into.ended,
             };
         };
+        // A provider reusing an id names a new call (the `copy_id` comment in
+        // `source/omp.rs`'s `decode_omp_line`). Only omp's copy ids can differ
+        // for one call id, and every fact of its calls rides its one
+        // transcript; claude-code's copy id is the call id itself.
         let generation = record.phase.ended
             && copy.is_some_and(|c| !record.copies.is_empty() && !record.copies.contains(c));
         if let Some(c) = copy
@@ -223,7 +224,7 @@ impl CallLedger {
         record.counted |= starts;
         let transition = (into > record.phase).then(|| {
             record.phase = into;
-            into.into_transition()
+            into.to_transition()
         });
         Observed {
             transition,

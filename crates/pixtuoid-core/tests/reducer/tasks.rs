@@ -2271,3 +2271,78 @@ fn a_replayed_task_start_answers_no_prompt_that_did_not_name_it() {
         ActivityState::RequiresAction { .. }
     ));
 }
+
+/// `payloads` decoded by the real hook decoder and folded in order, a second
+/// apart: the parent's activity, and how many calls it counted.
+fn fold_hooks(payloads: &[serde_json::Value]) -> (ActivityState, u32) {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut id = None;
+    for (n, v) in (0u64..).zip(payloads) {
+        for ev in decode_hook_payload(v.clone()).expect("decodes") {
+            id.get_or_insert(ev.agent_id());
+            r.apply(&mut scene, ev, t0 + Duration::from_secs(n), Transport::Hook);
+        }
+    }
+    let slot = &scene.agents[&id.expect("a payload")];
+    (slot.state.clone(), slot.tool_call_count)
+}
+
+/// A gated dispatch whose gate is decoded before its start (#242) ends as the
+/// start-then-gate order does, on kimi (a keyed PermissionRequest, then its
+/// child resuming under the parent's key) and on dsh (`approval_asked`, then
+/// the approval).
+#[test]
+fn a_gated_dispatch_decoded_before_its_start_ends_as_in_order() {
+    let kimi = |event: &str, call: &str, tool: &str| {
+        json!({"hook_event_name": event, "session_id": "s-kimi", "cwd": "/repo",
+               "_pixtuoid_source": "kimi", "tool_name": tool, "tool_input": {},
+               "tool_call_id": call})
+    };
+    let dsh = |ty: &str, extra: serde_json::Value| {
+        let mut v = json!({"type": ty, "sessionId": "s-dsh", "cwd": "/repo",
+                           "_pixtuoid_source": "dsh"});
+        v.as_object_mut()
+            .expect("an object")
+            .extend(extra.as_object().expect("an object").clone());
+        v
+    };
+    let dsh_call = json!({"callId": "T", "toolName": "subagent"});
+    let (mut want, mut got) = (Vec::new(), Vec::new());
+    for (what, start, dispatch, gate, after) in [
+        (
+            "kimi",
+            kimi("SessionStart", "", ""),
+            kimi("PreToolUse", "T", "Agent"),
+            kimi("PermissionRequest", "T", "Agent"),
+            kimi("PreToolUse", "c1", "Bash"),
+        ),
+        (
+            "dsh",
+            dsh("session_start", json!({})),
+            dsh("tool_call", dsh_call.clone()),
+            dsh("approval_asked", dsh_call.clone()),
+            dsh(
+                "approval_decided",
+                json!({"callId": "T", "toolName": "subagent", "outcome": "allowed-once"}),
+            ),
+        ),
+    ] {
+        let in_order = fold_hooks(&[start.clone(), dispatch.clone(), gate.clone(), after.clone()]);
+        assert_eq!(
+            in_order.0.clone(),
+            ActivityState::Running {
+                item: Some(ToolUse {
+                    tool_use_id: Some("T".into()),
+                    detail: Some("Delegating".into()),
+                    kind: pixtuoid_core::state::ToolKind::Task,
+                }),
+            },
+            "{what}: premise"
+        );
+        want.push((what, in_order));
+        got.push((what, fold_hooks(&[start, gate, dispatch, after])));
+    }
+    assert_eq!(got, want);
+}

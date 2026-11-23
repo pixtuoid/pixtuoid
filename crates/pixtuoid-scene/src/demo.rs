@@ -69,8 +69,8 @@ impl Cue {
 }
 
 /// A loop played, which names its ids and turns apart from every other lap's:
-/// the reducer counts an id once and refuses a closed turn's replay, so a
-/// replayed lap would add no work.
+/// a replayed lap's call meets its ended record and a closed turn refuses its
+/// replay, so a replayed lap would add no work.
 #[derive(Debug, Clone, Copy)]
 struct Lap {
     n: u64,
