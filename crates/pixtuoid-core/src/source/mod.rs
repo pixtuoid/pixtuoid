@@ -476,7 +476,7 @@ impl AgentEvent {
         }
     }
 
-    /// Whether this event is a turn's traffic: a call, a turn edge, or a
+    /// Whether this event is a turn's traffic: a call, a turn bracket, or a
     /// request for the user and its answer; never [`Backlog`](Self::Backlog),
     /// the reader's own word, nor [`ProofOfLife`](Self::ProofOfLife), which
     /// vouches a visible slot and must never create one.

@@ -11,7 +11,7 @@ use crate::state::correlation::{
 };
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
-use crate::state::turns::{Edges, End, Start};
+use crate::state::turns::{Brackets, End, Start};
 use crate::state::{
     ActivityState, AgentSlot, SceneState, Today, ToolKind, ToolUse, TurnKey, fsm, scope,
 };
@@ -866,20 +866,21 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let Some(brackets) = scene.agents.get(&agent_id).map(brackets_turns) else {
+        let Some(brackets) = scene.agents.get(&agent_id).map(|slot| {
+            if brackets_turns(slot) {
+                Brackets::OneStream
+            } else {
+                Brackets::Split
+            }
+        }) else {
             return;
         };
-        let edges = if brackets {
-            Edges::OneStream
-        } else {
-            Edges::Split
-        };
-        let (applies, implied, turnless) = match self.corr.turns.end(agent_id, turn.as_ref(), edges)
-        {
-            End::Applied { implied } => (true, implied, turn.is_none()),
-            End::StartUnseen => (true, None, true),
-            End::Stale => (false, None, false),
-        };
+        let (applies, implied, turnless) =
+            match self.corr.turns.end(agent_id, turn.as_ref(), brackets) {
+                End::Applied { implied } => (true, implied, turn.is_none()),
+                End::StartUnseen => (true, None, true),
+                End::Stale => (false, None, false),
+            };
         let ended = Ended::Turn {
             turn: turn.as_ref(),
             implied: implied.as_ref(),

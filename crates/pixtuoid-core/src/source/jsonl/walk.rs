@@ -724,7 +724,7 @@ pub(super) const SKIP_RESCAN_BYTES: u64 = 256 * 1024;
 /// line, leaving the reducer's `tasks_in_flight` empty: the parent never shows
 /// Delegating and the b1 completion cascade never arms. A re-emitted start
 /// shows the turn the session is in; a re-emitted end closes its own turn, and
-/// on one ordered stream (the turn ledger's `Edges::OneStream`) whatever turn
+/// on one ordered stream (the turn ledger's `Brackets::OneStream`) whatever turn
 /// the skip buried the end of.
 ///
 /// Tail-window geometry guarantees no false leak: a completion is always LATER

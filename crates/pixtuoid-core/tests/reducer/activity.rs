@@ -1542,7 +1542,7 @@ fn a_turn_start_leaves_a_standing_request_to_its_answer() {
 }
 
 /// codex's rollout carries each turn's start and its end in order, so either
-/// edge of another turn proves the open one ended.
+/// bracket of another turn proves the open one ended.
 #[test]
 fn on_one_ordered_stream_another_turns_start_or_end_ends_the_open_one() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
@@ -1580,7 +1580,7 @@ fn on_one_ordered_stream_another_turns_start_or_end_ends_the_open_one() {
 /// grok's hook starts a turn and its transcript ends one, in no order between
 /// them, so another turn's end proves only its own over.
 #[test]
-fn on_split_edges_another_turns_end_leaves_the_open_one() {
+fn on_split_brackets_another_turns_end_leaves_the_open_one() {
     let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
     let id = grok(&mut r, &mut scene);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
