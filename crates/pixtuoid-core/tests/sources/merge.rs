@@ -491,11 +491,11 @@ fn runs_of(source: &str) -> Vec<Run> {
         .collect()
 }
 
-/// Whether `m`'s order applied a copy of a call after an end of that call. It
-/// fails the order if a later step shows that call, or raises a wait from a gate
-/// naming it, unless a start under a copy id the call never held opened its
-/// next generation.
-fn no_step_shows_an_ended_call(run: &Run, m: &Merged) -> bool {
+/// Whether `m`'s order applied a copy of a call after an end of that call,
+/// failing the order if a later step shows that call, or raises a wait from a
+/// gate naming it, unless a start under a copy id the call never held opened
+/// its next generation.
+fn echoes_an_ended_call(run: &Run, m: &Merged) -> bool {
     let mut ended: BTreeSet<(AgentId, &str)> = BTreeSet::new();
     let mut held: BTreeMap<(AgentId, &str), HashSet<&CopyId>> = BTreeMap::new();
     let mut before: BTreeMap<AgentId, Option<&ActivityState>> = BTreeMap::new();
@@ -585,7 +585,7 @@ fn every_order_of_a_two_transport_run_ends_alike() {
         for run in &runs {
             let mut first = None;
             let orders = run.each(|m| {
-                echoed |= no_step_shows_an_ended_call(run, m);
+                echoed |= echoes_an_ended_call(run, m);
                 match &first {
                     None => first = Some((m.arrivals(), finals(m))),
                     Some((order, first_finals)) => assert_eq!(

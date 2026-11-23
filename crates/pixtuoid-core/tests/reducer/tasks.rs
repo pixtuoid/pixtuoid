@@ -133,61 +133,6 @@ fn a_hook_turn_end_during_a_task_is_suppressed() {
 }
 
 #[test]
-fn tasks_in_flight_drained_by_jsonl_end_even_if_hook_end_arrived_first() {
-    use pixtuoid_core::source::ToolDetail;
-
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-
-    let t0 = SystemTime::now();
-
-    tool_use_end(&mut r, &mut scene, id, Some("task-X"), t0, Transport::Hook);
-
-    r.apply(
-        &mut scene,
-        AgentEvent::tool_use_start(id, Some("task-X".into()), Some(ToolDetail::Task)),
-        t0 + Duration::from_millis(700),
-        Transport::Jsonl,
-    );
-
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        id,
-        Some("task-X"),
-        t0 + Duration::from_millis(800),
-        Transport::Jsonl,
-    );
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("other"),
-        Some("Bash: ls"),
-        t0 + Duration::from_millis(900),
-        Transport::Hook,
-    );
-
-    match &scene.agents.get(&id).unwrap().state {
-        ActivityState::Running {
-            item: Some(ToolUse { detail, .. }),
-        } => {
-            assert_eq!(
-                detail.as_deref(),
-                Some("Bash: ls"),
-                "tasks_in_flight must drain so subsequent hook events apply"
-            );
-        }
-        other => panic!("expected Running(Bash: ls), got {other:?}"),
-    }
-}
-
-/// A transcript echo of a call the hook started and ended, however late it
-/// lands, neither shows the call again nor counts it twice.
-#[test]
 fn a_transcript_echo_of_an_ended_call_never_reopens_it() {
     use pixtuoid_core::source::CopyId;
     for lag in [
@@ -2073,7 +2018,6 @@ fn ending_one_of_two_parallel_tasks_does_not_restart_the_parents_delegating_cloc
     let parent = AgentId::from_transcript_path("/p/parallel.jsonl");
     start(&mut r, &mut scene, parent);
 
-    // TWO Task dispatches in flight — the case no existing test covers.
     tool_use_start(
         &mut r,
         &mut scene,
@@ -2252,9 +2196,19 @@ fn a_raised_task_wait() -> (Reducer, SceneState, AgentId, SystemTime) {
     (r, scene, id, t0 + Duration::from_secs(2))
 }
 
+/// Though a call of its parent's started after it.
 #[test]
 fn an_approved_task_call_delegates_again() {
     let (mut r, mut scene, id, answered) = a_raised_task_wait();
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("y"),
+        Some("Bash: ls"),
+        answered,
+        Transport::Jsonl,
+    );
     r.apply(
         &mut scene,
         AgentEvent::UserActionResolved {

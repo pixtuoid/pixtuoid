@@ -21,8 +21,7 @@ pub enum Cue {
     /// An agent event, as a live source sends it.
     Event {
         at: Duration,
-        /// The transport the live source uses, which decides its lifecycle
-        /// authority and live-versus-replay counting.
+        /// The [`Transport`] the live source uses.
         transport: Transport,
         event: AgentEvent,
     },

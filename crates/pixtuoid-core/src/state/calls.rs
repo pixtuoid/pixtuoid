@@ -1,7 +1,9 @@
-//! The agents' tool calls: one record per call id whose phase only rises, so
-//! a call's facts merge in whatever order and from whichever transport they
-//! arrive. The reducer gives a call each effect on the transition
-//! [`CallLedger::observe`] reports, so a fact applied twice applies once.
+//! The agents' tool calls: one record per call id, whose phase is the max of
+//! its facts within a generation, so a call's facts merge in whatever order and
+//! from whichever transport they arrive. A generation opens only where copy ids
+//! mark a reused call id on one ordered stream ([`CallLedger::observe`]), whose
+//! order no merge reorders. The reducer gives a call each effect on the
+//! transition `observe` reports, so a fact applied twice applies once.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -151,6 +153,13 @@ pub(crate) struct Observed {
     pub(crate) ended: bool,
 }
 
+impl Observed {
+    /// Whether the fact raised its call's record into `into`.
+    pub(crate) fn rose_into(self, into: Transition) -> bool {
+        self.transition == Some(into)
+    }
+}
+
 #[derive(Debug, Clone)]
 struct Call {
     phase: Phase,
@@ -170,7 +179,9 @@ impl CallLedger {
     /// `agent`'s `call` met `fact`. A start under a copy id its ended record
     /// never held, while it holds another, opens the call's next generation:
     /// a provider reusing an id names a new call (`source/omp.rs`'s
-    /// `entry_copy`), and a held copy id is that call's replay.
+    /// `entry_copy`), and a held copy id is that call's replay. Only omp's
+    /// copy ids can differ for one call id, and every fact of its calls rides
+    /// its one transcript; claude-code's copy id is the call id itself.
     pub(crate) fn observe(&mut self, agent: AgentId, call: &str, fact: Fact<'_>) -> Observed {
         let into = Phase::of(fact);
         let (starts, copy) = match fact {

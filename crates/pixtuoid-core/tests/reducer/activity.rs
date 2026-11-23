@@ -602,9 +602,9 @@ fn jsonl_none_id_end_while_requires_action_keeps_requires_action() {
     );
 }
 
-// An end naming no call that answers a wait leaves no request behind, so its
-// member call's late transcript Start brings no wait back. A tool end naming no
-// call answers only a wait that named none either.
+// An end naming no call that answers a wait closes its request: the slot stays
+// out of RequiresAction through its member call's late transcript Start. A tool
+// end naming no call answers only a wait that named none either.
 #[test]
 fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
     use crate::user_action_request_for;
@@ -936,11 +936,6 @@ fn approve(
     );
 }
 
-/// A human's pause between a call's two arrivals.
-fn later(t: SystemTime) -> SystemTime {
-    t + Duration::from_secs(1)
-}
-
 #[test]
 fn parallel_approvals_resolve_on_the_last_member() {
     let mut scene = SceneState::uniform(4);
@@ -990,95 +985,69 @@ fn parallel_approvals_resolve_on_the_last_member() {
     );
 }
 
+/// A delegating parent's own approval round, its hooks under the parent's key
+/// while a Task is in flight (#951): its pre-use and start are dropped as the
+/// child's on either side of its gate, so the round ends alike whichever lands
+/// first, and its end, a member's, still answers the wait.
 #[test]
-fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_parts(UNNAMED_CHILD_HOOKS, "f");
-    start_as(&mut r, &mut scene, id, UNNAMED_CHILD_HOOKS);
+fn a_delegating_parents_own_approval_round_ends_alike_whichever_of_its_gate_and_start_lands_first()
+{
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    // A Task in flight arms `suppress_subagent_leak` for this id.
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("task-1"),
-        Some("Agent"),
-        t0,
-        Transport::Jsonl,
-    );
-
-    // The parent's OWN member tool (parallel to the Task), then its approval.
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: rm"),
-        t0,
-        Transport::Jsonl,
-    );
-    let t1 = later(t0);
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        t1,
-        Transport::Hook,
-    );
-    assert!(matches!(
-        scene.agents.get(&id).unwrap().state,
-        ActivityState::RequiresAction { .. }
-    ));
-
-    let t2 = later(t1) + Duration::from_secs(5);
-    approve(&mut r, &mut scene, id, "x1", t2, Transport::Hook);
-    assert!(
-        !matches!(
-            scene.agents.get(&id).unwrap().state,
-            ActivityState::RequiresAction { .. }
-        ),
-        "the approval resume must not be eaten as a subagent leak"
-    );
-    let count_after_resume = scene.agents.get(&id).unwrap().tool_call_count;
-
-    // Denial path on a second member call: the hook End must clear the wait too.
-    let t3 = later(t2);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x2"),
-        Some("bash: b"),
-        t3,
-        Transport::Jsonl,
-    );
-    let t4 = later(t3);
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x2"),
-        t4,
-        Transport::Hook,
-    );
-    let t5 = later(t4) + Duration::from_secs(5);
-    tool_use_end(&mut r, &mut scene, id, Some("x2"), t5, Transport::Hook);
-    assert!(
-        !matches!(
-            scene.agents.get(&id).unwrap().state,
-            ActivityState::RequiresAction { .. }
-        ),
-        "the denial End must not be eaten as a subagent leak"
-    );
-    assert_eq!(
-        scene.agents.get(&id).unwrap().tool_call_count,
-        count_after_resume + 1
-    );
+    let mut ends = Vec::new();
+    for gate_first in [false, true] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let id = AgentId::from_parts(UNNAMED_CHILD_HOOKS, "f");
+        start_as(&mut r, &mut scene, id, UNNAMED_CHILD_HOOKS);
+        // A Task in flight arms `suppress_subagent_leak` for this id.
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            id,
+            Some("task-1"),
+            Some("Agent"),
+            t0,
+            Transport::Hook,
+        );
+        let start = |r: &mut Reducer, scene: &mut SceneState| {
+            let pending = AgentEvent::ToolUsePending {
+                agent_id: id,
+                tool_use_id: "x1".into(),
+                tool_name: Some("bash".into()),
+                turn: None,
+            };
+            r.apply(scene, pending, t0, Transport::Hook);
+            tool_use_start(
+                r,
+                scene,
+                id,
+                Some("x1"),
+                Some("bash: rm"),
+                t0,
+                Transport::Hook,
+            );
+        };
+        let gate = |r: &mut Reducer, scene: &mut SceneState| {
+            user_action_request_for(r, scene, id, "bash", Some("x1"), t0, Transport::Hook);
+        };
+        if gate_first {
+            gate(&mut r, &mut scene);
+            start(&mut r, &mut scene);
+        } else {
+            start(&mut r, &mut scene);
+            gate(&mut r, &mut scene);
+        }
+        assert!(requires_action(&scene, id), "gate first: {gate_first}");
+        let ended = t0 + Duration::from_secs(5);
+        tool_use_end(&mut r, &mut scene, id, Some("x1"), ended, Transport::Hook);
+        assert!(
+            !requires_action(&scene, id),
+            "gate first: {gate_first}: the member's end was dropped as the child's"
+        );
+        let slot = &scene.agents[&id];
+        ends.push((slot.state.clone(), slot.tool_call_count));
+    }
+    assert_eq!(ends[0], ends[1]);
 }
 
 #[test]
@@ -1184,7 +1153,8 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     );
 }
 
-/// An approval resumes the call its start showed, with that start's detail.
+/// An approval resumes the call its start showed, with that start's detail,
+/// though another call of its message started after it.
 #[test]
 fn an_approval_resume_shows_its_calls_own_start() {
     let mut scene = SceneState::uniform(4);
@@ -1193,15 +1163,17 @@ fn an_approval_resume_shows_its_calls_own_start() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: rm -rf /tmp/x"),
-        t0,
-        Transport::Jsonl,
-    );
+    for (call, detail) in [("x1", "bash: rm -rf /tmp/x"), ("y", "read: notes")] {
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            id,
+            Some(call),
+            Some(detail),
+            t0,
+            Transport::Jsonl,
+        );
+    }
     user_action_request_for(
         &mut r,
         &mut scene,

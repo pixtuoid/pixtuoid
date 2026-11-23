@@ -7,7 +7,7 @@ use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
 use crate::source::{AgentEvent, CopyId, Resolution, ToolDetail, Transport};
 use crate::state::calls::{Fact, Observed, Transition};
-use crate::state::correlation::{CopyHolders, Correlation, Counted, elapsed_at_least};
+use crate::state::correlation::{Correlation, elapsed_at_least};
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{Brackets, End, Start};
@@ -267,7 +267,7 @@ enum Preprocessed {
     /// Survived the pre-pass, with what its call's record made of it, for a
     /// fact naming a call, and whether the Task tracker applied it.
     Dispatch {
-        call: Option<Observed>,
+        observed: Option<Observed>,
         tracked: bool,
     },
 }
@@ -278,7 +278,7 @@ enum Preprocessed {
 struct StartSeen<'a> {
     ids: WireIds<'a>,
     detail: Option<&'a ToolDetail>,
-    call: Option<Observed>,
+    observed: Option<Observed>,
 }
 
 /// The event coordinator: folds `AgentEvent`s into `SceneState`, owning the
@@ -357,8 +357,7 @@ impl Reducer {
     }
 
     /// Fold one `AgentEvent` into the scene at `now`, tagged with the
-    /// `Transport` it arrived on, which decides lifecycle authority and
-    /// live-versus-replay counting.
+    /// [`Transport`] it arrived on.
     pub fn apply(
         &mut self,
         scene: &mut SceneState,
@@ -367,13 +366,11 @@ impl Reducer {
         from: Transport,
     ) {
         let id = event.agent_id();
-        let Preprocessed::Dispatch { call, tracked } =
+        let Preprocessed::Dispatch { observed, tracked } =
             self.preprocess(scene, &event, id, now, from)
         else {
             return;
         };
-        // A call's fact moves its slot only on its record's transition.
-        let into = |want| call.is_none_or(|o| o.transition == Some(want));
 
         match event {
             AgentEvent::SessionStart {
@@ -408,14 +405,15 @@ impl Reducer {
                         copy: copy_id.as_ref(),
                     },
                     detail: detail.as_ref(),
-                    call,
+                    observed,
                 };
                 self.apply_tool_use_start(scene, agent_id, start, from, now);
             }
-            // The tracker drained this Task, which must not also end an
-            // id-less call the parent shows: an End ends any shown call that
-            // names none.
-            AgentEvent::ToolUseEnd { .. } if tracked || !into(Transition::Ended) => {}
+            // A call's End acts only on its record's rise, and never for a Task
+            // the tracker drained, which must not also end an id-less call the
+            // parent shows: an End ends any shown call that names none.
+            AgentEvent::ToolUseEnd { .. }
+                if tracked || !observed.is_none_or(|o| o.rose_into(Transition::Ended)) => {}
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id,
@@ -424,7 +422,7 @@ impl Reducer {
                 self.apply_tool_use_end(scene, agent_id, ended, from, now);
             }
             // Its name and turn bind it whatever its call's phase, until its end.
-            AgentEvent::ToolUsePending { .. } if call.is_some_and(|o| o.ended) => {}
+            AgentEvent::ToolUsePending { .. } if observed.is_some_and(|o| o.ended) => {}
             AgentEvent::ToolUsePending {
                 agent_id,
                 tool_use_id,
@@ -446,7 +444,8 @@ impl Reducer {
             AgentEvent::TurnEnd { agent_id, turn } => {
                 self.apply_turn_end(scene, agent_id, turn, from, now);
             }
-            AgentEvent::UserActionRequest { .. } if !into(Transition::Gated) => {}
+            AgentEvent::UserActionRequest { .. }
+                if !observed.is_none_or(|o| o.rose_into(Transition::Gated)) => {}
             AgentEvent::UserActionRequest {
                 agent_id,
                 reason,
@@ -467,7 +466,8 @@ impl Reducer {
                     now,
                 );
             }
-            AgentEvent::UserActionResolved { .. } if !into(Transition::Resumed) => {}
+            AgentEvent::UserActionResolved { .. }
+                if !observed.is_none_or(|o| o.rose_into(Transition::Resumed)) => {}
             AgentEvent::UserActionResolved { agent_id, by } => {
                 self.apply_user_action_resolved(scene, agent_id, &by, now);
             }
@@ -577,7 +577,7 @@ impl Reducer {
             return Preprocessed::Drop;
         }
 
-        let call = match Fact::of(event) {
+        let observed = match Fact::of(event) {
             Some((call, fact)) => {
                 if !scene.agents.contains_key(&id) {
                     return Preprocessed::Drop;
@@ -587,7 +587,7 @@ impl Reducer {
             None => None,
         };
 
-        let tracked = self.track_tasks_in_flight(scene, event, call, now, from);
+        let tracked = self.track_tasks_in_flight(scene, event, observed, now, from);
 
         // A payload's registration lands ahead of its dispatch start, so firing
         // on it would evict the subtree that start keeps alive.
@@ -595,7 +595,7 @@ impl Reducer {
             self.fire_pending_b1_cascades(scene, starts_untracked_task(event), now);
         }
 
-        Preprocessed::Dispatch { call, tracked }
+        Preprocessed::Dispatch { observed, tracked }
     }
 
     /// The `ToolUseStart` arm, for a Start the pre-pass tracker left to it.
@@ -611,7 +611,11 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let StartSeen { ids, detail, call } = start;
+        let StartSeen {
+            ids,
+            detail,
+            observed,
+        } = start;
         // Derive the category from the typed detail BEFORE it is erased to
         // the HUD display string.
         let item = ToolUse {
@@ -620,16 +624,16 @@ impl Reducer {
             kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
         };
         // Every start of a call still open merges into its pending start.
-        if let Some(id) = ids.own
-            && call.is_some_and(|o| !o.ended)
+        if let Some(call) = ids.own
+            && observed.is_some_and(|o| !o.ended)
         {
-            self.register_pending(agent_id, id, None, None, from, Some(item.clone()));
+            self.register_pending(agent_id, call, None, None, from, Some(item.clone()));
         }
         if !detail.is_some_and(ToolDetail::is_task) {
-            let first = call.is_none_or(|o| o.counts);
-            self.count_call(scene, agent_id, ids.copy, first, from, now);
+            let counts = observed.is_none_or(|o| o.counts);
+            self.count_call(scene, agent_id, ids.copy, counts, from, now);
         }
-        if call.is_some_and(|o| o.transition != Some(Transition::Started)) {
+        if observed.is_some_and(|o| !o.rose_into(Transition::Started)) {
             return;
         }
         let runs = (self.corr.action_requests).start(agent_id, is_requires_action(scene, agent_id));
@@ -641,16 +645,16 @@ impl Reducer {
         }
     }
 
-    /// Count a tool call at its record's first start (`first`), a start after
+    /// Count a tool call at its record's first start (`counts`), a start after
     /// its end included, and under a copy id only for the agent that counts it
-    /// ([`CopyHolders::claim`]), which every start claims; a start naming no
-    /// call counts every time.
+    /// ([`CopyHolders::claim`](crate::state::correlation::CopyHolders::claim)),
+    /// which every start claims; a start naming no call counts every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
         copy: Option<&CopyId>,
-        first: bool,
+        counts: bool,
         from: Transport,
         now: SystemTime,
     ) {
@@ -658,7 +662,7 @@ impl Reducer {
             return;
         };
         let mine = self.corr.call_holders.claim(&slot.source, agent_id, copy);
-        if first && mine {
+        if counts && mine {
             slot.tool_call_count += 1;
             if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
                 today.tool_calls = today.tool_calls.saturating_add(1);
@@ -904,9 +908,9 @@ impl Reducer {
     }
 
     /// The `UserActionResolved` arm: it settles a slot it answers, and ends no
-    /// item. An approval's settle shows the call it resumes: omp writes a gated
-    /// call's block before its approval request (the `approve-hermetic`
-    /// recording, lines 8 and 10), so the call is in flight.
+    /// item. An approval shows the call it resumes, whatever started since: omp
+    /// writes a gated call's block before its approval request (the
+    /// `approve-hermetic` recording, lines 8 and 10), so the call is in flight.
     fn apply_user_action_resolved(
         &mut self,
         scene: &mut SceneState,
@@ -918,9 +922,17 @@ impl Reducer {
             self.corr
                 .action_requests
                 .resolved(agent_id, by, is_requires_action(scene, agent_id));
-        if resolved {
-            self.end_item(scene, agent_id, true, false, now);
+        if !resolved {
+            return;
         }
+        if let Resolution::Approved(call) = by
+            && let Some(item) = self.corr.action_requests.in_flight(&agent_id, call)
+            && let Some(slot) = scene.agents.get_mut(&agent_id)
+        {
+            fsm::enter_running(slot, item, now);
+            return;
+        }
+        self.end_item(scene, agent_id, true, false, now);
     }
 
     fn apply_rename(scene: &mut SceneState, agent_id: AgentId, label: &str, now: SystemTime) {
@@ -1048,11 +1060,10 @@ impl Reducer {
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        let (counted, holders) = (
-            &mut self.corr.counted_readings,
-            &mut self.corr.reading_holders,
-        );
-        if is_new_work(counted, holders, &slot.source, agent_id, ids) {
+        // Both record the reading whatever the other answers.
+        let mine = (self.corr.reading_holders).claim(&slot.source, agent_id, ids.copy);
+        let new = self.corr.counted_readings.first(agent_id, ids.own);
+        if mine && new {
             slot.tokens_used = slot.tokens_used.saturating_add(fresh_tokens);
             slot.last_usage = Some(crate::state::UsageObservation::new(fresh_tokens, now));
             if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
@@ -1341,10 +1352,12 @@ impl Reducer {
     /// Hook transport only, on a source whose child hooks arrive unnamed under
     /// the parent's key: with any Task in flight, a hook ToolUseStart/End, its
     /// pre-use or a turn bracket for this AgentId is the child's work, so it is
-    /// dropped. Two exemptions: the Task's own PostToolUse (its tool_use_id
-    /// matches), and a request member's — the parent's own approval round (#951),
-    /// which eating would strand in RequiresAction until the parent's next own event
-    /// or the stale sweep.
+    /// dropped. Two ends are exempt: the Task's own PostToolUse (its
+    /// tool_use_id matches), and a request member's, the outcome of the wait the
+    /// parent shows (#951), which eating would strand in RequiresAction until
+    /// the parent's next own event or the stale sweep. A member's start or
+    /// pre-use is dropped like any other, so it counts alike whichever side of
+    /// its gate it lands.
     fn suppress_subagent_leak(
         &mut self,
         scene: &mut SceneState,
@@ -1357,12 +1370,7 @@ impl Reducer {
         let is_member =
             |call: Option<&str>| call.is_some_and(|t| self.corr.action_requests.is_member(&id, t));
         let suppress = match event {
-            AgentEvent::ToolUseStart { tool_use_id, .. } => {
-                in_task && !is_member(tool_use_id.as_deref())
-            }
-            AgentEvent::ToolUsePending { tool_use_id, .. } => {
-                in_task && !is_member(Some(tool_use_id))
-            }
+            AgentEvent::ToolUseStart { .. } | AgentEvent::ToolUsePending { .. } => in_task,
             AgentEvent::ToolUseEnd { tool_use_id, .. } => {
                 let is_task_self_end = tool_use_id
                     .as_ref()
@@ -1408,11 +1416,10 @@ impl Reducer {
         &mut self,
         scene: &mut SceneState,
         event: &AgentEvent,
-        call: Option<Observed>,
+        observed: Option<Observed>,
         now: SystemTime,
         from: Transport,
     ) -> bool {
-        let into = |want| call.is_some_and(|o| o.transition == Some(want));
         match event {
             AgentEvent::ToolUseStart {
                 agent_id,
@@ -1420,7 +1427,7 @@ impl Reducer {
                 detail: Some(d),
                 ..
             } if d.is_task() => {
-                if into(Transition::Started) {
+                if observed.is_some_and(|o| o.rose_into(Transition::Started)) {
                     let item = fsm::delegating_item(Some(Arc::from(tuid.as_str())));
                     self.corr
                         .tasks_in_flight
@@ -1442,7 +1449,7 @@ impl Reducer {
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: Some(tuid),
-            } if into(Transition::Ended) => {
+            } if observed.is_some_and(|o| o.rose_into(Transition::Ended)) => {
                 let Some(set) = self.corr.tasks_in_flight.get_mut(agent_id) else {
                     return false;
                 };
@@ -1642,21 +1649,6 @@ impl Reducer {
 struct WireIds<'a> {
     own: Option<&'a str>,
     copy: Option<&'a CopyId>,
-}
-
-/// Whether a reading under `ids` is new: its own id is new for `agent_id`, and
-/// its copy id is `agent_id`'s to count ([`CopyHolders::claim`]). Both are
-/// recorded whatever the answer.
-fn is_new_work(
-    counted: &mut Counted,
-    holders: &mut CopyHolders,
-    source: &Arc<str>,
-    agent_id: AgentId,
-    ids: WireIds<'_>,
-) -> bool {
-    let first_holder = holders.claim(source, agent_id, ids.copy);
-    let new = counted.first(agent_id, ids.own);
-    first_holder && new
 }
 
 fn is_requires_action(scene: &SceneState, id: AgentId) -> bool {

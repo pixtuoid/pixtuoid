@@ -33,7 +33,8 @@ pub(crate) enum Ended<'a> {
 enum Seen<'a> {
     /// A call started.
     Start,
-    End(Ended<'a>),
+    /// An end, and the transport it arrived on.
+    End(Ended<'a>, Transport),
     Resolved(&'a Resolution),
     /// An unnamed child's event, dropped while these Tasks are in flight: the
     /// child resumed.
@@ -80,8 +81,8 @@ struct Pending {
 #[derive(Debug, Clone)]
 struct Member {
     call: Arc<str>,
-    /// The wire named it, so its approval answers for it (#951); a bound
-    /// member's own start is its pre-use.
+    /// The wire named it, so its approval answers for it (#951), and a
+    /// drained Task answers for it alone (#152).
     named: bool,
 }
 
@@ -106,8 +107,8 @@ impl ActionRequest {
         matches!(&self.members[..], [m] if &*m.call == call)
     }
 
-    /// The wire gave no key to bind it by, so the agent's next start on its
-    /// transport is the agent working again.
+    /// The wire gave no key to bind it by, so the agent's next start, on either
+    /// transport, is the agent working again.
     fn is_keyless(&self) -> bool {
         self.members.is_empty() && self.tool_name.is_none()
     }
@@ -223,7 +224,7 @@ impl ActionRequests {
     /// A call's first start, or a start naming no call: whether the slot runs
     /// it, else it only counts. `requires_action` is whether a request stands.
     pub(crate) fn start(&mut self, id: AgentId, requires_action: bool) -> bool {
-        let resolved = !requires_action || self.resolves(&id, Seen::Start, Transport::Hook);
+        let resolved = !requires_action || self.resolves(&id, Seen::Start);
         if resolved {
             self.open.remove(&id);
         }
@@ -241,7 +242,7 @@ impl ActionRequests {
         from: Transport,
         requires_action: bool,
     ) -> bool {
-        let resolved = requires_action && self.resolves(&id, Seen::End(ended), from);
+        let resolved = requires_action && self.resolves(&id, Seen::End(ended, from));
         match ended {
             Ended::Call(c) => self.retire(&id, c),
             Ended::Turn {
@@ -281,7 +282,7 @@ impl ActionRequests {
 
     /// An answer that ends no item: whether it answers the standing request.
     pub(crate) fn resolved(&mut self, id: AgentId, by: &Resolution, requires_action: bool) -> bool {
-        let resolved = requires_action && self.resolves(&id, Seen::Resolved(by), Transport::Hook);
+        let resolved = requires_action && self.resolves(&id, Seen::Resolved(by));
         match by {
             Resolution::Call(c) => self.retire(&id, c),
             // An approved call runs on, so it leaves only the request.
@@ -306,33 +307,35 @@ impl ActionRequests {
         tasks: &HashSet<String>,
         requires_action: bool,
     ) -> bool {
-        let resolved =
-            requires_action && self.resolves(&id, Seen::ChildResumed(tasks), Transport::Hook);
+        let resolved = requires_action && self.resolves(&id, Seen::ChildResumed(tasks));
         if resolved {
             self.open.remove(&id);
         }
         resolved
     }
 
-    /// Whether `seen`, arriving on `from`, answers `id`'s standing request.
-    fn resolves(&self, id: &AgentId, seen: Seen<'_>, from: Transport) -> bool {
+    /// Whether `seen` answers `id`'s standing request.
+    fn resolves(&self, id: &AgentId, seen: Seen<'_>) -> bool {
         let Some(req) = self.open.get(id) else {
             return false;
         };
         match seen {
-            // A member's start is its pre-use, and an approval resumes by its
-            // own fact, so only a request the wire gave no key takes one.
+            // Only a request the wire gave no key takes a start: a member's own
+            // start answers nothing, and an approval resumes by its own fact.
             Seen::Start => req.is_keyless(),
-            Seen::End(Ended::Call(c)) => req.is_last_member(c),
+            Seen::End(Ended::Call(c), _) => req.is_last_member(c),
             Seen::Resolved(Resolution::Call(c)) => req.is_last_member(c),
             Seen::Resolved(Resolution::Approved(c)) => self.names(id, c) && req.is_last_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
-            Seen::End(Ended::Unnamed) => from == Transport::Hook && !req.named,
-            Seen::End(Ended::Turn {
-                turn,
-                implied,
-                turnless,
-            }) => match &req.turn {
+            Seen::End(Ended::Unnamed, from) => from == Transport::Hook && !req.named,
+            Seen::End(
+                Ended::Turn {
+                    turn,
+                    implied,
+                    turnless,
+                },
+                _,
+            ) => match &req.turn {
                 Some(t) => Some(t) == turn || Some(t) == implied,
                 None => turnless,
             },
@@ -340,6 +343,12 @@ impl ActionRequests {
             // The child resumed, unless a member is the parent's own call.
             Seen::ChildResumed(tasks) => req.members.iter().all(|m| tasks.contains(&*m.call)),
         }
+    }
+
+    /// The item `call`'s start showed, while it has not ended.
+    pub(crate) fn in_flight(&self, id: &AgentId, call: &str) -> Option<ToolUse> {
+        let starts = self.pending.get(id)?;
+        starts.iter().find(|p| &*p.call == call)?.item.clone()
     }
 
     /// The item of `id`'s newest call that started and has not ended.
@@ -605,7 +614,7 @@ mod tests {
         assert_eq!(members(&reqs), ["a"]);
         assert!(
             !reqs.start(id(), true),
-            "a bound member's own start is its pre-use, not an answer"
+            "a request naming its tool takes no start"
         );
     }
 
@@ -654,182 +663,150 @@ mod tests {
         let ran = Resolution::Call("x".into());
         let approved = Resolution::Approved("x".into());
         let stopped = Resolution::Turn(t1.clone());
-        for (what, reqs, seen, from, want) in [
+        for (what, reqs, seen, want) in [
             (
                 "a named member's approval",
                 named(),
                 Seen::Resolved(&approved),
-                HOOK,
                 true,
             ),
             (
                 "a bound member's approval",
                 bound(),
                 Seen::Resolved(&approved),
-                HOOK,
                 false,
             ),
+            ("a named request, a start", named(), Seen::Start, false),
+            ("a bound request, a start", bound(), Seen::Start, false),
             (
-                "a named request, a start",
-                named(),
-                Seen::Start,
-                HOOK,
-                false,
-            ),
-            (
-                "a bound request, a start",
-                bound(),
-                Seen::Start,
-                HOOK,
-                false,
-            ),
-            (
-                "a keyless request, a start on either transport",
+                "a keyless request, a start",
                 keyless(HOOK),
                 Seen::Start,
-                JSONL,
                 true,
             ),
             (
                 "a request waiting on its tool",
                 scoped(),
                 Seen::Start,
-                HOOK,
                 false,
             ),
             (
                 "a member's end, either channel",
                 named(),
-                Seen::End(Ended::Call("x")),
-                JSONL,
+                Seen::End(Ended::Call("x"), JSONL),
                 true,
             ),
             (
                 "a non-member's end",
                 named(),
-                Seen::End(Ended::Call("y")),
-                HOOK,
+                Seen::End(Ended::Call("y"), HOOK),
                 false,
             ),
-            ("a member's run", bound(), Seen::Resolved(&ran), HOOK, true),
-            (
-                "its turn's stop",
-                scoped(),
-                Seen::Resolved(&stopped),
-                HOOK,
-                true,
-            ),
+            ("a member's run", bound(), Seen::Resolved(&ran), true),
+            ("its turn's stop", scoped(), Seen::Resolved(&stopped), true),
             (
                 "a turnless request's stop",
                 bound(),
                 Seen::Resolved(&stopped),
-                HOOK,
                 false,
             ),
             (
                 "an id-less hook end, nothing named",
                 bound(),
-                Seen::End(Ended::Unnamed),
-                HOOK,
+                Seen::End(Ended::Unnamed, HOOK),
                 true,
             ),
             (
                 "an id-less hook end, a call named",
                 named(),
-                Seen::End(Ended::Unnamed),
-                HOOK,
+                Seen::End(Ended::Unnamed, HOOK),
                 false,
             ),
             (
                 "an id-less transcript end",
                 keyless(JSONL),
-                Seen::End(Ended::Unnamed),
-                JSONL,
+                Seen::End(Ended::Unnamed, JSONL),
                 false,
             ),
             (
                 "its turn's end",
                 scoped(),
-                Seen::End(turn_end(Some(&t1))),
-                JSONL,
+                Seen::End(turn_end(Some(&t1)), JSONL),
                 true,
             ),
             (
                 "another turn's end",
                 scoped(),
-                Seen::End(turn_end(Some(&t2))),
-                HOOK,
+                Seen::End(turn_end(Some(&t2)), HOOK),
                 false,
             ),
             (
                 "an end proving its turn ended",
                 scoped(),
-                Seen::End(Ended::Turn {
-                    turn: Some(&t2),
-                    implied: Some(&t1),
-                    turnless: false,
-                }),
-                JSONL,
+                Seen::End(
+                    Ended::Turn {
+                        turn: Some(&t2),
+                        implied: Some(&t1),
+                        turnless: false,
+                    },
+                    JSONL,
+                ),
                 true,
             ),
             (
                 "a turnless request, a keyed end",
                 bound(),
-                Seen::End(turn_end(Some(&t1))),
-                HOOK,
+                Seen::End(turn_end(Some(&t1)), HOOK),
                 false,
             ),
             (
                 "a turnless request, the end of a turn whose start went unseen",
                 bound(),
-                Seen::End(Ended::Turn {
-                    turn: Some(&t1),
-                    implied: None,
-                    turnless: true,
-                }),
-                HOOK,
+                Seen::End(
+                    Ended::Turn {
+                        turn: Some(&t1),
+                        implied: None,
+                        turnless: true,
+                    },
+                    HOOK,
+                ),
                 true,
             ),
             (
                 "a hook turn end",
                 named(),
-                Seen::End(turn_end(None)),
-                HOOK,
+                Seen::End(turn_end(None), HOOK),
                 true,
             ),
             (
                 "a transcript turn end, hook-raised",
                 keyless(HOOK),
-                Seen::End(turn_end(None)),
-                JSONL,
+                Seen::End(turn_end(None), JSONL),
                 true,
             ),
             (
                 "a child under its Task's prompt",
                 raised(vec![pending("task", None, HOOK)], raise(None, None, HOOK)),
                 Seen::ChildResumed(&tasks),
-                HOOK,
                 true,
             ),
             (
                 "a child past its parent's own call",
                 bound(),
                 Seen::ChildResumed(&tasks),
-                HOOK,
                 false,
             ),
             (
                 "a child under a bare prompt",
                 keyless(HOOK),
                 Seen::ChildResumed(&none),
-                HOOK,
                 true,
             ),
         ] {
-            assert_eq!(reqs.resolves(&id(), seen, from), want, "{what}");
+            assert_eq!(reqs.resolves(&id(), seen), want, "{what}");
         }
         assert!(
-            !ActionRequests::default().resolves(&id(), Seen::End(turn_end(None)), HOOK),
+            !ActionRequests::default().resolves(&id(), Seen::End(turn_end(None), HOOK)),
             "no request, nothing to answer"
         );
     }
@@ -847,8 +824,8 @@ mod tests {
         assert_eq!(members(&reqs), ["xn", "xn2"], "the same turn's raise joins");
         reqs.raise(id(), scoped("xm", &m), true);
         assert_eq!(members(&reqs), ["xm"]);
-        assert!(!reqs.resolves(&id(), Seen::End(turn_end(Some(&n))), JSONL));
-        assert!(reqs.resolves(&id(), Seen::End(turn_end(Some(&m))), JSONL));
+        assert!(!reqs.resolves(&id(), Seen::End(turn_end(Some(&n)), JSONL)));
+        assert!(reqs.resolves(&id(), Seen::End(turn_end(Some(&m)), JSONL)));
     }
 
     #[test]

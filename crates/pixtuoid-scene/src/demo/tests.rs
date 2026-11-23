@@ -479,10 +479,10 @@ fn a_visitor_ending_at_the_wrap_returns_every_loop() {
     }
 }
 
-/// Every id the reducer counts once and every turn an event names takes the
-/// lap, whichever field carries it.
+/// Every wire id an event names a record by takes the lap, whichever field
+/// carries it.
 #[test]
-fn a_lap_names_every_counted_id_and_turn_apart() {
+fn a_lap_names_every_merge_key_apart() {
     let lap = Lap {
         n: 3,
         seq_stride: 10,

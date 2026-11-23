@@ -11,10 +11,20 @@ use crate::state::TurnKey;
 /// layer.
 pub(crate) const DEFAULT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Which transport produced an event, which decides lifecycle authority and
-/// live-versus-replay counting in the reducer, never a merge. Lives on the
-/// source side because every `Source` implementor must tag its own events; the
-/// reducer is downstream.
+/// Which transport produced an event. The reducer reads it for:
+///
+/// - a session's lifecycle: what may create, end or revive it
+///   (`Reducer::authorizes`), and only a hook's `Identity` registers one;
+/// - whether an event counts as live work or as a replay;
+/// - which pending calls a request binds by tool name or by deduction: those
+///   seen on the transport that raised it;
+/// - whether a tool end naming no call answers a request: only a hook's does;
+/// - whether an unnamed child's activity under its parent's key is dropped:
+///   only a hook's is.
+///
+/// A call's facts merge on its record whatever transport carries them. Lives
+/// on the source side because every `Source` implementor must tag its own
+/// events; the reducer is downstream.
 ///
 /// `#[non_exhaustive]`: keeps adding a transport a non-breaking change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
