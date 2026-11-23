@@ -3,10 +3,10 @@
                                                ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
                                                ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
                                                ▒▒  ██                  █
-                                                   ██       v18.12.1
+                                                   ██       v19.1.0
 
-                        Tip: Start your prompt with `!` to run it as bash — `!!` runs it without
-                                              adding the output to context
+                         Tip: No native tool_calling? Inference provider botches parsing them?
+                              `PI_DIALECT=glm|kimi|anthropic…` rolls it locally for them!
 
 
 

@@ -3,17 +3,17 @@
                                                ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
                                                ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
                                                ▒▒  ██                  █
-                                                   ██       v18.13.1
+                                                   ██       v19.1.0
 
-                        Tip: Need a cheap nested model call? Use `completion(x...)`. Have a big
-                                         batch of tasks? Ask clanker to use it!
+                         Tip: `/shake` rips heavy tool results out of context to reclaim tokens
+                              without a full /compact — `/shake images` drops just images
 
                                                                                                                         
  Read NOTE.txt, then list this directory, then read NOTE.txt again.                                                     
                                                                                                                         
 
-╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ $ cat NOTE.txt                                                                                                       │
+╭─── Reading the note ─────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   cat NOTE.txt                                                                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
   ⎋ Reading the note                                                                                                    
@@ -25,5 +25,5 @@
 ├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │ ↑/↓ choose · ⏎ select · ⌃⏎/⌃Q approve · ⎋ deny · ⌃O details · type to deny and steer                                 │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- ⠇ 2s > ◒ gpt-4.1 > 🗑 pixtuoid-capture/proj > ⑂ main > $0.01 ▶─0.3%──────────────────────────────────────────┃───────1M─
+ ⠏ 2s > ◒ gpt-4.1 > 🗑 …xtuoid-run-f9DXtW/pixtuoid-capture/proj > ⑂ main > $0.01 ▶─0.3%──────────────────────────┃────1M─
 ╰─
