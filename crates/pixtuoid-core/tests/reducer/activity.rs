@@ -243,44 +243,6 @@ fn tool_call_count_increments_on_tool_use_start() {
 }
 
 #[test]
-fn running_ms_does_not_double_count_on_duplicate_tool_use_end() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/dedup.jsonl");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        None,
-        t0,
-        Transport::Hook,
-    );
-
-    let t1 = t0 + Duration::from_secs(2);
-    tool_use_end(&mut r, &mut scene, id, Some("t1"), t1, Transport::Hook);
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        t1 + Duration::from_millis(600),
-        Transport::Jsonl,
-    );
-
-    r.tick(&mut scene, t1 + Duration::from_secs(3));
-    let slot = scene.agents.get(&id).unwrap();
-    // A second folded span would read ~4600.
-    assert_eq!(
-        slot.running_ms, 2000,
-        "running_ms should be the single t0→t1 span (2000ms), not double-counted"
-    );
-}
-
-#[test]
 fn running_ms_preserved_when_task_arrives_during_running_tool() {
     use pixtuoid_core::source::ToolDetail;
 

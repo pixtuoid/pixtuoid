@@ -618,7 +618,8 @@ impl Reducer {
             detail: detail.map(|d| Arc::<str>::from(d.display())),
             kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
         };
-        // Every start of a call still open merges into its pending start.
+        // A start that rises into nothing still adds its transport, which a
+        // request raised there binds by, and its item, which its approval shows.
         if let Some(call) = ids.own
             && observed.is_some_and(|o| !o.ended)
         {
