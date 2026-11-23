@@ -83,6 +83,9 @@ which holds every other step.
    - A transcript-bearing fixture is driven with the first-sight seed, so a
      wrong `id_from_path` fails here instead of shipping two sprites for one
      session.
+   - A source with both a transcript and hooks needs a scenario recording
+     both streams, and its `harness::reads::WRITE_STAMPS` row in place before
+     recording (`sources/merge.rs`; CONTRIBUTING step 5 says why).
 2. **Only for unique behavior** (subagent hooks, custom lifecycle): a
    `tests/sources/<module>.rs`, registered in `sources/main.rs`. A plain CLI
    (antigravity) needs none.

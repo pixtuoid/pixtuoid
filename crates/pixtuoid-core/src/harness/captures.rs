@@ -478,8 +478,11 @@ pub fn jsonl_files_under(dir: &Path) -> Vec<PathBuf> {
 struct IdFamily {
     /// The token's name in a canonical capture.
     name: &'static str,
-    /// The token, or its one group where only its key tells the token from a
-    /// value of the same shape.
+    /// The key whose value is the token, where only its key tells the token
+    /// from a value of the same shape.
+    key: Option<&'static str>,
+    /// The token, or the value its `key` holds with the token as group 1, or
+    /// its one group where it takes more context than a key.
     pattern: &'static str,
     /// A committed capture that carries one, under `tests/sources`.
     #[cfg_attr(not(test), expect(dead_code, reason = "its test reads the citation"))]
@@ -497,6 +500,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     // The time-ordered v7 codex and grok mint included.
     IdFamily {
         name: "uuid",
+        key: None,
         pattern: r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
         seen_in: "claude_code/fixtures/tool-run-hermetic",
         renamed: &[(
@@ -506,12 +510,14 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "anthropic-tool-use",
+        key: None,
         pattern: r"toolu_[0-9A-Za-z_-]+",
         seen_in: "claude_code/fixtures/tool-run-hermetic",
         renamed: &[("toolu_whFwVaQVHr-tJpiG", "toolu_dft8jZ_PBInjS87R")],
     },
     IdFamily {
         name: "anthropic-message",
+        key: None,
         pattern: r"msg_[0-9A-Za-z_-]+",
         seen_in: "claude_code/fixtures/tool-run-hermetic",
         renamed: &[("msg_LWX8UtL2iJV4dA7e", "msg_0j52Kuc1lga-VWuW")],
@@ -520,6 +526,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     // minted id starts a word, and its tail outruns every wire name's.
     IdFamily {
         name: "openai-tool-call",
+        key: None,
         pattern: r"\bcall_[0-9A-Za-z_-]{16,}",
         seen_in: "kimi/fixtures/tool-run-hermetic",
         renamed: &[
@@ -532,12 +539,14 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "claude-code-subagent",
+        key: None,
         pattern: r"\ba[0-9a-f]{16}\b",
         seen_in: "claude_code/fixtures/subagent-hermetic",
         renamed: &[("agent-a8074a27caeedb715", "agent-a615cb511b5899d39")],
     },
     IdFamily {
         name: "opencode-session",
+        key: None,
         pattern: r"ses_[0-9A-Za-z]{26}",
         seen_in: "opencode/fixtures/tool-run-hermetic",
         renamed: &[(
@@ -547,18 +556,21 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "codewhale-session",
+        key: None,
         pattern: r"\bsess_[0-9a-f]{8}\b",
         seen_in: "codewhale/fixtures/tool-run-hermetic",
         renamed: &[("sess_45ce9c9f", "sess_411948cd")],
     },
     IdFamily {
         name: "codewhale-subagent",
+        key: None,
         pattern: r"\bagent_[0-9a-f]{8}\b",
         seen_in: "codewhale/fixtures/child-error-hermetic",
         renamed: &[("agent_7ca434ad", "agent_66a9c2b8")],
     },
     IdFamily {
         name: "reasonix-session-start",
+        key: None,
         pattern: r"\d{8}-\d{6}\.\d{9}",
         seen_in: "reasonix/fixtures/tool-run-hermetic",
         renamed: &[(
@@ -568,6 +580,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "hermes-session",
+        key: None,
         pattern: r"\blocal-[0-9a-f]{64}\b",
         seen_in: "hermes/fixtures/tool-run-hermetic",
         renamed: &[(
@@ -578,6 +591,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     // Codex's and omp's.
     IdFamily {
         name: "session-file-start",
+        key: None,
         pattern: r"\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d(?:-\d{3}Z)?",
         seen_in: "codex/fixtures/subagent-hermetic",
         renamed: &[
@@ -590,6 +604,7 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "omp-entry",
+        key: None,
         // The line's own id: a nested `"id"` keeps its pairing with whatever
         // references it.
         pattern: r#"(?m)^\{"type":"[a-z_]+","id":"([0-9a-f]{8})""#,
@@ -601,14 +616,16 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
     IdFamily {
         name: "shim-pid",
-        pattern: r#""_pid":(\d+)"#,
+        key: Some(crate::source::decoder::PID_STAMP),
+        pattern: r"(\d+)",
         seen_in: "dsh/fixtures/tool-run-hermetic",
         renamed: &[(r#"{"_pid":56875}"#, r#"{"_pid":42895}"#)],
     },
     // A port the orchestrator picks free.
     IdFamily {
         name: "openclaw-gateway-port",
-        pattern: r#""gatewayPort":(\d+)"#,
+        key: Some(crate::source::openclaw::GATEWAY_PORT_FIELD),
+        pattern: r"(\d+)",
         seen_in: "openclaw/fixtures/tool-run-hermetic",
         renamed: &[(r#"{"gatewayPort":55736}"#, r#"{"gatewayPort":63297}"#)],
     },
@@ -632,9 +649,13 @@ struct Mask {
 /// ([`WRITE_STAMPS`](super::reads::WRITE_STAMPS)).
 static MASKS: std::sync::LazyLock<Vec<Mask>> = std::sync::LazyLock::new(|| {
     use crate::source::decoder::FORWARDED_AT_STAMP;
-    let minted = ID_FAMILIES
-        .iter()
-        .map(|f| (f.name.to_owned(), f.pattern.to_owned(), true));
+    let minted = ID_FAMILIES.iter().map(|f| {
+        let pattern = match f.key {
+            Some(key) => format!(r#""{key}":{}"#, f.pattern),
+            None => f.pattern.to_owned(),
+        };
+        (f.name.to_owned(), pattern, true)
+    });
     let shim = (
         "shim-clock".to_owned(),
         format!(r#""{FORWARDED_AT_STAMP}":(\d+)"#),
