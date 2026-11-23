@@ -2,7 +2,7 @@
   "origin": "recorded",
   "cli": "grok",
   "version": "grok 1.0.92 (b06756fd6256)",
-  "captured": "2026-11-21",
+  "captured": "2026-11-23",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",

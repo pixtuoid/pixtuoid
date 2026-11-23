@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "grok",
   "version": "grok 1.0.92 (b06756fd6256)",
-  "captured": "2026-11-21",
+  "captured": "2026-11-23",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 240
+    "blanked": 242
   },
   "aimock": "1.48.0",
   "script": "tests/sources/grok/hermetic/subagent.json",
@@ -37,7 +37,7 @@
     }
   },
   "sentinel_reads": {
-    "01a1fed6-5063-77f2-8d13-2f9d55975023/updates.jsonl": [
+    "01a20801-15cb-7263-a0bf-7dc79f08db3d/updates.jsonl": [
       "4:/params/update/rawInput/background"
     ],
     "hook-payloads.jsonl": [
