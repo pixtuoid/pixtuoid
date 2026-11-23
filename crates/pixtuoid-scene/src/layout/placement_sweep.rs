@@ -471,12 +471,10 @@ fn pieces(l: &SceneLayout) -> Vec<Piece> {
             // moved beside a corner appliance adopts the blocker's AISLE row.
             FixtureKind::Plant { item, kind } => {
                 let pos = l.plants[item].pos;
-                let in_meeting = l
-                    .meeting_room_bounds(0)
-                    .is_some_and(|mr| contains_point(mr, pos));
+                let in_meeting = l.meeting_room_bounds(0).is_some_and(|mr| mr.contains(pos));
                 let container = if in_meeting {
                     Container::MeetingRoom(0)
-                } else if contains_point(l.cubicle_aisle, pos) {
+                } else if l.cubicle_aisle.contains(pos) {
                     Container::Aisle
                 } else {
                     Container::Band
@@ -659,10 +657,6 @@ fn lounge_piece(label: &str, pos: Point, row: Furniture) -> Piece {
         Container::Band,
         Some(LOUNGE_GROUP),
     )
-}
-
-fn contains_point(b: Bounds, p: Point) -> bool {
-    p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height
 }
 
 fn rect_in_bounds(tl: Point, sz: Size, b: Bounds) -> bool {
@@ -1674,7 +1668,7 @@ fn every_meeting_slot_sits_in_its_room(w: u16, h: u16, seed: u64, l: &SceneLayou
             ));
             continue;
         };
-        if !contains_point(b, wp.pos) {
+        if !b.contains(wp.pos) {
             v.push(format!(
                 "{w}x{h} seed {seed}: {:?} slot {:?} sits outside its room {room_id} {b:?}",
                 wp.kind, wp.pos

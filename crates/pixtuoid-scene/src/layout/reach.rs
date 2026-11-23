@@ -6,7 +6,7 @@
 
 use std::collections::VecDeque;
 
-use super::{CoarseGrid, Point, cell_dims, cell_holding, grid_origin, snap, snap_cell};
+use super::{Point, cell_dims, cell_holding, grid_origin, snap, snap_cell};
 use crate::grid::Grid;
 use crate::walkable::WalkableMask;
 
@@ -15,7 +15,7 @@ use crate::walkable::WalkableMask;
 /// pixel (a door on a wall edge, a desk) still lands in the right component.
 const SEED_SNAP_CELLS: u16 = 3;
 
-/// The set of coarse cells reachable (by `CoarseGrid::neighbors` steps) from a
+/// The set of coarse cells reachable (by `CoarseGraph::neighbors` steps) from a
 /// seed — i.e. the agent's connected walkable component. Built once per layout
 /// from a known in-component seed (the door, or a home desk).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub(crate) struct ReachSet {
 }
 
 impl ReachSet {
-    /// Coarse BFS over `CoarseGrid::neighbors` from `seed`'s cell (snapped to the
+    /// Coarse BFS over `CoarseGraph::neighbors` from `seed`'s cell (snapped to the
     /// nearest walkable cell when `seed` lands on a blocked one). An
     /// empty/degenerate mask yields an all-unreachable set.
     pub(crate) fn from_mask(mask: &WalkableMask, seed: Point) -> ReachSet {
@@ -39,12 +39,11 @@ impl ReachSet {
         }
         let seed_cell = snap_cell(mask, seed);
         if let Some(start) = snap(mask, seed_cell, cell_w, cell_h, SEED_SNAP_CELLS) {
-            let mut coarse = CoarseGrid::new(mask);
             let mut q = VecDeque::new();
             grid.set(start.0, start.1, true);
             q.push_back(start);
             while let Some((cx, cy)) = q.pop_front() {
-                for ((nx, ny), _) in coarse.neighbors((cx, cy)) {
+                for ((nx, ny), _) in mask.coarse().neighbors((cx, cy)) {
                     if !grid.get_or(nx, ny, false) {
                         grid.set(nx, ny, true);
                         q.push_back((nx, ny));
@@ -71,10 +70,11 @@ impl ReachSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::walkable::WalkableMaskBuilder;
 
     #[test]
     fn open_field_reaches_everywhere() {
-        let m = WalkableMask::new_open(64, 64);
+        let m = WalkableMaskBuilder::new_open(64, 64).freeze();
         let r = ReachSet::from_mask(&m, Point { x: 4, y: 4 });
         assert!(r.reaches(Point { x: 4, y: 4 }));
         assert!(r.reaches(Point { x: 60, y: 60 }));
@@ -85,8 +85,9 @@ mod tests {
 
     #[test]
     fn walled_pocket_is_unreachable_but_main_is_reachable() {
-        let mut m = WalkableMask::new_open(64, 64);
+        let mut m = WalkableMaskBuilder::new_open(64, 64);
         m.mark_blocked(28, 0, 8, 64, 0);
+        let m = m.freeze();
         let r = ReachSet::from_mask(&m, Point { x: 8, y: 32 });
         assert!(r.reaches(Point { x: 8, y: 32 }), "seed side reachable");
         assert!(
@@ -101,8 +102,9 @@ mod tests {
 
     #[test]
     fn blocked_seed_snaps_into_the_component() {
-        let mut m = WalkableMask::new_open(64, 64);
+        let mut m = WalkableMaskBuilder::new_open(64, 64);
         m.mark_blocked(30, 0, 4, 64, 0);
+        let m = m.freeze();
         let r = ReachSet::from_mask(&m, Point { x: 31, y: 32 }); // on the wall
         assert!(
             r.reaches(Point { x: 8, y: 32 }) || r.reaches(Point { x: 56, y: 32 }),
@@ -115,8 +117,9 @@ mod tests {
         // The blocked pocket must extend ≥ (SEED_SNAP_CELLS + 1) coarse cells past
         // the seed cell in every direction, so every cell the snap scan probes
         // (incl. its ring-interior skips) is blocked and `snap` returns None.
-        let mut m = WalkableMask::new_open(64, 64);
+        let mut m = WalkableMaskBuilder::new_open(64, 64);
         m.mark_blocked(0, 0, 40, 40, 0);
+        let m = m.freeze();
         let r = ReachSet::from_mask(&m, Point { x: 8, y: 8 });
         assert!(!r.reaches(Point { x: 8, y: 8 }), "seed cell is blocked");
         assert!(!r.reaches(Point { x: 50, y: 50 }), "open area never seeded");
@@ -138,8 +141,9 @@ mod tests {
     fn corner_seed_ring_scan_handles_negative_coords() {
         // The seed's cell is at the grid corner, so the snap ring scan walks to
         // negative cell coords before finding a walkable cell a few rings out.
-        let mut m = WalkableMask::new_open(64, 64);
+        let mut m = WalkableMaskBuilder::new_open(64, 64);
         m.mark_blocked(0, 0, 8, 8, 0);
+        let m = m.freeze();
         let r = ReachSet::from_mask(&m, Point { x: 1, y: 1 }); // → cell (0,0)
         assert!(
             r.reaches(Point { x: 40, y: 40 }),
@@ -150,14 +154,17 @@ mod tests {
     #[test]
     fn sub_cell_mask_yields_empty_reachset() {
         // Width 3 is narrower than COARSE_CELL_SIZE, so cell_w collapses to 0.
-        let r = ReachSet::from_mask(&WalkableMask::new_open(3, 64), Point { x: 0, y: 0 });
+        let r = ReachSet::from_mask(
+            &WalkableMaskBuilder::new_open(3, 64).freeze(),
+            Point { x: 0, y: 0 },
+        );
         assert!(!r.reaches(Point { x: 0, y: 0 }));
         assert_eq!(r.grid.width(), 0, "degenerate mask has a 0-width cell grid");
     }
 
     #[test]
     fn reaches_is_false_out_of_bounds() {
-        let m = WalkableMask::new_open(64, 64);
+        let m = WalkableMaskBuilder::new_open(64, 64).freeze();
         let r = ReachSet::from_mask(&m, Point { x: 4, y: 4 });
         assert!(
             !r.reaches(Point { x: 9999, y: 9999 }),

@@ -412,10 +412,10 @@ test *args:
 
 # The filter forwards to every target, and one matching nothing in a target is
 # not an error: `just bench 360` runs every 360x240 case.
-[doc('Render-path criterion benchmarks; forwards a filter')]
+[doc('Render-path and routing criterion benchmarks; forwards a filter')]
 [group('rust')]
 bench *args:
-    cargo bench -p pixtuoid-scene --bench render_frame -- "$@"
+    cargo bench -p pixtuoid-scene --bench render_frame --bench routing -- "$@"
     cargo bench -p pixtuoid --no-default-features --bench render_tiles -- "$@"
 
 [doc('Frame pacing through the real TUI painter per protocol: frame time, budget overruns, interval jitter, bytes per frame')]

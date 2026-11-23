@@ -57,8 +57,8 @@ pub(crate) use windows::{
 pub(crate) use windows::{WINDOW_W, window_bays, window_slots};
 // `crate::pathfind`'s A* and `reach`'s BFS both ride these ONE definitions.
 pub(crate) use coarse::{
-    COARSE_CELL_SIZE, CoarseGrid, cell_anchor, cell_center, cell_dims, cell_holding, cell_walkable,
-    grid_origin, routed_area, snap, snap_cell, snap_where,
+    COARSE_CELL_SIZE, CoarseGraph, cell_anchor, cell_center, cell_dims, cell_holding,
+    cell_walkable, grid_origin, routed_area, snap, snap_cell, snap_where,
 };
 
 use crate::walkable::WalkableMask;
@@ -108,6 +108,16 @@ impl Bounds {
             width: span(x, end(self.x, self.width).max(end(other.x, other.width))),
             height: span(y, end(self.y, self.height).max(end(other.y, other.height))),
         }
+    }
+
+    /// Whether half-open box `self` holds pixel `p`.
+    pub(crate) fn contains(self, p: Point) -> bool {
+        self.overlaps(Bounds {
+            x: p.x,
+            y: p.y,
+            width: 1,
+            height: 1,
+        })
     }
 
     /// Whether the two half-open boxes share a column, whatever their rows.
@@ -618,8 +628,6 @@ impl SceneLayout {
     /// GROUND rule (invariant #6), so the cell in front of a desk is legitimately
     /// walkable AND legitimately covered — fine to walk THROUGH, wrong to park in.
     pub(crate) fn is_visually_clear(&self, p: Point) -> bool {
-        let inside =
-            |b: Bounds| p.x >= b.x && p.x < b.x + b.width && p.y >= b.y && p.y < b.y + b.height;
         !self.fixtures().any(|f| {
             let covers = match f.kind {
                 FixtureKind::Desk(_)
@@ -659,7 +667,7 @@ impl SceneLayout {
                 | FixtureKind::WaterCooler
                 | FixtureKind::TrashBin => false,
             };
-            covers && inside(f.visual)
+            covers && f.visual.contains(p)
         })
     }
 
