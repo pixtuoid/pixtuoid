@@ -143,6 +143,9 @@ fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
 const MAX_SNAP_RADIUS: u16 = 12;
 
 /// Run A* on the layout's walkability mask.
+///
+/// `#[doc(hidden)] pub` for `benches/routing.rs`: the crate-private
+/// `AStarRouter` caches each pair, so a bench through it would time cache hits.
 #[doc(hidden)]
 pub fn find_path(
     mask: &WalkableMask,
@@ -163,7 +166,7 @@ pub fn find_path(
         cell_near(aim).filter(|&(cx, cy)| segment_clear(mask, cell_anchor(mask, cx, cy), to));
     let (goal, came_from) = match aimed.and_then(search) {
         Some(reached) => reached,
-        // A search toward the aimed cell has failed already.
+        // Skip `to`'s cell when it is the aimed cell, whose search just failed.
         None => search(cell_near(to).filter(|&goal| aimed != Some(goal))?)?,
     };
     Some(reconstruct(mask, &came_from, goal, from, to))
