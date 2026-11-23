@@ -738,8 +738,8 @@ mod liveness_tests {
         }
         let mut expected = children.each_ref().map(|c| c.id() as i32);
         expected.sort_unstable();
-        // Probe, then reap, then assert: a panicking assert would leak two
-        // `sleep 30`s.
+        // Probe, then reap, then assert: a panicking assert would leak both
+        // sleepers.
         let snapshot = live_cc_session_ids(dir.path());
         for child in &mut children {
             let _ = child.kill();

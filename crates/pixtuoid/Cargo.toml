@@ -215,7 +215,6 @@ rqrr = { version = "0.11", default-features = false }
 insta    = { workspace = true }
 # Integration tests parse the `--json` CLI output back (cli_json.rs).
 serde_json = { workspace = true }
-# `benches/render_tiles.rs`.
 criterion  = { workspace = true }
 
 # Tests that drive a pty: `tests/tui_startup.rs`, whose startup queries are
