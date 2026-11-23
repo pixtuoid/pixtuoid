@@ -794,18 +794,17 @@ mod tests {
         }
     }
 
-    // Transcript-bearing sources may legitimately have no target, so the rule is
-    // derived from `line_decoder().is_none()` — no exemption list to drift.
+    // Derived from the registry, so no exemption list drifts.
     #[test]
-    fn every_hook_only_source_has_an_install_target() {
+    fn every_hook_bearing_source_has_an_install_target() {
         use pixtuoid_core::source::registry::{self, descriptor_for};
         for src in registry::registered_source_names() {
             let d = descriptor_for(src).expect("registered source must have a descriptor row");
-            if d.line_decoder().is_none() {
+            if d.is_hook_bearing() {
                 assert!(
                     TARGETS.iter().any(|t| t.core_source == src),
-                    "hook-only source {src:?} has no install target — its hooks would never \
-                     install, so its sprite never appears. Add a Target in install/target.rs."
+                    "source {src:?} reaches pixtuoid over the hook socket but has no install \
+                     target, so nothing ever sends on it. Add a Target in install/target.rs."
                 );
             }
         }

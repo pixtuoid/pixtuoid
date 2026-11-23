@@ -68,6 +68,10 @@ came, with no stamp check, strip or scan.
   no decoder touches, so it leaves without anyone naming it, and what stays
   decodes to the same events. The allowlist is derived by probing the
   decoders, never listed, so it follows them, within the probe's limit below.
+  It also keeps a transcript's write stamp where a `reads::WRITE_STAMPS` row
+  names it, which `merge.rs` orders the two streams by, whether or not a
+  decoder reads it, unless no decoder reads anything else on its line, which
+  then blanks whole.
   - `/Users/dev` stays the convention for a home path a decoder DOES read. A
     capture redacted by hand says so in its `note`: without that, a reader
     can't tell an edited capture from an untouched one, the distinction the
@@ -94,8 +98,8 @@ came, with no stamp check, strip or scan.
 - **Re-recording a scenario that exists needs a hand**, unless the hermetic
   tier records it. The tier keeps a fixture whose record, `dropped` included,
   equals the run's but for `captured` and `sentinel_reads`, and whose bytes
-  and `sentinel_reads` match the run's up to the ids an `ID_FAMILIES` row
-  (`harness::captures`) names; otherwise `just hermetic --record` replaces
+  and `sentinel_reads` match the run's up to what `canonical_capture`
+  (`harness::captures`) masks; otherwise `just hermetic --record` replaces
   both whole. `just capture-fixture` never overwrites committed bytes: it
   writes `<name>.new` beside them, to diff rather than trust. Only `*.jsonl`
   and `provenance.json` are read, so a `.new` you don't `mv` over the old

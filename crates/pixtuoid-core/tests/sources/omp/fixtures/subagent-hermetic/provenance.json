@@ -6,7 +6,7 @@
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 165
+    "blanked": 157
   },
   "aimock": "1.48.0",
   "script": "tests/sources/omp/hermetic/subagent.json",
@@ -34,13 +34,13 @@
     }
   },
   "sentinel_reads": {
-    "2026-11-23T00-26-52-196Z_01a205cc-69a4-7315-bbce-67142151eecb.jsonl": [
+    "2026-11-23T04-57-50-616Z_01a206c4-7f18-7691-942e-3d07b9c44933.jsonl": [
       "11:/message/usage/cacheWrite",
       "14:/message/usage/cacheWrite",
       "1:/title",
       "8:/message/usage/cacheWrite"
     ],
-    "2026-11-23T00-26-52-196Z_01a205cc-69a4-7315-bbce-67142151eecb/Reader.jsonl": [
+    "2026-11-23T04-57-50-616Z_01a206c4-7f18-7691-942e-3d07b9c44933/Reader.jsonl": [
       "11:/message/usage/cacheWrite",
       "14:/message/usage/cacheWrite",
       "1:/title",

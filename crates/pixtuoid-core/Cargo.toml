@@ -57,7 +57,7 @@ harness = [
     "dep:sha2",
     # The literal census parses the decoders (`hermetic::literals`).
     "dep:syn",
-    # A re-record's capture is read up to the ids its run mints
+    # A re-record's capture is read up to the ids and clocks its run moves
     # (`harness::captures::canonical_capture`).
     "dep:regex",
     # A command line always names a program (`harness::plan::Argv`).
@@ -84,7 +84,7 @@ jiff        = { workspace = true, features = ["serde"] }
 sha2        = { workspace = true, optional = true }
 # The literal census reads what the decoders compare (`hermetic::literals`).
 syn         = { workspace = true, optional = true }
-# The id families a re-record may rename: `harness::captures::canonical_capture`.
+# The ids and clocks a re-record moves: `harness::captures::canonical_capture`.
 regex       = { workspace = true, optional = true }
 mutatis     = { workspace = true, optional = true }
 

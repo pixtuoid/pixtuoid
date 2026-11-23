@@ -50,7 +50,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// Deliberately NOT the profile name (never reaches the wire, and one profile may
 /// restart on a different port), the pid (changes every restart), or the session id
 /// (many per gateway).
-const GATEWAY_PORT_FIELD: &str = "gatewayPort";
+pub(crate) const GATEWAY_PORT_FIELD: &str = "gatewayPort";
 
 /// The turn's pairing key: a non-empty `runId`, else `sessionId`, else `"_"`. The
 /// `!is_empty` filter sits AFTER the pick, so a present-but-EMPTY `runId`

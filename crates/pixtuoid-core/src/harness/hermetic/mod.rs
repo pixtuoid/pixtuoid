@@ -965,7 +965,7 @@ mod tests {
                 if let Some(seed) = s.seed(p.source) {
                     assert!(seed.is_dir(), "{}: no seed at {}", p.source, seed.display());
                 }
-                let heard = p.descriptor().hook().is_some() || p.descriptor().is_daemon();
+                let heard = p.descriptor().is_hook_bearing();
                 assert_eq!(
                     s.expects.is_empty(),
                     !heard,

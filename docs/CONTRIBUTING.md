@@ -352,7 +352,7 @@ A **fold** is the one commit that takes a review round's accepted findings.
 ## Adding a new agent CLI
 
 No test forces steps 1–3; they are on you. Each later step names the check
-that fails without it; step 8 has one only for a hook-only source.
+that fails without it.
 
 1. **Verify the wire format against the CLI's actual source and releases
    first**: transcript location, line shape, hooks, session identity. Pin
@@ -401,6 +401,12 @@ that fails without it; step 8 has one only for a hook-only source.
 5. **The descriptor's `name` is the roster**: `registered_source_names()`
    projects `REGISTRY`. `just test` then requires:
    - a fixture, by the conformance suite;
+   - with both a transcript and hooks, a scenario recording both streams,
+     which only step 8's install target can record, and a
+     `harness::reads::WRITE_STAMPS` row for the transcript's write stamp, by
+     `tests/sources/merge.rs`. Add the row before recording: the strip blanks
+     a stamp no row names, `just restrip-fixtures` can't restore it, and a
+     `NOT_HERMETIC` source's re-record is billed;
    - a `PROFILES` row, or a `NOT_HERMETIC` reason and feed, by
      `harness/hermetic/mod.rs`;
    - the name in the `sources --json` golden
@@ -417,7 +423,9 @@ that fails without it; step 8 has one only for a hook-only source.
    runs unattended, the CLI's config (`merge_install`/`merge_uninstall` and a
    `verify_schema` fn mirroring its format). Add the
    registered-events↔decoder-arms guard too. `just test` fails without this
-   step for a hook-only source only.
+   step for any source heard over the hook socket, a hook-only agent, one
+   with a transcript too or a daemon
+   (`every_hook_bearing_source_has_an_install_target`).
 9. **Add a row to `site/src/sources.json`**, with the fields its neighbours
    carry (`name` is the `display_name`). Add that name to the bug form's
    `agent-cli` dropdown, then run `just gen-readme`.
