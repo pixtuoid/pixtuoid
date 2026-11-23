@@ -61,7 +61,7 @@ jobs:
           # expire. A key with a non-hex tail becomes its own one-element
           # family and is never deleted — the failure direction is
           # under-prune, never over-prune. Keep each family's newest entry,
-          # which is a stale generation when one saved after the live one (a
+          # which is not the live generation when another saved after it (a
           # revert, or main builds saving out of order); the next build then
           # restores it and rebuilds what differs.
           # An assignment propagates a pipeline failure under pipefail (a
