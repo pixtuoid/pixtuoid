@@ -34,14 +34,16 @@ const TUI_APPROVE: tui::Tui = tui::Tui {
     ..TUI
 };
 
-/// [`TUI`] submitting the `ask` tool's form as preselected: Enter picks the
-/// focused radio and moves to Submit, and Enter there submits
-/// (`packages/tui/src/html-form/dialog.ts:17-21` at `v18.18.8`).
+/// [`TUI`] submitting the `ask` tool's one-field form as preselected: Enter
+/// picks the focused radio and, with no next field, submits
+/// (`packages/tui/src/html-form/dialog.ts:442-443`, `:727-731`, `:1430-1434` at
+/// `v19.1.0`).
 const TUI_ASK: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
-        // Its footer's hint, which no other omp surface draws (`:1393`).
-        shows: "next field",
-        keys: &[tui::Key::Enter, tui::Key::Enter],
+        // The row the form always draws (`:158`, `:1830-1835`), which no
+        // startup tip holds (`packages/tui/src/prompt/tips.txt`).
+        shows: "Submit",
+        keys: &[tui::Key::Enter],
         dwell: std::time::Duration::ZERO,
     }],
     ..TUI
