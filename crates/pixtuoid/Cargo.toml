@@ -200,7 +200,6 @@ libm     = { workspace = true }
 syn         = { workspace = true }
 proc-macro2 = { workspace = true }
 # End-to-end CLI golden for `sources --json`, the Raycast contract (tests/cli_json.rs).
-# Goldens update with SNAPSHOTS=overwrite.
 snapbox  = { workspace = true, features = ["json"] }
 # Emits the SourceStatus JSON Schema — test/gen only, so the `JsonSchema` derive
 # is `cfg_attr(test)` and this stays a dev-dep. See sources.rs + `just gen-contract`.
@@ -213,9 +212,6 @@ icy_sixel = "0.7"
 # What reads `pair`'s QR in place of the App's camera (tests/serve.rs).
 rqrr = { version = "0.11", default-features = false }
 insta    = { workspace = true }
-# Integration tests parse the `--json` CLI output back (cli_json.rs).
-serde_json = { workspace = true }
-# `benches/render_tiles.rs`.
 criterion  = { workspace = true }
 
 # Tests that drive a pty: `tests/tui_startup.rs`, whose startup queries are
