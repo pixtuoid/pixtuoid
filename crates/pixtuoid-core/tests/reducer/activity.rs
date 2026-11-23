@@ -951,9 +951,10 @@ fn an_answered_agy_question_clears_requires_action_on_either_transport() {
 }
 
 // ---------------------------------------------------------------------------
-// omp extension-bridge approval rounds (#951): the interleavings human approval
-// latency makes reachable past `HOOK_WINS_WINDOW` (`counted_calls`' own doc) —
-// each must bind the wait to the member call id and count it ONCE.
+// Approval rounds whose wait names its call: each binds the wait to that member
+// and counts the call ONCE. omp's ride its transcript alone (`source::omp`'s
+// approval records); the others cross transports past `HOOK_WINS_WINDOW`
+// (`counted_calls`' own doc).
 // ---------------------------------------------------------------------------
 
 use crate::user_action_request_for;
@@ -965,210 +966,6 @@ fn beyond_dedup(t: SystemTime) -> SystemTime {
 }
 
 #[test]
-fn approval_transcript_start_first_requires_action_then_resumes_running_counting_once() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/a.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: rm"),
-        t0,
-        Transport::Jsonl,
-    );
-    assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 1);
-
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        beyond_dedup(t0),
-        Transport::Hook,
-    );
-    assert!(matches!(
-        scene.agents.get(&id).unwrap().state,
-        ActivityState::RequiresAction { .. }
-    ));
-
-    // The approval resume.
-    let t2 = beyond_dedup(beyond_dedup(t0)) + Duration::from_secs(5);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        None,
-        t2,
-        Transport::Hook,
-    );
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(
-        matches!(slot.state, ActivityState::Running { .. }),
-        "approval resume returns the slot to Running"
-    );
-    assert_eq!(slot.tool_call_count, 1, "the resume must not re-count x1");
-}
-
-#[test]
-fn approval_hook_user_action_request_first_survives_a_late_transcript_start() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/b.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        t0,
-        Transport::Hook,
-    );
-    assert!(matches!(
-        scene.agents.get(&id).unwrap().state,
-        ActivityState::RequiresAction { .. }
-    ));
-
-    // The transcript's Start for the SAME member call, while the human decides.
-    let t1 = beyond_dedup(t0);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: rm"),
-        t1,
-        Transport::Jsonl,
-    );
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(
-        matches!(slot.state, ActivityState::RequiresAction { .. }),
-        "a member call's own transcript Start must not fake an approval"
-    );
-    assert_eq!(slot.tool_call_count, 1);
-
-    let t2 = beyond_dedup(t1) + Duration::from_secs(5);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        None,
-        t2,
-        Transport::Hook,
-    );
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(matches!(slot.state, ActivityState::Running { .. }));
-    assert_eq!(slot.tool_call_count, 1, "still one logical call");
-}
-
-#[test]
-fn approval_resume_before_the_transcript_start_counts_once() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/c.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        t0,
-        Transport::Hook,
-    );
-    let t1 = beyond_dedup(t0) + Duration::from_secs(5);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        None,
-        t1,
-        Transport::Hook,
-    );
-    assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 1);
-
-    // The transcript's Start straggles in past the dedup window.
-    let t2 = beyond_dedup(t1);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: rm"),
-        t2,
-        Transport::Jsonl,
-    );
-    let slot = scene.agents.get(&id).unwrap();
-    assert_eq!(
-        slot.tool_call_count, 1,
-        "the straggler must not re-count x1"
-    );
-    assert!(matches!(slot.state, ActivityState::Running { .. }));
-}
-
-#[test]
-fn denied_approval_clears_requires_action_via_the_hook_end() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/d.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: rm"),
-        t0,
-        Transport::Jsonl,
-    );
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        beyond_dedup(t0),
-        Transport::Hook,
-    );
-
-    let t2 = beyond_dedup(beyond_dedup(t0)) + Duration::from_secs(5);
-    tool_use_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
-    assert!(
-        !matches!(
-            scene.agents.get(&id).unwrap().state,
-            ActivityState::RequiresAction { .. }
-        ),
-        "a denial must clear the RequiresAction (else the sprite hangs 60 min)"
-    );
-
-    // The transcript's error toolResult follows; it must not disturb anything.
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        beyond_dedup(t2),
-        Transport::Jsonl,
-    );
-    assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 1);
-}
-
-#[test]
 fn parallel_approvals_resolve_on_the_last_member() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -1176,86 +973,54 @@ fn parallel_approvals_resolve_on_the_last_member() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: a"),
-        t0,
-        Transport::Jsonl,
-    );
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x2"),
-        Some("bash: b"),
-        t0,
-        Transport::Jsonl,
-    );
+    for (call, detail) in [("x1", "bash: a"), ("x2", "bash: b")] {
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            id,
+            Some(call),
+            Some(detail),
+            t0,
+            Transport::Jsonl,
+        );
+    }
     assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 2);
-
-    let t1 = beyond_dedup(t0);
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        t1,
-        Transport::Hook,
-    );
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x2"),
-        t1,
-        Transport::Hook,
-    );
+    for call in ["x1", "x2"] {
+        user_action_request_for(
+            &mut r,
+            &mut scene,
+            id,
+            "bash",
+            Some(call),
+            t0,
+            Transport::Jsonl,
+        );
+    }
 
     // x1's resume retires it; x2 still waits on the human.
-    let t2 = beyond_dedup(t1) + Duration::from_secs(2);
+    let t1 = t0 + Duration::from_secs(2);
     tool_use_start(
         &mut r,
         &mut scene,
         id,
         Some("x1"),
-        None,
-        t2,
-        Transport::Hook,
+        Some("bash"),
+        t1,
+        Transport::Jsonl,
     );
     assert!(matches!(
         scene.agents.get(&id).unwrap().state,
         ActivityState::RequiresAction { .. }
     ));
-
-    // omp re-raises the still-pending request; its resolve must work identically.
-    let t3 = t2 + Duration::from_secs(1);
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x2"),
-        t3,
-        Transport::Hook,
-    );
-    assert!(matches!(
-        scene.agents.get(&id).unwrap().state,
-        ActivityState::RequiresAction { .. }
-    ));
-    let t4 = beyond_dedup(t3) + Duration::from_secs(2);
+    let t2 = t1 + Duration::from_secs(2);
     tool_use_start(
         &mut r,
         &mut scene,
         id,
         Some("x2"),
-        None,
-        t4,
-        Transport::Hook,
+        Some("bash"),
+        t2,
+        Transport::Jsonl,
     );
     let slot = scene.agents.get(&id).unwrap();
     assert!(matches!(slot.state, ActivityState::Running { .. }));
@@ -1372,47 +1137,32 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: a"),
-        t0,
-        Transport::Jsonl,
-    );
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x2"),
-        Some("bash: b"),
-        t0,
-        Transport::Jsonl,
-    );
-    let t1 = beyond_dedup(t0);
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        t1,
-        Transport::Hook,
-    );
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x2"),
-        t1,
-        Transport::Hook,
-    );
+    for (call, detail) in [("x1", "bash: a"), ("x2", "bash: b")] {
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            id,
+            Some(call),
+            Some(detail),
+            t0,
+            Transport::Jsonl,
+        );
+    }
+    for call in ["x1", "x2"] {
+        user_action_request_for(
+            &mut r,
+            &mut scene,
+            id,
+            "bash",
+            Some(call),
+            t0,
+            Transport::Jsonl,
+        );
+    }
 
     // Denying x1 must not forget x2's still-pending membership.
-    let t2 = beyond_dedup(t1) + Duration::from_secs(3);
-    tool_use_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Hook);
+    let t1 = t0 + Duration::from_secs(3);
+    tool_use_end(&mut r, &mut scene, id, Some("x1"), t1, Transport::Jsonl);
     assert!(
         matches!(
             scene.agents.get(&id).unwrap().state,
@@ -1420,25 +1170,15 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
         ),
         "x2 still waits on the human"
     );
-    let t3 = t2 + Duration::from_secs(1);
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x2"),
-        t3,
-        Transport::Hook,
-    );
-    let t4 = beyond_dedup(t3) + Duration::from_secs(3);
+    let t2 = t1 + Duration::from_secs(3);
     tool_use_start(
         &mut r,
         &mut scene,
         id,
         Some("x2"),
-        None,
-        t4,
-        Transport::Hook,
+        Some("bash"),
+        t2,
+        Transport::Jsonl,
     );
     let slot = scene.agents.get(&id).unwrap();
     assert!(
@@ -1452,75 +1192,6 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
 }
 
 #[test]
-fn an_already_resolved_calls_late_transcript_start_keeps_a_sibling_member() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/h.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    // x1's whole round runs hook-first; its transcript Start straggles in
-    // AFTER x1 resolved, while x2's approval is still pending.
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        t0,
-        Transport::Hook,
-    );
-    let t1 = beyond_dedup(t0) + Duration::from_secs(2);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        None,
-        t1,
-        Transport::Hook,
-    );
-    let t2 = t1 + Duration::from_secs(1);
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x2"),
-        t2,
-        Transport::Hook,
-    );
-
-    let t3 = beyond_dedup(t2);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: a"),
-        t3,
-        Transport::Jsonl,
-    );
-    // The straggler must not have wiped x2's membership.
-    let t4 = beyond_dedup(t3) + Duration::from_secs(2);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x2"),
-        None,
-        t4,
-        Transport::Hook,
-    );
-    let slot = scene.agents.get(&id).unwrap();
-    assert!(matches!(slot.state, ActivityState::Running { .. }));
-    assert_eq!(
-        slot.tool_call_count, 2,
-        "x1 once (resume), x2 once (resume) — the straggler added nothing"
-    );
-}
-
-#[test]
 fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
@@ -1528,6 +1199,15 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("x1"),
+        Some("bash: rm"),
+        t0,
+        Transport::Jsonl,
+    );
     user_action_request_for(
         &mut r,
         &mut scene,
@@ -1535,10 +1215,10 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
         "bash",
         Some("x1"),
         t0,
-        Transport::Hook,
+        Transport::Jsonl,
     );
     // A rules-approved sibling runs while x1 still awaits the human.
-    let t1 = beyond_dedup(t0);
+    let t1 = t0 + Duration::from_secs(1);
     tool_use_start(
         &mut r,
         &mut scene,
@@ -1548,19 +1228,9 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
         t1,
         Transport::Jsonl,
     );
-    // x1's denial must still resolve the (re-raised) wait as a member's End.
-    let t2 = beyond_dedup(t1);
-    user_action_request_for(
-        &mut r,
-        &mut scene,
-        id,
-        "bash",
-        Some("x1"),
-        t2,
-        Transport::Hook,
-    );
-    let t3 = beyond_dedup(t2) + Duration::from_secs(2);
-    tool_use_end(&mut r, &mut scene, id, Some("x1"), t3, Transport::Hook);
+    // x1's denial must still resolve the wait as a member's End.
+    let t2 = t1 + Duration::from_secs(2);
+    tool_use_end(&mut r, &mut scene, id, Some("x1"), t2, Transport::Jsonl);
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
@@ -1570,9 +1240,8 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     );
 }
 
-/// Hook-first ordering: the transcript's richer detail lands while the slot
-/// Waits and is deliberately dropped, so the resume re-labels from the wire's
-/// toolName — a held transcript start's documented label-only cost.
+/// The resume re-labels from the record's toolName, over the richer detail its
+/// call's own Start showed: a documented label-only cost.
 #[test]
 fn the_approval_resume_labels_from_the_wire_tool_name() {
     let mut scene = SceneState::uniform(4);
@@ -1581,6 +1250,15 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
     start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
 
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("x1"),
+        Some("bash: rm -rf /tmp/x"),
+        t0,
+        Transport::Jsonl,
+    );
     user_action_request_for(
         &mut r,
         &mut scene,
@@ -1588,27 +1266,17 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
         "bash",
         Some("x1"),
         t0,
-        Transport::Hook,
-    );
-    let t1 = beyond_dedup(t0);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash: rm -rf /tmp/x"),
-        t1,
         Transport::Jsonl,
     );
-    let t2 = beyond_dedup(t1) + Duration::from_secs(2);
+    let t1 = t0 + Duration::from_secs(2);
     tool_use_start(
         &mut r,
         &mut scene,
         id,
         Some("x1"),
         Some("bash"),
-        t2,
-        Transport::Hook,
+        t1,
+        Transport::Jsonl,
     );
     match &scene.agents.get(&id).unwrap().state {
         ActivityState::Running {

@@ -132,7 +132,7 @@
     "name": "Oh My Pi",
     "url": "https://omp.sh",
     "status": "supported",
-    "transport": "session transcripts (default ~/.omp/agent/sessions/, redirectable by profile, PI_CONFIG_DIR, XDG, or .env; subagents nested per-task) + a bridge extension (TS → agent-dir extensions/) for approval waits and instant lifecycle",
+    "transport": "session transcripts (default ~/.omp/agent/sessions/, redirectable by profile, PI_CONFIG_DIR, XDG, or .env; subagents nested per-task) + a bridge extension (TS → agent-dir extensions/) for instant lifecycle",
     "platforms": {
       "macos": "yes",
       "linux": "yes",

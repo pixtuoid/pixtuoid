@@ -2365,3 +2365,99 @@ fn a_named_childs_parent_shows_its_own_tool_during_a_task() {
         other => panic!("expected the parent's own tool, got {other:?}"),
     }
 }
+
+/// A gated Task, raised in the order the `approve-hermetic` recording writes a
+/// gated call: its block, then its approval request, then its outcome, all in
+/// one transcript. The outcome so meets a Task already in flight.
+fn a_raised_task_wait() -> (Reducer, SceneState, AgentId, SystemTime) {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "gated-task");
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("T"),
+        Some("Agent"),
+        t0,
+        Transport::Jsonl,
+    );
+    user_action_request_for(
+        &mut r,
+        &mut scene,
+        id,
+        "task",
+        Some("T"),
+        t0,
+        Transport::Jsonl,
+    );
+    (r, scene, id, t0 + Duration::from_secs(2))
+}
+
+#[test]
+fn an_approved_task_call_delegates_again() {
+    let (mut r, mut scene, id, answered) = a_raised_task_wait();
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("T"),
+        Some("Agent"),
+        answered,
+        Transport::Jsonl,
+    );
+    assert_delegating(&scene, id, "the approval's resume lifts the wait");
+}
+
+#[test]
+fn a_denied_task_call_lifts_its_wait() {
+    let (mut r, mut scene, id, answered) = a_raised_task_wait();
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("T"),
+        answered,
+        Transport::Jsonl,
+    );
+    assert!(
+        !matches!(
+            scene.agents[&id].state,
+            ActivityState::RequiresAction { .. }
+        ),
+        "the denial left the wait standing"
+    );
+}
+
+/// The same transport's replay of a dispatch already in flight, under a prompt
+/// that named no call and so takes the agent's next start: it answers nothing.
+#[test]
+fn a_replayed_task_start_answers_no_prompt_that_did_not_name_it() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "keyless-wait");
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let task = |r: &mut Reducer, scene: &mut SceneState, at| {
+        tool_use_start(r, scene, id, Some("T"), Some("Agent"), at, Transport::Jsonl);
+    };
+    task(&mut r, &mut scene, t0);
+    // A second call in flight, so the prompt binds neither by deduction.
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("x"),
+        Some("bash: ls"),
+        t0,
+        Transport::Jsonl,
+    );
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Jsonl);
+    task(&mut r, &mut scene, t0 + Duration::from_secs(2));
+    assert!(matches!(
+        scene.agents[&id].state,
+        ActivityState::RequiresAction { .. }
+    ));
+}

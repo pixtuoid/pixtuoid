@@ -4,7 +4,7 @@
 //! modules), so pixtuoid drops an extension at
 //! `<omp-agent-dir>/extensions/pixtuoid.ts`, which omp auto-discovers at
 //! startup (`--no-extensions` opts out and leaves the transcript-only path).
-//! The extension forwards the lifecycle/approval allowlist into the
+//! The extension forwards the lifecycle allowlist into the
 //! `pixtuoid-hook` shim; the shim's absolute path is baked in (JSON-escaped)
 //! at install time from the `omp_extension.ts` template.
 //!

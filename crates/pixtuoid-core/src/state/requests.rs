@@ -234,10 +234,10 @@ impl ActionRequests {
             return true;
         }
         let resolved = self.resolves(&id, Seen::Start(call), from);
-        if let Some(req) = self.open.get_mut(&id)
+        if let Some(c) = call
+            && self.names(&id, c)
+            && let Some(req) = self.open.get_mut(&id)
             && from == req.raised_on
-            && let Some(c) = call
-            && req.member(c).is_some_and(|m| m.named)
         {
             req.members.retain(|m| &*m.call != c);
         }
@@ -272,6 +272,42 @@ impl ActionRequests {
             self.open.remove(&id);
         }
         resolved
+    }
+
+    /// Whether `id`'s request names `call` on the wire.
+    fn names(&self, id: &AgentId, call: &str) -> bool {
+        self.open
+            .get(id)
+            .and_then(|req| req.member(call))
+            .is_some_and(|m| m.named)
+    }
+
+    /// A Task's Start, as [`Self::start`]; one already in flight runs it only
+    /// to answer a request that [names](Self::names) it.
+    pub(crate) fn task_start(
+        &mut self,
+        id: AgentId,
+        task: &str,
+        first: bool,
+        from: Transport,
+        requires_action: bool,
+    ) -> bool {
+        (first || (requires_action && self.names(&id, task)))
+            && self.start(id, Some(task), from, requires_action)
+    }
+
+    /// A drained Task's end, as [`Self::end`], answering only a request that
+    /// [names](Self::names) it: a subagent returning answers no prompt a
+    /// deduction bound it to (#152).
+    pub(crate) fn drained(
+        &mut self,
+        id: AgentId,
+        task: &str,
+        from: Transport,
+        requires_action: bool,
+    ) -> bool {
+        let named = self.names(&id, task);
+        self.end(id, Ended::Call(task), from, requires_action && named)
     }
 
     /// An answer that ends no item: whether it answers the standing request.
@@ -354,9 +390,7 @@ impl ActionRequests {
             .is_some_and(|req| req.member(call).is_some())
     }
 
-    /// `call` ended: it is no longer pending nor a member. Retiring the last
-    /// member answers nothing: a drained Task's end may be a subagent's, past
-    /// its parent's own prompt (#152).
+    /// `call` ended: it is no longer pending nor a member.
     pub(crate) fn retire(&mut self, id: &AgentId, call: &str) {
         if let Some(req) = self.open.get_mut(id) {
             req.members.retain(|m| &*m.call != call);
@@ -883,11 +917,10 @@ mod tests {
     }
 
     #[test]
-    fn a_drained_last_member_answers_nothing() {
+    fn a_drained_member_bound_by_deduction_answers_nothing() {
         let mut reqs = raised(vec![pending("task", None, HOOK)], raise(None, None, HOOK));
-        reqs.retire(&id(), "task");
+        assert!(!reqs.drained(id(), "task", HOOK, true));
         assert!(reqs.contains(&id()), "#152: the request is kept");
-        assert!(!reqs.resolves(&id(), Seen::End(Ended::Call("task")), HOOK));
         assert!(
             reqs.pending.get(&id()).is_none_or(Vec::is_empty),
             "nor is the Task pending"

@@ -1,8 +1,8 @@
 // @pixtuoid-omp-extension — managed by pixtuoid (connect/disconnect omp in pixtuoid's Sources panel: press s).
 //
 // omp's transcripts stay pixtuoid's durable authority; this bridge forwards
-// ONLY what they can never carry — pre-persist presence, empty-session
-// shutdown, and the tool-approval wait — into the `pixtuoid-hook` shim.
+// ONLY what they can never carry — pre-persist presence and empty-session
+// shutdown — into the `pixtuoid-hook` shim.
 // It NEVER blocks omp: it registers NO gating handlers (omp's `tool_call`
 // gate fails CLOSED on a throw/timeout), and every handler is try/catch'd.
 // The ONE awaited thing is the shim itself — bounded by its own write-timeout
@@ -11,9 +11,8 @@
 // race and the empty-session shutdown never arrives (capture-verified).
 //
 // Privacy allowlist: event type, session file/id (plus the previous session's
-// file on a switch or branch), cwd, tool name, tool call id, approval
-// state/reason, and process.pid. Never prompts, messages, tool arguments, tool
-// results, or model output.
+// file on a switch or branch), cwd, and process.pid. Never prompts, messages,
+// tool arguments, tool results, or model output.
 //
 // HOOK_PATH is baked in at install time (a JSON-encoded absolute path). Safe
 // to delete — disconnecting omp in pixtuoid's Sources panel replaces this
@@ -27,8 +26,6 @@ import type {
   SessionShutdownEvent,
   SessionStartEvent,
   SessionSwitchEvent,
-  ToolApprovalRequestedEvent,
-  ToolApprovalResolvedEvent,
 } from "@oh-my-pi/pi-coding-agent"
 import type { Fields } from "./plugin-types.js"
 
@@ -39,8 +36,6 @@ type Observed = Fields<
   | SessionSwitchEvent
   | SessionBranchEvent
   | SessionShutdownEvent
-  | ToolApprovalRequestedEvent
-  | ToolApprovalResolvedEvent
 >
 
 export default ((pi: ExtensionAPI) => {
@@ -57,10 +52,6 @@ export default ((pi: ExtensionAPI) => {
       } catch {}
       if (typeof ctx.cwd === "string") payload.cwd = ctx.cwd
       if (typeof ev.previousSessionFile === "string") payload.previousSessionFile = ev.previousSessionFile
-      if (typeof ev.toolCallId === "string") payload.toolCallId = ev.toolCallId
-      if (typeof ev.toolName === "string") payload.toolName = ev.toolName
-      if (typeof ev.reason === "string") payload.reason = ev.reason
-      if (typeof ev.approved === "boolean") payload.approved = ev.approved
       // The omp process pid (extensions run in-process) — the PluginStamp
       // channel: focus and the abrupt-exit watch ride it.
       payload._pid = process.pid
@@ -75,7 +66,7 @@ export default ((pi: ExtensionAPI) => {
       // Best-effort: a broken shim must never surface in omp.
     }
   }
-  // Observe-only lifecycle and approval events; the decoder
+  // Observe-only lifecycle events; the decoder
   // (`pixtuoid-core/src/source/omp.rs`) claims exactly this set. Each
   // registration is try/catch'd so one unknown event name cannot take the
   // whole bridge down.
@@ -88,6 +79,4 @@ export default ((pi: ExtensionAPI) => {
   observe(() => pi.on("session_switch", (ev, ctx) => forward("session_switch", ev, ctx)))
   observe(() => pi.on("session_branch", (ev, ctx) => forward("session_branch", ev, ctx)))
   observe(() => pi.on("session_shutdown", (ev, ctx) => forward("session_shutdown", ev, ctx)))
-  observe(() => pi.on("tool_approval_requested", (ev, ctx) => forward("tool_approval_requested", ev, ctx)))
-  observe(() => pi.on("tool_approval_resolved", (ev, ctx) => forward("tool_approval_resolved", ev, ctx)))
 }) satisfies ExtensionFactory
