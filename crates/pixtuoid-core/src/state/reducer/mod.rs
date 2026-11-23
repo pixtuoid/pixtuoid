@@ -391,7 +391,8 @@ impl Reducer {
                 from,
                 now,
             ),
-            // The tracker owns every Task-dispatch Start, replays included.
+            // The tracker owns every Task-dispatch Start that names its call,
+            // replays included.
             AgentEvent::ToolUseStart { .. } if tracked => {}
             AgentEvent::ToolUseStart {
                 agent_id,
@@ -594,10 +595,12 @@ impl Reducer {
     }
 
     /// The `ToolUseStart` arm, for a Start the pre-pass tracker left to it.
-    /// Only a start that raises its call's record ([`Observed::rose`]) runs
-    /// the call, and one the agent's action request holds back
+    /// Only a start that raises its call's record ([`Observed::rose`]), or one
+    /// naming no call, runs the call, and one the agent's action request holds
+    /// back
     /// ([`ActionRequests::start`](crate::state::requests::ActionRequests::start))
-    /// only counts: a RequiresAction slot shows no call.
+    /// only counts: a RequiresAction slot shows no call. A start that answers
+    /// that request shows its call's own item, whether or not it raised it.
     fn apply_tool_use_start(
         &mut self,
         scene: &mut SceneState,
@@ -619,27 +622,51 @@ impl Reducer {
             kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
         };
         // A start that does not raise its record still adds its transport,
-        // which a request raised there binds by, and its item, which its
-        // approval shows.
-        if let Some(call) = ids.own
-            && observed.is_some_and(|o| !o.ended)
-        {
-            self.register_pending(agent_id, call, None, None, from, Some(item.clone()));
-        }
+        // by which a request raised there binds it or takes it as its answer,
+        // and its item, which an answer shows.
+        let first_here = match ids.own {
+            Some(call) if observed.is_some_and(|o| !o.ended) => {
+                self.register_pending(agent_id, call, None, None, from, Some(item.clone()))
+            }
+            _ => false,
+        };
         if !detail.is_some_and(ToolDetail::is_task) {
             let counts = observed.is_none_or(|o| o.counts);
             self.count_call(scene, agent_id, ids.copy, counts, from, now);
         }
-        if observed.is_some_and(|o| !o.rose) {
+        let rose = observed.is_none_or(|o| o.rose);
+        let on = ids.own.map(|_| from);
+        if !self.start_shows(scene, agent_id, rose, first_here, on) {
             return;
         }
-        let runs = (self.corr.action_requests).start(agent_id, is_requires_action(scene, agent_id));
-        if !runs {
-            return;
-        }
+        let shown = ids
+            .own
+            .and_then(|call| self.corr.action_requests.in_flight(&agent_id, call))
+            .unwrap_or(item);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            fsm::enter_running(slot, item, now);
+            fsm::enter_running(slot, shown, now);
         }
+    }
+
+    /// Whether a start shows its call. One that raised its call's record
+    /// (`rose`) runs unless a request holds it back; one that did not shows its
+    /// call only by answering the standing wait, which takes only its call's
+    /// first start on its transport (`first_here`). `on` is that transport,
+    /// `None` for a start naming no call.
+    fn start_shows(
+        &mut self,
+        scene: &SceneState,
+        agent_id: AgentId,
+        rose: bool,
+        first_here: bool,
+        on: Option<Transport>,
+    ) -> bool {
+        let requires_action = is_requires_action(scene, agent_id);
+        (rose || (first_here && requires_action))
+            && self
+                .corr
+                .action_requests
+                .start(agent_id, requires_action, on)
     }
 
     /// Count a tool call at its record's first start (`counts`), a start after
@@ -692,6 +719,7 @@ impl Reducer {
 
     /// A start of `call` on `on` that has not ended, scoped to its own turn
     /// else the open one; `item` is what its start shows, `None` for a pre-use.
+    /// Whether it is a start, its call's first on `on`.
     fn register_pending(
         &mut self,
         agent_id: AgentId,
@@ -700,7 +728,7 @@ impl Reducer {
         turn: Option<TurnKey>,
         on: Transport,
         item: Option<ToolUse>,
-    ) {
+    ) -> bool {
         let turn = turn.or_else(|| self.corr.turns.open(&agent_id).cloned());
         self.corr.action_requests.register(
             agent_id,
@@ -711,7 +739,7 @@ impl Reducer {
                 on,
                 item,
             },
-        );
+        )
     }
 
     /// The `ToolUseEnd` arm, for an End the pre-pass tracker left to it. It
@@ -1411,7 +1439,7 @@ impl Reducer {
     /// a drained parent Task means the subtree returned — cascade EXIT to the
     /// DESCENDANTS, not the parent, so they leave before
     /// [`STALE_IDLE_TIMEOUT`]. Returns whether it owns `event`: every Task
-    /// dispatch Start, and the End that drained one.
+    /// dispatch Start that names its call, and the End that drained one.
     fn track_tasks_in_flight(
         &mut self,
         scene: &mut SceneState,
@@ -1430,6 +1458,7 @@ impl Reducer {
                 // A start decoded after its gate (#242) is below its record's
                 // phase, yet its Task runs: the child's hooks are its, and its
                 // approval shows it.
+                let mut first_here = false;
                 if observed.is_some_and(|o| !o.ended) {
                     let item = fsm::delegating_item(Some(Arc::from(tuid.as_str())));
                     self.corr
@@ -1437,14 +1466,12 @@ impl Reducer {
                         .entry(*agent_id)
                         .or_default()
                         .insert(tuid.clone());
-                    self.register_pending(*agent_id, tuid, None, None, from, Some(item));
+                    first_here =
+                        self.register_pending(*agent_id, tuid, None, None, from, Some(item));
                 }
-                if observed.is_some_and(|o| o.rose)
+                let rose = observed.is_some_and(|o| o.rose);
+                if self.start_shows(scene, *agent_id, rose, first_here, Some(from))
                     && let Some(slot) = scene.agents.get_mut(agent_id)
-                    && (self.corr.action_requests).start(
-                        *agent_id,
-                        matches!(slot.state, ActivityState::RequiresAction { .. }),
-                    )
                 {
                     fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
                 }

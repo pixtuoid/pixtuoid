@@ -1760,6 +1760,85 @@ fn a_pre_use_delivered_after_its_request_joins_it() {
     );
 }
 
+/// #951: a keyless wait the hooks raised (CC's Notification, grok's
+/// `permission_prompt`) is answered by a call's first start on the hooks, never
+/// by a transcript-only copy of a queued call, which can land on either side of
+/// the wait.
+#[test]
+fn a_keyless_hook_wait_takes_a_calls_first_hook_start_in_either_order() {
+    use pixtuoid_core::source::CopyId;
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let mut wrong = Vec::new();
+    // CC's PreToolUse decodes a pre-use beside its start, and its transcript
+    // line names a copy id; grok's names neither.
+    for (source, pre_use, copy) in [("claude-code", true, true), ("grok", false, false)] {
+        for transcript_first in [false, true] {
+            let mut scene = SceneState::uniform(4);
+            let mut r = Reducer::new();
+            let id = AgentId::from_parts(source, "keyless");
+            start_as(&mut r, &mut scene, id, source);
+            let hook_start = |r: &mut Reducer, scene: &mut SceneState, call: &str| {
+                if pre_use {
+                    let pending = AgentEvent::ToolUsePending {
+                        agent_id: id,
+                        tool_use_id: call.into(),
+                        tool_name: Some("Bash".into()),
+                        turn: None,
+                    };
+                    r.apply(scene, pending, t0, Transport::Hook);
+                }
+                tool_use_start(
+                    r,
+                    scene,
+                    id,
+                    Some(call),
+                    Some("Bash: ls"),
+                    t0,
+                    Transport::Hook,
+                );
+            };
+            let transcript = |r: &mut Reducer, scene: &mut SceneState| {
+                let mut line =
+                    AgentEvent::tool_use_start(id, Some("c3".into()), Some("Bash: ls".into()));
+                if copy {
+                    line = line.with_copy_id(CopyId::new("c3"));
+                }
+                r.apply(scene, line, t0, Transport::Jsonl);
+            };
+            let what = format!("{source}, transcript first: {transcript_first}");
+            // Two calls in flight, so the wait binds neither by deduction.
+            for call in ["c1", "c2"] {
+                hook_start(&mut r, &mut scene, call);
+            }
+            if transcript_first {
+                transcript(&mut r, &mut scene);
+            }
+            user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+            if !transcript_first {
+                transcript(&mut r, &mut scene);
+            }
+            if !requires_action(&scene, id) {
+                wrong.push(format!("{what}: the copy answered"));
+            }
+            hook_start(&mut r, &mut scene, "c3");
+            let slot = &scene.agents[&id];
+            let shows_c3 = matches!(
+                &slot.state,
+                ActivityState::Running {
+                    item: Some(ToolUse { tool_use_id: Some(c), .. })
+                } if &**c == "c3"
+            );
+            if !shows_c3 || slot.tool_call_count != 3 {
+                wrong.push(format!(
+                    "{what}: then {:?}, {} calls",
+                    slot.state, slot.tool_call_count
+                ));
+            }
+        }
+    }
+    assert!(wrong.is_empty(), "{wrong:#?}");
+}
+
 /// #951 extended: the other transport's copy of a call already started lands
 /// while the human decides, however late: it answers no wait, which the agent's
 /// next call does.

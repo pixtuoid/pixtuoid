@@ -3,10 +3,11 @@
 //! from whichever transport they arrive. A generation opens only where copy ids
 //! mark a reused call id on one ordered stream ([`CallLedger::observe`]), whose
 //! order no merge reorders. The reducer gates each of a call's state changes
-//! but its approval on the rise `observe` reports, and an approval answers its
-//! request once, since an answered member leaves it; a fact that does not
-//! raise its record otherwise only merges idempotently (its pending fields, a
-//! Task's tracking, its count flag), so a fact applied twice applies once.
+//! on the rise `observe` reports, but two answers to a wait: an approval, once,
+//! since an answered member leaves its request, and a call's first start on
+//! the transport that raised a keyless wait. A fact that does not raise its
+//! record otherwise only merges idempotently (its pending fields, a Task's
+//! tracking, its count flag), so a fact applied twice applies once.
 
 use std::collections::HashMap;
 use std::sync::Arc;
