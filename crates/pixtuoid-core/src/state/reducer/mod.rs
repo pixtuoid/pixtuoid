@@ -1496,10 +1496,11 @@ impl Reducer {
                             Some(fsm::delegating_item(Some(Arc::from(tuid.as_str())))),
                         );
                     }
-                    // omp writes a gated call's block, then its approval
-                    // request, then its outcome, for every tool it wraps
-                    // (`extensibility/extensions/wrapper.ts:361-450`, `:527-528`
-                    // at v19.1.0), so a gated Task's resume finds it in flight.
+                    // omp writes a gated call's block before its approval
+                    // request (the `approve-hermetic` recording, lines 8 and
+                    // 10) and every wrapped tool's request before its outcome
+                    // (`extensibility/extensions/wrapper.ts:416-450` at
+                    // v19.1.0), so a gated Task's resume finds it in flight.
                     if let Some(slot) = scene.agents.get_mut(agent_id)
                         && self.corr.action_requests.task_start(
                             *agent_id,

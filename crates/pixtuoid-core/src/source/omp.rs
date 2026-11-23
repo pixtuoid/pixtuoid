@@ -1038,11 +1038,7 @@ fn omp_approval(
 /// `reason` when it says anything (a plain bash gate records none), else the
 /// tool name, else the literal gate.
 fn omp_approval_reason(data: &serde_json::Map<String, Value>, tool: &str) -> String {
-    let wire = data
-        .get("reason")
-        .and_then(|r| r.as_str())
-        .filter(|r| !r.is_empty());
-    match wire {
+    match non_empty(data, "reason") {
         Some(r) => ellipsize(r, MAX_DECODED_FIELD_CHARS),
         None if !tool.is_empty() => ellipsize(tool, MAX_DECODED_FIELD_CHARS),
         None => "approval".to_string(),

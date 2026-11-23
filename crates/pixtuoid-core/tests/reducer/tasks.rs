@@ -2366,10 +2366,9 @@ fn a_named_childs_parent_shows_its_own_tool_during_a_task() {
     }
 }
 
-/// A gated Task, raised as omp writes every gated call: its block, then its
-/// approval request, then its outcome, all in one transcript
-/// (`extensibility/extensions/wrapper.ts:361-450` at v19.1.0). The outcome so
-/// meets a Task already in flight.
+/// A gated Task, raised in the order the `approve-hermetic` recording writes a
+/// gated call: its block, then its approval request, then its outcome, all in
+/// one transcript. The outcome so meets a Task already in flight.
 fn a_raised_task_wait() -> (Reducer, SceneState, AgentId, SystemTime) {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
