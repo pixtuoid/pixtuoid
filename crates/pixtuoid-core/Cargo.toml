@@ -84,7 +84,7 @@ jiff        = { workspace = true, features = ["serde"] }
 sha2        = { workspace = true, optional = true }
 # The literal census reads what the decoders compare (`hermetic::literals`).
 syn         = { workspace = true, optional = true }
-# The id families a re-record may rename: `harness::captures::canonical_capture`.
+# The ids and clocks a re-record moves: `harness::captures::canonical_capture`.
 regex       = { workspace = true, optional = true }
 mutatis     = { workspace = true, optional = true }
 

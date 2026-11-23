@@ -1113,12 +1113,13 @@ mod tests {
     fn every_kept_clock_is_masked_whole() {
         use crate::harness::reads::{WRITE_STAMPS, is_hook_envelope};
         use crate::source::decoder::FORWARDED_AT_STAMP;
-        let mut kept: BTreeMap<String, usize> = BTreeMap::new();
+        const HOOKS: &str = "the hook streams";
+        let mut kept: BTreeSet<&str> = BTreeSet::new();
         for capture in captures(&crate::harness::sources_root()) {
             let write_stamp = WRITE_STAMPS.iter().find(|(s, ..)| *s == capture.source);
             for file in jsonl_files_under(&capture.dir) {
                 let (keeper, key) = match write_stamp {
-                    _ if is_hook_envelope(&file) => (FORWARDED_AT_STAMP, FORWARDED_AT_STAMP),
+                    _ if is_hook_envelope(&file) => (HOOKS, FORWARDED_AT_STAMP),
                     Some(&(source, key, _)) => (source, key),
                     None => continue,
                 };
@@ -1139,15 +1140,15 @@ mod tests {
                         "{}: its {key} {stamp} is not masked whole",
                         file.display()
                     );
-                    *kept.entry(keeper.to_owned()).or_default() += 1;
+                    kept.insert(keeper);
                 }
             }
         }
         let keepers = WRITE_STAMPS.iter().map(|&(source, ..)| source);
-        for keeper in keepers.chain([FORWARDED_AT_STAMP]) {
+        for keeper in keepers.chain([HOOKS]) {
             assert!(
-                kept.contains_key(keeper),
-                "no committed capture keeps {keeper}'s clock"
+                kept.contains(keeper),
+                "no committed capture keeps a clock of {keeper}"
             );
         }
     }
