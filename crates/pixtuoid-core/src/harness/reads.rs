@@ -30,7 +30,7 @@ pub struct Strip {
     pub sentinel_reads: BTreeMap<PathBuf, BTreeSet<String>>,
 }
 
-/// Blank every subtree no decoder reads but the stamps [`kept_key`] keeps, so an
+/// Blank every subtree no decoder reads but the stamps `kept_key` keeps, so an
 /// operator's roster, instructions and paths leave without anyone naming them. DERIVED, never listed — a subtree
 /// is blanked when blanking it leaves the decoded events identical — because a
 /// hand-kept list drifts in the one direction nothing catches: a field the

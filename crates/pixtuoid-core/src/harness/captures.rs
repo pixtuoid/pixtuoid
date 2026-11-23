@@ -684,11 +684,11 @@ fn with_masks_named(text: &str, mut name: impl FnMut(usize, &str) -> String) -> 
     out
 }
 
-/// A capture's files up to the tokens [`MASKS`] names: each file's path from
+/// A capture's files up to the tokens `MASKS` names: each file's path from
 /// `dir` and its text, each such token in either replaced by `⟨name#n⟩`, `n`
 /// its row's order of first appearance across the capture, so one numbering is
 /// the one bijection two recordings must share, or by `⟨name⟩` for a row whose
-/// pairings are no evidence ([`Mask::numbered`]). Files are walked in the order
+/// pairings are no evidence (`Mask::numbered`). Files are walked in the order
 /// of their paths, then their texts, with tokens masked, as a raw sort would
 /// order two id-named session dirs at random; none when two files tie there,
 /// as only their masked tokens tell them apart. Then `reads`, a
