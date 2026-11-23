@@ -1,9 +1,10 @@
 //! One session's two streams folded in every order they can reach the reducer
 //! in: a hook at its forwarded-at stamp
 //! ([`FORWARDED_AT_STAMP`](crate::source::decoder::FORWARDED_AT_STAMP)), and a
-//! transcript line no sooner than its write
-//! stamp and at most the watcher's `DEFAULT_POLL_INTERVAL` after it, behind
-//! every line above it, since the watcher reads a file in order.
+//! transcript line no sooner than it was written and at most the watcher's
+//! `DEFAULT_POLL_INTERVAL` after, behind every line above it, since the
+//! watcher reads a file in order. A line's write stamp dates its write, or
+//! for a line with none, the stamped lines around it do.
 
 use std::time::{Duration, SystemTime};
 
@@ -53,12 +54,16 @@ impl Merged {
 }
 
 /// A line `read` delivered events for, its seed alone included, and when its
-/// CLI wrote it: exactly `at` when `within` is zero, else in `at..at + within`.
+/// CLI wrote it: no sooner than `at`, and no later than `until`'s stamp allows.
 #[derive(Debug)]
 struct Written {
     line: usize,
     at: SystemTime,
-    within: Duration,
+    /// The stamp that bounds its write from above, as `(at, within)`: exactly
+    /// `at` when `within` is zero, else in `at..at + within`. Its own, else the
+    /// next stamped line's, as a file is written in order; `None` past the
+    /// file's last stamp.
+    until: Option<(SystemTime, Duration)>,
     events: Vec<Delivered>,
 }
 
@@ -152,9 +157,8 @@ fn stamp_of(v: &Value, spelling: Spelling) -> Option<(Duration, Duration)> {
 }
 
 /// `lines`' lines `read` delivers events for, each stamped by `stamp` and
-/// counted in `d`. A line with no
-/// stamp of its own was written no sooner than the one above it, and the
-/// file's first no sooner than the epoch.
+/// counted in `d`. A line with no stamp of its own was written between the
+/// stamped lines around it, the file's first no sooner than the epoch.
 fn written<S: AsRef<str>>(
     decode: &Decode,
     lines: &[S],
@@ -163,29 +167,43 @@ fn written<S: AsRef<str>>(
     stamp: impl Fn(&Value) -> Option<(Duration, Duration)>,
 ) -> Vec<Written> {
     let mut out = Vec::new();
-    let (mut at, mut within) = (SystemTime::UNIX_EPOCH, Duration::ZERO);
+    let mut stamps = Vec::new();
+    let mut at = SystemTime::UNIX_EPOCH;
     let lines = lines
         .iter()
         .map(AsRef::as_ref)
         .filter(|l| !l.trim().is_empty());
     for (index, line) in lines.enumerate() {
+        let mut own = None;
         let parsed = |v: &Value| {
-            if let Some((since, w)) = stamp(v) {
-                (at, within) = (SystemTime::UNIX_EPOCH + since, w);
-            }
+            own = stamp(v).map(|(since, within)| (SystemTime::UNIX_EPOCH + since, within));
         };
-        let Some(own) = decode.line(Some(line), d, parsed) else {
+        let decoded = decode.line(Some(line), d, parsed);
+        stamps.push(own);
+        if let Some((stamped, _)) = own {
+            at = stamped;
+        }
+        let Some(events) = decoded else {
             continue;
         };
-        let events = read(line, own);
+        let events = read(line, events);
         if !events.is_empty() {
             out.push(Written {
                 line: index,
                 at,
-                within,
+                until: own,
                 events,
             });
         }
+    }
+    let mut next = None;
+    let mut next_after = vec![None; stamps.len()];
+    for (index, own) in stamps.iter().enumerate().rev() {
+        next_after[index] = next;
+        next = own.or(next);
+    }
+    for w in &mut out {
+        w.until = w.until.or(next_after[w.line]);
     }
     out
 }
@@ -197,12 +215,13 @@ fn bounds(hooks: &[Written], transcript: &[Written]) -> Vec<(usize, usize)> {
     let mut out: Vec<(usize, usize)> = transcript
         .iter()
         .map(|t| {
-            let latest = t.at + t.within + DEFAULT_POLL_INTERVAL;
-            let reachable = |h: &&Written| h.at < latest || (t.within.is_zero() && h.at == latest);
-            (
-                hooks.iter().filter(|h| h.at < t.at).count(),
-                hooks.iter().filter(reachable).count(),
-            )
+            let most = t.until.map_or(hooks.len(), |(until, within)| {
+                let latest = until + within + DEFAULT_POLL_INTERVAL;
+                let reachable =
+                    |h: &&Written| h.at < latest || (within.is_zero() && h.at == latest);
+                hooks.iter().filter(reachable).count()
+            });
+            (hooks.iter().filter(|h| h.at < t.at).count(), most)
         })
         .collect();
     for i in 1..out.len() {
@@ -445,7 +464,7 @@ mod tests {
         let written = |at: SystemTime, within| Written {
             line: 0,
             at,
-            within,
+            until: Some((at, within)),
             events: Vec::new(),
         };
         /// Not 1 ns: Windows' `SystemTime` counts 100 ns intervals and drops a
@@ -461,6 +480,27 @@ mod tests {
                 .map(|at| written(at, Duration::ZERO));
             assert_eq!(bounds(&hooks, &[line]), [(0, 1)], "{within:?}");
         }
+    }
+
+    /// A line with no stamp of its own was written between the stamped lines
+    /// around it, so a hook stamped before the next one may precede it.
+    #[test]
+    fn an_unstamped_line_may_follow_a_hook_stamped_before_the_next_stamp() {
+        let mut unstamped: Value = serde_json::from_str(&call(0)).expect("json");
+        unstamped
+            .as_object_mut()
+            .expect("a line")
+            .remove("timestamp");
+        // Past a poll interval from the epoch, the first line's earliest
+        // write, so only the next line's stamp can admit the hook ahead of it.
+        let hook_at = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms") * 2;
+        let hooks = [hook("SessionStart", hook_at)];
+        let lines = [unstamped.to_string(), output(hook_at + 1_000)];
+        let merges = drive().merges(&hooks, &lines).expect("codex merges");
+        assert_eq!(
+            orders(merges),
+            [vec![(J, 0), (H, 0), (J, 1)], vec![(H, 0), (J, 0), (J, 1)]]
+        );
     }
 
     #[test]

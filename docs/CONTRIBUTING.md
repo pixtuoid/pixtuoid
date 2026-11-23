@@ -401,11 +401,12 @@ that fails without it.
 5. **The descriptor's `name` is the roster**: `registered_source_names()`
    projects `REGISTRY`. `just test` then requires:
    - a fixture, by the conformance suite;
-   - with both a transcript and hooks, a scenario recording both streams and
-     a `harness::reads::WRITE_STAMPS` row for the transcript's write stamp, by
-     `tests/sources/merge.rs`. Add the row before recording: the strip blanks
-     a stamp no row names, `just restrip-fixtures` can't restore it, and a
-     `NOT_HERMETIC` source's re-record is billed;
+   - with both a transcript and hooks, a scenario recording both streams,
+     once step 8's install target exists, and a `harness::reads::WRITE_STAMPS`
+     row for the transcript's write stamp, by `tests/sources/merge.rs`. Add
+     the row before recording: the strip blanks a stamp no row names,
+     `just restrip-fixtures` can't restore it, and a `NOT_HERMETIC` source's
+     re-record is billed;
    - a `PROFILES` row, or a `NOT_HERMETIC` reason and feed, by
      `harness/hermetic/mod.rs`;
    - the name in the `sources --json` golden

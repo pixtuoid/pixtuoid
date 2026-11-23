@@ -31,11 +31,12 @@ pub struct Strip {
 }
 
 /// Blank every subtree no decoder reads but the stamps `kept_key` keeps, so an
-/// operator's roster, instructions and paths leave without anyone naming them. DERIVED, never listed — a subtree
-/// is blanked when blanking it leaves the decoded events identical — because a
-/// hand-kept list drifts in the one direction nothing catches: a field the
-/// decoder stopped reading stays in the bytes. Top-down, so an unread container
-/// collapses whole, element count included.
+/// operator's roster, instructions and paths leave without anyone naming them.
+/// DERIVED, never listed — a subtree is blanked when blanking it leaves the
+/// decoded events identical — because a hand-kept list drifts in the one
+/// direction nothing catches: a field the decoder stopped reading stays in the
+/// bytes. Top-down, so an unread container collapses whole, element count
+/// included, and an unread transcript line takes its write stamp with it.
 ///
 /// # Errors
 ///
@@ -393,8 +394,8 @@ impl Spelling {
     }
 }
 
-/// Each source whose transcript lines carry their write stamp: the top-level
-/// key it rides, and its spelling.
+/// The write stamp the merge orders each two-transport source's transcript by:
+/// the top-level key it rides, and its spelling.
 pub(crate) const WRITE_STAMPS: &[(&str, &str, Spelling)] = &[
     // Its recorded stamps carry no fraction
     // (`antigravity/fixtures/*/*/.system_generated/logs/transcript.jsonl`).
@@ -406,8 +407,8 @@ pub(crate) const WRITE_STAMPS: &[(&str, &str, Spelling)] = &[
 ];
 
 /// Whether `key` under `at` is a `transcript`'s write stamp, which the strip
-/// keeps whether or not a decoder reads it: the merge test
-/// (`tests/sources/merge.rs`) orders a session's two streams by it.
+/// keeps whether or not a decoder reads it, but on a line it blanks whole: the
+/// merge test (`tests/sources/merge.rs`) orders a session's two streams by it.
 pub(crate) fn is_write_stamp(source: &str, transcript: bool, at: &str, key: &str) -> bool {
     transcript
         && at.is_empty()

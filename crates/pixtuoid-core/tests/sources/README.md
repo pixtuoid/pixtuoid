@@ -70,7 +70,8 @@ came, with no stamp check, strip or scan.
   decoders, never listed, so it follows them, within the probe's limit below.
   It also keeps a transcript's write stamp where a `reads::WRITE_STAMPS` row
   names it, which `merge.rs` orders the two streams by, whether or not a
-  decoder reads it.
+  decoder reads it, unless no decoder reads anything else on its line, which
+  then blanks whole.
   - `/Users/dev` stays the convention for a home path a decoder DOES read. A
     capture redacted by hand says so in its `note`: without that, a reader
     can't tell an edited capture from an untouched one, the distinction the

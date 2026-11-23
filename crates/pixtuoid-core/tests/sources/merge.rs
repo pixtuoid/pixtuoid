@@ -552,9 +552,8 @@ fn runs_of(source: &str) -> Vec<Run> {
 }
 
 /// Every order of every recorded run of a two-transport source ends alike. A
-/// source with no write stamp, or a run whose stamps admit one order, proves
-/// nothing: a transcript with no stamp it parses arrives whole at the epoch,
-/// ahead of every hook.
+/// source with no write stamp proves nothing, nor does a run whose lines admit
+/// one order.
 #[test]
 fn every_order_of_a_two_transport_run_ends_alike() {
     let mut unstamped = Vec::new();
