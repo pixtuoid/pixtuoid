@@ -1017,12 +1017,20 @@ fn omp_approval(
         // The resume. copilot's approve-emits-nothing shape doesn't fit omp:
         // the call's block precedes the request, so only this Start can lift
         // the wait.
-        Some(true) => AgentEvent::ToolUseStart {
-            agent_id: acting,
-            tool_use_id: Some(call.to_owned()),
-            detail: Some(omp_tool_detail(tool(), None, None)),
-            copy_id: None,
-        },
+        Some(true) => {
+            let name = tool();
+            // An ask's form opens only once approved, so the wait its block
+            // raised lasts until its toolResult; this Start would lift it.
+            if name == TOOL_ASK {
+                return None;
+            }
+            AgentEvent::ToolUseStart {
+                agent_id: acting,
+                tool_use_id: Some(call.to_owned()),
+                detail: Some(omp_tool_detail(name, None, None)),
+                copy_id: None,
+            }
+        }
         // A denial lifts the wait now; the isError toolResult that follows
         // ends nothing more.
         Some(false) => end(),
@@ -2073,6 +2081,23 @@ mod tests {
                 other => panic!("{field}: {line}: {other:?}"),
             }
         }
+    }
+
+    #[test]
+    fn an_approved_ask_keeps_its_own_wait_and_a_denied_one_ends() {
+        let ask = |line| {
+            with_data(line, |d| {
+                d.insert("toolName".into(), json!(TOOL_ASK));
+            })
+        };
+        assert!(
+            decode(&ask(APPROVAL_APPROVED)).is_empty(),
+            "an approved ask's form still waits on its answer"
+        );
+        assert!(matches!(
+            &decode(&ask(APPROVAL_DENIED))[..],
+            [AgentEvent::ToolUseEnd { .. }]
+        ));
     }
 
     #[test]
