@@ -2,8 +2,11 @@
 //! its facts within a generation, so a call's facts merge in whatever order and
 //! from whichever transport they arrive. A generation opens only where copy ids
 //! mark a reused call id on one ordered stream ([`CallLedger::observe`]), whose
-//! order no merge reorders. The reducer gives a call each effect on the
-//! transition `observe` reports, so a fact applied twice applies once.
+//! order no merge reorders. The reducer gates each of a call's state changes
+//! but its approval on the rise `observe` reports, and an approval answers its
+//! request once, since an answered member leaves it; a fact that rises into
+//! nothing otherwise only merges idempotently (its pending fields, a Task's
+//! tracking, its count flag), so a fact applied twice applies once.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -11,8 +14,8 @@ use std::sync::Arc;
 use crate::AgentId;
 use crate::source::{AgentEvent, CopyId, Resolution};
 
-/// How far a call got. An end outranks every step, so no fact after it
-/// raises the call again.
+/// How far a call got. An end outranks every step, so no fact of its
+/// generation raises the call again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Phase {
     ended: bool,
@@ -116,48 +119,19 @@ impl Phase {
             },
         }
     }
-
-    fn to_transition(self) -> Transition {
-        match self {
-            Self { ended: true, .. } => Transition::Ended,
-            Self { step, .. } => match step {
-                Step::PreUse => Transition::PreUse,
-                Step::Started => Transition::Started,
-                Step::Gated => Transition::Gated,
-                Step::Resumed => Transition::Resumed,
-            },
-        }
-    }
-}
-
-/// The phase a call's record rose into.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Transition {
-    PreUse,
-    /// Its first start, or the next generation's.
-    Started,
-    Gated,
-    Resumed,
-    Ended,
 }
 
 /// What observing one fact did to its call's record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Observed {
-    /// The phase it rose into; `None` when it rose into none.
-    pub(crate) transition: Option<Transition>,
+    /// It raised its call's record into its own phase, or opened the call's
+    /// next generation.
+    pub(crate) rose: bool,
     /// It is the call's first start, or its next generation's: the call ran,
     /// so it counts, a start after its end included.
     pub(crate) counts: bool,
     /// The call has ended.
     pub(crate) ended: bool,
-}
-
-impl Observed {
-    /// Whether the fact raised its call's record into `into`.
-    pub(crate) fn rose_into(self, into: Transition) -> bool {
-        self.transition == Some(into)
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -196,7 +170,7 @@ impl CallLedger {
                 },
             );
             return Observed {
-                transition: Some(into.to_transition()),
+                rose: true,
                 counts: starts,
                 ended: into.ended,
             };
@@ -215,19 +189,19 @@ impl CallLedger {
         if generation {
             record.phase = Phase::STARTED;
             return Observed {
-                transition: Some(Transition::Started),
+                rose: true,
                 counts: true,
                 ended: false,
             };
         }
         let counts = starts && !record.counted;
         record.counted |= starts;
-        let transition = (into > record.phase).then(|| {
+        let rose = into > record.phase;
+        if rose {
             record.phase = into;
-            into.to_transition()
-        });
+        }
         Observed {
-            transition,
+            rose,
             counts,
             ended: record.phase.ended,
         }
@@ -295,7 +269,7 @@ mod tests {
             for &n in &facts {
                 let before = phase(&ledger);
                 let observed = ledger.observe(agent(), "c", fact(n, &c));
-                prop_assert_eq!(observed.transition.is_some(), phase(&ledger) != before);
+                prop_assert_eq!(observed.rose, phase(&ledger) != before);
             }
             let max = facts.iter().map(|&n| Phase::of(fact(n, &c))).max();
             prop_assert_eq!(phase(&ledger), max);
@@ -311,7 +285,7 @@ mod tests {
                 ledger.observe(agent(), "c", fact(n, &c));
                 let once = format!("{ledger:?}");
                 let again = ledger.observe(agent(), "c", fact(n, &c));
-                prop_assert_eq!(again.transition, None);
+                prop_assert!(!again.rose);
                 prop_assert!(!again.counts);
                 prop_assert_eq!(format!("{ledger:?}"), once);
             }
@@ -322,12 +296,9 @@ mod tests {
     fn a_call_counts_at_its_first_start_even_after_its_end() {
         let mut ledger = CallLedger::default();
         let end = ledger.observe(agent(), "c", Fact::End);
-        assert_eq!(
-            (end.transition, end.counts),
-            (Some(Transition::Ended), false)
-        );
+        assert_eq!((end.rose, end.counts), (true, false));
         let start = ledger.observe(agent(), "c", Fact::Start(None));
-        assert_eq!((start.transition, start.counts), (None, true));
+        assert_eq!((start.rose, start.counts), (false, true));
         assert!(!ledger.observe(agent(), "c", Fact::Start(None)).counts);
     }
 
@@ -338,25 +309,20 @@ mod tests {
         ledger.observe(agent(), "c", Fact::Start(Some(&first)));
         ledger.observe(agent(), "c", Fact::End);
         let replay = ledger.observe(agent(), "c", Fact::Start(Some(&first)));
-        assert_eq!(
-            (replay.transition, replay.counts),
-            (None, false),
-            "a replay"
-        );
+        assert_eq!((replay.rose, replay.counts), (false, false), "a replay");
         let next = ledger.observe(agent(), "c", Fact::Start(Some(&second)));
         assert_eq!(
             next,
             Observed {
-                transition: Some(Transition::Started),
+                rose: true,
                 counts: true,
                 ended: false,
             }
         );
-        assert_eq!(
-            ledger
+        assert!(
+            !ledger
                 .observe(agent(), "c", Fact::Start(Some(&second)))
-                .transition,
-            None,
+                .rose,
             "the new generation's replay"
         );
     }
@@ -370,7 +336,7 @@ mod tests {
         ledger.observe(agent(), "c", Fact::Start(None));
         ledger.observe(agent(), "c", Fact::End);
         let echo = ledger.observe(agent(), "c", Fact::Start(Some(&copy)));
-        assert_eq!((echo.transition, echo.ended), (None, true));
+        assert_eq!((echo.rose, echo.ended), (false, true));
     }
 
     #[test]
@@ -379,7 +345,7 @@ mod tests {
         ledger.observe(agent(), "c", Fact::Start(None));
         ledger.end_life(&agent());
         let replay = ledger.observe(agent(), "c", Fact::Start(None));
-        assert_eq!((replay.transition, replay.ended), (None, true));
+        assert_eq!((replay.rose, replay.ended), (false, true));
         ledger.forget(&agent());
         assert_eq!(ledger.len(), 0);
     }

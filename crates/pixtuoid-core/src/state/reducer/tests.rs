@@ -1726,3 +1726,74 @@ fn every_interleaving_of_a_calls_two_streams_ends_alike() {
         "3! hook orders, 5C2 placements, 3^4 lags"
     );
 }
+
+/// A turn's end answers a wait that named its call, and a tool end naming no
+/// call answers one bound by deduction, which named none: either lifts the
+/// wait and closes its request.
+#[test]
+fn a_turn_end_or_an_unnamed_end_answers_a_wait_and_closes_its_request() {
+    use crate::source::{AgentEvent, RequestKeys, ToolDetail, Transport};
+    use crate::state::ActivityState;
+    use crate::{AgentId, Reducer, SceneState};
+    use std::path::PathBuf;
+    use std::time::{Duration, SystemTime};
+
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for turn in [true, false] {
+        let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+        let id = AgentId::from_parts("claude-code", "answered");
+        let start = AgentEvent::SessionStart {
+            agent_id: id,
+            source: "claude-code".into(),
+            session_id: "answered".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        };
+        r.apply(&mut scene, start, t0, Transport::Hook);
+        let mut keys = RequestKeys::default();
+        if turn {
+            keys.tool_use_id = Some("call_1".into());
+        } else {
+            let call = AgentEvent::tool_use_start(
+                id,
+                Some("call_1".into()),
+                Some(ToolDetail::from("Bash")),
+            );
+            r.apply(&mut scene, call, t0, Transport::Hook);
+        }
+        let raise = AgentEvent::user_action_request(id, Some("permission".into()), keys);
+        r.apply(&mut scene, raise, t0, Transport::Hook);
+        assert!(
+            matches!(
+                scene.agents[&id].state,
+                ActivityState::RequiresAction { .. }
+            ) && r.corr.action_requests.contains(&id),
+            "turn: {turn}: premise"
+        );
+        let end = if turn {
+            AgentEvent::turn_end(id)
+        } else {
+            AgentEvent::ToolUseEnd {
+                agent_id: id,
+                tool_use_id: None,
+            }
+        };
+        r.apply(
+            &mut scene,
+            end,
+            t0 + Duration::from_secs(1),
+            Transport::Hook,
+        );
+        assert!(
+            !matches!(
+                scene.agents[&id].state,
+                ActivityState::RequiresAction { .. }
+            ),
+            "turn: {turn}: the end left the wait standing"
+        );
+        assert!(
+            !r.corr.action_requests.contains(&id),
+            "turn: {turn}: the answered request stayed open"
+        );
+    }
+}

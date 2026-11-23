@@ -285,7 +285,9 @@ impl ActionRequests {
         let resolved = requires_action && self.resolves(&id, Seen::Resolved(by));
         match by {
             Resolution::Call(c) => self.retire(&id, c),
-            // An approved call runs on, so it leaves only the request.
+            // An answered member leaves its request, so a replayed approval
+            // answers nothing; an approved call runs on, so it leaves only the
+            // request.
             Resolution::Approved(c) if self.names(&id, c) => {
                 if let Some(req) = self.open.get_mut(&id) {
                     req.members.retain(|m| &*m.call != c);

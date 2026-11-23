@@ -307,8 +307,9 @@ impl Merges {
             }
         };
         // Each line at its arrival instant, never `Fold::feed`'s cascade tick
-        // after each event: that tick runs the clock past the other transport's
-        // next arrival, lapsing the grace windows it lands in.
+        // after each event: that tick runs `CASCADE_TICK` on, firing any b1
+        // cascade whose `B1_CASCADE_GRACE` the other transport's next arrival
+        // lands inside.
         for (t, &before) in self.transcript.iter().zip(order).skip(shared) {
             for h in self.hooks.get(taken..before).unwrap_or_default() {
                 arrive(&mut fold, &mut trail.steps, &mut last, Transport::Hook, h);

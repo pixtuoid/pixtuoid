@@ -602,63 +602,6 @@ fn jsonl_none_id_end_while_requires_action_keeps_requires_action() {
     );
 }
 
-// An end naming no call that answers a wait closes its request: the slot stays
-// out of RequiresAction through its member call's late transcript Start. A tool
-// end naming no call answers only a wait that named none either.
-#[test]
-fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
-    use crate::user_action_request_for;
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for turn in [true, false] {
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "sess-1");
-        start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-        if turn {
-            user_action_request_for(
-                &mut r,
-                &mut scene,
-                id,
-                "permission",
-                Some("call_1"),
-                t0,
-                Transport::Hook,
-            );
-        } else {
-            tool_use_start(
-                &mut r,
-                &mut scene,
-                id,
-                Some("call_1"),
-                None,
-                t0 - Duration::from_secs(1),
-                Transport::Hook,
-            );
-            user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
-        }
-        let end = t0 + Duration::from_millis(200);
-        if turn {
-            turn_end(&mut r, &mut scene, id, end, Transport::Hook);
-        } else {
-            tool_use_end(&mut r, &mut scene, id, None, end, Transport::Hook);
-        }
-        tool_use_start(
-            &mut r,
-            &mut scene,
-            id,
-            Some("call_1"),
-            Some("Bash: ls"),
-            end + Duration::from_millis(100),
-            Transport::Jsonl,
-        );
-        assert!(
-            !requires_action(&scene, id),
-            "turn: {turn}, got {:?}",
-            scene.agents[&id].state
-        );
-    }
-}
-
 // Line shapes follow the recorded ask round (`omp/fixtures/ask-hermetic`), sanitized.
 #[test]
 fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
@@ -914,7 +857,7 @@ fn an_answered_agy_question_clears_requires_action_on_either_transport() {
 
 // ---------------------------------------------------------------------------
 // Approval rounds whose wait names its call: each binds the wait to that member,
-// resumes it by its approval and counts the call ONCE.
+// which its approval or its end answers.
 // ---------------------------------------------------------------------------
 
 use crate::user_action_request_for;

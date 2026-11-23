@@ -6,7 +6,7 @@ use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
 use crate::source::{AgentEvent, CopyId, Resolution, ToolDetail, Transport};
-use crate::state::calls::{Fact, Observed, Transition};
+use crate::state::calls::{Fact, Observed};
 use crate::state::correlation::{Correlation, elapsed_at_least};
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
@@ -265,7 +265,7 @@ enum Preprocessed {
     /// holds.
     Drop,
     /// Survived the pre-pass, with what its call's record made of it, for a
-    /// fact naming a call, and whether the Task tracker applied it.
+    /// fact naming a call, and whether the Task tracker owns it.
     Dispatch {
         observed: Option<Observed>,
         tracked: bool,
@@ -412,8 +412,7 @@ impl Reducer {
             // A call's End acts only on its record's rise, and never for a Task
             // the tracker drained, which must not also end an id-less call the
             // parent shows: an End ends any shown call that names none.
-            AgentEvent::ToolUseEnd { .. }
-                if tracked || !observed.is_none_or(|o| o.rose_into(Transition::Ended)) => {}
+            AgentEvent::ToolUseEnd { .. } if tracked || !observed.is_none_or(|o| o.rose) => {}
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id,
@@ -444,8 +443,7 @@ impl Reducer {
             AgentEvent::TurnEnd { agent_id, turn } => {
                 self.apply_turn_end(scene, agent_id, turn, from, now);
             }
-            AgentEvent::UserActionRequest { .. }
-                if !observed.is_none_or(|o| o.rose_into(Transition::Gated)) => {}
+            AgentEvent::UserActionRequest { .. } if !observed.is_none_or(|o| o.rose) => {}
             AgentEvent::UserActionRequest {
                 agent_id,
                 reason,
@@ -466,8 +464,6 @@ impl Reducer {
                     now,
                 );
             }
-            AgentEvent::UserActionResolved { .. }
-                if !observed.is_none_or(|o| o.rose_into(Transition::Resumed)) => {}
             AgentEvent::UserActionResolved { agent_id, by } => {
                 self.apply_user_action_resolved(scene, agent_id, &by, now);
             }
@@ -544,11 +540,7 @@ impl Reducer {
         }
     }
 
-    /// The pre-pass every event runs before dispatch. ORDER IS LOAD-BEARING:
-    /// the call's record before task tracking, which acts on its transition
-    /// alone, else a replay re-fires `enter_delegating` onto a RequiresAction
-    /// parent; fire b1 cascades AFTER tracking, or a cancelling dispatch at the
-    /// grace boundary evicts its own live subtree.
+    /// The pre-pass every event runs before dispatch.
     fn preprocess(
         &mut self,
         scene: &mut SceneState,
@@ -590,8 +582,10 @@ impl Reducer {
 
         let tracked = self.track_tasks_in_flight(scene, event, observed, now, from);
 
-        // A payload's registration lands ahead of its dispatch start, so firing
-        // on it would evict the subtree that start keeps alive.
+        // After tracking, or a cancelling dispatch at the grace boundary evicts
+        // its own live subtree; and a payload's registration lands ahead of its
+        // dispatch start, so firing on it would evict the subtree that start
+        // keeps alive.
         if event.is_turn_traffic() {
             self.fire_pending_b1_cascades(scene, starts_untracked_task(event), now);
         }
@@ -634,7 +628,7 @@ impl Reducer {
             let counts = observed.is_none_or(|o| o.counts);
             self.count_call(scene, agent_id, ids.copy, counts, from, now);
         }
-        if observed.is_some_and(|o| !o.rose_into(Transition::Started)) {
+        if observed.is_some_and(|o| !o.rose) {
             return;
         }
         let runs = (self.corr.action_requests).start(agent_id, is_requires_action(scene, agent_id));
@@ -1442,7 +1436,7 @@ impl Reducer {
                         .insert(tuid.clone());
                     self.register_pending(*agent_id, tuid, None, None, from, Some(item));
                 }
-                if observed.is_some_and(|o| o.rose_into(Transition::Started))
+                if observed.is_some_and(|o| o.rose)
                     && let Some(slot) = scene.agents.get_mut(agent_id)
                     && (self.corr.action_requests).start(
                         *agent_id,
@@ -1456,7 +1450,7 @@ impl Reducer {
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: Some(tuid),
-            } if observed.is_some_and(|o| o.rose_into(Transition::Ended)) => {
+            } if observed.is_some_and(|o| o.rose) => {
                 let Some(set) = self.corr.tasks_in_flight.get_mut(agent_id) else {
                     return false;
                 };
