@@ -310,7 +310,7 @@ pub enum Resolution {
     /// The turn stopped with nothing left pending (codex's `Stop`).
     Turn(TurnKey),
     /// The user approved the call its wait named, which runs on (omp's
-    /// `tool_approval_resolved`).
+    /// `tool_approval_resolved`, dsh's `approval_decided`).
     Approved(String),
 }
 
