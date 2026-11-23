@@ -2023,6 +2023,36 @@ fn a_cc_pre_use_delivered_after_its_prompt_joins_it() {
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
+/// #242 the other way round: a call's PreToolUse decoded after its
+/// PostToolUse, however late, leaves nothing pending, so the next prompt for
+/// its tool holds only that prompt's own call.
+#[test]
+fn a_pre_use_decoded_after_its_calls_end_holds_no_later_prompt() {
+    use serde_json::json;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts("claude-code", "sess-cc");
+    start(&mut r, &mut scene, id);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let (old, new) = (json!({"tool_use_id": "t1"}), json!({"tool_use_id": "t2"}));
+    feed(&mut r, &mut scene, cc_hook("PostToolUse", old.clone()), t0);
+    let late = t0 + Duration::from_secs(10 * 60);
+    feed(&mut r, &mut scene, cc_hook("PreToolUse", old), late);
+    feed(&mut r, &mut scene, cc_hook("PreToolUse", new.clone()), late);
+    feed(
+        &mut r,
+        &mut scene,
+        cc_hook("PermissionRequest", json!({})),
+        late,
+    );
+    assert!(
+        requires_action(&scene, id),
+        "premise: the new call is gated"
+    );
+    feed(&mut r, &mut scene, cc_hook("PostToolUse", new), late);
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
 /// Only Reasonix's end names no call, and its starts name none either.
 #[test]
 fn an_end_naming_no_call_ends_only_a_call_named_by_none() {

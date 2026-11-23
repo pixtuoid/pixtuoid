@@ -1664,7 +1664,8 @@ fn late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped() {
 }
 
 /// A transcript replay of a dispatch already in flight, however late, leaves
-/// the parent's pending permission RequiresAction.
+/// the parent's pending permission RequiresAction, though the prompt named no
+/// call and so takes the agent's next start.
 #[test]
 fn jsonl_task_start_replay_does_not_clobber_requires_action_parent() {
     for lag in [Duration::from_millis(100), Duration::from_secs(10 * 60)] {
@@ -1673,15 +1674,18 @@ fn jsonl_task_start_replay_does_not_clobber_requires_action_parent() {
         let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
         let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-wait", t0);
         let t1 = t0 + Duration::from_secs(1);
-        tool_use_start(
-            &mut r,
-            &mut scene,
-            parent,
-            Some("task-T"),
-            Some("Agent"),
-            t1,
-            Transport::Hook,
-        );
+        // A second call in flight, so the prompt binds neither by deduction.
+        for (call, detail) in [("task-T", "Agent"), ("x", "Bash: ls")] {
+            tool_use_start(
+                &mut r,
+                &mut scene,
+                parent,
+                Some(call),
+                Some(detail),
+                t1,
+                Transport::Hook,
+            );
+        }
         user_action_request(
             &mut r,
             &mut scene,
@@ -2058,14 +2062,9 @@ fn task_drain_while_parent_requires_action_keeps_requires_action() {
     );
 }
 
-/// The `handled_by_task_tracking` guard's REMOVAL was invisible to all 36 test
-/// binaries: every existing test drains the LAST task, where the drain path and
-/// the general arm happen to agree. With parallel Tasks in flight they diverge —
-/// without the guard the general arm re-runs `enter_delegating`, resetting
-/// `state_started_at` on a parent that never left Delegating.
-///
-/// Asserting the resulting STATE alone would reproduce the gap (it is Delegating
-/// either way); the clock is what pins the guard.
+/// The drain of the Task the parent shows settles it onto the other one in
+/// flight, the same state, so its clock keeps running: asserting the state
+/// alone would pass a settle that restarts it.
 #[test]
 fn ending_one_of_two_parallel_tasks_does_not_restart_the_parents_delegating_clock() {
     let mut r = Reducer::new();
@@ -2095,12 +2094,13 @@ fn ending_one_of_two_parallel_tasks_does_not_restart_the_parents_delegating_cloc
     );
     let armed_at = scene.agents[&parent].state_started_at;
 
-    // Drain ONE. The other is still live, so the parent stays Delegating.
+    // Drain the one it shows. The other is still live, so the parent stays
+    // Delegating.
     tool_use_end(
         &mut r,
         &mut scene,
         parent,
-        Some("task-a"),
+        Some("task-b"),
         t0 + Duration::from_secs(30),
         Transport::Hook,
     );
@@ -2112,8 +2112,7 @@ fn ending_one_of_two_parallel_tasks_does_not_restart_the_parents_delegating_cloc
     );
     assert_eq!(
         slot.state_started_at, armed_at,
-        "the drain already applied this event; the general arm must be SKIPPED, \
-         or it re-enters Delegating and restarts the clock mid-delegation"
+        "the settle onto the other Task restarted the clock mid-delegation"
     );
 }
 
