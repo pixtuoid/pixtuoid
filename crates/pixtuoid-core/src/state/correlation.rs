@@ -287,9 +287,6 @@ pub(super) struct Correlation {
     pub(super) recent_proof_of_life: HashMap<AgentId, SystemTime>,
     pub(super) action_requests: ActionRequests,
     pub(super) turns: TurnLedger,
-    /// The transport whose start set the call each slot shows: a transcript's
-    /// turn end naming no turn can lag its hooks' next call (grok).
-    pub(super) item_started_on: HashMap<AgentId, Transport>,
     /// Tool calls already counted into `tool_call_count`, so the SAME logical
     /// call started twice counts once: omp's approval resume repeats its call's
     /// Start a human later, and a hook Start's transcript twin can land past
@@ -315,7 +312,7 @@ pub(super) struct Correlation {
 impl Correlation {
     /// Each map's name and size, read off an exhaustive destructure: a map
     /// added to the struct fails to compile here until it is measured.
-    pub(super) fn sizes(&self) -> [(&'static str, usize); 13] {
+    pub(super) fn sizes(&self) -> [(&'static str, usize); 12] {
         let Self {
             recent_hook_tool_uses,
             lifecycles,
@@ -324,7 +321,6 @@ impl Correlation {
             recent_proof_of_life,
             action_requests,
             turns,
-            item_started_on,
             counted_calls,
             counted_readings,
             call_holders,
@@ -339,7 +335,6 @@ impl Correlation {
             ("recent_proof_of_life", recent_proof_of_life.len()),
             ("action_requests", action_requests.len()),
             ("turns", turns.len()),
-            ("item_started_on", item_started_on.len()),
             ("counted_calls", counted_calls.len()),
             ("counted_readings", counted_readings.len()),
             ("call_holders", call_holders.len()),
@@ -487,7 +482,6 @@ impl Correlation {
             .retain(|_, ts| is_fresh(now, *ts, PROOF_OF_LIFE_TTL));
         self.recent_task_drains
             .retain(|_, ts| is_fresh(now, *ts, DRAINED_TASK_TOMBSTONE_TTL));
-        self.turns.gc(now);
         self.call_holders.expire(now);
         self.reading_holders.expire(now);
         self.lifecycles.retain(|_, l| {

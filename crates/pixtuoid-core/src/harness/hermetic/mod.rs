@@ -1660,7 +1660,8 @@ mod tests {
     /// `SourceCaps::brackets_turns`' conformance: a source brackets its turns
     /// exactly where its profile names a recording of every exit a turn takes,
     /// each recording closing every turn it opens through its own exit alone,
-    /// and no capture of any other source decodes a turn's start.
+    /// and a capture of any other source ends every turn it opens by that
+    /// turn's key, the one its requests and calls are scoped by.
     #[test]
     fn a_source_brackets_turns_only_where_every_exit_is_recorded() {
         for source in registry::registered_source_names() {
@@ -1711,12 +1712,10 @@ mod tests {
             if brackets {
                 continue;
             }
-            let starts = captured_events(&capture.source, &capture.dir)
-                .iter()
-                .any(|e| matches!(e, crate::AgentEvent::TurnStart { .. }));
+            let open = verify::unclosed_turns(&captured_events(&capture.source, &capture.dir));
             assert!(
-                !starts,
-                "{}: {} opens a turn, but its source does not bracket its turns",
+                open.is_empty(),
+                "{}: {} leaves {open:?} open",
                 capture.source,
                 capture.dir.display()
             );

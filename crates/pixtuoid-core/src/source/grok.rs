@@ -33,12 +33,13 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, non_empty};
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
+use crate::state::TurnKey;
 
 #[cfg(feature = "native")]
 mod native;
@@ -107,9 +108,10 @@ const XAI_HOOK_EXECUTION: &str = "hook_execution";
 /// Decode one grok hook payload (already identified by
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
 ///
-/// `user_prompt_submit` maps to `SessionStart` too — it is the resurrect
-/// carrier, because grok's `session_end` is unreliable (a TUI quit fires none)
-/// so a stale-swept LIVE session must walk back in on its next prompt.
+/// `user_prompt_submit` maps to `SessionStart` too, beside its turn's start —
+/// it is the resurrect carrier, because grok's `session_end` is unreliable (a
+/// TUI quit fires none) so a stale-swept LIVE session must walk back in on its
+/// next prompt.
 /// Anything unrecognized bails: registered-vs-decoded drift must be loud.
 ///
 /// # Errors
@@ -173,13 +175,28 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             }
             Ok(evs)
         }
-        "user_prompt_submit" => Ok(vec![AgentEvent::SessionStart {
-            agent_id,
-            source: SOURCE_NAME.to_string(),
-            session_id: key.to_string(),
-            cwd: cwd.unwrap_or("").into(),
-            parent_id: None,
-        }]),
+        "user_prompt_submit" => {
+            const PROMPT_ID: &str = "promptId";
+            let mut evs = vec![AgentEvent::SessionStart {
+                agent_id,
+                source: SOURCE_NAME.to_string(),
+                session_id: key.to_string(),
+                cwd: cwd.unwrap_or("").into(),
+                parent_id: None,
+            }];
+            // Upstream fires it with the turn's prompt id, the key the
+            // transcript's `turn_completed` ends the turn by
+            // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn.rs:909-917`
+            // at `xai-org/grok-build` `2bdd1d6a63`).
+            match non_empty(obj, PROMPT_ID) {
+                Some(prompt) => evs.push(AgentEvent::TurnStart {
+                    agent_id,
+                    turn: TurnKey::Id(prompt.into()),
+                }),
+                None => crate::source::drift::missing_field(SOURCE_NAME, event, PROMPT_ID),
+            }
+            Ok(evs)
+        }
         "pre_tool_use" => {
             let tool = obj
                 .get("toolName")
@@ -244,7 +261,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // `idle_prompt` is the 60s-idle nudge — idle, not blocked; a
                 // RequiresAction would misrender every lunch break as a permission
                 // prompt. `agent_error` is the retry-exhausted toast, an
-                // errored TURN whose state signal is the `stop_failure` arm.
+                // errored TURN, which its transcript's `turn_completed` ends.
                 // `task_complete` announces a BACKGROUNDED shell/monitor task
                 // finishing — no `toolUseId`, and its spawning tool call
                 // already Ended at backgrounding time, so nothing to close.
@@ -259,9 +276,12 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 }
             }
         }
-        // Identity-less: an end alone registers nothing. All three of
-        // upstream's turn-end causes land here.
-        "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![AgentEvent::turn_end(agent_id)]),
+        // The transcript's `turn_completed` ends every turn. These miss a
+        // subagent's turns, which fire `subagent_stop` instead, and add a
+        // session-end `stop` naming no turn (`stop_gate.rs:241-245`, `:95-111`
+        // under `crates/codegen/xai-grok-shell/src/session/acp_session_impl/`
+        // at `2bdd1d6a63`).
+        "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![]),
         "subagent_start" => {
             let Some(child_session_id) = child_key(obj) else {
                 crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
@@ -435,9 +455,22 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
                     as_child: true,
                 }]
             }
-            // The transcript twin of the `stop` hook: a tool-less turn's only
-            // end signal for transcript-only setups.
-            XAI_TURN_COMPLETED => vec![AgentEvent::turn_end(agent_id)],
+            // Written on every terminal of a turn (`emit_turn_completed`,
+            // `crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn_end.rs:384-416`
+            // at `2bdd1d6a63`), under the prompt id its hook started it by.
+            XAI_TURN_COMPLETED => {
+                const PROMPT_ID: &str = "prompt_id";
+                match non_empty(update, PROMPT_ID) {
+                    Some(prompt) => vec![AgentEvent::keyed_turn_end(
+                        agent_id,
+                        TurnKey::Id(prompt.into()),
+                    )],
+                    None => {
+                        crate::source::drift::missing_field(SOURCE_NAME, tag, PROMPT_ID);
+                        vec![AgentEvent::turn_end(agent_id)]
+                    }
+                }
+            }
             XAI_HOOK_EXECUTION => {
                 if str_field("event_name") == Some("session_end") {
                     vec![AgentEvent::SessionEnd {
@@ -916,21 +949,47 @@ mod tests {
     #[test]
     fn key_falls_back_to_cwd_when_session_id_absent() {
         let ev = decode(json!({
-            "hookEventName": "stop",
+            "hookEventName": "session_end",
             "cwd": "/Users/dev/proj"
         }));
-        assert!(matches!(ev, AgentEvent::TurnEnd { agent_id, .. }
+        assert!(matches!(ev, AgentEvent::SessionEnd { agent_id, .. }
             if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/proj")));
     }
 
+    fn missing(field: &str, logs: &str) -> bool {
+        logs.contains(<&str>::from(crate::source::drift::DriftKind::MissingField))
+            && logs.contains(field)
+    }
+
     #[test]
-    fn every_turn_end_cause_is_a_bare_turn_end() {
-        for event in ["stop", "stop_failure", "stop_cancelled"] {
-            let evs = decode_all(envelope(event));
+    fn a_prompt_submit_hook_starts_its_turn() {
+        let mut v = envelope("user_prompt_submit");
+        v["promptId"] = json!("prompt-1");
+        let evs = decode_all(v);
+        assert!(
+            matches!(evs.as_slice(), [
+                AgentEvent::SessionStart { .. },
+                AgentEvent::TurnStart { agent_id, turn: TurnKey::Id(k) },
+            ] if *agent_id == AgentId::from_parts(SOURCE_NAME, "0197fa30-sess") && &**k == "prompt-1"),
+            "{evs:?}"
+        );
+        let logs = crate::test_capture::capture_logs(|| {
+            let evs = decode_all(envelope("user_prompt_submit"));
             assert!(
-                matches!(evs.as_slice(), [AgentEvent::TurnEnd { .. }]),
-                "{event}: {evs:?}"
+                matches!(evs.as_slice(), [AgentEvent::SessionStart { .. }]),
+                "{evs:?}"
             );
+        });
+        assert!(missing("promptId", &logs), "{logs}");
+    }
+
+    #[test]
+    fn no_stop_hook_ends_a_turn() {
+        for event in ["stop", "stop_failure", "stop_cancelled"] {
+            let mut v = envelope(event);
+            v["promptId"] = json!("prompt-1");
+            let evs = decode_all(v);
+            assert!(evs.is_empty(), "{event}: {evs:?}");
         }
     }
 
@@ -1128,12 +1187,22 @@ mod tests {
     }
 
     #[test]
-    fn turn_completed_settles_the_turn_to_idle() {
-        let evs = decode_line(xai_line(json!({"sessionUpdate": "turn_completed"})));
+    fn turn_completed_ends_its_turn_by_prompt_id() {
+        let evs = decode_line(xai_line(
+            json!({"sessionUpdate": "turn_completed", "prompt_id": "prompt-1"}),
+        ));
         assert!(
-            matches!(&evs[..], [AgentEvent::TurnEnd { .. }]),
+            matches!(&evs[..], [AgentEvent::TurnEnd { turn: Some(TurnKey::Id(k)), .. }] if &**k == "prompt-1"),
             "got {evs:?}"
         );
+        let logs = crate::test_capture::capture_logs(|| {
+            let evs = decode_line(xai_line(json!({"sessionUpdate": "turn_completed"})));
+            assert!(
+                matches!(&evs[..], [AgentEvent::TurnEnd { turn: None, .. }]),
+                "got {evs:?}"
+            );
+        });
+        assert!(missing("prompt_id", &logs), "{logs}");
     }
 
     #[test]

@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 2ceb20507fd14c7afc9d1e12e5a031ec75a0e8c630290e7c2a467f921f33f54b # shrinks to ops = [Start(3), Start(0)]
+cc 807d6c614b3e1613bbdd984a6df2f62b379a689608dbe50e88c9e2b6a3eee642 # shrinks to ops = [Start(1), End(Some(0))]

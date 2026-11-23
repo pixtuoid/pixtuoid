@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use pixtuoid_core::AgentId;
 use pixtuoid_core::source::{AgentEvent, RequestKeys, Transport};
 use pixtuoid_core::state::reducer::Reducer;
-use pixtuoid_core::state::{ActivityState, SceneState, ToolUse};
+use pixtuoid_core::state::{ActivityState, SceneState, ToolKind, ToolUse};
 
 use crate::{
     HOOK_AND_TRANSCRIPT, UNNAMED_CHILD_HOOKS, start, start_as, tool_use_end, tool_use_start,
@@ -155,33 +155,6 @@ fn a_start_answers_only_a_request_holding_no_other_call() {
         Transport::Hook,
     );
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
-}
-
-/// The transcript ends a turn it may have read before a hook's fresh prompt,
-/// so its turn end answers only a prompt the transcript raised.
-#[test]
-fn a_jsonl_turn_end_resolves_only_a_transcript_raised_wait() {
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    for (raised_on, resolves) in [(Transport::Jsonl, true), (Transport::Hook, false)] {
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        let id = AgentId::from_parts("codex", "sess-1");
-        start_as(&mut r, &mut scene, id, "codex");
-        user_action_request(&mut r, &mut scene, id, "permission", t0, raised_on);
-        turn_end(
-            &mut r,
-            &mut scene,
-            id,
-            t0 + Duration::from_millis(200),
-            Transport::Jsonl,
-        );
-        assert_eq!(
-            scene.agents[&id].state == ActivityState::Idle,
-            resolves,
-            "raised on {raised_on:?}: got {:?}",
-            scene.agents[&id].state
-        );
-    }
 }
 
 #[test]
@@ -1474,20 +1447,74 @@ fn a_bracketed_turn_runs_between_its_items_and_settles_at_its_end() {
     assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
+fn grok(r: &mut Reducer, scene: &mut SceneState) -> AgentId {
+    let id = AgentId::from_parts("grok", "019e7762-9ded-7e33-be41-946ecf105bf4");
+    start_as(r, scene, id, "grok");
+    id
+}
+
 #[test]
-fn a_turn_start_on_a_source_that_does_not_bracket_its_turns_shows_nothing() {
+fn a_turn_start_scopes_but_does_not_show_on_a_source_that_does_not_bracket() {
     let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
-    let id = AgentId::from_parts("claude-code", "ses_cc");
-    start_as(&mut r, &mut scene, id, "claude-code");
+    let id = grok(&mut r, &mut scene);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(&mut r, &mut scene, turn_start(id, "k"), t0, Transport::Hook);
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
     apply(
         &mut r,
         &mut scene,
-        turn_start(id, "t1"),
+        resolved(id, Resolution::Turn(turn("k"))),
         t0,
         Transport::Hook,
     );
-    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Idle,
+        "the raise took turn k's scope"
+    );
+}
+
+/// grok's hooks start each turn and its transcript ends it, so the end of a
+/// turn can land past the next turn's start.
+#[test]
+fn a_lagging_end_of_the_last_grok_turn_neither_answers_nor_ends_the_next() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = grok(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for k in ["k1", "k2"] {
+        apply(&mut r, &mut scene, turn_start(id, k), t0, Transport::Hook);
+    }
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c2"),
+        Some("bash"),
+        t0,
+        Transport::Hook,
+    );
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    apply(
+        &mut r,
+        &mut scene,
+        keyed_turn_end(id, "k1"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert!(requires_action(&scene, id), "{:?}", scene.agents[&id].state);
+    // An answer that ends no call settles onto the newest call in flight.
+    tool_use_end(&mut r, &mut scene, id, None, t0, Transport::Hook);
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "c2"
+        ),
+        "c2 is still in flight: {:?}",
+        scene.agents[&id].state
+    );
 }
 
 #[test]
@@ -1512,16 +1539,25 @@ fn a_turn_start_leaves_a_standing_request_to_its_answer() {
     assert!(requires_action(&scene, id));
 }
 
+/// A start of another turn ends the open one; an end of another turn keyed by
+/// an opaque id proves only its own over.
 #[test]
-fn a_bracket_of_another_turn_ends_the_one_the_stream_left_open() {
+fn a_start_of_another_turn_ends_the_open_one_and_its_end_does_not() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let next_turn_open = ActivityState::Running { item: None };
+    let c1_runs = ActivityState::Running {
+        item: Some(ToolUse {
+            tool_use_id: Some("c1".into()),
+            detail: None,
+            kind: ToolKind::Other,
+        }),
+    };
     for (next, then) in [
         (
             turn_start as fn(AgentId, &str) -> AgentEvent,
             next_turn_open,
         ),
-        (keyed_turn_end, ActivityState::Idle),
+        (keyed_turn_end, c1_runs),
     ] {
         let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
         let id = codex(&mut r, &mut scene);
@@ -1822,34 +1858,6 @@ fn a_start_on_the_transport_that_did_not_raise_only_counts() {
         scene.agents[&id].state,
         ActivityState::Running { .. }
     ));
-}
-
-/// grok's transcript reads `turn_completed` past its hooks' next call; a call
-/// naming no id has no in-flight entry to show it again.
-#[test]
-fn a_transcript_turn_end_naming_no_turn_leaves_a_hook_started_call() {
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let runs = [Some("x"), None].into_iter().flat_map(|call| {
-        [
-            (call, Transport::Hook, false),
-            (call, Transport::Jsonl, true),
-        ]
-    });
-    for (call, started_on, settles) in runs {
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        let id = AgentId::from_parts("grok", "/Users/dev/proj");
-        start_as(&mut r, &mut scene, id, "grok");
-        tool_use_start(&mut r, &mut scene, id, call, Some("bash"), t0, started_on);
-        turn_end(&mut r, &mut scene, id, t0, Transport::Jsonl);
-        assert_eq!(
-            scene.agents[&id].state == ActivityState::Idle,
-            settles,
-            "{call:?} started on {started_on:?}"
-        );
-        turn_end(&mut r, &mut scene, id, t0, Transport::Hook);
-        assert_eq!(scene.agents[&id].state, ActivityState::Idle);
-    }
 }
 
 /// One CC hook payload, decoded by the real decoder: a Bash call unless

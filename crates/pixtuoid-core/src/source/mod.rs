@@ -128,7 +128,7 @@ pub enum AgentEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn: Option<TurnKey>,
     },
-    /// A turn started, from the agent's ordered bracket stream.
+    /// A turn started.
     TurnStart {
         /// The agent whose turn started.
         agent_id: AgentId,
@@ -140,8 +140,7 @@ pub enum AgentEvent {
     TurnEnd {
         /// The agent whose work ended.
         agent_id: AgentId,
-        /// The turn, from a bracket stream; `None` from a source whose turn
-        /// end names none.
+        /// The turn; `None` from a source whose turn end names none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn: Option<TurnKey>,
     },

@@ -6,7 +6,7 @@
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 242
+    "blanked": 236
   },
   "aimock": "1.48.0",
   "script": "tests/sources/grok/hermetic/subagent.json",
@@ -37,7 +37,7 @@
     }
   },
   "sentinel_reads": {
-    "01a20801-15cb-7263-a0bf-7dc79f08db3d/updates.jsonl": [
+    "01a20808-4e93-74a2-b0ac-ebca07f141d9/updates.jsonl": [
       "4:/params/update/rawInput/background"
     ],
     "hook-payloads.jsonl": [

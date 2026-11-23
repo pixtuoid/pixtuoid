@@ -3,100 +3,106 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 17032987364562210925
-    tool_use_id: call_vaZerAtUazwAUpDF
+    agent_id: 13258955323147316669
+    tool_use_id: call_RiAi0W2DdvadhnN_
     detail:
       Generic:
         display: read_file
 - ToolUseEnd:
-    agent_id: 17032987364562210925
-    tool_use_id: call_vaZerAtUazwAUpDF
+    agent_id: 13258955323147316669
+    tool_use_id: call_RiAi0W2DdvadhnN_
 - TurnEnd:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
+    turn:
+      Id: a167492d-4c72-4c66-979f-dc745b81845b
 - ModelInfo:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 17032987364562210925
-    tool_use_id: call_toixYzCHvM7Mms7k
+    agent_id: 13258955323147316669
+    tool_use_id: call_R5hf6vH8mbZIGqL1
     detail:
       Generic:
         display: read_file
 - ToolUseEnd:
-    agent_id: 17032987364562210925
-    tool_use_id: call_toixYzCHvM7Mms7k
+    agent_id: 13258955323147316669
+    tool_use_id: call_R5hf6vH8mbZIGqL1
 - TurnEnd:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
+    turn:
+      Id: 678ae428-0a74-459c-9317-7da451523862
 - SessionEnd:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     as_child: false
 - SessionStart:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     source: grok
-    session_id: 01a20801-a5c1-73d3-aa6d-c769ff911cb5
+    session_id: 01a20808-df41-7020-a34d-c8d00d53a424
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     source: grok
-    session_id: 01a20801-a5c1-73d3-aa6d-c769ff911cb5
+    session_id: 01a20808-df41-7020-a34d-c8d00d53a424
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
+- TurnStart:
+    agent_id: 13258955323147316669
+    turn:
+      Id: a167492d-4c72-4c66-979f-dc745b81845b
 - Identity:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     source: grok
-    session_id: 01a20801-a5c1-73d3-aa6d-c769ff911cb5
+    session_id: 01a20808-df41-7020-a34d-c8d00d53a424
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 17032987364562210925
-    tool_use_id: call_vaZerAtUazwAUpDF
+    agent_id: 13258955323147316669
+    tool_use_id: call_RiAi0W2DdvadhnN_
     detail:
       Generic:
         display: read_file
 - Identity:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     source: grok
-    session_id: 01a20801-a5c1-73d3-aa6d-c769ff911cb5
+    session_id: 01a20808-df41-7020-a34d-c8d00d53a424
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 17032987364562210925
-    tool_use_id: call_vaZerAtUazwAUpDF
-- TurnEnd:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
+    tool_use_id: call_RiAi0W2DdvadhnN_
 - SessionStart:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     source: grok
-    session_id: 01a20801-a5c1-73d3-aa6d-c769ff911cb5
+    session_id: 01a20808-df41-7020-a34d-c8d00d53a424
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
+- TurnStart:
+    agent_id: 13258955323147316669
+    turn:
+      Id: 678ae428-0a74-459c-9317-7da451523862
 - Identity:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     source: grok
-    session_id: 01a20801-a5c1-73d3-aa6d-c769ff911cb5
+    session_id: 01a20808-df41-7020-a34d-c8d00d53a424
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 17032987364562210925
-    tool_use_id: call_toixYzCHvM7Mms7k
+    agent_id: 13258955323147316669
+    tool_use_id: call_R5hf6vH8mbZIGqL1
     detail:
       Generic:
         display: read_file
 - Identity:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     source: grok
-    session_id: 01a20801-a5c1-73d3-aa6d-c769ff911cb5
+    session_id: 01a20808-df41-7020-a34d-c8d00d53a424
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 17032987364562210925
-    tool_use_id: call_toixYzCHvM7Mms7k
-- TurnEnd:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
+    tool_use_id: call_R5hf6vH8mbZIGqL1
 - SessionEnd:
-    agent_id: 17032987364562210925
+    agent_id: 13258955323147316669
     as_child: false
-- TurnEnd:
-    agent_id: 17032987364562210925

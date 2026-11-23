@@ -77,7 +77,8 @@ pub(crate) struct SettleCtx {
     pub(crate) in_flight: Option<ToolUse>,
     /// A Task the slot dispatched that still runs.
     pub(crate) task_in_flight: Option<Arc<str>>,
-    /// The slot's turn is still open.
+    /// The slot's turn is still open, on a source that shows it
+    /// (`SourceCaps::brackets_turns`).
     pub(crate) turn_open: bool,
 }
 
