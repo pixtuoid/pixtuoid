@@ -19,8 +19,8 @@
 //!    reader in the registry's native-only `NativeTranscript` column (the title,
 //!    the label, a path-derived cwd, and the tail-activity reader whose
 //!    sidecar-only verdict vetoes a registration), which a wasm-clean build lacks.
-//! 2. **Transport is load-bearing** (the reducer's hook-wins dedup keys on it),
-//!    so it is not a free parameter.
+//! 2. **Transport is load-bearing** (the reducer's lifecycle authority keys on
+//!    it), so it is not a free parameter.
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;

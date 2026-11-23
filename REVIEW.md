@@ -73,7 +73,8 @@ skipping one is not partial coverage.
 - **Reducer, liveness, sweeps** (`crates/pixtuoid-core/src/state/`,
   `source/jsonl/liveness.rs`, `source/exit_watch.rs`, `source/daemon.rs`):
   trace the downstream interaction graph (rebind, sweeps, TTLs, cascade,
-  dedup, polarity) and the provenance of every newly keyed signal.
+  per-id records, polarity) and, for every newly keyed signal, the wire id
+  both transports name it by.
 - **Domain math**: geometry, sky, lighting (under
   `crates/pixtuoid-scene/src/`: `sky/`, `celestial.rs`, `lighting.rs`,
   `layout/`). Enumerate the domain invariants and re-derive each across the

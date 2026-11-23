@@ -224,9 +224,8 @@ fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
 
 /// The omp module doc's load-bearing claim, pinned hermetically per recorded
 /// round: BOTH transports mint one folded AgentId. An approval round's wait
-/// comes from the transcript alone, and its two Starts of the call (the
-/// block's, then the resume a human later) count ONE call through a real
-/// `Reducer`.
+/// and its resume come from the transcript alone, and its call counts ONCE
+/// through a real `Reducer`.
 #[test]
 pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
     for scenario in [

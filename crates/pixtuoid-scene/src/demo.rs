@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::source::daemon::{self, DaemonInstanceKey, DaemonPresenceUpdate};
-use pixtuoid_core::source::{RequestKeys, Resolution, registry};
+use pixtuoid_core::source::{RequestKeys, registry};
 use pixtuoid_core::state::reducer::Reducer;
 use pixtuoid_core::state::{SceneState, TurnKey};
 use pixtuoid_core::{AgentEvent, AgentId, ToolDetail, Transport};
@@ -21,7 +21,8 @@ pub enum Cue {
     /// An agent event, as a live source sends it.
     Event {
         at: Duration,
-        /// What hook-wins dedup reads: the transport the live source uses.
+        /// The transport the live source uses, which decides its lifecycle
+        /// authority and live-versus-replay counting.
         transport: Transport,
         event: AgentEvent,
     },
@@ -86,68 +87,17 @@ impl Lap {
     };
 
     fn name(self, event: &mut AgentEvent) {
-        if let Some(id) = counted_id(event) {
+        let keys = event.merge_keys_mut();
+        if let Some(id) = keys.id {
             id.push_str(&format!("#{}", self.n));
         }
-        match turn(event) {
+        match keys.turn {
             Some(TurnKey::Id(id)) => *id = format!("{id}#{}", self.n).into(),
             Some(TurnKey::Seq(seq)) => {
                 *seq = seq.saturating_add(self.seq_stride.saturating_mul(self.n));
             }
             None => {}
         }
-    }
-}
-
-/// The turn `event` names, wherever it carries one.
-fn turn(event: &mut AgentEvent) -> Option<&mut TurnKey> {
-    match event {
-        AgentEvent::TurnStart { turn, .. }
-        | AgentEvent::TurnEnd {
-            turn: Some(turn), ..
-        }
-        | AgentEvent::ToolUsePending {
-            turn: Some(turn), ..
-        }
-        | AgentEvent::UserActionRequest {
-            turn: Some(turn), ..
-        }
-        | AgentEvent::UserActionResolved {
-            by: Resolution::Turn(turn),
-            ..
-        } => Some(turn),
-        _ => None,
-    }
-}
-
-/// The id `event` names that the reducer counts once: a call's, wherever the
-/// event carries it, or a reading's.
-fn counted_id(event: &mut AgentEvent) -> Option<&mut String> {
-    match event {
-        AgentEvent::ToolUseStart {
-            tool_use_id: Some(id),
-            ..
-        }
-        | AgentEvent::ToolUseEnd {
-            tool_use_id: Some(id),
-            ..
-        }
-        | AgentEvent::UserActionRequest {
-            tool_use_id: Some(id),
-            ..
-        }
-        | AgentEvent::ToolUsePending {
-            tool_use_id: id, ..
-        }
-        | AgentEvent::UserActionResolved {
-            by: Resolution::Call(id),
-            ..
-        }
-        | AgentEvent::Usage {
-            reading_id: Some(id),
-            ..
-        } => Some(id),
-        _ => None,
     }
 }
 
@@ -367,7 +317,7 @@ impl Script {
         cues.sort_by_key(|cue| place(cue.at(), period).0);
         let seq_stride = (cues.iter_mut())
             .filter_map(|cue| match cue {
-                Cue::Event { event, .. } => turn(event),
+                Cue::Event { event, .. } => event.merge_keys_mut().turn,
                 Cue::Presence { .. } => None,
             })
             .filter_map(|turn| match turn {

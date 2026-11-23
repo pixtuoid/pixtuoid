@@ -139,7 +139,7 @@ pub(crate) fn spawn_pipeline(
 
     // Source-health side channel: a fatal source exit must reach the painter's
     // footer. Deliberately NOT an AgentEvent — the one event channel carries agent
-    // activity (its Transport tag drives hook-wins dedup), not source lifecycle.
+    // activity, not source lifecycle.
     let (health_tx, health_rx) = watch::channel(Vec::new());
     let mut manager = SourceManager::new();
     for src in sources {

@@ -262,7 +262,6 @@ fn running_ms_does_not_double_count_on_duplicate_tool_use_end() {
 
     let t1 = t0 + Duration::from_secs(2);
     tool_use_end(&mut r, &mut scene, id, Some("t1"), t1, Transport::Hook);
-    // The 2nd end is deliberately PAST the hook-wins window, so it is NOT deduped.
     tool_use_end(
         &mut r,
         &mut scene,
@@ -604,8 +603,8 @@ fn jsonl_none_id_end_while_requires_action_keeps_requires_action() {
 }
 
 // An end naming no call that answers a wait leaves no request behind, so its
-// member call's late transcript Start is plain work, not a re-observed approval. A
-// tool end naming no call answers only a wait that named none either.
+// member call's late transcript Start brings no wait back. A tool end naming no
+// call answers only a wait that named none either.
 #[test]
 fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
     use crate::user_action_request_for;
@@ -626,14 +625,13 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
                 Transport::Hook,
             );
         } else {
-            // Outside the dedup window, so its transcript twin below lands.
             tool_use_start(
                 &mut r,
                 &mut scene,
                 id,
                 Some("call_1"),
                 None,
-                t0 - HOOK_WINS_WINDOW,
+                t0 - Duration::from_secs(1),
                 Transport::Hook,
             );
             user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
@@ -654,7 +652,7 @@ fn an_end_naming_no_call_that_answers_a_wait_closes_its_request() {
             Transport::Jsonl,
         );
         assert!(
-            matches!(scene.agents[&id].state, ActivityState::Running { .. }),
+            !requires_action(&scene, id),
             "turn: {turn}, got {:?}",
             scene.agents[&id].state
         );
@@ -898,44 +896,49 @@ fn an_answered_agy_question_clears_requires_action_on_either_transport() {
             "{what}: the answer clears RequiresAction before the turn ends"
         );
     }
-    // Both sides of the window the hook End is remembered for.
-    let inside = HOOK_WINS_WINDOW / 10;
-    let past = HOOK_WINS_WINDOW + Duration::from_millis(1);
-    for (what, late, after, parks) in [
-        ("hook", hook("PreToolUse"), inside, false),
-        ("transcript", asked.clone(), inside, false),
-        ("hook", hook("PreToolUse"), past, true),
-        ("transcript", asked, past, true),
-    ] {
-        let mut scene = SceneState::uniform(4);
-        let mut r = Reducer::new();
-        start_as(&mut r, &mut scene, id, SOURCE_NAME);
-        feed(&mut r, &mut scene, &[hook("PostToolUse")], t0);
-        feed(&mut r, &mut scene, &[late], t0 + after);
-        assert_eq!(
-            matches!(
-                scene.agents[&id].state,
-                ActivityState::RequiresAction { .. }
-            ),
-            parks,
-            "{what}: a wait {after:?} after its call's hook End parks the slot only past the window"
-        );
+    // A wait landing after its call's hook End, however late, parks nothing.
+    for (what, late) in [("hook", hook("PreToolUse")), ("transcript", asked)] {
+        for after in [Duration::from_millis(50), Duration::from_secs(10 * 60)] {
+            let mut scene = SceneState::uniform(4);
+            let mut r = Reducer::new();
+            start_as(&mut r, &mut scene, id, SOURCE_NAME);
+            feed(&mut r, &mut scene, &[hook("PostToolUse")], t0);
+            feed(&mut r, &mut scene, std::slice::from_ref(&late), t0 + after);
+            assert!(
+                !requires_action(&scene, id),
+                "{what}: a wait {after:?} after its call's hook End parked the slot"
+            );
+        }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Approval rounds whose wait names its call: each binds the wait to that member
-// and counts the call ONCE. omp's ride its transcript alone (`source::omp`'s
-// approval records); the others cross transports past `HOOK_WINS_WINDOW`
-// (`counted_calls`' own doc).
+// Approval rounds whose wait names its call: each binds the wait to that member,
+// resumes it by its approval and counts the call ONCE.
 // ---------------------------------------------------------------------------
 
 use crate::user_action_request_for;
-use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
 
-/// Past the dedup window: the cross-transport pair separated by a human.
-fn beyond_dedup(t: SystemTime) -> SystemTime {
-    t + HOOK_WINS_WINDOW + Duration::from_millis(100)
+/// `call`'s approval, which resumes it.
+fn approve(
+    r: &mut Reducer,
+    scene: &mut SceneState,
+    id: AgentId,
+    call: &str,
+    at: SystemTime,
+    tp: Transport,
+) {
+    r.apply(
+        scene,
+        resolved(id, Resolution::Approved(call.into())),
+        at,
+        tp,
+    );
+}
+
+/// A human's pause between a call's two arrivals.
+fn later(t: SystemTime) -> SystemTime {
+    t + Duration::from_secs(1)
 }
 
 #[test]
@@ -970,31 +973,15 @@ fn parallel_approvals_resolve_on_the_last_member() {
         );
     }
 
-    // x1's resume retires it; x2 still waits on the human.
+    // x1's approval retires it; x2 still waits on the human.
     let t1 = t0 + Duration::from_secs(2);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash"),
-        t1,
-        Transport::Jsonl,
-    );
+    approve(&mut r, &mut scene, id, "x1", t1, Transport::Jsonl);
     assert!(matches!(
         scene.agents.get(&id).unwrap().state,
         ActivityState::RequiresAction { .. }
     ));
     let t2 = t1 + Duration::from_secs(2);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x2"),
-        Some("bash"),
-        t2,
-        Transport::Jsonl,
-    );
+    approve(&mut r, &mut scene, id, "x2", t2, Transport::Jsonl);
     let slot = scene.agents.get(&id).unwrap();
     assert!(matches!(slot.state, ActivityState::Running { .. }));
     assert_eq!(
@@ -1032,7 +1019,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         t0,
         Transport::Jsonl,
     );
-    let t1 = beyond_dedup(t0);
+    let t1 = later(t0);
     user_action_request_for(
         &mut r,
         &mut scene,
@@ -1047,16 +1034,8 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         ActivityState::RequiresAction { .. }
     ));
 
-    let t2 = beyond_dedup(t1) + Duration::from_secs(5);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        None,
-        t2,
-        Transport::Hook,
-    );
+    let t2 = later(t1) + Duration::from_secs(5);
+    approve(&mut r, &mut scene, id, "x1", t2, Transport::Hook);
     assert!(
         !matches!(
             scene.agents.get(&id).unwrap().state,
@@ -1067,7 +1046,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
     let count_after_resume = scene.agents.get(&id).unwrap().tool_call_count;
 
     // Denial path on a second member call: the hook End must clear the wait too.
-    let t3 = beyond_dedup(t2);
+    let t3 = later(t2);
     tool_use_start(
         &mut r,
         &mut scene,
@@ -1077,7 +1056,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         t3,
         Transport::Jsonl,
     );
-    let t4 = beyond_dedup(t3);
+    let t4 = later(t3);
     user_action_request_for(
         &mut r,
         &mut scene,
@@ -1087,7 +1066,7 @@ fn a_delegating_parents_own_approval_round_survives_subagent_suppression() {
         t4,
         Transport::Hook,
     );
-    let t5 = beyond_dedup(t4) + Duration::from_secs(5);
+    let t5 = later(t4) + Duration::from_secs(5);
     tool_use_end(&mut r, &mut scene, id, Some("x2"), t5, Transport::Hook);
     assert!(
         !matches!(
@@ -1144,19 +1123,11 @@ fn a_denial_resolving_one_member_keeps_the_queued_siblings() {
         "x2 still waits on the human"
     );
     let t2 = t1 + Duration::from_secs(3);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x2"),
-        Some("bash"),
-        t2,
-        Transport::Jsonl,
-    );
+    approve(&mut r, &mut scene, id, "x2", t2, Transport::Jsonl);
     let slot = scene.agents.get(&id).unwrap();
     assert!(
         matches!(slot.state, ActivityState::Running { .. }),
-        "x2's resume must still read as its approval round"
+        "x2's approval must still read as its approval round"
     );
     assert_eq!(
         slot.tool_call_count, 2,
@@ -1213,10 +1184,9 @@ fn an_auto_approved_parallel_tool_does_not_strip_a_pending_member() {
     );
 }
 
-/// The resume re-labels from the record's toolName, over the richer detail its
-/// call's own Start showed: a documented label-only cost.
+/// An approval resumes the call its start showed, with that start's detail.
 #[test]
-fn the_approval_resume_labels_from_the_wire_tool_name() {
+fn an_approval_resume_shows_its_calls_own_start() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/j.jsonl");
@@ -1242,55 +1212,40 @@ fn the_approval_resume_labels_from_the_wire_tool_name() {
         Transport::Jsonl,
     );
     let t1 = t0 + Duration::from_secs(2);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("x1"),
-        Some("bash"),
-        t1,
-        Transport::Jsonl,
-    );
+    approve(&mut r, &mut scene, id, "x1", t1, Transport::Jsonl);
     match &scene.agents.get(&id).unwrap().state {
         ActivityState::Running {
             item: Some(ToolUse { detail, .. }),
         } => {
-            assert_eq!(detail.as_deref(), Some("bash"));
+            assert_eq!(detail.as_deref(), Some("bash: rm -rf /tmp/x"));
         }
         other => panic!("expected Running after the resume, got {other:?}"),
     }
 }
 
-/// The CC shape, not omp's: a hook Start whose JSONL twin lands past
-/// `HOOK_WINS_WINDOW` (an FSEvents-coalesced poll). Before `counted_calls` this
-/// double-incremented the HUD count.
+/// The CC shape, not omp's: a hook Start whose JSONL twin lands however late
+/// (an FSEvents-coalesced poll) counts once.
 #[test]
-fn a_transcript_twin_past_the_dedup_window_counts_once() {
-    let mut scene = SceneState::uniform(4);
-    let mut r = Reducer::new();
-    let id = AgentId::from_transcript_path("/p/k.jsonl");
-    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        Some("Edit: a.rs"),
-        t0,
-        Transport::Hook,
-    );
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("t1"),
-        Some("Edit: a.rs"),
-        beyond_dedup(t0),
-        Transport::Jsonl,
-    );
-    assert_eq!(scene.agents.get(&id).unwrap().tool_call_count, 1);
+fn a_transcript_twin_counts_once_at_any_lag() {
+    for lag in [Duration::ZERO, Duration::from_secs(10 * 60)] {
+        let mut scene = SceneState::uniform(4);
+        let mut r = Reducer::new();
+        let id = AgentId::from_transcript_path("/p/k.jsonl");
+        start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        for (at, tp) in [(t0, Transport::Hook), (t0 + lag, Transport::Jsonl)] {
+            tool_use_start(
+                &mut r,
+                &mut scene,
+                id,
+                Some("t1"),
+                Some("Edit: a.rs"),
+                at,
+                tp,
+            );
+        }
+        assert_eq!(scene.agents[&id].tool_call_count, 1, "{lag:?}");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1929,33 +1884,50 @@ fn a_pre_use_delivered_after_its_request_joins_it() {
     );
 }
 
-/// #951 extended: the other transport's start lands while the human decides.
+/// #951 extended: the other transport's copy of a call already started lands
+/// while the human decides, however late: it answers no wait, which the agent's
+/// next call does.
 #[test]
-fn a_start_on_the_transport_that_did_not_raise_only_counts() {
+fn the_other_transports_copy_of_a_started_call_answers_no_wait() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/other-transport.jsonl");
     start(&mut r, &mut scene, id);
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    // Two calls in flight, so the prompt binds neither by deduction.
+    for call in ["c1", "c2"] {
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            id,
+            Some(call),
+            Some("Read: a"),
+            t0,
+            Transport::Hook,
+        );
+    }
     user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
-    tool_use_start(
-        &mut r,
-        &mut scene,
-        id,
-        Some("j1"),
-        Some("Read: a"),
-        t0,
-        Transport::Jsonl,
-    );
+    for call in ["c1", "c2"] {
+        let copy = t0 + Duration::from_secs(10 * 60);
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            id,
+            Some(call),
+            Some("Read: a"),
+            copy,
+            Transport::Jsonl,
+        );
+    }
     assert!(requires_action(&scene, id));
-    assert_eq!(scene.agents[&id].tool_call_count, 1, "it still counts");
+    assert_eq!(scene.agents[&id].tool_call_count, 2, "each counts once");
     tool_use_start(
         &mut r,
         &mut scene,
         id,
         Some("h1"),
         Some("Bash: ls"),
-        t0,
+        t0 + Duration::from_secs(10 * 60),
         Transport::Hook,
     );
     assert!(matches!(

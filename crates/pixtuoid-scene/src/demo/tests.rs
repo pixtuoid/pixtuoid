@@ -1,5 +1,7 @@
 use super::*;
-use pixtuoid_core::source::{CopyId, claude_code, codex, copilot, hermes, openclaw, opencode};
+use pixtuoid_core::source::{
+    CopyId, Resolution, claude_code, codex, copilot, hermes, openclaw, opencode,
+};
 use pixtuoid_core::state::{ActivityState, DaemonInstanceId, ToolKind};
 
 const PERIOD: Duration = Duration::from_secs(60);
@@ -368,13 +370,12 @@ fn a_call_across_the_wrap_runs_from_its_start_through_it() {
 }
 
 /// The first loop's wrapped End belongs to a loop before `started`, so it
-/// never lands: landed inside the hook-wins window before its own loop's
-/// Start, it would drop that Start as an already-ended call.
+/// never lands: landed before its own loop's Start, it would refuse that Start
+/// as an already-ended call.
 #[test]
 fn the_first_loop_never_lands_a_wrapped_end_and_still_runs_its_start() {
-    use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
     let start = ms(2_000);
-    let early = HOOK_WINS_WINDOW / 2;
+    let early = ms(250);
     let mut cues = vec![lead().start(ms(0))];
     cues.extend(lead().delegate(start, PERIOD - early));
     assert_eq!(
@@ -514,11 +515,15 @@ fn a_lap_names_every_counted_id_and_turn_apart() {
             agent_id,
             by: Resolution::Call(id()),
         },
+        AgentEvent::UserActionResolved {
+            agent_id,
+            by: Resolution::Approved(id()),
+        },
         AgentEvent::usage(agent_id, 1, Some(id())),
     ] {
         lap.name(&mut event);
         assert_eq!(
-            counted_id(&mut event).cloned(),
+            event.merge_keys_mut().id.cloned(),
             Some("x#3".to_owned()),
             "{event:?}"
         );
@@ -556,7 +561,11 @@ fn a_lap_names_every_counted_id_and_turn_apart() {
         ),
     ] {
         lap.name(&mut event);
-        assert_eq!(turn(&mut event).cloned(), Some(want), "{event:?}");
+        assert_eq!(
+            event.merge_keys_mut().turn.cloned(),
+            Some(want),
+            "{event:?}"
+        );
     }
 }
 

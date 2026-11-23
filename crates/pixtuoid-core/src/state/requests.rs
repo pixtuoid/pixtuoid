@@ -31,8 +31,8 @@ pub(crate) enum Ended<'a> {
 /// An event as a request's resolution reads it.
 #[derive(Clone, Copy, Debug)]
 enum Seen<'a> {
-    /// A call started; its id when the wire names one.
-    Start(Option<&'a str>),
+    /// A call started.
+    Start,
     End(Ended<'a>),
     Resolved(&'a Resolution),
     /// An unnamed child's event, dropped while these Tasks are in flight: the
@@ -80,8 +80,8 @@ struct Pending {
 #[derive(Debug, Clone)]
 struct Member {
     call: Arc<str>,
-    /// The wire named it, so its start on the raising transport is the
-    /// approval's resume (#951); a bound member's own start is its pre-use.
+    /// The wire named it, so its approval answers for it (#951); a bound
+    /// member's own start is its pre-use.
     named: bool,
 }
 
@@ -220,27 +220,10 @@ impl ActionRequests {
         }
     }
 
-    /// A start of `call` on `from`: whether the slot runs it, else it only
-    /// counts. `requires_action` is whether a request stands.
-    pub(crate) fn start(
-        &mut self,
-        id: AgentId,
-        call: Option<&str>,
-        from: Transport,
-        requires_action: bool,
-    ) -> bool {
-        if !requires_action {
-            self.open.remove(&id);
-            return true;
-        }
-        let resolved = self.resolves(&id, Seen::Start(call), from);
-        if let Some(c) = call
-            && self.names(&id, c)
-            && let Some(req) = self.open.get_mut(&id)
-            && from == req.raised_on
-        {
-            req.members.retain(|m| &*m.call != c);
-        }
+    /// A call's first start, or a start naming no call: whether the slot runs
+    /// it, else it only counts. `requires_action` is whether a request stands.
+    pub(crate) fn start(&mut self, id: AgentId, requires_action: bool) -> bool {
+        let resolved = !requires_action || self.resolves(&id, Seen::Start, Transport::Hook);
         if resolved {
             self.open.remove(&id);
         }
@@ -282,20 +265,6 @@ impl ActionRequests {
             .is_some_and(|m| m.named)
     }
 
-    /// A Task's Start, as [`Self::start`]; one already in flight runs it only
-    /// to answer a request that [names](Self::names) it.
-    pub(crate) fn task_start(
-        &mut self,
-        id: AgentId,
-        task: &str,
-        first: bool,
-        from: Transport,
-        requires_action: bool,
-    ) -> bool {
-        (first || (requires_action && self.names(&id, task)))
-            && self.start(id, Some(task), from, requires_action)
-    }
-
     /// A drained Task's end, as [`Self::end`], answering only a request that
     /// [names](Self::names) it: a subagent returning answers no prompt a
     /// deduction bound it to (#152).
@@ -313,8 +282,15 @@ impl ActionRequests {
     /// An answer that ends no item: whether it answers the standing request.
     pub(crate) fn resolved(&mut self, id: AgentId, by: &Resolution, requires_action: bool) -> bool {
         let resolved = requires_action && self.resolves(&id, Seen::Resolved(by), Transport::Hook);
-        if let Resolution::Call(c) = by {
-            self.retire(&id, c);
+        match by {
+            Resolution::Call(c) => self.retire(&id, c),
+            // An approved call runs on, so it leaves only the request.
+            Resolution::Approved(c) if self.names(&id, c) => {
+                if let Some(req) = self.open.get_mut(&id) {
+                    req.members.retain(|m| &*m.call != c);
+                }
+            }
+            Resolution::Approved(_) | Resolution::Turn(_) => {}
         }
         if resolved {
             self.open.remove(&id);
@@ -344,19 +320,12 @@ impl ActionRequests {
             return false;
         };
         match seen {
-            // The other transport's start of the same work lands while the
-            // human still decides (#951), so only the raising transport's
-            // start counts: a named member's resume, or any start once the
-            // wire gave no key.
-            Seen::Start(call) => {
-                from == req.raised_on
-                    && match call.and_then(|c| req.member(c)) {
-                        Some(m) => m.named && req.is_last_member(&m.call),
-                        None => req.is_keyless(),
-                    }
-            }
+            // A member's start is its pre-use, and an approval resumes by its
+            // own fact, so only a request the wire gave no key takes one.
+            Seen::Start => req.is_keyless(),
             Seen::End(Ended::Call(c)) => req.is_last_member(c),
             Seen::Resolved(Resolution::Call(c)) => req.is_last_member(c),
+            Seen::Resolved(Resolution::Approved(c)) => self.names(id, c) && req.is_last_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
             Seen::End(Ended::Unnamed) => from == Transport::Hook && !req.named,
             Seen::End(Ended::Turn {
@@ -635,7 +604,7 @@ mod tests {
         reqs.register(id(), pending("a", Some("Bash"), HOOK));
         assert_eq!(members(&reqs), ["a"]);
         assert!(
-            !reqs.start(id(), Some("a"), HOOK, true),
+            !reqs.start(id(), true),
             "a bound member's own start is its pre-use, not an answer"
         );
     }
@@ -683,54 +652,48 @@ mod tests {
             reqs
         };
         let ran = Resolution::Call("x".into());
+        let approved = Resolution::Approved("x".into());
         let stopped = Resolution::Turn(t1.clone());
         for (what, reqs, seen, from, want) in [
             (
-                "a named member's resume",
+                "a named member's approval",
                 named(),
-                Seen::Start(Some("x")),
+                Seen::Resolved(&approved),
                 HOOK,
                 true,
             ),
             (
-                "a named member's transcript start",
+                "a bound member's approval",
+                bound(),
+                Seen::Resolved(&approved),
+                HOOK,
+                false,
+            ),
+            (
+                "a named request, a start",
                 named(),
-                Seen::Start(Some("x")),
-                JSONL,
-                false,
-            ),
-            (
-                "a bound member's own start",
-                bound(),
-                Seen::Start(Some("x")),
+                Seen::Start,
                 HOOK,
                 false,
             ),
             (
-                "a non-member's start",
+                "a bound request, a start",
                 bound(),
-                Seen::Start(Some("y")),
+                Seen::Start,
                 HOOK,
                 false,
             ),
             (
-                "a keyless request, its own transport",
+                "a keyless request, a start on either transport",
                 keyless(HOOK),
-                Seen::Start(Some("y")),
-                HOOK,
+                Seen::Start,
+                JSONL,
                 true,
-            ),
-            (
-                "a keyless request, the other transport",
-                keyless(HOOK),
-                Seen::Start(None),
-                JSONL,
-                false,
             ),
             (
                 "a request waiting on its tool",
                 scoped(),
-                Seen::Start(Some("y")),
+                Seen::Start,
                 HOOK,
                 false,
             ),
@@ -892,8 +855,9 @@ mod tests {
     fn only_the_last_member_answers() {
         let mut reqs = raised(vec![], raise(Some("x"), None, HOOK));
         reqs.raise(id(), raise(Some("y"), None, HOOK), true);
-        assert!(!reqs.start(id(), Some("x"), HOOK, true), "y still waits");
-        assert_eq!(members(&reqs), ["y"], "x's resume retired it");
+        let x = Resolution::Approved("x".into());
+        assert!(!reqs.resolved(id(), &x, true), "y still waits");
+        assert_eq!(members(&reqs), ["y"], "x's approval retired it");
         assert!(!reqs.end(id(), Ended::Call("z"), HOOK, true));
         assert!(reqs.end(id(), Ended::Call("y"), JSONL, true), "a denial");
         assert!(!reqs.contains(&id()));
@@ -923,7 +887,7 @@ mod tests {
     #[test]
     fn a_start_outside_a_wait_runs_and_drops_a_stale_request() {
         let mut reqs = raised(vec![], raise(Some("x"), None, HOOK));
-        assert!(reqs.start(id(), Some("y"), JSONL, false));
+        assert!(reqs.start(id(), false));
         assert!(!reqs.contains(&id()));
     }
 

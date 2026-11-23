@@ -215,7 +215,7 @@ async fn oversized_delegating_parent_attach_replays_pending_dispatch() {
     assert_eq!(
         task_starts,
         vec![Transport::Jsonl],
-        "the in-flight dispatch must be re-emitted exactly once, Jsonl-tagged (it passes the hook-wins dedup at mid-attach)"
+        "the in-flight dispatch must be re-emitted exactly once, Jsonl-tagged"
     );
     let backlog_replays = events
         .iter()

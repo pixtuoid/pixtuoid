@@ -1074,8 +1074,8 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             now,
             Transport::Hook,
         );
-        // An ORPHAN Task (no SessionStart or Identity) registers no slot, so its
-        // tasks_in_flight entry is the tick's to reap.
+        // An ORPHAN Task (no SessionStart or Identity) registers no slot, so it
+        // keeps no record.
         r.apply(
             &mut scene,
             AgentEvent::ToolUseStart {
@@ -1107,9 +1107,9 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     }
 }
 
-/// A transcript tool or backlog line registers no slot, yet a Task it starts and
-/// a backlog marker it carries are kept by id: the tick reaps both while no slot
-/// holds it.
+/// A transcript tool or backlog line registers no slot: a Task it starts keeps
+/// no record, and a backlog marker it carries is kept by id, which the tick
+/// reaps while no slot holds it.
 #[test]
 fn the_tick_reaps_what_an_id_no_slot_holds_left() {
     use crate::AgentId;
@@ -1135,13 +1135,12 @@ fn the_tick_reaps_what_an_id_no_slot_holds_left() {
     r.apply(&mut scene, backlog, t0, Transport::Jsonl);
     assert!(!scene.agents.contains_key(&id), "premise: no slot");
     assert!(
-        r.corr.tasks_in_flight.contains_key(&id),
-        "premise: a Task kept"
+        !r.corr.tasks_in_flight.contains_key(&id) && r.corr.calls.len() == 0,
+        "a Task with no slot keeps nothing"
     );
     assert!(r.corr.caught_up.contains(&id), "premise: a marker kept");
 
     r.tick(&mut scene, t0);
-    assert!(!r.corr.tasks_in_flight.contains_key(&id));
     assert!(!r.corr.caught_up.contains(&id));
 }
 
@@ -1612,51 +1611,6 @@ fn every_order_of_two_turns_and_a_gated_request_keeps_the_property() {
         }
     }
     assert_eq!(orders, 120, "5! orders");
-}
-
-/// A drained Task's End read past its tombstone reaches the request ledger,
-/// where only the drain's retirement of the call keeps it from answering a
-/// prompt still standing (#152).
-#[test]
-fn a_drained_tasks_end_past_its_tombstone_resolves_no_standing_prompt() {
-    use crate::source::{AgentEvent, RequestKeys, Transport};
-    use crate::state::ActivityState;
-    use crate::state::correlation::DRAINED_TASK_TOMBSTONE_TTL;
-    use crate::{AgentId, Reducer, SceneState};
-    use std::path::PathBuf;
-    use std::time::{Duration, SystemTime};
-    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
-    let id = AgentId::from_parts("omp", "/p/tombstone.jsonl");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let start = AgentEvent::SessionStart {
-        agent_id: id,
-        source: "omp".into(),
-        session_id: "p".into(),
-        cwd: PathBuf::from("/repo"),
-        parent_id: None,
-    };
-    r.apply(&mut scene, start, t0, Transport::Hook);
-    let task = AgentEvent::tool_use_start(id, Some("task-T".into()), Some("Agent".into()));
-    r.apply(&mut scene, task, t0, Transport::Hook);
-    let prompt =
-        AgentEvent::user_action_request(id, Some("permission".into()), RequestKeys::default());
-    r.apply(&mut scene, prompt, t0, Transport::Hook);
-    let end = || AgentEvent::ToolUseEnd {
-        agent_id: id,
-        tool_use_id: Some("task-T".into()),
-    };
-    let drained = t0 + Duration::from_secs(1);
-    r.apply(&mut scene, end(), drained, Transport::Hook);
-    let late = drained + DRAINED_TASK_TOMBSTONE_TTL + Duration::from_secs(1);
-    r.apply(&mut scene, end(), late, Transport::Jsonl);
-    assert!(
-        matches!(
-            scene.agents[&id].state,
-            ActivityState::RequiresAction { .. }
-        ),
-        "{:?}",
-        scene.agents[&id].state
-    );
 }
 
 /// Every interleaving of one call's hook facts, in any order (per-connection

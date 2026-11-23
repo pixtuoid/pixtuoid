@@ -20,7 +20,7 @@ use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind,
 };
-use crate::source::{AgentEvent, RequestKeys, ToolDetail};
+use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};
 
 /// The dsh source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "dsh";
@@ -230,29 +230,29 @@ pub fn decode_dsh_payload(
             if outcome.is_none() {
                 crate::source::drift::missing_field(SOURCE_NAME, APPROVAL_DECIDED, "outcome");
             }
-            let event = if outcome == Some(OUTCOME_ALLOWED) {
+            let event = match (outcome == Some(OUTCOME_ALLOWED), call_id()) {
                 // The resume: the gated call now runs; its `tool_call` was
-                // already streamed before the gate, so only this Start lifts
-                // the wait. GENERIC even for a dispatch: the reducer's Task
-                // pre-pass keyed this tuid at the original `tool_call`
-                // (Delegating already entered), and a second Task Start for
-                // a known tuid is treated as a replay — `handled_by_task_start`
-                // skips the RequiresAction→Running resume arm and the slot would
-                // strand in RequiresAction for the whole delegation.
-                AgentEvent::ToolUseStart {
+                // already streamed before the gate, so only this lifts the
+                // wait.
+                (true, Some(call)) => AgentEvent::UserActionResolved {
                     agent_id,
-                    tool_use_id: call_id(),
+                    by: Resolution::Approved(call),
+                },
+                // A wait that named no call is answered by the agent's next
+                // start (`ActionRequests::resolves`).
+                (true, None) => AgentEvent::ToolUseStart {
+                    agent_id,
+                    tool_use_id: None,
                     detail: Some(ToolDetail::Generic {
                         display: tool_display(),
                     }),
                     copy_id: None,
-                }
-            } else {
+                },
                 // rejected | cancelled | unavailable: the call never runs.
-                AgentEvent::ToolUseEnd {
+                (false, tool_use_id) => AgentEvent::ToolUseEnd {
                     agent_id,
-                    tool_use_id: call_id(),
-                }
+                    tool_use_id,
+                },
             };
             Ok(vec![identity(), event])
         }
@@ -423,24 +423,22 @@ mod tests {
         }));
         assert!(matches!(
             &evs[..],
-            [AgentEvent::Identity { .. }, AgentEvent::ToolUseStart { tool_use_id: Some(t), .. }]
-                if t == "call_9"
+            [
+                AgentEvent::Identity { .. },
+                AgentEvent::UserActionResolved { by: Resolution::Approved(t), .. },
+            ] if t == "call_9"
         ));
-        // A GATED dispatch resumes GENERIC on purpose: the Task pre-pass
-        // keyed the tuid at the original `tool_call`, so a second Task Start
-        // for it reads as a replay and would strand the slot in RequiresAction (the
-        // decoder arm's comment owns the mechanism).
+        // A wait that named no call is answered by the agent's next start.
         let evs = decode(json!({
             "type": "approval_decided", "sessionId": SID,
-            "callId": "call_10",
-            "toolName": "subagent", "outcome": "allowed-once",
+            "toolName": "bash", "outcome": "allowed-once",
         }));
         assert!(matches!(
             &evs[..],
             [
                 _,
                 AgentEvent::ToolUseStart {
-                    detail: Some(ToolDetail::Generic { .. }),
+                    tool_use_id: None,
                     ..
                 }
             ]

@@ -799,18 +799,16 @@ fn hook_session_end_for_unknown_id_does_not_create_slot() {
     assert!(scene.agents.is_empty(), "SessionEnd must not register");
 }
 
-/// An `Identity` `authorizes` refuses leaves no hook record behind: a
-/// straggler's hook call must not eat the transcript's copy of that call once a
-/// new life registers.
+/// An `Identity` `authorizes` refuses leaves no call record behind: a
+/// straggler's hook call must not swallow the transcript's copy of that call
+/// once a new life registers.
 #[test]
-fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
-    use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
+fn a_refused_hook_registration_leaves_no_call_record_for_the_later_jsonl_copy() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let id = AgentId::from_parts(HOOK_AND_TRANSCRIPT, "gated-sess");
-    // The transcript's copy lands inside the hook's dedup window.
-    let step = HOOK_WINS_WINDOW / 4;
+    let step = Duration::from_millis(100);
 
     sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
     identity(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT, t0 + step);
@@ -856,7 +854,7 @@ fn refused_hook_registration_does_not_poison_dedup_for_the_later_jsonl_copy() {
         .expect("the hook start registers the new life");
     assert!(
         matches!(slot.state, ActivityState::Running { .. }),
-        "the JSONL ToolUseStart must not be dedup-eaten by the refused hook's record"
+        "the JSONL ToolUseStart must not meet a record the refused hook left"
     );
 }
 
@@ -1301,8 +1299,8 @@ fn a_reading_id_is_its_own_agents() {
     assert_eq!(scene.agents[&other].tokens_used, 100);
 }
 
-/// A slot gone takes its ids, as `counted_calls` goes: its next life's readings
-/// are new.
+/// A slot gone takes its ids, as its calls go: its next life's readings are
+/// new.
 #[test]
 fn a_slots_end_forgets_its_reading_ids() {
     let (mut r, mut scene, id, t0) = usage_scene();
@@ -1424,6 +1422,46 @@ fn a_resurrect_keeps_its_call_ids() {
         Transport::Jsonl,
     );
     assert_eq!(scene.agents[&id].tool_call_count, 1);
+}
+
+/// A call the dead life left open ended with it: its late gate raises no wait
+/// on the revived slot.
+#[test]
+fn a_dead_lifes_open_call_raises_no_wait_after_a_resurrect() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("t1"),
+        Some("Bash"),
+        t0,
+        Transport::Hook,
+    );
+    sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
+    let revived = t0 + EXIT_GRACE_WINDOW / 2;
+    let restart = AgentEvent::SessionStart {
+        agent_id: id,
+        source: "claude-code".into(),
+        session_id: "abc".into(),
+        cwd: PathBuf::from("/"),
+        parent_id: None,
+    };
+    r.apply(&mut scene, restart, revived, Transport::Hook);
+    assert!(
+        scene.agents[&id].exiting_at.is_none(),
+        "precondition: resurrected in place"
+    );
+    crate::user_action_request_for(
+        &mut r,
+        &mut scene,
+        id,
+        "permission",
+        Some("t1"),
+        revived,
+        Transport::Jsonl,
+    );
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
 }
 
 #[test]

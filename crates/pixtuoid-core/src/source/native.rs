@@ -24,7 +24,7 @@ pub type TaggedReceiver = mpsc::Receiver<(Transport, AgentEvent)>;
 ///    `agent_id` built via [`AgentId::from_parts(self.name(),
 ///    opaque_id)`][`AgentId::from_parts`]; any other construction risks
 ///    cross-source collisions.
-/// 3. **Transport tagging** — the reducer's hook-vs-JSONL dedup keys on the
+/// 3. **Transport tagging** — the reducer's lifecycle authority keys on the
 ///    [`Transport`] tag; the wrong tag silently breaks it.
 /// 4. **Never panic** — sources run inside a tokio task that doesn't propagate
 ///    panics cleanly. Log + continue on malformed input.

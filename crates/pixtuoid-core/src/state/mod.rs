@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::id::AgentId;
 
+mod calls;
 mod correlation;
 mod fsm;
 /// The event coordinator: [`reducer::Reducer`] folds `AgentEvent`s into `SceneState`.

@@ -2009,8 +2009,10 @@ mod tests {
         );
     }
 
+    /// Its call ended first, so the wait raises nothing, and its tool still
+    /// reads as ended.
     #[test]
-    fn a_wait_that_lands_after_every_end_of_its_tool_still_passes() {
+    fn a_wait_that_lands_after_every_end_of_its_tool_never_waits_and_still_ends() {
         let d = recorded("dsh", "permission", DS_REQUIRES_ACTION_SCENE);
         reorder_hooks(d.path(), |lines| {
             let asked = lines
@@ -2025,7 +2027,12 @@ mod tests {
             lines.insert(end, wait);
         });
         let v = verify(d.path()).expect("verify");
-        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        assert!(
+            has(&v, Label::Fail, "never went RequiresAction")
+                && !has(&v, Label::Fail, "waited on never ended"),
+            "{:?}",
+            v.findings()
+        );
     }
 
     #[test]

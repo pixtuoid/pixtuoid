@@ -5,10 +5,9 @@ use std::time::{Duration, SystemTime};
 use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
-use crate::source::{AgentEvent, CopyId, Resolution, ToolDetail, Transport};
-use crate::state::correlation::{
-    CopyHolders, Correlation, Counted, ToolEventKind, elapsed_at_least,
-};
+use crate::source::{AgentEvent, CopyId, Merge, MergeKey, Resolution, ToolDetail, Transport};
+use crate::state::calls::{Observed, Transition};
+use crate::state::correlation::{CopyHolders, Correlation, Counted, elapsed_at_least};
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
 use crate::state::turns::{Brackets, End, Start};
@@ -18,8 +17,7 @@ use crate::state::{
 
 #[doc(hidden)]
 pub use crate::state::correlation::{
-    CHILD_END_GATE_TTL, CHILD_END_RELINK_TTL, COPY_RETENTION, HOOK_WINS_WINDOW, PROOF_OF_LIFE_TTL,
-    STRAGGLER_TTL,
+    CHILD_END_GATE_TTL, CHILD_END_RELINK_TTL, COPY_RETENTION, PROOF_OF_LIFE_TTL, STRAGGLER_TTL,
 };
 
 /// How long to keep an exiting agent's slot alive after `SessionEnd` so the
@@ -260,25 +258,27 @@ impl Refusal {
 
 /// Verdict of [`Reducer::preprocess`]. `#[must_use]` because every `Drop` arm
 /// exists to STOP the event reaching the dispatch match — silently ignoring one
-/// re-opens the leak or the double-apply the pre-pass was added to close.
+/// re-opens the leak the pre-pass was added to close.
 #[must_use]
 enum Preprocessed {
-    /// An unnamed child's hook activity, a hook-wins duplicate, or a Start,
-    /// pre-use or [`AgentEvent::UserActionRequest`] whose call's End already
-    /// landed (#242).
+    /// An unnamed child's hook activity, or a call's fact for an id no slot
+    /// holds, whose record would outlive any slot to forget it with.
     Drop,
-    /// Survived the pre-pass; carries what task tracking already applied, so
-    /// the general arms can skip work the tracker has done.
-    Dispatch(TaskTracking),
+    /// Survived the pre-pass, with what its call's record made of it, for a
+    /// fact naming a call, and whether the Task tracker applied it.
+    Dispatch {
+        call: Option<Observed>,
+        tracked: bool,
+    },
 }
 
-struct TaskTracking {
-    /// The tracker owns this Task `ToolUseEnd`: it drained the Task now, or the
-    /// Task's drain already ran (a replay).
-    handled_by_task_tracking: bool,
-    /// A `ToolUseStart` was a Task dispatch, which the tracker owns — replays
-    /// included.
-    handled_by_task_start: bool,
+/// A `ToolUseStart` as the `ToolUseStart` arm applies it: its wire fields, and
+/// what its call's record made of it, `None` for a start naming no call.
+#[derive(Clone, Copy)]
+struct StartSeen<'a> {
+    ids: WireIds<'a>,
+    detail: Option<&'a ToolDetail>,
+    call: Option<Observed>,
 }
 
 /// The event coordinator: folds `AgentEvent`s into `SceneState`, owning the
@@ -327,12 +327,9 @@ impl Reducer {
         {
             scene.today = None;
         }
-        // What no slot holds: a Task or backlog marker for an id that never
+        // What no slot holds: a backlog marker for an id that never
         // registered, and a gone slot's turns, closed and newest, which
         // `remove_agent_correlation` keeps through a revive: their one release.
-        self.corr
-            .tasks_in_flight
-            .retain(|id, _| scene.agents.contains_key(id));
         self.corr.turns.retain(|id| scene.agents.contains_key(id));
         self.corr
             .caught_up
@@ -360,7 +357,8 @@ impl Reducer {
     }
 
     /// Fold one `AgentEvent` into the scene at `now`, tagged with the
-    /// `Transport` it arrived on (load-bearing for hook-wins dedup).
+    /// `Transport` it arrived on, which decides lifecycle authority and
+    /// live-versus-replay counting.
     pub fn apply(
         &mut self,
         scene: &mut SceneState,
@@ -369,9 +367,13 @@ impl Reducer {
         from: Transport,
     ) {
         let id = event.agent_id();
-        let Preprocessed::Dispatch(tracking) = self.preprocess(scene, &event, id, now, from) else {
+        let Preprocessed::Dispatch { call, tracked } =
+            self.preprocess(scene, &event, id, now, from)
+        else {
             return;
         };
+        // A call's fact moves its slot only on its record's transition.
+        let into = |want| call.is_none_or(|o| o.transition == Some(want));
 
         match event {
             AgentEvent::SessionStart {
@@ -393,23 +395,27 @@ impl Reducer {
                 now,
             ),
             // The tracker owns every Task-dispatch Start, replays included.
-            AgentEvent::ToolUseStart { .. } if tracking.handled_by_task_start => {}
+            AgentEvent::ToolUseStart { .. } if tracked => {}
             AgentEvent::ToolUseStart {
                 agent_id,
                 tool_use_id,
                 detail,
                 copy_id,
             } => {
-                let ids = WireIds {
-                    own: tool_use_id.as_deref(),
-                    copy: copy_id.as_ref(),
+                let start = StartSeen {
+                    ids: WireIds {
+                        own: tool_use_id.as_deref(),
+                        copy: copy_id.as_ref(),
+                    },
+                    detail: detail.as_ref(),
+                    call,
                 };
-                self.apply_tool_use_start(scene, agent_id, ids, detail.as_ref(), from, now);
+                self.apply_tool_use_start(scene, agent_id, start, from, now);
             }
-            // The tracker owns this End (it drained the Task, now or earlier),
-            // which must not also end an id-less call the parent shows: an End
-            // ends any shown call that names none.
-            AgentEvent::ToolUseEnd { .. } if tracking.handled_by_task_tracking => {}
+            // The tracker drained this Task, which must not also end an
+            // id-less call the parent shows: an End ends any shown call that
+            // names none.
+            AgentEvent::ToolUseEnd { .. } if tracked || !into(Transition::Ended) => {}
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id,
@@ -417,22 +423,22 @@ impl Reducer {
                 let ended = tool_use_id.as_deref().map_or(Ended::Unnamed, Ended::Call);
                 self.apply_tool_use_end(scene, agent_id, ended, from, now);
             }
+            // Its name and turn bind it whatever its call's phase, until its end.
+            AgentEvent::ToolUsePending { .. } if call.is_some_and(|o| o.ended) => {}
             AgentEvent::ToolUsePending {
                 agent_id,
                 tool_use_id,
                 tool_name,
                 turn,
             } => {
-                if scene.agents.contains_key(&agent_id) {
-                    self.register_pending(
-                        agent_id,
-                        &tool_use_id,
-                        tool_name.as_deref(),
-                        turn,
-                        from,
-                        None,
-                    );
-                }
+                self.register_pending(
+                    agent_id,
+                    &tool_use_id,
+                    tool_name.as_deref(),
+                    turn,
+                    from,
+                    None,
+                );
             }
             AgentEvent::TurnStart { agent_id, turn } => {
                 self.apply_turn_start(scene, agent_id, turn, from, now);
@@ -440,6 +446,7 @@ impl Reducer {
             AgentEvent::TurnEnd { agent_id, turn } => {
                 self.apply_turn_end(scene, agent_id, turn, from, now);
             }
+            AgentEvent::UserActionRequest { .. } if !into(Transition::Gated) => {}
             AgentEvent::UserActionRequest {
                 agent_id,
                 reason,
@@ -460,6 +467,7 @@ impl Reducer {
                     now,
                 );
             }
+            AgentEvent::UserActionResolved { .. } if !into(Transition::Resumed) => {}
             AgentEvent::UserActionResolved { agent_id, by } => {
                 self.apply_user_action_resolved(scene, agent_id, &by, now);
             }
@@ -537,9 +545,10 @@ impl Reducer {
     }
 
     /// The pre-pass every event runs before dispatch. ORDER IS LOAD-BEARING:
-    /// dedup before task tracking (#150), else a duplicate re-fires
-    /// `enter_delegating` onto a RequiresAction parent; fire b1 cascades AFTER tracking,
-    /// or a cancelling dispatch at the grace boundary evicts its own live subtree.
+    /// the call's record before task tracking, which acts on its transition
+    /// alone, else a replay re-fires `enter_delegating` onto a RequiresAction
+    /// parent; fire b1 cascades AFTER tracking, or a cancelling dispatch at the
+    /// grace boundary evicts its own live subtree.
     fn preprocess(
         &mut self,
         scene: &mut SceneState,
@@ -568,82 +577,17 @@ impl Reducer {
             return Preprocessed::Drop;
         }
 
-        if from == Transport::Jsonl
-            && let Some((kind, tuid)) = event_tool_use_id(event)
-            && let Some((_, recorded)) =
-                self.corr.recent_hook_tool_uses.get(&(id, tuid.to_string()))
-        {
-            // Kind-ASYMMETRIC (#150): a hook Start never eats a JSONL
-            // End, the only completion signal left if PostToolUse drops.
-            if !(*recorded == ToolEventKind::Start && kind == ToolEventKind::End) {
-                // The hook counted the call, and a hook names no copy id.
-                if let AgentEvent::ToolUseStart {
-                    copy_id: Some(copy),
-                    ..
-                } = event
-                    && let Some(slot) = scene.agents.get(&id)
-                {
-                    self.corr.call_holders.claim(&slot.source, id, Some(copy));
+        let call = match event.merge() {
+            Merge::Keyed(MergeKey::Call { id: call, fact }) => {
+                if !scene.agents.contains_key(&id) {
+                    return Preprocessed::Drop;
                 }
-                return Preprocessed::Drop;
+                Some(self.corr.calls.observe(id, call, fact))
             }
-        }
+            _ => None,
+        };
 
-        // Per-connection hook delivery can decode a call's End before its Start
-        // (#242); that Start would open a call that already returned.
-        if from == Transport::Hook
-            && let AgentEvent::ToolUseStart {
-                tool_use_id: Some(tuid),
-                detail,
-                copy_id,
-                ..
-            } = event
-            && self
-                .corr
-                .recent_hook_tool_uses
-                .get(&(id, tuid.clone()))
-                .is_some_and(|(_, kind)| *kind == ToolEventKind::End)
-        {
-            // The call did run.
-            let ids = WireIds {
-                own: Some(tuid),
-                copy: copy_id.as_ref(),
-            };
-            self.count_call(scene, id, ids, detail.as_ref(), from, now);
-            return Preprocessed::Drop;
-        }
-
-        // Likewise a wait for a call whose hook End already landed, or its
-        // pre-use, from a reordered hook (#242) or a lagging watcher: its
-        // answer came first.
-        if let AgentEvent::UserActionRequest {
-            tool_use_id: Some(tuid),
-            ..
-        }
-        | AgentEvent::ToolUsePending {
-            tool_use_id: tuid, ..
-        } = event
-            && self
-                .corr
-                .recent_hook_tool_uses
-                .get(&(id, tuid.clone()))
-                .is_some_and(|(_, kind)| *kind == ToolEventKind::End)
-        {
-            return Preprocessed::Drop;
-        }
-
-        // Gated on the slot EXISTING: an `Identity` `authorizes` refused would
-        // leave a record that dedup-eats the JSONL registration's Start.
-        if from == Transport::Hook
-            && scene.agents.contains_key(&id)
-            && let Some((kind, tuid)) = event_tool_use_id(event)
-        {
-            self.corr
-                .recent_hook_tool_uses
-                .insert((id, tuid.to_string()), (now, kind));
-        }
-
-        let tracking = self.track_tasks_in_flight(scene, event, now, from);
+        let tracked = self.track_tasks_in_flight(scene, event, call, now, from);
 
         // A payload's registration lands ahead of its dispatch start, so firing
         // on it would evict the subtree that start keeps alive.
@@ -651,45 +595,44 @@ impl Reducer {
             self.fire_pending_b1_cascades(scene, starts_untracked_task(event), now);
         }
 
-        Preprocessed::Dispatch(tracking)
+        Preprocessed::Dispatch { call, tracked }
     }
 
     /// The `ToolUseStart` arm, for a Start the pre-pass tracker left to it.
-    /// A start the agent's action request holds back
+    /// Only a call's first start runs it, and one the agent's action request
+    /// holds back
     /// ([`ActionRequests::start`](crate::state::requests::ActionRequests::start))
-    /// only counts: a RequiresAction slot shows no call. An approval resume
-    /// relabels the slot from its record's `toolName`, over its call's richer
-    /// Start (a label-only cost, pinned by
-    /// `the_approval_resume_labels_from_the_wire_tool_name`).
+    /// only counts: a RequiresAction slot shows no call.
     fn apply_tool_use_start(
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
-        ids: WireIds<'_>,
-        detail: Option<&ToolDetail>,
+        start: StartSeen<'_>,
         from: Transport,
         now: SystemTime,
     ) {
-        let tool_use_id = ids.own;
+        let StartSeen { ids, detail, call } = start;
         // Derive the category from the typed detail BEFORE it is erased to
         // the HUD display string.
         let item = ToolUse {
-            tool_use_id: tool_use_id.map(Arc::from),
+            tool_use_id: ids.own.map(Arc::from),
             detail: detail.map(|d| Arc::<str>::from(d.display())),
             kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
         };
-        if let Some(call) = tool_use_id
-            && scene.agents.contains_key(&agent_id)
+        // Every start of a call still open merges into its pending start.
+        if let Some(id) = ids.own
+            && call.is_some_and(|o| !o.ended)
         {
-            self.register_pending(agent_id, call, None, None, from, Some(item.clone()));
+            self.register_pending(agent_id, id, None, None, from, Some(item.clone()));
         }
-        let runs = self.corr.action_requests.start(
-            agent_id,
-            tool_use_id,
-            from,
-            is_requires_action(scene, agent_id),
-        );
-        self.count_call(scene, agent_id, ids, detail, from, now);
+        if !detail.is_some_and(ToolDetail::is_task) {
+            let first = call.is_none_or(|o| o.counts);
+            self.count_call(scene, agent_id, ids.copy, first, from, now);
+        }
+        if call.is_some_and(|o| o.transition != Some(Transition::Started)) {
+            return;
+        }
+        let runs = (self.corr.action_requests).start(agent_id, is_requires_action(scene, agent_id));
         if !runs {
             return;
         }
@@ -698,26 +641,24 @@ impl Reducer {
         }
     }
 
-    /// Count a tool call ONCE per call id for as long as its slot exists,
-    /// resurrects included, and under a copy id only for the agent that counts
-    /// it ([`CopyHolders::claim`]); the id-less path counts every time.
+    /// Count a tool call at its record's first start (`first`), a start after
+    /// its end included, and under a copy id only for the agent that counts it
+    /// ([`CopyHolders::claim`]), which every start claims; a start naming no
+    /// call counts every time.
     fn count_call(
         &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
-        ids: WireIds<'_>,
-        detail: Option<&ToolDetail>,
+        copy: Option<&CopyId>,
+        first: bool,
         from: Transport,
         now: SystemTime,
     ) {
-        if detail.is_some_and(ToolDetail::is_task) {
-            return;
-        }
         let Some(slot) = scene.agents.get_mut(&agent_id) else {
             return;
         };
-        let (counted, holders) = (&mut self.corr.counted_calls, &mut self.corr.call_holders);
-        if is_new_work(counted, holders, &slot.source, agent_id, ids) {
+        let mine = self.corr.call_holders.claim(&slot.source, agent_id, copy);
+        if first && mine {
             slot.tool_call_count += 1;
             if let Some(today) = self.today_of(&mut scene.today, agent_id, from, now) {
                 today.tool_calls = today.tool_calls.saturating_add(1);
@@ -963,7 +904,9 @@ impl Reducer {
     }
 
     /// The `UserActionResolved` arm: it settles a slot it answers, and ends no
-    /// item.
+    /// item. An approval's settle shows the call it resumes: omp writes a gated
+    /// call's block before its approval request (the `approve-hermetic`
+    /// recording, lines 8 and 10), so the call is in flight.
     fn apply_user_action_resolved(
         &mut self,
         scene: &mut SceneState,
@@ -1454,20 +1397,22 @@ impl Reducer {
         suppress
     }
 
-    /// Tracks Task tool_use_ids from either transport, marking a parent that
-    /// gains one Running("Delegating") so it doesn't look asleep while subagents
-    /// work. b1 subagent-completion inference, where [`ChildEndInference`] says
-    /// so: a drained parent Task means the subtree returned — cascade EXIT to the
-    /// DESCENDANTS, not the parent, so they leave before [`STALE_IDLE_TIMEOUT`].
+    /// Tracks Task tool_use_ids from either transport, on their records'
+    /// transitions, marking a parent that gains one Running("Delegating") so it
+    /// doesn't look asleep while subagents work. b1 subagent-completion
+    /// inference, where [`ChildEndInference`] says so: a drained parent Task
+    /// means the subtree returned — cascade EXIT to the DESCENDANTS, not the
+    /// parent, so they leave before [`STALE_IDLE_TIMEOUT`]. Returns whether it
+    /// owns `event`: every Task dispatch Start, and the End that drained one.
     fn track_tasks_in_flight(
         &mut self,
         scene: &mut SceneState,
         event: &AgentEvent,
+        call: Option<Observed>,
         now: SystemTime,
         from: Transport,
-    ) -> TaskTracking {
-        let mut handled_by_task_tracking = false;
-        let mut handled_by_task_start = false;
+    ) -> bool {
+        let into = |want| call.is_some_and(|o| o.transition == Some(want));
         match event {
             AgentEvent::ToolUseStart {
                 agent_id,
@@ -1475,112 +1420,74 @@ impl Reducer {
                 detail: Some(d),
                 ..
             } if d.is_task() => {
-                handled_by_task_start = true;
-                // Delegating on a FIRST insert of a never-drained tuid: an
-                // out-of-window replay would clobber a since-RequiresAction parent,
-                // and, tracked, would settle the parent back to Delegating.
-                if !self
-                    .corr
-                    .recent_task_drains
-                    .contains_key(&(*agent_id, tuid.clone()))
-                {
-                    let first = self
-                        .corr
+                if into(Transition::Started) {
+                    let item = fsm::delegating_item(Some(Arc::from(tuid.as_str())));
+                    self.corr
                         .tasks_in_flight
                         .entry(*agent_id)
                         .or_default()
                         .insert(tuid.clone());
-                    if first && scene.agents.contains_key(agent_id) {
-                        self.register_pending(
-                            *agent_id,
-                            tuid,
-                            None,
-                            None,
-                            from,
-                            Some(fsm::delegating_item(Some(Arc::from(tuid.as_str())))),
-                        );
-                    }
-                    // omp writes a gated call's block before its approval
-                    // request (the `approve-hermetic` recording, lines 8 and
-                    // 10) and every wrapped tool's request before its outcome
-                    // (`extensibility/extensions/wrapper.ts:416-450` at
-                    // v19.1.0), so a gated Task's resume finds it in flight.
+                    self.register_pending(*agent_id, tuid, None, None, from, Some(item));
                     if let Some(slot) = scene.agents.get_mut(agent_id)
-                        && self.corr.action_requests.task_start(
+                        && (self.corr.action_requests).start(
                             *agent_id,
-                            tuid,
-                            first,
-                            from,
                             matches!(slot.state, ActivityState::RequiresAction { .. }),
                         )
                     {
                         fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
                     }
                 }
+                true
             }
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: Some(tuid),
-            } => {
-                if let Some(set) = self.corr.tasks_in_flight.get_mut(agent_id)
-                    && set.remove(tuid)
-                {
-                    handled_by_task_tracking = true;
-                    self.corr
-                        .recent_task_drains
-                        .insert((*agent_id, tuid.clone()), now);
-                    // The drain skips the main arm, so it retires this member
-                    // itself, and answers the request a denied dispatch's End
-                    // is the outcome of.
-                    let answered = self.corr.action_requests.drained(
-                        *agent_id,
-                        tuid,
-                        from,
-                        is_requires_action(scene, *agent_id),
-                    );
-                    if let Some(slot) = scene.agents.get_mut(agent_id) {
-                        slot.last_event_at = now;
-                        if set.is_empty() && child_end_inference(slot).dispatch_end_ends_child(true)
-                        {
-                            self.pending_b1_cascades.insert(*agent_id, now);
-                        }
-                        // A parent showing its own call keeps it for that
-                        // call's own end.
-                        let shown_drained = matches!(
-                            &slot.state,
-                            ActivityState::Running {
-                                item: Some(ToolUse { tool_use_id: Some(t), .. }),
-                            } if **t == **tuid
-                        );
-                        let delegation_over = matches!(
-                            slot.state,
-                            ActivityState::Running {
-                                item: Some(ToolUse {
-                                    kind: ToolKind::Task,
-                                    ..
-                                })
-                            }
-                        ) && (set.is_empty() || shown_drained);
-                        if answered || delegation_over {
-                            let ctx = self.settle_ctx(slot);
-                            fsm::settle(slot, ctx, now);
-                        }
-                    }
-                } else if self
-                    .corr
-                    .recent_task_drains
-                    .contains_key(&(*agent_id, tuid.clone()))
-                {
-                    // A drained Task's replayed End: its drain already ran.
-                    handled_by_task_tracking = true;
+            } if into(Transition::Ended) => {
+                let Some(set) = self.corr.tasks_in_flight.get_mut(agent_id) else {
+                    return false;
+                };
+                if !set.remove(tuid) {
+                    return false;
                 }
+                // The drain skips the main arm, so it retires this member
+                // itself, and answers the request a denied dispatch's End
+                // is the outcome of.
+                let answered = self.corr.action_requests.drained(
+                    *agent_id,
+                    tuid,
+                    from,
+                    is_requires_action(scene, *agent_id),
+                );
+                if let Some(slot) = scene.agents.get_mut(agent_id) {
+                    slot.last_event_at = now;
+                    if set.is_empty() && child_end_inference(slot).dispatch_end_ends_child(true) {
+                        self.pending_b1_cascades.insert(*agent_id, now);
+                    }
+                    // A parent showing its own call keeps it for that
+                    // call's own end.
+                    let shown_drained = matches!(
+                        &slot.state,
+                        ActivityState::Running {
+                            item: Some(ToolUse { tool_use_id: Some(t), .. }),
+                        } if **t == **tuid
+                    );
+                    let delegation_over = matches!(
+                        slot.state,
+                        ActivityState::Running {
+                            item: Some(ToolUse {
+                                kind: ToolKind::Task,
+                                ..
+                            })
+                        }
+                    ) && (set.is_empty() || shown_drained);
+                    if answered || delegation_over {
+                        let ctx = self.settle_ctx(slot);
+                        fsm::settle(slot, ctx, now);
+                    }
+                }
+                true
             }
-            _ => {}
-        }
-
-        TaskTracking {
-            handled_by_task_tracking,
-            handled_by_task_start,
+            _ => false,
         }
     }
 
@@ -1684,13 +1591,14 @@ impl Reducer {
 
     /// Retire the per-slot correlation a departing life owns, on BOTH a
     /// resurrect-in-place and a slot removal. Death-only teardown
-    /// (`recent_proof_of_life`, the counted ids, [`Correlation::note_removed`])
-    /// and the copy-id holders' release deliberately stay at the sweep site —
-    /// they must NOT run on a resurrect.
+    /// (`recent_proof_of_life`, the calls and counted readings,
+    /// [`Correlation::note_removed`]) and the copy-id holders' release
+    /// deliberately stay at the sweep site — they must NOT run on a resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.tasks_in_flight.remove(id);
         self.corr.action_requests.forget(id);
         self.corr.turns.end_life(*id);
+        self.corr.calls.end_life(id);
         self.corr.caught_up.remove(id);
         self.pending_b1_cascades.remove(id);
     }
@@ -1718,7 +1626,7 @@ impl Reducer {
             // A resurrect keeps `tokens_used` and `tool_call_count`, so it keeps
             // the ids that built them.
             self.corr.counted_readings.forget(&id);
-            self.corr.counted_calls.forget(&id);
+            self.corr.calls.forget(&id);
             self.corr.reading_holders.release(id, now);
             self.corr.call_holders.release(id, now);
             self.corr.note_removed(id, now);
@@ -1736,10 +1644,9 @@ struct WireIds<'a> {
     copy: Option<&'a CopyId>,
 }
 
-/// Whether work under `ids` is new: its own id is new for `agent_id`, and its
-/// copy id is `agent_id`'s to count ([`CopyHolders::claim`]). Both are recorded whatever
-/// the answer, so a call a hook counted claims its copy id when its transcript
-/// line arrives.
+/// Whether a reading under `ids` is new: its own id is new for `agent_id`, and
+/// its copy id is `agent_id`'s to count ([`CopyHolders::claim`]). Both are
+/// recorded whatever the answer.
 fn is_new_work(
     counted: &mut Counted,
     holders: &mut CopyHolders,
@@ -1757,18 +1664,6 @@ fn is_requires_action(scene: &SceneState, id: AgentId) -> bool {
         .agents
         .get(&id)
         .is_some_and(|s| matches!(s.state, ActivityState::RequiresAction { .. }))
-}
-
-fn event_tool_use_id(ev: &AgentEvent) -> Option<(ToolEventKind, &str)> {
-    match ev {
-        AgentEvent::ToolUseStart { tool_use_id, .. } => {
-            tool_use_id.as_deref().map(|t| (ToolEventKind::Start, t))
-        }
-        AgentEvent::ToolUseEnd { tool_use_id, .. } => {
-            tool_use_id.as_deref().map(|t| (ToolEventKind::End, t))
-        }
-        _ => None,
-    }
 }
 
 #[cfg(test)]

@@ -397,8 +397,9 @@ fn grok_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 ///
 /// The agent id is derived from the PATH (`grok_id_from_path`), NEVER the
 /// line's `sessionId`: the path is the watcher's id space, and the two are
-/// equal by construction. The hook transport keys on the same string, so
-/// cross-transport dedup (hook `toolUseId` == ACP `toolCallId`) actually fires.
+/// equal by construction. The hook transport keys on the same string, so both
+/// transports' facts of a call (hook `toolUseId` == ACP `toolCallId`) meet on
+/// one record.
 pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentEvent> {
     let agent_id = AgentId::from_parts(source, &grok_id_from_path(Path::new(path)));
     let Some(method) = v.get("method").and_then(|m| m.as_str()) else {

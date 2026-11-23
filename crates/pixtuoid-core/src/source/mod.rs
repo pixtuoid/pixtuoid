@@ -11,15 +11,16 @@ use crate::state::TurnKey;
 /// layer.
 pub(crate) const DEFAULT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Which transport produced an event — used by the reducer for hook-wins
-/// dedup. Lives on the source side because every `Source` implementor must
-/// tag its own events; the reducer is downstream.
+/// Which transport produced an event, which decides lifecycle authority and
+/// live-versus-replay counting in the reducer, never a merge. Lives on the
+/// source side because every `Source` implementor must tag its own events; the
+/// reducer is downstream.
 ///
 /// `#[non_exhaustive]`: keeps adding a transport a non-breaking change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Transport {
-    /// Arrived over the hook socket/named pipe — live; wins hook-vs-JSONL dedup.
+    /// Arrived over the hook socket/named pipe — live.
     Hook,
     /// Read from a transcript JSONL file (may be a historical replay).
     Jsonl,
@@ -97,7 +98,7 @@ pub enum AgentEvent {
     ToolUseStart {
         /// The acting agent.
         agent_id: AgentId,
-        /// The tool call's id, used to pair with its `ToolUseEnd` (hook-wins dedup).
+        /// The tool call's id, which pairs it with its `ToolUseEnd`.
         tool_use_id: Option<String>,
         /// Structured tool detail (e.g. a subagent-dispatch `Task`), when known.
         detail: Option<ToolDetail>,
@@ -254,8 +255,7 @@ pub enum AgentEvent {
     /// A FRESH-token spend observation from a source's wire — cache READS are
     /// re-served context, not new spend, and are excluded. Each event is that
     /// reading's DELTA; the reducer accumulates onto an EXISTING slot only
-    /// (unknown id = no-op — usage never registers a session). It names no call,
-    /// so it never enters hook-wins dedup.
+    /// (unknown id = no-op — usage never registers a session).
     #[non_exhaustive]
     Usage {
         /// The agent whose token spend this reading records.
@@ -309,6 +309,9 @@ pub enum Resolution {
     Call(String),
     /// The turn stopped with nothing left pending (codex's `Stop`).
     Turn(TurnKey),
+    /// The user approved the call its wait named, which runs on (omp's
+    /// `tool_approval_resolved`).
+    Approved(String),
 }
 
 /// An id unique across every transcript of its source, so a line repeating it
@@ -500,6 +503,177 @@ impl AgentEvent {
             | AgentEvent::Backlog { .. } => false,
         }
     }
+
+    /// Which merge rule this fact follows, by what it names on the wire.
+    #[doc(hidden)]
+    pub fn merge(&self) -> Merge<'_> {
+        let call = |id, fact| Merge::Keyed(MergeKey::Call { id, fact });
+        match self {
+            AgentEvent::ToolUseStart {
+                tool_use_id: Some(id),
+                copy_id,
+                ..
+            } => call(id, CallFact::Start(copy_id.as_ref())),
+            AgentEvent::ToolUseEnd {
+                tool_use_id: Some(id),
+                ..
+            } => call(id, CallFact::End),
+            AgentEvent::ToolUsePending { tool_use_id, .. } => call(tool_use_id, CallFact::PreUse),
+            AgentEvent::UserActionRequest {
+                tool_use_id: Some(id),
+                ..
+            } => call(id, CallFact::Gate),
+            AgentEvent::UserActionResolved { by, .. } => match by {
+                Resolution::Approved(id) => call(id, CallFact::Resume),
+                Resolution::Turn(turn) => Merge::Keyed(MergeKey::Turn(turn)),
+                // codex's hook alone sends it, and it answers a request
+                // without moving its call's phase.
+                Resolution::Call(_) => Merge::SingleWriter,
+            },
+            AgentEvent::TurnEnd {
+                turn: Some(turn), ..
+            } => Merge::Keyed(MergeKey::Turn(turn)),
+            AgentEvent::Usage {
+                reading_id: Some(id),
+                ..
+            } => Merge::Keyed(MergeKey::Reading(id)),
+            // A start supersedes another key's open turn, so its order across
+            // keys decides which turn is open.
+            AgentEvent::TurnStart { .. }
+            | AgentEvent::ToolUseStart {
+                tool_use_id: None, ..
+            }
+            | AgentEvent::ToolUseEnd {
+                tool_use_id: None, ..
+            }
+            | AgentEvent::UserActionRequest {
+                tool_use_id: None, ..
+            }
+            | AgentEvent::TurnEnd { turn: None, .. }
+            | AgentEvent::Usage {
+                reading_id: None, ..
+            }
+            | AgentEvent::ModelInfo { .. }
+            | AgentEvent::Rename { .. }
+            | AgentEvent::LabelHint { .. } => Merge::SingleWriter,
+            AgentEvent::SessionStart { .. }
+            | AgentEvent::SessionEnd { .. }
+            | AgentEvent::Identity { .. }
+            | AgentEvent::ProofOfLife { .. }
+            | AgentEvent::Backlog { .. } => Merge::Lifecycle,
+        }
+    }
+
+    /// Each wire id this event names a record by, mutably, for a host that
+    /// replays a script under fresh ids. Every field of a variant carrying
+    /// one is named here, so a field it gains fails to compile until sorted.
+    #[doc(hidden)]
+    pub fn merge_keys_mut(&mut self) -> MergeKeysMut<'_> {
+        let (id, turn) = match self {
+            AgentEvent::ToolUseStart {
+                agent_id: _,
+                tool_use_id,
+                detail: _,
+                copy_id: _,
+            }
+            | AgentEvent::ToolUseEnd {
+                agent_id: _,
+                tool_use_id,
+            } => (tool_use_id.as_mut(), None),
+            AgentEvent::ToolUsePending {
+                agent_id: _,
+                tool_use_id,
+                tool_name: _,
+                turn,
+            } => (Some(tool_use_id), turn.as_mut()),
+            AgentEvent::UserActionRequest {
+                agent_id: _,
+                reason: _,
+                tool_use_id,
+                tool_name: _,
+                turn,
+            } => (tool_use_id.as_mut(), turn.as_mut()),
+            AgentEvent::UserActionResolved { agent_id: _, by } => match by {
+                Resolution::Call(id) | Resolution::Approved(id) => (Some(id), None),
+                Resolution::Turn(turn) => (None, Some(turn)),
+            },
+            AgentEvent::TurnStart { agent_id: _, turn } => (None, Some(turn)),
+            AgentEvent::TurnEnd { agent_id: _, turn } => (None, turn.as_mut()),
+            AgentEvent::Usage {
+                agent_id: _,
+                fresh_tokens: _,
+                reading_id,
+                copy_id: _,
+            } => (reading_id.as_mut(), None),
+            AgentEvent::SessionStart { .. }
+            | AgentEvent::Rename { .. }
+            | AgentEvent::LabelHint { .. }
+            | AgentEvent::SessionEnd { .. }
+            | AgentEvent::ProofOfLife { .. }
+            | AgentEvent::Identity { .. }
+            | AgentEvent::ModelInfo { .. }
+            | AgentEvent::Backlog { .. } => (None, None),
+        };
+        MergeKeysMut { id, turn }
+    }
+}
+
+/// Which merge rule a fact follows ([`AgentEvent::merge`]).
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Merge<'a> {
+    /// Either transport may carry it: it merges on the record a wire id both
+    /// name, in any order.
+    Keyed(MergeKey<'a>),
+    /// One transport per source carries it, since nothing orders it across
+    /// transports.
+    SingleWriter,
+    /// A session's life, which `Reducer::authorizes` decides.
+    Lifecycle,
+}
+
+/// The record a [`Merge::Keyed`] fact merges on.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeKey<'a> {
+    /// A tool call's.
+    Call {
+        /// The call's id.
+        id: &'a str,
+        /// What the fact says of it.
+        fact: CallFact<'a>,
+    },
+    /// A turn's.
+    Turn(&'a TurnKey),
+    /// A usage reading's, by its id.
+    Reading(&'a str),
+}
+
+/// What a fact says of its call.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallFact<'a> {
+    /// It is about to run.
+    PreUse,
+    /// It started, under its copy id where its wire names one.
+    Start(Option<&'a CopyId>),
+    /// It waits on the user.
+    Gate,
+    /// The user approved it, and it runs on.
+    Resume,
+    /// It ended.
+    End,
+}
+
+/// The wire ids an event names its records by ([`AgentEvent::merge_keys_mut`]).
+#[doc(hidden)]
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct MergeKeysMut<'a> {
+    /// Its call's or its reading's id.
+    pub id: Option<&'a mut String>,
+    /// Its turn.
+    pub turn: Option<&'a mut TurnKey>,
 }
 
 /// The PRIMARY on-disk root a source resolves, through the SAME
