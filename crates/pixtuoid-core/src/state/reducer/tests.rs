@@ -1658,3 +1658,117 @@ fn a_drained_tasks_end_past_its_tombstone_resolves_no_standing_prompt() {
         scene.agents[&id].state
     );
 }
+
+/// Every interleaving of one call's hook facts, in any order (per-connection
+/// delivery, #242), with its transcript's start and end, in file order, at any
+/// lag between arrivals: no step after an end shows the call, and every
+/// interleaving ends alike with the call counted once.
+#[test]
+fn every_interleaving_of_a_calls_two_streams_ends_alike() {
+    use crate::source::{AgentEvent, CopyId, ToolDetail, Transport};
+    use crate::state::{ActivityState, ToolUse};
+    use crate::{AgentId, Reducer, SceneState};
+    use std::path::PathBuf;
+    use std::time::{Duration, SystemTime};
+
+    let id = AgentId::from_parts("claude-code", "two-streams");
+    let call = "toolu_c";
+    let start =
+        || AgentEvent::tool_use_start(id, Some(call.into()), Some(ToolDetail::from("Bash: ls")));
+    let end = || AgentEvent::ToolUseEnd {
+        agent_id: id,
+        tool_use_id: Some(call.into()),
+    };
+    let hooks = [
+        AgentEvent::ToolUsePending {
+            agent_id: id,
+            tool_use_id: call.into(),
+            tool_name: Some("Bash".into()),
+            turn: None,
+        },
+        start(),
+        end(),
+    ];
+    let transcript = [start().with_copy_id(CopyId::new(call)), end()];
+    let lags = [
+        Duration::ZERO,
+        Duration::from_secs(1),
+        Duration::from_secs(10 * 60),
+    ];
+    let perms = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    let slots = hooks.len() + transcript.len();
+    let gaps = u32::try_from(slots - 1).expect("a handful of gaps");
+    let mut first: Option<ActivityState> = None;
+    let mut runs = 0;
+    for perm in perms {
+        // Which arrivals are the transcript's: its lines stay in file order.
+        for mask in (0u32..1 << slots).filter(|m| m.count_ones() == 2) {
+            for lag_code in 0..lags.len().pow(gaps) {
+                let (mut h, mut t) = (perm.iter(), transcript.iter());
+                let order: Vec<(Transport, &AgentEvent)> = (0..slots)
+                    .map(|k| match mask & (1 << k) {
+                        0 => (Transport::Hook, &hooks[*h.next().expect("three hooks")]),
+                        _ => (Transport::Jsonl, t.next().expect("two lines")),
+                    })
+                    .collect();
+                let mut scene = SceneState::uniform(2);
+                let mut r = Reducer::new();
+                let mut at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+                r.apply(
+                    &mut scene,
+                    AgentEvent::SessionStart {
+                        agent_id: id,
+                        source: "claude-code".into(),
+                        session_id: "two-streams".into(),
+                        cwd: PathBuf::from("/repo"),
+                        parent_id: None,
+                    },
+                    at,
+                    Transport::Hook,
+                );
+                let mut code = lag_code;
+                let mut ended = false;
+                for (k, (from, event)) in order.iter().enumerate() {
+                    if k > 0 {
+                        at += lags[code % lags.len()];
+                        code /= lags.len();
+                    }
+                    r.apply(&mut scene, (*event).clone(), at, *from);
+                    ended |= matches!(event, AgentEvent::ToolUseEnd { .. });
+                    let shows = matches!(
+                        &scene.agents[&id].state,
+                        ActivityState::Running {
+                            item: Some(ToolUse { tool_use_id: Some(shown), .. }),
+                        } if &**shown == call
+                    );
+                    assert!(
+                        !(ended && shows),
+                        "{order:?} at lags {lag_code}: step {k} shows the ended call"
+                    );
+                }
+                let slot = &scene.agents[&id];
+                assert_eq!(slot.tool_call_count, 1, "{order:?} at lags {lag_code}");
+                match &first {
+                    None => first = Some(slot.state.clone()),
+                    Some(state) => assert_eq!(
+                        &slot.state, state,
+                        "{order:?} at lags {lag_code} ends otherwise"
+                    ),
+                }
+                runs += 1;
+            }
+        }
+    }
+    assert_eq!(
+        runs,
+        6 * 10 * 81,
+        "3! hook orders, 5C2 placements, 3^4 lags"
+    );
+}

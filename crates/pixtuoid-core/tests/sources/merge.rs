@@ -2,14 +2,14 @@
 //! lines folded in every order they can reach the reducer in
 //! (`harness::merge`).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::merge::{Merged, Merges, Step};
-use pixtuoid_core::source::{AgentEvent, registry};
+use pixtuoid_core::source::{AgentEvent, CopyId, registry};
 use pixtuoid_core::state::TurnKey;
 use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
 use pixtuoid_core::{ActivityState, AgentId, ToolUse, Transport};
@@ -551,12 +551,87 @@ fn runs_of(source: &str) -> Vec<Run> {
         .collect()
 }
 
-/// Every order of every recorded run of a two-transport source ends alike. A
-/// source with no write stamp proves nothing, nor does a run whose lines admit
-/// one order.
+/// Whether `m`'s order applied a copy of a call after an end of that call. It
+/// fails the order if a later step shows that call, or raises a wait from a gate
+/// naming it, unless a start under a copy id the call never held opened its
+/// next generation.
+fn no_step_shows_an_ended_call(run: &Run, m: &Merged) -> bool {
+    let mut ended: BTreeSet<(AgentId, &str)> = BTreeSet::new();
+    let mut held: BTreeMap<(AgentId, &str), HashSet<&CopyId>> = BTreeMap::new();
+    let mut before: BTreeMap<AgentId, Option<&ActivityState>> = BTreeMap::new();
+    let mut echoed = false;
+    let raised =
+        |s: Option<&ActivityState>| matches!(s, Some(ActivityState::RequiresAction { .. }));
+    for s in &m.steps {
+        let agent = s.event.agent_id();
+        let was = before.insert(agent, s.state.as_ref()).flatten();
+        match &s.event {
+            AgentEvent::ToolUseStart {
+                tool_use_id: Some(call),
+                copy_id,
+                ..
+            } => {
+                let key = (agent, call.as_str());
+                let copies = held.entry(key).or_default();
+                if let Some(copy) = copy_id {
+                    if !copies.is_empty() && !copies.contains(copy) {
+                        ended.remove(&key);
+                    }
+                    copies.insert(copy);
+                }
+                echoed |= ended.contains(&key);
+            }
+            AgentEvent::ToolUseEnd {
+                tool_use_id: Some(call),
+                ..
+            } => {
+                ended.insert((agent, call.as_str()));
+            }
+            AgentEvent::UserActionRequest {
+                tool_use_id: Some(call),
+                ..
+            } if ended.contains(&(agent, call.as_str())) => {
+                echoed = true;
+                assert!(
+                    raised(was) || !raised(s.state.as_ref()),
+                    "{}: {:?} line {} raised a wait from a gate of {call}, which ended",
+                    run.name,
+                    s.transport,
+                    s.line
+                );
+            }
+            _ => {}
+        }
+        if let Some(ActivityState::Running {
+            item:
+                Some(ToolUse {
+                    tool_use_id: Some(shown),
+                    ..
+                }),
+        }) = &s.state
+        {
+            assert!(
+                !ended.contains(&(agent, &**shown)),
+                "{}: {:?} line {} ({:?}) shows {shown}, which ended",
+                run.name,
+                s.transport,
+                s.line,
+                s.event
+            );
+        }
+    }
+    echoed
+}
+
+/// Every order of every recorded run of a two-transport source ends alike, and
+/// shows no call again once an end of it applied; some order applies a copy of
+/// an ended call after its end. A source with no write stamp proves nothing, nor
+/// does a run whose lines admit one order. One walk folds each order once for
+/// both checks.
 #[test]
 fn every_order_of_a_two_transport_run_ends_alike() {
     let mut unstamped = Vec::new();
+    let mut echoed = false;
     for source in two_transport_sources() {
         let runs = runs_of(source);
         assert!(
@@ -569,15 +644,18 @@ fn every_order_of_a_two_transport_run_ends_alike() {
         }
         for run in &runs {
             let mut first = None;
-            let orders = run.each(|m| match &first {
-                None => first = Some((m.arrivals(), finals(m))),
-                Some((order, first_finals)) => assert_eq!(
-                    finals(m),
-                    *first_finals,
-                    "{}: {:?} leaves its slots otherwise than {order:?}",
-                    run.name,
-                    m.arrivals()
-                ),
+            let orders = run.each(|m| {
+                echoed |= no_step_shows_an_ended_call(run, m);
+                match &first {
+                    None => first = Some((m.arrivals(), finals(m))),
+                    Some((order, first_finals)) => assert_eq!(
+                        finals(m),
+                        *first_finals,
+                        "{}: {:?} leaves its slots otherwise than {order:?}",
+                        run.name,
+                        m.arrivals()
+                    ),
+                }
             });
             assert!(orders >= 2, "{}: one order", run.name);
         }
@@ -586,4 +664,5 @@ fn every_order_of_a_two_transport_run_ends_alike() {
         unstamped.is_empty(),
         "no write stamp (`harness::reads::WRITE_STAMPS`) for {unstamped:?}"
     );
+    assert!(echoed, "no order applies a copy of a call after its end");
 }
