@@ -2004,7 +2004,7 @@ mod tests {
         recorded("permission-hermetic", TOOL_APPROVAL_RESOLVED, Some(false))
     }
 
-    /// The string `line`'s record holds at `key`.
+    /// The string `line`'s record's `data` holds at `key`.
     fn data_str(line: &str, key: &str) -> String {
         let v: Value = serde_json::from_str(line).unwrap();
         v["data"][key].as_str().unwrap().to_owned()

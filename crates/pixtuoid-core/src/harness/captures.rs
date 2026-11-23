@@ -1,8 +1,8 @@
 //! The committed capture corpus: where each capture's bytes live and which
 //! registered source owns them, read off the tree's layout, and what they say
-//! blind to the ids their run minted; and the recorder's contract with its
-//! callers: its workspace, raw record, flag spellings and the wait on a
-//! server either starts.
+//! blind to the ids and clocks each run moves; and the recorder's contract
+//! with its callers: its workspace, raw record, flag spellings and the wait on
+//! a server either starts.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
@@ -491,8 +491,8 @@ struct IdFamily {
 }
 
 /// Every family of minted token a tier recording carries, so two recordings
-/// of one turn differ in these and their write stamps ([`MASKS`]) alone. Where
-/// two match at once, the one that starts first wins, then the earlier row.
+/// of one turn differ in these and their clocks ([`MASKS`]) alone. Where two
+/// match at once, the one that starts first wins, then the earlier row.
 const ID_FAMILIES: &[IdFamily] = &[
     // The time-ordered v7 codex and grok mint included.
     IdFamily {
@@ -605,15 +605,6 @@ const ID_FAMILIES: &[IdFamily] = &[
         seen_in: "dsh/fixtures/tool-run-hermetic",
         renamed: &[(r#"{"_pid":56875}"#, r#"{"_pid":42895}"#)],
     },
-    IdFamily {
-        name: "shim-clock",
-        pattern: r#""_shim_ts_ms":(\d+)"#,
-        seen_in: "dsh/fixtures/tool-run-hermetic",
-        renamed: &[(
-            r#"{"_shim_ts_ms":1792464600287}"#,
-            r#"{"_shim_ts_ms":1792482405228}"#,
-        )],
-    },
     // A port the orchestrator picks free.
     IdFamily {
         name: "openclaw-gateway-port",
@@ -634,13 +625,21 @@ struct Mask {
     numbered: bool,
 }
 
-/// Every token a re-record moves: each [`ID_FAMILIES`] row, then each
-/// transcript write stamp the strip keeps
+/// Every token a re-record moves: each [`ID_FAMILIES`] row, then the clocks,
+/// the hook's forwarded-at stamp
+/// ([`FORWARDED_AT_STAMP`](crate::source::decoder::FORWARDED_AT_STAMP)) and
+/// each transcript write stamp the strip keeps
 /// ([`WRITE_STAMPS`](super::reads::WRITE_STAMPS)).
 static MASKS: std::sync::LazyLock<Vec<Mask>> = std::sync::LazyLock::new(|| {
+    use crate::source::decoder::FORWARDED_AT_STAMP;
     let minted = ID_FAMILIES
         .iter()
         .map(|f| (f.name.to_owned(), f.pattern.to_owned(), true));
+    let shim = (
+        "shim-clock".to_owned(),
+        format!(r#""{FORWARDED_AT_STAMP}":(\d+)"#),
+        false,
+    );
     let stamps = super::reads::WRITE_STAMPS
         .iter()
         .map(|&(_, key, spelling)| {
@@ -648,6 +647,7 @@ static MASKS: std::sync::LazyLock<Vec<Mask>> = std::sync::LazyLock::new(|| {
             (format!("{key}:{spelling:?}"), pattern, false)
         });
     minted
+        .chain([shim])
         .chain(stamps)
         .map(|(name, pattern, numbered)| Mask {
             name,
@@ -657,14 +657,10 @@ static MASKS: std::sync::LazyLock<Vec<Mask>> = std::sync::LazyLock::new(|| {
         .collect()
 });
 
-/// `text` with each token a row of `masks` matches replaced by what `name`
+/// `text` with each token a [`MASKS`] row matches replaced by what `name`
 /// makes of that row and the token.
-fn with_masks_named(
-    text: &str,
-    masks: &[Mask],
-    mut name: impl FnMut(usize, &str) -> String,
-) -> String {
-    let mut found: Vec<(usize, usize, usize)> = masks
+fn with_masks_named(text: &str, mut name: impl FnMut(usize, &str) -> String) -> String {
+    let mut found: Vec<(usize, usize, usize)> = MASKS
         .iter()
         .enumerate()
         .flat_map(|(row, Mask { re, .. })| {
@@ -695,7 +691,7 @@ fn with_masks_named(
 /// pairings are no evidence ([`Mask::numbered`]). Files are walked in the order
 /// of their paths, then their texts, with tokens masked, as a raw sort would
 /// order two id-named session dirs at random; none when two files tie there,
-/// as only their ids tell them apart. Then `reads`, a
+/// as only their masked tokens tell them apart. Then `reads`, a
 /// record's reads keyed by each file's path from `dir`
 /// ([`Recorded::sentinel_reads`](super::provenance::Recorded::sentinel_reads)),
 /// rekeyed by that file's numbered path; a key naming no file stays as it is.
@@ -708,7 +704,7 @@ pub fn canonical_capture(
     reads: &BTreeMap<String, BTreeSet<String>>,
 ) -> std::io::Result<Option<Canonical>> {
     let flat = |row: usize| format!("⟨{}⟩", MASKS[row].name);
-    let masked = |text: &str| with_masks_named(text, &MASKS, |row, _| flat(row));
+    let masked = |text: &str| with_masks_named(text, |row, _| flat(row));
     let mut files = Vec::new();
     for file in jsonl_files_under(dir) {
         let path = slashed_under(dir, &file)?;
@@ -722,7 +718,7 @@ pub fn canonical_capture(
     let mut seen: Vec<std::collections::HashMap<String, usize>> =
         MASKS.iter().map(|_| Default::default()).collect();
     let mut numbered = |text: &str| {
-        with_masks_named(text, &MASKS, |row, token| {
+        with_masks_named(text, |row, token| {
             if !MASKS[row].numbered {
                 return flat(row);
             }
@@ -882,7 +878,7 @@ mod tests {
             .map(|(files, _)| files)
     }
 
-    fn same_up_to_ids(old: &[(&str, &str)], new: &[(&str, &str)]) -> bool {
+    fn same_up_to_masks(old: &[(&str, &str)], new: &[(&str, &str)]) -> bool {
         let old = canonical(old);
         old.is_some() && old == canonical(new)
     }
@@ -899,7 +895,7 @@ mod tests {
     const U3: &str = "5a557b88-5d6b-695d-cdb4-7d9ed74f9c2f";
 
     /// A record's read keyed by an id-named file: two runs name it apart, and
-    /// up to ids it is one read.
+    /// up to its masks it is one read.
     #[test]
     fn a_read_renames_with_the_file_it_names() {
         let canonical_with_read = |id: &str| {
@@ -923,9 +919,9 @@ mod tests {
             vec![(format!("s/{name}.jsonl"), format!(r#"{{"id":"{holds}"}}"#))]
         };
         let old = file(U1, U1);
-        assert!(same_up_to_ids(&refs(&old), &refs(&file(U2, U2))));
+        assert!(same_up_to_masks(&refs(&old), &refs(&file(U2, U2))));
         assert!(
-            !same_up_to_ids(&refs(&old), &refs(&file(U2, U3))),
+            !same_up_to_masks(&refs(&old), &refs(&file(U2, U3))),
             "the file is named for one session and holds another"
         );
     }
@@ -934,11 +930,17 @@ mod tests {
     fn two_ids_renamed_to_one_or_one_to_two_is_no_bijection() {
         let two = format!(r#"{{"a":"{U1}","b":"{U2}"}}"#);
         let one = format!(r#"{{"a":"{U3}","b":"{U3}"}}"#);
-        assert!(!same_up_to_ids(&[("h.jsonl", &two)], &[("h.jsonl", &one)]));
-        assert!(!same_up_to_ids(&[("h.jsonl", &one)], &[("h.jsonl", &two)]));
+        assert!(!same_up_to_masks(
+            &[("h.jsonl", &two)],
+            &[("h.jsonl", &one)]
+        ));
+        assert!(!same_up_to_masks(
+            &[("h.jsonl", &one)],
+            &[("h.jsonl", &two)]
+        ));
         let swapped = format!(r#"{{"a":"{U3}","b":"{U1}"}}"#);
         assert!(
-            same_up_to_ids(&[("h.jsonl", &two)], &[("h.jsonl", &swapped)]),
+            same_up_to_masks(&[("h.jsonl", &two)], &[("h.jsonl", &swapped)]),
             "U2 may take U1's old name"
         );
     }
@@ -979,7 +981,7 @@ mod tests {
             .iter()
             .map(|(path, text)| (renamed(path), renamed(text)))
             .collect();
-        assert!(same_up_to_ids(&refs(&old), &refs(&new)));
+        assert!(same_up_to_masks(&refs(&old), &refs(&new)));
     }
 
     #[test]
@@ -996,13 +998,13 @@ mod tests {
     #[test]
     fn a_file_more_or_a_text_changed_is_another_capture() {
         let old = [("h.jsonl", r#"{"model":"deepseek-flash"}"#)];
-        assert!(!same_up_to_ids(&old, &[old[0], ("z.jsonl", "{}")]));
+        assert!(!same_up_to_masks(&old, &[old[0], ("z.jsonl", "{}")]));
         assert!(
-            !same_up_to_ids(&old, &[("h.jsonl", r#"{"model":"deepseek-fresh"}"#)]),
+            !same_up_to_masks(&old, &[("h.jsonl", r#"{"model":"deepseek-fresh"}"#)]),
             "text no family names, even renamed one for one"
         );
         assert!(
-            !same_up_to_ids(
+            !same_up_to_masks(
                 &[("h.jsonl", r#"{"sessionId":"session-q7Hk29Lm4QpZ"}"#)],
                 &[("h.jsonl", r#"{"sessionId":"session-r8Il30Mn5RqA"}"#)]
             ),
@@ -1013,7 +1015,7 @@ mod tests {
     #[test]
     fn a_token_one_family_starts_wins_over_another_nested_in_it() {
         // A message id's tail holding a uuid, the earlier row.
-        assert!(same_up_to_ids(
+        assert!(same_up_to_masks(
             &[(
                 "h.jsonl",
                 r#"{"id":"msg_Q-01234567-89ab-cdef-0123-456789abcdef"}"#
@@ -1037,12 +1039,12 @@ mod tests {
             let was = format!(r#"{{"{name}":1}}"#);
             let now = format!(r#"{{"{}x":1}}"#, &name[..name.len() - 1]);
             assert!(
-                !same_up_to_ids(&[("h.jsonl", &was)], &[("h.jsonl", &now)]),
+                !same_up_to_masks(&[("h.jsonl", &was)], &[("h.jsonl", &now)]),
                 "{name}"
             );
         }
         assert!(
-            !same_up_to_ids(
+            !same_up_to_masks(
                 &[("h.jsonl", r#"{"tool":"recall_0123456789abcdef"}"#)],
                 &[("h.jsonl", r#"{"tool":"recall_0123456789abcdex"}"#)]
             ),
@@ -1061,7 +1063,7 @@ mod tests {
                     family.name
                 );
                 assert!(
-                    same_up_to_ids(&[("h.jsonl", was)], &[("h.jsonl", now)]),
+                    same_up_to_masks(&[("h.jsonl", was)], &[("h.jsonl", now)]),
                     "{}: {was} -> {now}",
                     family.name
                 );
@@ -1081,10 +1083,11 @@ mod tests {
         }
     }
 
-    /// A whole-second stamp splits a re-record's lines across a second
-    /// boundary wherever it falls, so which lines share one is no evidence.
+    /// A clock's tick splits a re-record's lines across its boundary wherever
+    /// it falls, so which lines share one is no evidence.
     #[test]
-    fn lines_that_share_a_whole_second_need_not_share_it_again() {
+    fn lines_that_share_a_clock_tick_need_not_share_it_again() {
+        use crate::source::decoder::FORWARDED_AT_STAMP;
         for (key, at, next) in [
             (
                 "created_at",
@@ -1092,49 +1095,60 @@ mod tests {
                 r#""2026-11-23T04:47:15Z""#,
             ),
             ("timestamp", "1793078269", "1793078270"),
+            (FORWARDED_AT_STAMP, "1795409234391", "1795409234392"),
         ] {
             let line = |stamp: &str| format!(r#"{{"{key}":{stamp}}}"#);
             let shared = format!("{}\n{}", line(at), line(at));
             let split = format!("{}\n{}", line(at), line(next));
             assert!(
-                same_up_to_ids(&[("s/t.jsonl", &shared)], &[("s/t.jsonl", &split)]),
+                same_up_to_masks(&[("s/t.jsonl", &shared)], &[("s/t.jsonl", &split)]),
                 "{key}"
             );
         }
     }
 
-    /// A re-record moves every kept write stamp, so a run that changed only
-    /// its clock reads as one that renamed only its ids.
+    /// A re-record moves every clock a capture keeps, so a run that moved
+    /// only its ids and clocks reads as unchanged.
     #[test]
-    fn every_kept_write_stamp_is_masked_whole() {
-        let root = crate::harness::sources_root();
-        for &(source, key, _) in crate::harness::reads::WRITE_STAMPS {
-            let mut kept = 0;
-            for capture in captures(&root).into_iter().filter(|c| c.source == source) {
-                let transcripts = jsonl_files_under(&capture.dir).into_iter();
-                for file in transcripts.filter(|f| !f.ends_with(HOOK_PAYLOADS)) {
-                    for line in std::fs::read_to_string(&file).expect("read").lines() {
-                        let v: serde_json::Value = serde_json::from_str(line).expect("json");
-                        let stamp = match &v[key] {
-                            serde_json::Value::String(s) if !s.is_empty() => s.clone(),
-                            serde_json::Value::Number(n) => n.to_string(),
-                            _ => continue,
-                        };
-                        let mut masked = Vec::new();
-                        with_masks_named(line, &MASKS, |_, token| {
-                            masked.push(token.to_owned());
-                            String::new()
-                        });
-                        assert!(
-                            masked.contains(&stamp),
-                            "{}: its {key} {stamp} is not masked whole",
-                            file.display()
-                        );
-                        kept += 1;
-                    }
+    fn every_kept_clock_is_masked_whole() {
+        use crate::harness::reads::{WRITE_STAMPS, is_hook_envelope};
+        use crate::source::decoder::FORWARDED_AT_STAMP;
+        let mut kept: BTreeMap<String, usize> = BTreeMap::new();
+        for capture in captures(&crate::harness::sources_root()) {
+            let write_stamp = WRITE_STAMPS.iter().find(|(s, ..)| *s == capture.source);
+            for file in jsonl_files_under(&capture.dir) {
+                let (keeper, key) = match write_stamp {
+                    _ if is_hook_envelope(&file) => (FORWARDED_AT_STAMP, FORWARDED_AT_STAMP),
+                    Some(&(source, key, _)) => (source, key),
+                    None => continue,
+                };
+                for line in std::fs::read_to_string(&file).expect("read").lines() {
+                    let v: serde_json::Value = serde_json::from_str(line).expect("json");
+                    let stamp = match &v[key] {
+                        serde_json::Value::String(s) if !s.is_empty() => s.clone(),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        _ => continue,
+                    };
+                    let mut masked = Vec::new();
+                    with_masks_named(line, |_, token| {
+                        masked.push(token.to_owned());
+                        String::new()
+                    });
+                    assert!(
+                        masked.contains(&stamp),
+                        "{}: its {key} {stamp} is not masked whole",
+                        file.display()
+                    );
+                    *kept.entry(keeper.to_owned()).or_default() += 1;
                 }
             }
-            assert!(kept > 0, "{source}: no committed capture keeps its {key}");
+        }
+        let keepers = WRITE_STAMPS.iter().map(|&(source, ..)| source);
+        for keeper in keepers.chain([FORWARDED_AT_STAMP]) {
+            assert!(
+                kept.contains_key(keeper),
+                "no committed capture keeps {keeper}'s clock"
+            );
         }
     }
 

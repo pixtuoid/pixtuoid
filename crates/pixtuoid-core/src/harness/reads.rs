@@ -406,8 +406,8 @@ pub(crate) const WRITE_STAMPS: &[(&str, &str, Spelling)] = &[
 ];
 
 /// Whether `key` under `at` is a `transcript`'s write stamp, which the strip
-/// keeps though no decoder reads it: the merge test (`tests/sources/merge.rs`)
-/// orders a session's two streams by it.
+/// keeps whether or not a decoder reads it: the merge test
+/// (`tests/sources/merge.rs`) orders a session's two streams by it.
 pub(crate) fn is_write_stamp(source: &str, transcript: bool, at: &str, key: &str) -> bool {
     transcript
         && at.is_empty()

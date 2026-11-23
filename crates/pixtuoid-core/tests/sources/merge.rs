@@ -484,12 +484,11 @@ fn grok_s_hook_set_item_survives_its_last_turn_s_lagging_end() {
     a_hook_set_item_survives_a_lagging_jsonl_turn_end(&Run::of("grok", "two-turn-hermetic"));
 }
 
-/// What an order leaves of a slot, less any field read off an arrival instant
-/// (`running_ms`, any `*_at`) and any fact whose value is whichever
-/// transport's copy landed first or last (label, model, effort, an item's
-/// detail, a request's reason). Its presence and `exiting` still read the
-/// clock: the fold's final tick is the run's last arrival plus
-/// `harness::CASCADE_TICK`, and a slot goes once its exit is
+/// What an order leaves of a slot that the order must not decide: its
+/// presence, whether it is exiting, its parent, its activity with its item's
+/// call id and tool kind, its tool-call count and its tokens. Its presence
+/// and `exiting` still read the clock: the fold's final tick is the run's
+/// last arrival plus `harness::CASCADE_TICK`, and a slot goes once its exit is
 /// `EXIT_GRACE_WINDOW` old, so a slot whose exit can start on either side of
 /// `EXIT_GRACE_WINDOW` before that tick can be gone in one order and still
 /// exiting in another, whatever the merge does.

@@ -69,7 +69,7 @@ came, with no stamp check, strip or scan.
   decodes to the same events. The allowlist is derived by probing the
   decoders, never listed, so it follows them, within the probe's limit below.
   It also keeps each transcript's write stamp (`reads::WRITE_STAMPS`), which
-  no decoder reads but `merge.rs` orders the two streams by.
+  `merge.rs` orders the two streams by, whether or not a decoder reads it.
   - `/Users/dev` stays the convention for a home path a decoder DOES read. A
     capture redacted by hand says so in its `note`: without that, a reader
     can't tell an edited capture from an untouched one, the distinction the
