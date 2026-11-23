@@ -1971,11 +1971,11 @@ mod tests {
         assert!(decode(line).is_empty());
     }
 
-    /// omp 19.1.0's `approve` run: the request, then the human's approval.
-    const APPROVAL_REQUESTED: &str = r#"{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"call_lpeNXErIg5IcpDCA","toolName":"bash","approvalMode":"always-ask","requestedAt":"2026-11-21T15:40:33.728Z"},"id":"67a99a3e","parentId":"2b584b27","timestamp":"2026-11-21T15:40:33.728Z","runtime":{"version":"19.1.0"}}"#;
-    const APPROVAL_APPROVED: &str = r#"{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_lpeNXErIg5IcpDCA","toolName":"bash","approved":true,"resolvedAt":"2026-11-21T15:40:34.302Z"},"id":"473e3a83","parentId":"67a99a3e","timestamp":"2026-11-21T15:40:34.302Z","runtime":{"version":"19.1.0"}}"#;
-    /// Its headless `permission` run, refused for want of a UI.
-    const APPROVAL_DENIED: &str = r#"{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_sMwsLbJWrnAzGJbI","toolName":"bash","approved":false,"reason":"no interactive UI available","resolvedAt":"2026-11-21T15:40:21.488Z"},"id":"49a328f9","parentId":"2dfc0526","timestamp":"2026-11-21T15:40:21.488Z","runtime":{"version":"19.1.0"}}"#;
+    /// `omp/fixtures/approve-hermetic`'s request and approval, verbatim (lines 10-11).
+    const APPROVAL_REQUESTED: &str = r#"{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"call_UC_YjRxxjp6TXcuk","toolName":"bash","approvalMode":"","requestedAt":""},"id":"","parentId":"","timestamp":"","runtime":{}}"#;
+    const APPROVAL_APPROVED: &str = r#"{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_UC_YjRxxjp6TXcuk","toolName":"bash","approved":true,"resolvedAt":""},"id":"","parentId":"","timestamp":"","runtime":{}}"#;
+    /// `omp/fixtures/permission-hermetic`'s headless denial, verbatim (line 11).
+    const APPROVAL_DENIED: &str = r#"{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_94Vh4ZaiDJlI2Ygs","toolName":"","approved":false,"reason":"","resolvedAt":""},"id":"","parentId":"","timestamp":"","runtime":{}}"#;
 
     /// `line` with its record's `data` edited by `edit`.
     fn with_data(line: &str, edit: impl FnOnce(&mut serde_json::Map<String, Value>)) -> String {
@@ -2001,7 +2001,7 @@ mod tests {
                     Some("bash"),
                     "no reason: the tool names it"
                 );
-                assert_eq!(tool_use_id.as_deref(), Some("call_lpeNXErIg5IcpDCA"));
+                assert_eq!(tool_use_id.as_deref(), Some("call_UC_YjRxxjp6TXcuk"));
             }
             other => panic!("expected one UserActionRequest, got {other:?}"),
         }
@@ -2040,7 +2040,7 @@ mod tests {
                 },
             ] => {
                 assert_eq!(*agent_id, root());
-                assert_eq!(tool_use_id.as_deref(), Some("call_lpeNXErIg5IcpDCA"));
+                assert_eq!(tool_use_id.as_deref(), Some("call_UC_YjRxxjp6TXcuk"));
                 assert_eq!(detail.as_ref().map(|d| d.display()), Some("bash"));
             }
             other => panic!("expected the resume's ToolUseStart, got {other:?}"),
@@ -2049,7 +2049,7 @@ mod tests {
             decode(APPROVAL_DENIED),
             [AgentEvent::ToolUseEnd {
                 agent_id: root(),
-                tool_use_id: Some("call_sMwsLbJWrnAzGJbI".to_owned()),
+                tool_use_id: Some("call_94Vh4ZaiDJlI2Ygs".to_owned()),
             }]
         );
         let task = with_data(APPROVAL_APPROVED, |d| {
