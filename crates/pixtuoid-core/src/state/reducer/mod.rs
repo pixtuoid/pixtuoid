@@ -652,8 +652,9 @@ impl Reducer {
     /// The `ToolUseStart` arm, for a Start the pre-pass tracker left to it.
     /// A start the agent's action request holds back
     /// ([`ActionRequests::start`](crate::state::requests::ActionRequests::start))
-    /// only counts: a RequiresAction slot shows no call, and an approval resume
-    /// re-labels from the wire's `toolName` (a label-only cost, pinned by
+    /// only counts: a RequiresAction slot shows no call. An approval resume
+    /// relabels the slot from its record's `toolName`, over its call's richer
+    /// Start (a label-only cost, pinned by
     /// `the_approval_resume_labels_from_the_wire_tool_name`).
     fn apply_tool_use_start(
         &mut self,
@@ -1471,39 +1472,50 @@ impl Reducer {
                 ..
             } if d.is_task() => {
                 handled_by_task_start = true;
-                // Delegating only on a FIRST insert of a never-drained tuid: an
+                // Delegating on a FIRST insert of a never-drained tuid: an
                 // out-of-window replay would clobber a since-RequiresAction parent,
                 // and, tracked, would settle the parent back to Delegating.
                 if !self
                     .corr
                     .recent_task_drains
                     .contains_key(&(*agent_id, tuid.clone()))
-                    && self
+                {
+                    let first = self
                         .corr
                         .tasks_in_flight
                         .entry(*agent_id)
                         .or_default()
-                        .insert(tuid.clone())
-                    && scene.agents.contains_key(agent_id)
-                {
-                    self.register_pending(
-                        *agent_id,
-                        tuid,
-                        None,
-                        None,
-                        from,
-                        Some(fsm::delegating_item(Some(Arc::from(tuid.as_str())))),
-                    );
-                    if let Some(slot) = scene.agents.get_mut(agent_id)
-                        && self.corr.action_requests.start(
+                        .insert(tuid.clone());
+                    if first && scene.agents.contains_key(agent_id) {
+                        self.register_pending(
                             *agent_id,
-                            Some(tuid),
+                            tuid,
+                            None,
+                            None,
                             from,
-                            matches!(slot.state, ActivityState::RequiresAction { .. }),
-                        )
-                    {
-                        fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
-                        self.corr.item_started_on.insert(*agent_id, from);
+                            Some(fsm::delegating_item(Some(Arc::from(tuid.as_str())))),
+                        );
+                    }
+                    if let Some(slot) = scene.agents.get_mut(agent_id) {
+                        let requires_action =
+                            matches!(slot.state, ActivityState::RequiresAction { .. });
+                        // A Start of a Task already in flight still answers a
+                        // request naming it: omp writes a gated task's block,
+                        // then its approval request, then the resume's Start
+                        // (`omp/fixtures/approve-hermetic`'s lines 8, 10, 11).
+                        let resumes =
+                            requires_action && self.corr.action_requests.names(agent_id, tuid);
+                        if (first || resumes)
+                            && self.corr.action_requests.start(
+                                *agent_id,
+                                Some(tuid),
+                                from,
+                                requires_action,
+                            )
+                        {
+                            fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
+                            self.corr.item_started_on.insert(*agent_id, from);
+                        }
                     }
                 }
             }
@@ -1519,8 +1531,14 @@ impl Reducer {
                         .recent_task_drains
                         .insert((*agent_id, tuid.clone()), now);
                     // The drain skips the main arm, so it retires this member
-                    // itself.
-                    self.corr.action_requests.retire(agent_id, tuid);
+                    // itself, and answers the request a denied dispatch's End
+                    // is the outcome of.
+                    let answered = self.corr.action_requests.drained(
+                        *agent_id,
+                        tuid,
+                        from,
+                        is_requires_action(scene, *agent_id),
+                    );
                     if let Some(slot) = scene.agents.get_mut(agent_id) {
                         slot.last_event_at = now;
                         if set.is_empty() && child_end_inference(slot).dispatch_end_ends_child(true)
@@ -1535,7 +1553,7 @@ impl Reducer {
                                 item: Some(ToolUse { tool_use_id: Some(t), .. }),
                             } if **t == **tuid
                         );
-                        if matches!(
+                        let shows_drained_task = matches!(
                             slot.state,
                             ActivityState::Running {
                                 item: Some(ToolUse {
@@ -1543,8 +1561,8 @@ impl Reducer {
                                     ..
                                 })
                             }
-                        ) && (set.is_empty() || shown_drained)
-                        {
+                        ) && (set.is_empty() || shown_drained);
+                        if answered || shows_drained_task {
                             fsm::settle(slot, self.settle_ctx(agent_id), now);
                         }
                     }

@@ -975,8 +975,8 @@ fn omp_ask_reason(intent: Option<&str>) -> String {
 
 /// The event an approval `record` carries for the call its `data` names: the
 /// wait, then its resume or its end (`data`'s shape:
-/// `session/tool-approval-records.ts:9-26` at v19.1.0). The call id is REQUIRED
-/// there, so a record without one is drift.
+/// `session/tool-approval-records.ts:9-26` at v19.1.0). The call id and the
+/// tool name are REQUIRED there, so either missing where it is read is drift.
 fn omp_approval(
     acting: AgentId,
     source: &str,
@@ -990,11 +990,18 @@ fn omp_approval(
         crate::source::drift::missing_field(source, record, "toolCallId");
         return None;
     };
-    let tool = data.get("toolName").and_then(|t| t.as_str()).unwrap_or("");
+    let tool = || {
+        data.get("toolName")
+            .and_then(|t| t.as_str())
+            .unwrap_or_else(|| {
+                crate::source::drift::missing_field(source, record, "toolName");
+                ""
+            })
+    };
     Some(if record == TOOL_APPROVAL_REQUESTED {
         AgentEvent::user_action_request(
             acting,
-            Some(omp_approval_reason(data, tool)),
+            Some(omp_approval_reason(data, tool())),
             RequestKeys {
                 tool_use_id: Some(call.to_owned()),
                 ..RequestKeys::default()
@@ -1007,7 +1014,7 @@ fn omp_approval(
         AgentEvent::ToolUseStart {
             agent_id: acting,
             tool_use_id: Some(call.to_owned()),
-            detail: Some(omp_tool_detail(tool, None, None)),
+            detail: Some(omp_tool_detail(tool(), None, None)),
             copy_id: None,
         }
     } else {
@@ -1999,11 +2006,14 @@ mod tests {
         let nameless = with_data(APPROVAL_REQUESTED, |d| {
             d.remove("toolName");
         });
-        match &decode(&nameless)[..] {
+        let out = crate::test_capture::capture_logs(|| match &decode(&nameless)[..] {
             [AgentEvent::UserActionRequest { reason, .. }] => {
                 assert_eq!(reason.as_deref(), Some("approval"))
             }
             other => panic!("expected one UserActionRequest, got {other:?}"),
+        });
+        for needle in [crate::source::drift::TARGET, "missing_field", "toolName"] {
+            assert!(out.contains(needle), "missing {needle:?}\n{out}");
         }
     }
 
@@ -2039,6 +2049,16 @@ mod tests {
                 assert!(detail.as_ref().is_some_and(|d| d.is_task()));
             }
             other => panic!("expected the resume's ToolUseStart, got {other:?}"),
+        }
+        // Only the resume reads the name, so only its absence there is drift.
+        for (line, drift) in [(APPROVAL_APPROVED, true), (APPROVAL_DENIED, false)] {
+            let nameless = with_data(line, |d| {
+                d.remove("toolName");
+            });
+            let out = crate::test_capture::capture_logs(|| {
+                assert_eq!(decode(&nameless).len(), 1);
+            });
+            assert_eq!(out.contains("toolName"), drift, "{line}\n{out}");
         }
     }
 
@@ -2907,7 +2927,7 @@ mod tests {
         // An approval an older pixtuoid's extension still forwards from an omp
         // started before the upgrade: the transcript raises that wait, and a
         // hook resume can't lift a transcript-raised one (`ActionRequests::resolves`).
-        for ty in ["credential_disabled", TOOL_APPROVAL_REQUESTED] {
+        for ty in ["credential_disabled", "tool_approval_requested"] {
             assert!(
                 hook(serde_json::json!({
                     "type": ty, "sessionFile": HOOK_ROOT,

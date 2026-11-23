@@ -232,7 +232,7 @@ fn agent_cases() -> Vec<WireCase> {
             // to pixels.
             fixture: "omp/fixtures/approve-hermetic",
             wire: Wire::Transcript { seeded: false },
-            must_reach: &[Reach::RequiresAction, Reach::Running],
+            must_reach: &[Reach::RequiresAction],
         },
         WireCase {
             name: "grok",

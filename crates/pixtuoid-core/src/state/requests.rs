@@ -274,6 +274,30 @@ impl ActionRequests {
         resolved
     }
 
+    /// Whether `id`'s request names `call` on the wire. A Task's own Start or
+    /// End answers only such a request, as omp's approval of the dispatch
+    /// does: a subagent returning answers no prompt a deduction bound it to
+    /// (#152).
+    pub(crate) fn names(&self, id: &AgentId, call: &str) -> bool {
+        self.open
+            .get(id)
+            .and_then(|req| req.member(call))
+            .is_some_and(|m| m.named)
+    }
+
+    /// A drained Task's end, as [`Self::end`], answering only a request that
+    /// [names](Self::names) it.
+    pub(crate) fn drained(
+        &mut self,
+        id: AgentId,
+        task: &str,
+        from: Transport,
+        requires_action: bool,
+    ) -> bool {
+        let named = self.names(&id, task);
+        self.end(id, Ended::Call(task), from, requires_action && named)
+    }
+
     /// An answer that ends no item: whether it answers the standing request.
     pub(crate) fn resolved(&mut self, id: AgentId, by: &Resolution, requires_action: bool) -> bool {
         let resolved = requires_action && self.resolves(&id, Seen::Resolved(by), Transport::Hook);
