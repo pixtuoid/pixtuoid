@@ -213,8 +213,6 @@ icy_sixel = "0.7"
 # What reads `pair`'s QR in place of the App's camera (tests/serve.rs).
 rqrr = { version = "0.11", default-features = false }
 insta    = { workspace = true }
-# Integration tests parse the `--json` CLI output back (cli_json.rs).
-serde_json = { workspace = true }
 criterion  = { workspace = true }
 
 # Tests that drive a pty: `tests/tui_startup.rs`, whose startup queries are
