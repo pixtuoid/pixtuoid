@@ -60,10 +60,10 @@ jobs:
           # changes envhash, so it forks a new family and leaves the old one to
           # expire. A key with a non-hex tail becomes its own one-element
           # family and is never deleted — the failure direction is
-          # under-prune, never over-prune. Keep each family's newest entry,
-          # which is not the live generation when another saved after it (a
-          # revert, or main builds saving out of order); the next build then
-          # restores it and rebuilds what differs.
+          # under-prune, never over-prune. Keep each family's newest entry.
+          # After a revert, or main builds saving out of order, that is not the
+          # live generation: the live one is deleted, and the next build
+          # restores the kept one and rebuilds what differs.
           # An assignment propagates a pipeline failure under pipefail (a
           # process substitution would swallow it); --limit 300 is an order
           # of magnitude past what the cache quota can hold
