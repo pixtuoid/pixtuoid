@@ -389,7 +389,7 @@ impl Spelling {
     pub(crate) fn value_pattern(self) -> &'static str {
         match self {
             Self::Rfc3339 | Self::Rfc3339Secs => r#""(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z)""#,
-            Self::EpochSecs => r"(\d+)",
+            Self::EpochSecs => r"([1-9]\d*)",
         }
     }
 }

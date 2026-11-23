@@ -646,7 +646,9 @@ struct Mask {
 /// the hook's forwarded-at stamp
 /// ([`FORWARDED_AT_STAMP`](crate::source::decoder::FORWARDED_AT_STAMP)) and
 /// each transcript write stamp the strip keeps
-/// ([`WRITE_STAMPS`](super::reads::WRITE_STAMPS)).
+/// ([`WRITE_STAMPS`](super::reads::WRITE_STAMPS)). A write-stamp row matches
+/// its key at any depth, in every file of the capture, where the strip may have
+/// blanked a field of that name, so its value pattern refuses the blank.
 static MASKS: std::sync::LazyLock<Vec<Mask>> = std::sync::LazyLock::new(|| {
     use crate::source::decoder::FORWARDED_AT_STAMP;
     let minted = ID_FAMILIES.iter().map(|f| {
@@ -1102,6 +1104,19 @@ mod tests {
             });
             assert!(carried, "{}: {} carries none", family.name, family.seen_in);
         }
+    }
+
+    /// The strip blanks an unread number to `0`, so a stamp a re-record
+    /// un-blanks is a change, not a clock that moved.
+    #[test]
+    fn a_blanked_numeric_stamp_is_no_clock() {
+        let blank = [("t.jsonl", r#"{"timestamp":0}"#)];
+        let stamped = [("t.jsonl", r#"{"timestamp":1793078269}"#)];
+        assert!(!same_up_to_masks(&blank, &stamped));
+        assert!(same_up_to_masks(
+            &stamped,
+            &[("t.jsonl", r#"{"timestamp":1793078270}"#)]
+        ));
     }
 
     /// A clock's tick splits a re-record's lines across its boundary wherever

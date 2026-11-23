@@ -5,8 +5,8 @@
 //! `DEFAULT_POLL_INTERVAL` after, behind every line above it, since the
 //! watcher reads a file in order. A line's write stamp dates its write, or
 //! for a line with none, the stamped lines around it do; one ahead of the
-//! file's first stamp was written no sooner than the earliest stamp either
-//! stream records.
+//! transcript's first stamp was written no sooner than the earliest stamp
+//! either stream records.
 
 use std::time::{Duration, SystemTime};
 
@@ -171,14 +171,15 @@ fn stamp_of(v: &Value, spelling: Spelling) -> Option<(Duration, Duration)> {
 /// `lines`' lines `read` delivers events for, each stamped by `stamp` and
 /// counted in `d`. A line with no stamp of its own was written between the
 /// stamped lines around it, and one ahead of the file's first stamp no sooner
-/// than the earliest stamp either stream records, the other's `beside`.
+/// than the earlier of that stamp and `other_earliest`, the other stream's
+/// earliest stamp (`None` for the hooks, which are read first).
 fn written<S: AsRef<str>>(
     decode: &Decode,
     lines: &[S],
     mut read: impl FnMut(&str, Vec<AgentEvent>) -> Vec<Delivered>,
     d: &mut Driven,
     stamp: impl Fn(&Value) -> Option<(Duration, Duration)>,
-    beside: Option<SystemTime>,
+    other_earliest: Option<SystemTime>,
 ) -> Vec<Written> {
     let mut out = Vec::new();
     let mut stamps = Vec::new();
@@ -219,7 +220,7 @@ fn written<S: AsRef<str>>(
     // Never at the epoch, which would age the slot first sight registers past
     // every stale threshold by the next arrival: a reap production never makes.
     let first = stamps.iter().flatten().map(|&(at, _)| at).next();
-    let floor = first.into_iter().chain(beside).min();
+    let floor = first.into_iter().chain(other_earliest).min();
     for w in &mut out {
         w.until = w.until.or(next_after[w.line]);
         w.at = floor.map_or(w.at, |floor| w.at.max(floor));
@@ -435,9 +436,9 @@ mod tests {
         .to_string()
     }
 
-    /// [`call`] with no stamp of its own.
-    fn unstamped_call() -> String {
-        let mut line: Value = serde_json::from_str(&call(0)).expect("json");
+    /// `line` with no stamp of its own.
+    fn unstamped(line: &str) -> String {
+        let mut line: Value = serde_json::from_str(line).expect("json");
         line.as_object_mut().expect("a line").remove("timestamp");
         line.to_string()
     }
@@ -520,7 +521,7 @@ mod tests {
             hook("SessionStart", poll),
             hook("PreToolUse", 2 * poll + 500),
         ];
-        let lines = [unstamped_call(), output(2 * poll + 1_000)];
+        let lines = [unstamped(&call(0)), output(2 * poll + 1_000)];
         let merges = drive().merges(&hooks, &lines).expect("codex merges");
         assert_eq!(
             orders(merges),
@@ -545,7 +546,11 @@ mod tests {
             hook("SessionStart", stamped_at + poll / 2),
             hook("PreToolUse", stamped_at + poll + poll / 2),
         ];
-        let lines = [unstamped_call(), eventless, output(stamped_at + 3 * poll)];
+        let lines = [
+            unstamped(&call(0)),
+            eventless,
+            output(stamped_at + 3 * poll),
+        ];
         let merges = drive().merges(&hooks, &lines).expect("codex merges");
         assert_eq!(
             orders(merges),
@@ -570,7 +575,7 @@ mod tests {
             (vec![], ms),
             (vec![hook("SessionStart", ms + 500)], ms),
         ] {
-            let lines = vec![unstamped_call(), output(first_stamp)];
+            let lines = vec![unstamped(&call(0)), output(first_stamp)];
             let mut led = 0;
             for merged in drive().merges(&hooks, &lines).expect("codex merges") {
                 let first = merged.steps.first().expect("a step");
@@ -582,6 +587,26 @@ mod tests {
             }
             assert!(led > 0, "{hooks:?}: no order leads with the head line");
         }
+    }
+
+    /// A line past the file's last stamp was written at no instant the file
+    /// bounds, so any hook may precede it.
+    #[test]
+    fn a_line_past_the_last_stamp_may_follow_every_hook() {
+        let poll = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms");
+        let hooks = [hook("SessionStart", poll), hook("PreToolUse", 3 * poll)];
+        let lines = [call(poll), unstamped(&output(0))];
+        let merges = drive().merges(&hooks, &lines).expect("codex merges");
+        assert_eq!(
+            orders(merges),
+            [
+                vec![(J, 0), (J, 1), (H, 0), (H, 1)],
+                vec![(J, 0), (H, 0), (J, 1), (H, 1)],
+                vec![(J, 0), (H, 0), (H, 1), (J, 1)],
+                vec![(H, 0), (J, 0), (J, 1), (H, 1)],
+                vec![(H, 0), (J, 0), (H, 1), (J, 1)],
+            ]
+        );
     }
 
     #[test]
