@@ -794,17 +794,17 @@ mod tests {
         }
     }
 
-    // Derived from the row's hook decoder, so no exemption list drifts.
+    // Derived from the registry, so no exemption list drifts.
     #[test]
-    fn every_hooked_source_has_an_install_target() {
+    fn every_hook_bearing_source_has_an_install_target() {
         use pixtuoid_core::source::registry::{self, descriptor_for};
         for src in registry::registered_source_names() {
             let d = descriptor_for(src).expect("registered source must have a descriptor row");
-            if d.hook().is_some() {
+            if d.is_hook_bearing() {
                 assert!(
                     TARGETS.iter().any(|t| t.core_source == src),
-                    "hooked source {src:?} has no install target — its hooks would never \
-                     install, so nothing fires them. Add a Target in install/target.rs."
+                    "source {src:?} reaches pixtuoid over the hook socket but has no install \
+                     target, so nothing ever sends on it. Add a Target in install/target.rs."
                 );
             }
         }

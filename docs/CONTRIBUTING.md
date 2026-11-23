@@ -423,7 +423,9 @@ that fails without it.
    runs unattended, the CLI's config (`merge_install`/`merge_uninstall` and a
    `verify_schema` fn mirroring its format). Add the
    registered-events↔decoder-arms guard too. `just test` fails without this
-   step (`every_hooked_source_has_an_install_target`).
+   step for any source heard over the hook socket, a hook-only agent, one
+   with a transcript too or a daemon
+   (`every_hook_bearing_source_has_an_install_target`).
 9. **Add a row to `site/src/sources.json`**, with the fields its neighbours
    carry (`name` is the `display_name`). Add that name to the bug form's
    `agent-cli` dropdown, then run `just gen-readme`.
