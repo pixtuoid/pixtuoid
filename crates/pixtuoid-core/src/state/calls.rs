@@ -4,9 +4,9 @@
 //! mark a reused call id on one ordered stream ([`CallLedger::observe`]), whose
 //! order no merge reorders. The reducer gates each of a call's state changes
 //! but its approval on the rise `observe` reports, and an approval answers its
-//! request once, since an answered member leaves it; a fact that rises into
-//! nothing otherwise only merges idempotently (its pending fields, a Task's
-//! tracking, its count flag), so a fact applied twice applies once.
+//! request once, since an answered member leaves it; a fact that does not
+//! raise its record otherwise only merges idempotently (its pending fields, a
+//! Task's tracking, its count flag), so a fact applied twice applies once.
 
 use std::collections::HashMap;
 use std::sync::Arc;

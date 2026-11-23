@@ -618,8 +618,9 @@ impl Reducer {
             detail: detail.map(|d| Arc::<str>::from(d.display())),
             kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
         };
-        // A start that rises into nothing still adds its transport, which a
-        // request raised there binds by, and its item, which its approval shows.
+        // A start that does not raise its record still adds its transport,
+        // which a request raised there binds by, and its item, which its
+        // approval shows.
         if let Some(call) = ids.own
             && observed.is_some_and(|o| !o.ended)
         {
@@ -1425,9 +1426,9 @@ impl Reducer {
                 detail: Some(d),
                 ..
             } if d.is_task() => {
-                // A start decoded after its gate (#242) rises into nothing, yet
-                // its Task runs: the child's hooks are its, and its approval
-                // shows it.
+                // A start decoded after its gate (#242) is below its record's
+                // phase, yet its Task runs: the child's hooks are its, and its
+                // approval shows it.
                 if observed.is_some_and(|o| !o.ended) {
                     let item = fsm::delegating_item(Some(Arc::from(tuid.as_str())));
                     self.corr
@@ -1600,9 +1601,11 @@ impl Reducer {
 
     /// Retire the per-slot correlation a departing life owns, on BOTH a
     /// resurrect-in-place and a slot removal. Death-only teardown
-    /// (`recent_proof_of_life`, the calls and counted readings,
-    /// [`Correlation::note_removed`]) and the copy-id holders' release
-    /// deliberately stay at the sweep site — they must NOT run on a resurrect.
+    /// (`recent_proof_of_life`, forgetting the call records
+    /// ([`CallLedger::forget`](crate::state::calls::CallLedger::forget)) and the
+    /// counted readings, [`Correlation::note_removed`]) and the copy-id holders'
+    /// release deliberately stay at the sweep site — they must NOT run on a
+    /// resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.tasks_in_flight.remove(id);
         self.corr.action_requests.forget(id);
