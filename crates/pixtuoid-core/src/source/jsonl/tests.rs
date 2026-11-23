@@ -2547,16 +2547,16 @@ async fn oversized_attach_re_emits_a_turns_start_before_its_dispatch() {
     let (mut r, mut scene) = (crate::Reducer::new(), crate::SceneState::uniform(4));
     let t0 = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let id = events[start].1.agent_id();
-    // The walk registers its own slot under its `test` source and deriver, and
-    // `test` sets no `SourceCaps::brackets_turns`; a codex slot does.
-    let codex = AgentEvent::SessionStart {
+    // The walk seeds its slot by its `test` deriver, while codex's decoder keys
+    // these events by the rollout's own id.
+    let seed = AgentEvent::SessionStart {
         agent_id: id,
-        source: crate::source::codex::SOURCE_NAME.into(),
+        source: "test".into(),
         session_id: "s".into(),
         cwd: "/repo".into(),
         parent_id: None,
     };
-    r.apply(&mut scene, codex, t0, Transport::Jsonl);
+    r.apply(&mut scene, seed, t0, Transport::Jsonl);
     for (from, ev) in events {
         r.apply(&mut scene, ev, t0, from);
     }

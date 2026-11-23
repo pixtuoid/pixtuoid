@@ -59,7 +59,7 @@ fn caps_of(slot: &AgentSlot) -> Option<SourceCaps> {
     crate::source::registry::descriptor_for(&slot.source).map(|d| d.caps())
 }
 
-/// Whether `slot`'s source shows its open turn ([`SourceCaps::brackets_turns`]).
+/// Whether `slot`'s source brackets its turns ([`SourceCaps::brackets_turns`]).
 fn brackets_turns(slot: &AgentSlot) -> bool {
     caps_of(slot).is_some_and(|c| c.brackets_turns)
 }

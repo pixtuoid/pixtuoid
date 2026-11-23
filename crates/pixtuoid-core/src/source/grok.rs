@@ -78,9 +78,11 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // draining the session actor), so the DOMINANT exit is signal-less; the
             // authority is the liveness probe over grok's `active_sessions.json`.
             has_exit_signal: false,
-            // Every prompt fires `user_prompt_submit` (→ SessionStart), so a swept
-            // LIVE session walks back in — which is what makes the short idle reap
-            // safe for grok's untracked headless one-shots.
+            // Every user prompt fires `user_prompt_submit` (→ SessionStart; a
+            // model-authored one fires none, `acp_session_impl/turn.rs:909` at
+            // `2bdd1d6a63`), so a swept LIVE session walks back in on its user's
+            // next prompt — which is what makes the short idle reap safe for
+            // grok's untracked headless one-shots.
             resurrects_on_prompt: true,
             // A BLOCKING spawn's Task detail gets its post_tool_use at
             // completion, and a background spawn never mints a Task at all.
