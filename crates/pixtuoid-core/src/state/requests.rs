@@ -275,15 +275,15 @@ impl ActionRequests {
     }
 
     /// Whether `id`'s request names `call` on the wire.
-    pub(crate) fn names(&self, id: &AgentId, call: &str) -> bool {
+    fn names(&self, id: &AgentId, call: &str) -> bool {
         self.open
             .get(id)
             .and_then(|req| req.member(call))
             .is_some_and(|m| m.named)
     }
 
-    /// A Task's Start, as [`Self::start`]; one already in flight answers only
-    /// a request that [names](Self::names) it.
+    /// A Task's Start, as [`Self::start`]; one already in flight runs it only
+    /// to answer a request that [names](Self::names) it.
     pub(crate) fn task_start(
         &mut self,
         id: AgentId,
