@@ -5,8 +5,8 @@ use std::time::{Duration, SystemTime};
 use crate::AgentId;
 use crate::source::decoder::label_prefix_for;
 use crate::source::registry::{ChildEndInference, SourceCaps};
-use crate::source::{AgentEvent, CopyId, Merge, MergeKey, Resolution, ToolDetail, Transport};
-use crate::state::calls::{Observed, Transition};
+use crate::source::{AgentEvent, CopyId, Resolution, ToolDetail, Transport};
+use crate::state::calls::{Fact, Observed, Transition};
 use crate::state::correlation::{CopyHolders, Correlation, Counted, elapsed_at_least};
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
@@ -577,14 +577,14 @@ impl Reducer {
             return Preprocessed::Drop;
         }
 
-        let call = match event.merge() {
-            Merge::Keyed(MergeKey::Call { id: call, fact }) => {
+        let call = match Fact::of(event) {
+            Some((call, fact)) => {
                 if !scene.agents.contains_key(&id) {
                     return Preprocessed::Drop;
                 }
                 Some(self.corr.calls.observe(id, call, fact))
             }
-            _ => None,
+            None => None,
         };
 
         let tracked = self.track_tasks_in_flight(scene, event, call, now, from);

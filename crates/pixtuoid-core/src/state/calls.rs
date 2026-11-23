@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::AgentId;
-use crate::source::{CallFact, CopyId};
+use crate::source::{AgentEvent, CopyId, Resolution};
 
 /// How far a call got. An end outranks every step, so no fact after it
 /// raises the call again.
@@ -15,6 +15,76 @@ use crate::source::{CallFact, CopyId};
 struct Phase {
     ended: bool,
     step: Step,
+}
+
+/// What a fact says of its call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Fact<'a> {
+    /// It is about to run.
+    PreUse,
+    /// It started, under its copy id where its wire names one.
+    Start(Option<&'a CopyId>),
+    /// It waits on the user.
+    Gate,
+    /// The user approved it, and it runs on.
+    Resume,
+    /// It ended.
+    End,
+}
+
+impl<'a> Fact<'a> {
+    /// The call `event` names and what it says of it; `None` for an event
+    /// naming no call. Every variant is sorted here, so a new one fails to
+    /// compile until it is.
+    pub(crate) fn of(event: &'a AgentEvent) -> Option<(&'a str, Self)> {
+        let fact = match event {
+            AgentEvent::ToolUseStart {
+                tool_use_id: Some(id),
+                copy_id,
+                ..
+            } => (id, Fact::Start(copy_id.as_ref())),
+            AgentEvent::ToolUseEnd {
+                tool_use_id: Some(id),
+                ..
+            } => (id, Fact::End),
+            AgentEvent::ToolUsePending { tool_use_id, .. } => (tool_use_id, Fact::PreUse),
+            AgentEvent::UserActionRequest {
+                tool_use_id: Some(id),
+                ..
+            } => (id, Fact::Gate),
+            AgentEvent::UserActionResolved {
+                by: Resolution::Approved(id),
+                ..
+            } => (id, Fact::Resume),
+            // codex's PostToolUse answers its request and leaves its call's
+            // end to the rollout.
+            AgentEvent::UserActionResolved {
+                by: Resolution::Call(_) | Resolution::Turn(_),
+                ..
+            }
+            | AgentEvent::ToolUseStart {
+                tool_use_id: None, ..
+            }
+            | AgentEvent::ToolUseEnd {
+                tool_use_id: None, ..
+            }
+            | AgentEvent::UserActionRequest {
+                tool_use_id: None, ..
+            }
+            | AgentEvent::SessionStart { .. }
+            | AgentEvent::TurnStart { .. }
+            | AgentEvent::TurnEnd { .. }
+            | AgentEvent::Rename { .. }
+            | AgentEvent::LabelHint { .. }
+            | AgentEvent::SessionEnd { .. }
+            | AgentEvent::ProofOfLife { .. }
+            | AgentEvent::Identity { .. }
+            | AgentEvent::ModelInfo { .. }
+            | AgentEvent::Usage { .. }
+            | AgentEvent::Backlog { .. } => return None,
+        };
+        Some((fact.0.as_str(), fact.1))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -31,14 +101,14 @@ impl Phase {
         step: Step::Started,
     };
 
-    fn of(fact: CallFact<'_>) -> Self {
+    fn of(fact: Fact<'_>) -> Self {
         let step = |step| Self { ended: false, step };
         match fact {
-            CallFact::PreUse => step(Step::PreUse),
-            CallFact::Start(_) => Self::STARTED,
-            CallFact::Gate => step(Step::Gated),
-            CallFact::Resume => step(Step::Resumed),
-            CallFact::End => Self {
+            Fact::PreUse => step(Step::PreUse),
+            Fact::Start(_) => Self::STARTED,
+            Fact::Gate => step(Step::Gated),
+            Fact::Resume => step(Step::Resumed),
+            Fact::End => Self {
                 ended: true,
                 step: Step::PreUse,
             },
@@ -101,10 +171,10 @@ impl CallLedger {
     /// never held, while it holds another, opens the call's next generation:
     /// a provider reusing an id names a new call (`source/omp.rs`'s
     /// `entry_copy`), and a held copy id is that call's replay.
-    pub(crate) fn observe(&mut self, agent: AgentId, call: &str, fact: CallFact<'_>) -> Observed {
+    pub(crate) fn observe(&mut self, agent: AgentId, call: &str, fact: Fact<'_>) -> Observed {
         let into = Phase::of(fact);
         let (starts, copy) = match fact {
-            CallFact::Start(copy) => (true, copy),
+            Fact::Start(copy) => (true, copy),
             _ => (false, None),
         };
         let calls = self.calls.entry(agent).or_default();
@@ -188,14 +258,14 @@ mod tests {
 
     /// A fact by index, its start naming the one copy id `c` or none, so no
     /// start opens a generation.
-    fn fact(n: u8, c: &CopyId) -> CallFact<'_> {
+    fn fact(n: u8, c: &CopyId) -> Fact<'_> {
         match n {
-            0 => CallFact::PreUse,
-            1 => CallFact::Start(None),
-            2 => CallFact::Start(Some(c)),
-            3 => CallFact::Gate,
-            4 => CallFact::Resume,
-            _ => CallFact::End,
+            0 => Fact::PreUse,
+            1 => Fact::Start(None),
+            2 => Fact::Start(Some(c)),
+            3 => Fact::Gate,
+            4 => Fact::Resume,
+            _ => Fact::End,
         }
     }
 
@@ -239,29 +309,29 @@ mod tests {
     #[test]
     fn a_call_counts_at_its_first_start_even_after_its_end() {
         let mut ledger = CallLedger::default();
-        let end = ledger.observe(agent(), "c", CallFact::End);
+        let end = ledger.observe(agent(), "c", Fact::End);
         assert_eq!(
             (end.transition, end.counts),
             (Some(Transition::Ended), false)
         );
-        let start = ledger.observe(agent(), "c", CallFact::Start(None));
+        let start = ledger.observe(agent(), "c", Fact::Start(None));
         assert_eq!((start.transition, start.counts), (None, true));
-        assert!(!ledger.observe(agent(), "c", CallFact::Start(None)).counts);
+        assert!(!ledger.observe(agent(), "c", Fact::Start(None)).counts);
     }
 
     #[test]
     fn a_start_under_a_copy_id_its_ended_call_never_held_opens_its_next_generation() {
         let (first, second) = (CopyId::new("e1@t#0"), CopyId::new("e2@t#0"));
         let mut ledger = CallLedger::default();
-        ledger.observe(agent(), "c", CallFact::Start(Some(&first)));
-        ledger.observe(agent(), "c", CallFact::End);
-        let replay = ledger.observe(agent(), "c", CallFact::Start(Some(&first)));
+        ledger.observe(agent(), "c", Fact::Start(Some(&first)));
+        ledger.observe(agent(), "c", Fact::End);
+        let replay = ledger.observe(agent(), "c", Fact::Start(Some(&first)));
         assert_eq!(
             (replay.transition, replay.counts),
             (None, false),
             "a replay"
         );
-        let next = ledger.observe(agent(), "c", CallFact::Start(Some(&second)));
+        let next = ledger.observe(agent(), "c", Fact::Start(Some(&second)));
         assert_eq!(
             next,
             Observed {
@@ -272,7 +342,7 @@ mod tests {
         );
         assert_eq!(
             ledger
-                .observe(agent(), "c", CallFact::Start(Some(&second)))
+                .observe(agent(), "c", Fact::Start(Some(&second)))
                 .transition,
             None,
             "the new generation's replay"
@@ -285,18 +355,18 @@ mod tests {
     fn a_first_copy_id_after_the_end_opens_no_generation() {
         let copy = CopyId::new("toolu_c");
         let mut ledger = CallLedger::default();
-        ledger.observe(agent(), "c", CallFact::Start(None));
-        ledger.observe(agent(), "c", CallFact::End);
-        let echo = ledger.observe(agent(), "c", CallFact::Start(Some(&copy)));
+        ledger.observe(agent(), "c", Fact::Start(None));
+        ledger.observe(agent(), "c", Fact::End);
+        let echo = ledger.observe(agent(), "c", Fact::Start(Some(&copy)));
         assert_eq!((echo.transition, echo.ended), (None, true));
     }
 
     #[test]
     fn a_revived_slot_ends_its_dead_lifes_calls_and_keeps_them() {
         let mut ledger = CallLedger::default();
-        ledger.observe(agent(), "c", CallFact::Start(None));
+        ledger.observe(agent(), "c", Fact::Start(None));
         ledger.end_life(&agent());
-        let replay = ledger.observe(agent(), "c", CallFact::Start(None));
+        let replay = ledger.observe(agent(), "c", Fact::Start(None));
         assert_eq!((replay.transition, replay.ended), (None, true));
         ledger.forget(&agent());
         assert_eq!(ledger.len(), 0);

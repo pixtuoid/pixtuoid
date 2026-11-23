@@ -504,66 +504,6 @@ impl AgentEvent {
         }
     }
 
-    /// Which merge rule this fact follows, by what it names on the wire.
-    #[doc(hidden)]
-    pub fn merge(&self) -> Merge<'_> {
-        let call = |id, fact| Merge::Keyed(MergeKey::Call { id, fact });
-        match self {
-            AgentEvent::ToolUseStart {
-                tool_use_id: Some(id),
-                copy_id,
-                ..
-            } => call(id, CallFact::Start(copy_id.as_ref())),
-            AgentEvent::ToolUseEnd {
-                tool_use_id: Some(id),
-                ..
-            } => call(id, CallFact::End),
-            AgentEvent::ToolUsePending { tool_use_id, .. } => call(tool_use_id, CallFact::PreUse),
-            AgentEvent::UserActionRequest {
-                tool_use_id: Some(id),
-                ..
-            } => call(id, CallFact::Gate),
-            AgentEvent::UserActionResolved { by, .. } => match by {
-                Resolution::Approved(id) => call(id, CallFact::Resume),
-                Resolution::Turn(turn) => Merge::Keyed(MergeKey::Turn(turn)),
-                // codex's hook alone sends it, and it answers a request
-                // without moving its call's phase.
-                Resolution::Call(_) => Merge::SingleWriter,
-            },
-            AgentEvent::TurnEnd {
-                turn: Some(turn), ..
-            } => Merge::Keyed(MergeKey::Turn(turn)),
-            AgentEvent::Usage {
-                reading_id: Some(id),
-                ..
-            } => Merge::Keyed(MergeKey::Reading(id)),
-            // A start supersedes another key's open turn, so its order across
-            // keys decides which turn is open.
-            AgentEvent::TurnStart { .. }
-            | AgentEvent::ToolUseStart {
-                tool_use_id: None, ..
-            }
-            | AgentEvent::ToolUseEnd {
-                tool_use_id: None, ..
-            }
-            | AgentEvent::UserActionRequest {
-                tool_use_id: None, ..
-            }
-            | AgentEvent::TurnEnd { turn: None, .. }
-            | AgentEvent::Usage {
-                reading_id: None, ..
-            }
-            | AgentEvent::ModelInfo { .. }
-            | AgentEvent::Rename { .. }
-            | AgentEvent::LabelHint { .. } => Merge::SingleWriter,
-            AgentEvent::SessionStart { .. }
-            | AgentEvent::SessionEnd { .. }
-            | AgentEvent::Identity { .. }
-            | AgentEvent::ProofOfLife { .. }
-            | AgentEvent::Backlog { .. } => Merge::Lifecycle,
-        }
-    }
-
     /// Each wire id this event names a record by, mutably, for a host that
     /// replays a script under fresh ids. Every field of a variant carrying
     /// one is named here, so a field it gains fails to compile until sorted.
@@ -616,53 +556,6 @@ impl AgentEvent {
         };
         MergeKeysMut { id, turn }
     }
-}
-
-/// Which merge rule a fact follows ([`AgentEvent::merge`]).
-#[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Merge<'a> {
-    /// Either transport may carry it: it merges on the record a wire id both
-    /// name, in any order.
-    Keyed(MergeKey<'a>),
-    /// One transport per source carries it, since nothing orders it across
-    /// transports.
-    SingleWriter,
-    /// A session's life, which `Reducer::authorizes` decides.
-    Lifecycle,
-}
-
-/// The record a [`Merge::Keyed`] fact merges on.
-#[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MergeKey<'a> {
-    /// A tool call's.
-    Call {
-        /// The call's id.
-        id: &'a str,
-        /// What the fact says of it.
-        fact: CallFact<'a>,
-    },
-    /// A turn's.
-    Turn(&'a TurnKey),
-    /// A usage reading's, by its id.
-    Reading(&'a str),
-}
-
-/// What a fact says of its call.
-#[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CallFact<'a> {
-    /// It is about to run.
-    PreUse,
-    /// It started, under its copy id where its wire names one.
-    Start(Option<&'a CopyId>),
-    /// It waits on the user.
-    Gate,
-    /// The user approved it, and it runs on.
-    Resume,
-    /// It ended.
-    End,
 }
 
 /// The wire ids an event names its records by ([`AgentEvent::merge_keys_mut`]).
