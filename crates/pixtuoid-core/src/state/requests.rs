@@ -221,8 +221,9 @@ impl ActionRequests {
         }
     }
 
-    /// A call's first start, or a start naming no call: whether the slot runs
-    /// it, else it only counts. `requires_action` is whether a request stands.
+    /// A start that raised its call's record, or one naming no call: whether
+    /// the slot runs it, else it only counts. `requires_action` is whether a
+    /// request stands.
     pub(crate) fn start(&mut self, id: AgentId, requires_action: bool) -> bool {
         let resolved = !requires_action || self.resolves(&id, Seen::Start);
         if resolved {

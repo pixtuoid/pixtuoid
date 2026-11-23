@@ -14,12 +14,12 @@ use std::sync::Arc;
 use crate::AgentId;
 use crate::source::{AgentEvent, CopyId, Resolution};
 
-/// How far a call got. An end outranks every step, so no fact of its
+/// How far a call got. An end outranks every open step, so no fact of its
 /// generation raises the call again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Phase {
-    ended: bool,
-    step: Step,
+enum Phase {
+    Open(Step),
+    Ended,
 }
 
 /// What a fact says of its call.
@@ -101,22 +101,13 @@ enum Step {
 }
 
 impl Phase {
-    const STARTED: Self = Self {
-        ended: false,
-        step: Step::Started,
-    };
-
     fn of(fact: Fact<'_>) -> Self {
-        let step = |step| Self { ended: false, step };
         match fact {
-            Fact::PreUse => step(Step::PreUse),
-            Fact::Start(_) => Self::STARTED,
-            Fact::Gate => step(Step::Gated),
-            Fact::Resume => step(Step::Resumed),
-            Fact::End => Self {
-                ended: true,
-                step: Step::PreUse,
-            },
+            Fact::PreUse => Self::Open(Step::PreUse),
+            Fact::Start(_) => Self::Open(Step::Started),
+            Fact::Gate => Self::Open(Step::Gated),
+            Fact::Resume => Self::Open(Step::Resumed),
+            Fact::End => Self::Ended,
         }
     }
 }
@@ -172,14 +163,14 @@ impl CallLedger {
             return Observed {
                 rose: true,
                 counts: starts,
-                ended: into.ended,
+                ended: into == Phase::Ended,
             };
         };
         // A provider reusing an id names a new call (the `copy_id` comment in
         // `source/omp.rs`'s `decode_omp_line`). Only omp's copy ids can differ
         // for one call id, and every fact of its calls rides its one
         // transcript; claude-code's copy id is the call id itself.
-        let generation = record.phase.ended
+        let generation = record.phase == Phase::Ended
             && copy.is_some_and(|c| !record.copies.is_empty() && !record.copies.contains(c));
         if let Some(c) = copy
             && !record.copies.contains(c)
@@ -187,7 +178,7 @@ impl CallLedger {
             record.copies.push(c.clone());
         }
         if generation {
-            record.phase = Phase::STARTED;
+            record.phase = Phase::Open(Step::Started);
             return Observed {
                 rose: true,
                 counts: true,
@@ -203,7 +194,7 @@ impl CallLedger {
         Observed {
             rose,
             counts,
-            ended: record.phase.ended,
+            ended: record.phase == Phase::Ended,
         }
     }
 
@@ -216,7 +207,7 @@ impl CallLedger {
             .into_iter()
             .flat_map(HashMap::values_mut)
         {
-            record.phase.ended = true;
+            record.phase = Phase::Ended;
         }
     }
 

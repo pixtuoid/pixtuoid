@@ -594,8 +594,8 @@ impl Reducer {
     }
 
     /// The `ToolUseStart` arm, for a Start the pre-pass tracker left to it.
-    /// Only a call's first start runs it, and one the agent's action request
-    /// holds back
+    /// Only a start that raises its call's record ([`Observed::rose`]) runs
+    /// the call, and one the agent's action request holds back
     /// ([`ActionRequests::start`](crate::state::requests::ActionRequests::start))
     /// only counts: a RequiresAction slot shows no call.
     fn apply_tool_use_start(
@@ -1405,12 +1405,13 @@ impl Reducer {
     }
 
     /// Tracks Task tool_use_ids from either transport while their calls are
-    /// open, marking a parent whose Task first starts Running("Delegating") so
-    /// it doesn't look asleep while subagents work. b1 subagent-completion
-    /// inference, where [`ChildEndInference`] says so: a drained parent Task
-    /// means the subtree returned — cascade EXIT to the DESCENDANTS, not the
-    /// parent, so they leave before [`STALE_IDLE_TIMEOUT`]. Returns whether it
-    /// owns `event`: every Task dispatch Start, and the End that drained one.
+    /// open, marking a parent whose Task start raises its record
+    /// Running("Delegating") so it doesn't look asleep while subagents work.
+    /// b1 subagent-completion inference, where [`ChildEndInference`] says so:
+    /// a drained parent Task means the subtree returned — cascade EXIT to the
+    /// DESCENDANTS, not the parent, so they leave before
+    /// [`STALE_IDLE_TIMEOUT`]. Returns whether it owns `event`: every Task
+    /// dispatch Start, and the End that drained one.
     fn track_tasks_in_flight(
         &mut self,
         scene: &mut SceneState,
