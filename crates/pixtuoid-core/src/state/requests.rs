@@ -31,8 +31,8 @@ pub(crate) enum Ended<'a> {
 /// An event as a request's resolution reads it.
 #[derive(Clone, Copy, Debug)]
 enum Seen<'a> {
-    /// A call started: the transport its call first started on, `None` for a
-    /// start naming no call.
+    /// A call started: the transport this start came on, `None` for a start
+    /// naming no call.
     Start(Option<Transport>),
     /// An end, and the transport it arrived on.
     End(Ended<'a>, Transport),

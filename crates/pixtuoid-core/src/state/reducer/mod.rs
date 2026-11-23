@@ -1433,8 +1433,9 @@ impl Reducer {
     }
 
     /// Tracks Task tool_use_ids from either transport while their calls are
-    /// open, marking a parent whose Task start raises its record
-    /// Running("Delegating") so it doesn't look asleep while subagents work.
+    /// open, marking the parent Running("Delegating") when its Task start
+    /// shows ([`Self::start_shows`]) so it doesn't look asleep while subagents
+    /// work.
     /// b1 subagent-completion inference, where [`ChildEndInference`] says so:
     /// a drained parent Task means the subtree returned — cascade EXIT to the
     /// DESCENDANTS, not the parent, so they leave before
