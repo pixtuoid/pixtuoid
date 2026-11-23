@@ -975,8 +975,9 @@ fn omp_ask_reason(intent: Option<&str>) -> String {
 
 /// The event an approval `record` carries for the call its `data` names: the
 /// wait, then its resume or its end (`data`'s shape:
-/// `session/tool-approval-records.ts:9-26` at v19.1.0). The call id and the
-/// tool name are REQUIRED there, so either missing where it is read is drift.
+/// `session/tool-approval-records.ts:9-26` at v19.1.0). The call id, the tool
+/// name and `approved` are REQUIRED there, so any missing where it is read is
+/// drift.
 fn omp_approval(
     acting: AgentId,
     source: &str,
@@ -998,31 +999,37 @@ fn omp_approval(
                 ""
             })
     };
-    Some(if record == TOOL_APPROVAL_REQUESTED {
-        AgentEvent::user_action_request(
+    if record == TOOL_APPROVAL_REQUESTED {
+        return Some(AgentEvent::user_action_request(
             acting,
             Some(omp_approval_reason(data, tool())),
             RequestKeys {
                 tool_use_id: Some(call.to_owned()),
                 ..RequestKeys::default()
             },
-        )
-    } else if data.get("approved").and_then(Value::as_bool) == Some(true) {
+        ));
+    }
+    let end = || AgentEvent::ToolUseEnd {
+        agent_id: acting,
+        tool_use_id: Some(call.to_owned()),
+    };
+    Some(match data.get("approved").and_then(Value::as_bool) {
         // The resume. copilot's approve-emits-nothing shape doesn't fit omp:
         // the call's block precedes the request, so only this Start can lift
         // the wait.
-        AgentEvent::ToolUseStart {
+        Some(true) => AgentEvent::ToolUseStart {
             agent_id: acting,
             tool_use_id: Some(call.to_owned()),
             detail: Some(omp_tool_detail(tool(), None, None)),
             copy_id: None,
-        }
-    } else {
+        },
         // A denial lifts the wait now; the isError toolResult that follows
         // ends nothing more.
-        AgentEvent::ToolUseEnd {
-            agent_id: acting,
-            tool_use_id: Some(call.to_owned()),
+        Some(false) => end(),
+        // Still an outcome, so the wait lifts.
+        None => {
+            crate::source::drift::missing_field(source, record, "approved");
+            end()
         }
     })
 }
@@ -2050,15 +2057,25 @@ mod tests {
             }
             other => panic!("expected the resume's ToolUseStart, got {other:?}"),
         }
-        // Only the resume reads the name, so only its absence there is drift.
-        for (line, drift) in [(APPROVAL_APPROVED, true), (APPROVAL_DENIED, false)] {
-            let nameless = with_data(line, |d| {
-                d.remove("toolName");
+        // Only the resume reads the name, so only its absence there is drift;
+        // an outcome without its verdict still ends the call.
+        for (line, field, drift) in [
+            (APPROVAL_APPROVED, "toolName", true),
+            (APPROVAL_DENIED, "toolName", false),
+            (APPROVAL_APPROVED, "approved", true),
+        ] {
+            let missing = with_data(line, |d| {
+                d.remove(field);
             });
+            let mut evs = Vec::new();
             let out = crate::test_capture::capture_logs(|| {
-                assert_eq!(decode(&nameless).len(), 1);
+                evs = decode(&missing);
             });
-            assert_eq!(out.contains("toolName"), drift, "{line}\n{out}");
+            assert_eq!(out.contains(field), drift, "{field}: {line}\n{out}");
+            match (field, &evs[..]) {
+                ("approved", [AgentEvent::ToolUseEnd { .. }]) | ("toolName", [_]) => {}
+                other => panic!("{field}: {line}: {other:?}"),
+            }
         }
     }
 

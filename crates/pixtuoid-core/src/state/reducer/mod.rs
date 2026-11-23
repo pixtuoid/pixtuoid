@@ -1496,26 +1496,21 @@ impl Reducer {
                             Some(fsm::delegating_item(Some(Arc::from(tuid.as_str())))),
                         );
                     }
-                    if let Some(slot) = scene.agents.get_mut(agent_id) {
-                        let requires_action =
-                            matches!(slot.state, ActivityState::RequiresAction { .. });
-                        // A Start of a Task already in flight still answers a
-                        // request naming it: omp writes a gated task's block,
-                        // then its approval request, then the resume's Start
-                        // (`omp/fixtures/approve-hermetic`'s lines 8, 10, 11).
-                        let resumes =
-                            requires_action && self.corr.action_requests.names(agent_id, tuid);
-                        if (first || resumes)
-                            && self.corr.action_requests.start(
-                                *agent_id,
-                                Some(tuid),
-                                from,
-                                requires_action,
-                            )
-                        {
-                            fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
-                            self.corr.item_started_on.insert(*agent_id, from);
-                        }
+                    // omp writes a gated call's block, then its approval
+                    // request, then its outcome, for every tool it wraps
+                    // (`extensibility/extensions/wrapper.ts:361-450`, `:527-528`
+                    // at v19.1.0), so a gated Task's resume finds it in flight.
+                    if let Some(slot) = scene.agents.get_mut(agent_id)
+                        && self.corr.action_requests.task_start(
+                            *agent_id,
+                            tuid,
+                            first,
+                            from,
+                            matches!(slot.state, ActivityState::RequiresAction { .. }),
+                        )
+                    {
+                        fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
+                        self.corr.item_started_on.insert(*agent_id, from);
                     }
                 }
             }
@@ -1553,7 +1548,7 @@ impl Reducer {
                                 item: Some(ToolUse { tool_use_id: Some(t), .. }),
                             } if **t == **tuid
                         );
-                        let shows_drained_task = matches!(
+                        let delegation_over = matches!(
                             slot.state,
                             ActivityState::Running {
                                 item: Some(ToolUse {
@@ -1562,7 +1557,7 @@ impl Reducer {
                                 })
                             }
                         ) && (set.is_empty() || shown_drained);
-                        if answered || shows_drained_task {
+                        if answered || delegation_over {
                             fsm::settle(slot, self.settle_ctx(agent_id), now);
                         }
                     }
