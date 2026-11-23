@@ -4,7 +4,9 @@
 //! transcript line no sooner than it was written and at most the watcher's
 //! `DEFAULT_POLL_INTERVAL` after, behind every line above it, since the
 //! watcher reads a file in order. A line's write stamp dates its write, or
-//! for a line with none, the stamped lines around it do.
+//! for a line with none, the stamped lines around it do; one ahead of the
+//! file's first stamp was written no sooner than the earliest stamp either
+//! stream records.
 
 use std::time::{Duration, SystemTime};
 
@@ -506,15 +508,23 @@ mod tests {
     /// around it, so a hook stamped before the next one may precede it.
     #[test]
     fn an_unstamped_line_may_follow_a_hook_stamped_before_the_next_stamp() {
-        // Past a poll interval from the epoch, the first line's earliest
-        // write, so only the next line's stamp can admit the hook ahead of it.
-        let hook_at = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms") * 2;
-        let hooks = [hook("SessionStart", hook_at)];
-        let lines = [unstamped_call(), output(hook_at + 1_000)];
+        let poll = u64::try_from(DEFAULT_POLL_INTERVAL.as_millis()).expect("ms");
+        // The first hook floors the line's earliest write; the second, past a
+        // poll after it, can precede the line only through the next line's
+        // stamp.
+        let hooks = [
+            hook("SessionStart", poll),
+            hook("PreToolUse", 2 * poll + 500),
+        ];
+        let lines = [unstamped_call(), output(2 * poll + 1_000)];
         let merges = drive().merges(&hooks, &lines).expect("codex merges");
         assert_eq!(
             orders(merges),
-            [vec![(J, 0), (H, 0), (J, 1)], vec![(H, 0), (J, 0), (J, 1)]]
+            [
+                vec![(J, 0), (H, 0), (H, 1), (J, 1)],
+                vec![(H, 0), (J, 0), (H, 1), (J, 1)],
+                vec![(H, 0), (H, 1), (J, 0), (J, 1)],
+            ]
         );
     }
 
