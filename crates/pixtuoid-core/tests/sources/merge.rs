@@ -3,19 +3,19 @@
 //! (`harness::merge`).
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::harness::HOOK_PAYLOADS;
-use pixtuoid_core::harness::merge::{Merged, Step};
-use pixtuoid_core::source::AgentEvent;
+use pixtuoid_core::harness::merge::{Merged, Merges, Step};
+use pixtuoid_core::source::{AgentEvent, registry};
 use pixtuoid_core::state::TurnKey;
 use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
 use pixtuoid_core::{ActivityState, AgentId, ToolUse, Transport};
 use serde_json::Value;
 
-use super::captures::{fixture_lines, transcript_in};
+use super::captures::{fixture_lines, sources_root, transcript_in, transcripts_in};
 
 /// One recorded run's two streams.
 struct Run {
@@ -30,9 +30,13 @@ struct Run {
 
 impl Run {
     fn of(source: &str, scenario: &str) -> Self {
-        let dir = pixtuoid_core::harness::fixtures_dir(&super::captures::sources_root(), source)
-            .join(scenario);
+        let dir = pixtuoid_core::harness::fixtures_dir(&sources_root(), source).join(scenario);
         let transcript = transcript_in(&dir);
+        Self::at(source, &dir, transcript)
+    }
+
+    /// The run of `transcript` against every hook its capture `dir` recorded.
+    fn at(source: &str, dir: &Path, transcript: PathBuf) -> Self {
         let hooks = fixture_lines(&dir.join(HOOK_PAYLOADS));
         let lines = fixture_lines(&transcript);
         let parsed = |raw: &[String]| -> Vec<Value> {
@@ -42,7 +46,8 @@ impl Run {
                 .collect()
         };
         Self {
-            name: format!("{source}/{scenario}"),
+            name: pixtuoid_core::harness::slashed_under(&sources_root(), &transcript)
+                .expect("every capture is under tests/sources"),
             source: source.to_owned(),
             transcript,
             hook_values: parsed(&hooks),
@@ -52,14 +57,19 @@ impl Run {
         }
     }
 
-    /// `check` over every order the run's lines can arrive in, folded one at a
-    /// time: a run has tens of thousands.
-    fn each(&self, mut check: impl FnMut(&Merged)) {
-        let merges = Drive::transcript_at(&self.source, &self.transcript)
+    /// Every order the run's lines can arrive in; `None` when its source's
+    /// transcript carries no write stamp.
+    fn merges(&self) -> Option<Merges> {
+        Drive::transcript_at(&self.source, &self.transcript)
             .expect("a transcript source")
             .seeded()
             .merges(&self.hooks, &self.lines)
-            .expect("its transcript carries a write stamp");
+    }
+
+    /// `check` over every order the run's lines can arrive in, folded one at a
+    /// time: a run has tens of thousands. Returns how many there were.
+    fn each(&self, mut check: impl FnMut(&Merged)) -> usize {
+        let merges = self.merges().expect("its transcript carries a write stamp");
         let mut orders = 0;
         for m in merges {
             m.driven.assert_clean(&self.name);
@@ -67,6 +77,7 @@ impl Run {
             orders += 1;
         }
         assert!(orders > 0, "{}: no order to merge in", self.name);
+        orders
     }
 
     /// The raw line a step's event decoded from.
@@ -470,4 +481,105 @@ fn a_lagging_jsonl_start_never_reopens_a_call_the_hook_ended() {
 #[test]
 fn grok_s_hook_set_item_survives_its_last_turn_s_lagging_end() {
     a_hook_set_item_survives_a_lagging_jsonl_turn_end(&Run::of("grok", "two-turn-hermetic"));
+}
+
+/// What an order leaves of a slot that must not depend on the order: nothing
+/// read off an arrival instant (`running_ms`, any `*_at`), and no fact whose
+/// value is whichever transport's copy landed first or last (label, model,
+/// effort, an item's detail, a request's reason).
+#[derive(Debug, PartialEq)]
+struct Ends {
+    exiting: bool,
+    parent_id: Option<AgentId>,
+    state: ActivityState,
+    tool_call_count: u32,
+    tokens_used: u64,
+}
+
+/// Each slot `m` left, by agent: a slot only some orders leave differs too.
+fn ends(m: &Merged) -> BTreeMap<AgentId, Ends> {
+    let slots = m.driven.scene.agents.iter();
+    slots
+        .map(|(&agent, slot)| {
+            let state = match &slot.state {
+                ActivityState::Running { item } => ActivityState::Running {
+                    item: item.clone().map(|i| ToolUse { detail: None, ..i }),
+                },
+                ActivityState::RequiresAction { .. } => {
+                    ActivityState::RequiresAction { reason: None }
+                }
+                ActivityState::Idle => ActivityState::Idle,
+            };
+            let ends = Ends {
+                exiting: slot.exiting_at.is_some(),
+                parent_id: slot.parent_id,
+                state,
+                tool_call_count: slot.tool_call_count,
+                tokens_used: slot.tokens_used,
+            };
+            (agent, ends)
+        })
+        .collect()
+}
+
+/// The registry rows with both a transcript and hooks: a CLI that gains the
+/// second transport joins here, and fails until its transcript is stamped.
+fn two_transport_sources() -> Vec<&'static str> {
+    registry::registered_source_names()
+        .filter(|&s| {
+            registry::descriptor_for(s)
+                .is_some_and(|d| d.line_decoder().is_some() && d.hook().is_some())
+        })
+        .collect()
+}
+
+/// `source`'s recorded runs: each transcript of each capture that recorded its
+/// hooks too.
+fn runs_of(source: &str) -> Vec<Run> {
+    let captures = pixtuoid_core::harness::captures(&sources_root()).into_iter();
+    captures
+        .filter(|c| c.source == source && c.dir.join(HOOK_PAYLOADS).is_file())
+        .flat_map(|c| {
+            let transcripts = transcripts_in(&c.dir).into_iter();
+            transcripts.map(move |t| Run::at(source, &c.dir, t))
+        })
+        .collect()
+}
+
+/// Every order of every recorded run of a two-transport source ends alike. A
+/// source with no write stamp, or a run whose stamps admit one order, proves
+/// nothing: a transcript with no stamp it parses arrives whole at the epoch,
+/// ahead of every hook.
+#[test]
+fn every_order_of_a_two_transport_run_ends_alike() {
+    let mut unstamped = Vec::new();
+    for source in two_transport_sources() {
+        let runs = runs_of(source);
+        assert!(
+            !runs.is_empty(),
+            "{source}: no capture records both streams"
+        );
+        if runs[0].merges().is_none() {
+            unstamped.push(source);
+            continue;
+        }
+        for run in &runs {
+            let mut first = None;
+            let orders = run.each(|m| match &first {
+                None => first = Some((m.arrivals(), ends(m))),
+                Some((order, left)) => assert_eq!(
+                    ends(m),
+                    *left,
+                    "{}: {:?} ends otherwise than {order:?}",
+                    run.name,
+                    m.arrivals()
+                ),
+            });
+            assert!(orders >= 2, "{}: one order", run.name);
+        }
+    }
+    assert!(
+        unstamped.is_empty(),
+        "no write stamp (`harness::reads::WRITE_STAMPS`) for {unstamped:?}"
+    );
 }

@@ -375,6 +375,9 @@ pub(crate) fn is_shim_stamp(at: &str, key: &str) -> bool {
 pub(crate) enum Spelling {
     /// An RFC 3339 string.
     Rfc3339,
+    /// An RFC 3339 string cut to the whole second, so the write is anywhere in
+    /// that second.
+    Rfc3339Secs,
     /// An integer count of seconds since the epoch.
     EpochSecs,
 }
@@ -382,8 +385,13 @@ pub(crate) enum Spelling {
 /// Each source whose transcript lines carry their write stamp: the top-level
 /// key it rides, and its spelling.
 pub(crate) const WRITE_STAMPS: &[(&str, &str, Spelling)] = &[
+    // Its recorded stamps carry no fraction
+    // (`antigravity/fixtures/*/*/.system_generated/logs/transcript.jsonl`).
+    ("antigravity", "created_at", Spelling::Rfc3339Secs),
+    ("claude-code", "timestamp", Spelling::Rfc3339),
     ("codex", "timestamp", Spelling::Rfc3339),
     ("grok", "timestamp", Spelling::EpochSecs),
+    ("omp", "timestamp", Spelling::Rfc3339),
 ];
 
 /// Whether `key` under `at` is a `transcript`'s write stamp, which the strip

@@ -6,7 +6,7 @@
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 60
+    "blanked": 56
   },
   "aimock": "1.48.0",
   "script": "tests/sources/omp/hermetic/tool-run.json",
@@ -32,7 +32,7 @@
     }
   },
   "sentinel_reads": {
-    "2026-11-23T00-25-34-316Z_01a205cb-396c-7663-9bb8-e36958fe9605.jsonl": [
+    "2026-11-23T04-56-34-754Z_01a206c3-56c2-7130-9466-7e78f368a3be.jsonl": [
       "11:/message/usage/cacheWrite",
       "1:/title",
       "8:/message/usage/cacheWrite"

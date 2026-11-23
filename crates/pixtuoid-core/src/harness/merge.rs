@@ -41,6 +41,17 @@ pub struct Merged {
     pub steps: Vec<Step>,
 }
 
+impl Merged {
+    /// Its lines in the order they arrived, as each one's stream and index, a
+    /// line's run of steps once.
+    pub fn arrivals(&self) -> Vec<(Transport, usize)> {
+        let mut lines: Vec<(Transport, usize)> =
+            self.steps.iter().map(|s| (s.transport, s.line)).collect();
+        lines.dedup();
+        lines
+    }
+}
+
 /// A line `read` delivered events for, its seed alone included, and when its
 /// CLI wrote it: exactly `at` when `within` is zero, else in `at..at + within`.
 #[derive(Debug)]
@@ -135,6 +146,7 @@ impl Drive {
 fn stamp_of(v: &Value, spelling: Spelling) -> Option<(Duration, Duration)> {
     match spelling {
         Spelling::Rfc3339 => Some((rfc3339_to_epoch(v.as_str()?)?, Duration::ZERO)),
+        Spelling::Rfc3339Secs => Some((rfc3339_to_epoch(v.as_str()?)?, Duration::from_secs(1))),
         Spelling::EpochSecs => Some((Duration::from_secs(v.as_u64()?), Duration::from_secs(1))),
     }
 }
@@ -385,17 +397,9 @@ mod tests {
         .to_string()
     }
 
-    /// Each order, as the stream and line of each step, a line's run of steps
-    /// once.
+    /// Each order's [`Merged::arrivals`].
     fn orders(merges: Merges) -> Vec<Vec<(Transport, usize)>> {
-        merges
-            .map(|m| {
-                let mut lines: Vec<(Transport, usize)> =
-                    m.steps.iter().map(|s| (s.transport, s.line)).collect();
-                lines.dedup();
-                lines
-            })
-            .collect()
+        merges.map(|m| m.arrivals()).collect()
     }
 
     const H: Transport = Transport::Hook;
@@ -588,6 +592,18 @@ mod tests {
         assert_eq!(stamp_of(&json!("1793078269"), Spelling::EpochSecs), None);
     }
 
+    #[test]
+    fn a_whole_second_rfc3339_stamp_spans_its_second() {
+        let (at, within) =
+            stamp_of(&json!("2026-11-23T04:47:14Z"), Spelling::Rfc3339Secs).expect("a stamp");
+        assert_eq!(at, Duration::from_secs(1_795_409_234));
+        assert_eq!(within, Duration::from_secs(1));
+        assert_eq!(
+            stamp_of(&json!(1_795_409_234_u64), Spelling::Rfc3339Secs),
+            None
+        );
+    }
+
     /// The shim (`pixtuoid-hook`) is the key's one writer, a crate this one
     /// cannot import from, so its own recorded output pins the spelling.
     #[test]
@@ -609,10 +625,10 @@ mod tests {
     fn a_drive_with_no_write_stamp_to_order_by_has_no_merge() {
         let none: [&str; 0] = [];
         assert!(Drive::hooks().merges(&none, &none).is_none());
-        let omp = "/h/.omp/agent/sessions/-h-p/2026-09-19T18-16-13-370Z_01a0bae2-133a-769f-851a-927926fbca45.jsonl";
+        let copilot = "/h/.copilot/session-state/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl";
         assert!(
-            Drive::transcript("omp", omp)
-                .expect("omp has a transcript")
+            Drive::transcript("copilot", copilot)
+                .expect("copilot has a transcript")
                 .merges(&none, &none)
                 .is_none()
         );
