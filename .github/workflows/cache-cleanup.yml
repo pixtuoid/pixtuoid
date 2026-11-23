@@ -6,14 +6,12 @@ name: cache cleanup
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] no checkout or PR-code execution; policy pins the cache-only job
     types: [closed]
-  # A lockfile bump strands the previous rust cache generation on the main
-  # ref; deleting it deterministically beats the LRU lottery at the cache
-  # quota. Toolchain bumps are out of scope in both directions: they don't
-  # touch Cargo.lock, and the rustc hash is inside the family key, so a bump
-  # forks a NEW family rather than superseding the old one.
+  # Each new rust cache generation strands its predecessor on the main ref;
+  # deleting it deterministically beats the LRU lottery at the cache quota.
+  # Every push, not a path filter, which would copy the files rust-cache
+  # hashes into a generation (its src/config.ts).
   push:
     branches: [main]
-    paths: [Cargo.lock]
 
 # Per-job grants: with more than one job, a workflow-level write is
 # zizmor's excessive-permissions class.
@@ -57,14 +55,15 @@ jobs:
         run: |
           set -euo pipefail
           # Stripping the last segment reproduces rust-cache's own restoreKey
-          # boundary (key = prefix-sharedkey-OS-arch-envhash-LOCKHASH), so a
-          # family is (job, OS, toolchain) and only lockfile generations
-          # compete inside it. A key with a non-hex tail becomes its own
-          # one-element family and is never deleted — the failure direction
-          # is under-prune, never over-prune. Keep each family's newest
-          # entry; this run races the build creating its successor, so the
-          # superseded generation survives until the NEXT bump — the
-          # invariant is at most two generations per family, not one.
+          # boundary (key = prefix-{shared key or job}-OS-arch-envhash-genhash),
+          # so only generations compete inside a family; a toolchain bump
+          # changes envhash, so it forks a new family and leaves the old one to
+          # expire. A key with a non-hex tail becomes its own one-element
+          # family and is never deleted — the failure direction is
+          # under-prune, never over-prune. Keep each family's newest entry.
+          # After a revert, or main builds saving out of order, that is not the
+          # live generation: the live one is deleted, and the next build
+          # restores the kept one and rebuilds what differs.
           # An assignment propagates a pipeline failure under pipefail (a
           # process substitution would swallow it); --limit 300 is an order
           # of magnitude past what the cache quota can hold
