@@ -142,24 +142,14 @@ startup:
             name: "permission",
             shape: Shape::Permission,
             surface: Surface::Headless,
-            expects: &[
-                "session_start",
-                "tool_approval_requested",
-                "tool_approval_resolved",
-                "session_shutdown",
-            ],
+            expects: &["session_start", "session_shutdown"],
             turn: Turn::PROFILE,
         },
         Scenario {
             name: "approve",
             shape: Shape::Permission,
             surface: Surface::Tui { row: &TUI_APPROVE },
-            expects: &[
-                "session_start",
-                "tool_approval_requested",
-                "tool_approval_resolved",
-                "session_shutdown",
-            ],
+            expects: &["session_start", "session_shutdown"],
             turn: Turn::PROFILE,
         },
         // omp's question is a tool the model calls, which only a UI answers

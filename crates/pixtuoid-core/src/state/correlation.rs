@@ -291,11 +291,10 @@ pub(super) struct Correlation {
     /// turn end naming no turn can lag its hooks' next call (grok).
     pub(super) item_started_on: HashMap<AgentId, Transport>,
     /// Tool calls already counted into `tool_call_count`, so the SAME logical
-    /// call re-observed on the other transport counts once (#951). Not
-    /// [`HOOK_WINS_WINDOW`]'s job: omp's transcript writes the call BEFORE the
-    /// approval request goes out, so the two Starts are separated by HUMAN
-    /// approval latency and no dedup window can span them. Never swept, only
-    /// forgotten with the slot, as `counted_readings` is.
+    /// call started twice counts once: omp's approval resume repeats its call's
+    /// Start a human later, and a hook Start's transcript twin can land past
+    /// [`HOOK_WINS_WINDOW`]. Never swept, only forgotten with the slot, as
+    /// `counted_readings` is.
     pub(super) counted_calls: Counted,
     /// Usage readings already counted into `tokens_used`, by the id a wire that
     /// repeats one gives it. Never swept, only forgotten with the slot: a

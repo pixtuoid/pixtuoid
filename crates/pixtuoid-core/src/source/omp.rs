@@ -8,8 +8,8 @@
 //! extension (`pixtuoid/src/install/omp_extension.ts`, auto-discovered from the
 //! agent dir's `extensions/`) whose payloads `decode_omp_hook_payload` claims
 //! (#951). It forwards what the transcript can never carry: pre-persist
-//! presence, empty-session shutdown, the approval wait, and the process's own
-//! `_pid`. Both transports key on the sessionFile stem chain
+//! presence, empty-session shutdown, and the process's own `_pid`. Both
+//! transports key on the sessionFile stem chain
 //! ([`omp_id_from_path`]), so they mint ONE AgentId per session, as grok's do;
 //! under `omp --no-extensions`, or with the bridge broken, the transcript alone
 //! carries the session. Wire shape: upstream `packages/coding-agent/src/session/`
@@ -44,7 +44,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Oh My Pi",
     label_prefix: "om",
-    verified_version: "18.20.2",
+    verified_version: "19.1.0",
     version_probe: Some(&["omp", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("PI_CODING_AGENT_DIR"),
@@ -687,6 +687,15 @@ const TITLE_FIELD: &str = "title";
 /// stale-sweep.
 const SESSION_EXIT: &str = "session_exit";
 
+/// The `customType`s of an approval wait and its outcome, flushed to the file
+/// before the extension event fires and before the prompt opens
+/// (`session/tool-approval-records.ts:5-6`, `:38-39`,
+/// `extensibility/extensions/wrapper.ts:416-450` at v19.1.0). A session with no
+/// file (`--no-session`, `session/session-manager.ts:2137-2144`) records none,
+/// and so shows no wait.
+const TOOL_APPROVAL_REQUESTED: &str = "tool_approval_requested";
+const TOOL_APPROVAL_RESOLVED: &str = "tool_approval_resolved";
+
 /// The turn role carrying tool calls. Its `model` is read BARE, never the
 /// provider-prefixed `model_change` form, so the dossier shows the
 /// vocabulary CC/codex/copilot emit. `model_change` itself stays undecoded: every
@@ -903,12 +912,18 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
         MODEL_USAGE => omp_usage(acting, obj, obj.get("usage"))
             .into_iter()
             .collect(),
-        CUSTOM if obj.get("customType").and_then(|c| c.as_str()) == Some(SESSION_EXIT) => {
-            vec![AgentEvent::SessionEnd {
+        CUSTOM => match obj.get("customType").and_then(|c| c.as_str()) {
+            Some(SESSION_EXIT) => vec![AgentEvent::SessionEnd {
                 agent_id: acting,
                 as_child: omp_parent_key_from_path(path).is_some(),
-            }]
-        }
+            }],
+            Some(record @ (TOOL_APPROVAL_REQUESTED | TOOL_APPROVAL_RESOLVED)) => {
+                omp_approval(acting, source, record, obj.get("data"))
+                    .into_iter()
+                    .collect()
+            }
+            _ => vec![],
+        },
         THINKING_LEVEL_CHANGE => match obj.get("thinkingLevel").and_then(|l| l.as_str()) {
             Some(level) if !level.is_empty() => vec![AgentEvent::ModelInfo {
                 agent_id: acting,
@@ -958,6 +973,68 @@ fn omp_ask_reason(intent: Option<&str>) -> String {
     )
 }
 
+/// The event an approval `record` carries for the call its `data` names: the
+/// wait, then its resume or its end (`data`'s shape:
+/// `session/tool-approval-records.ts:9-26` at v19.1.0). The call id is REQUIRED
+/// there, so a record without one is drift.
+fn omp_approval(
+    acting: AgentId,
+    source: &str,
+    record: &str,
+    data: Option<&Value>,
+) -> Option<AgentEvent> {
+    let Some((data, call)) = data
+        .and_then(Value::as_object)
+        .and_then(|d| Some((d, d.get("toolCallId")?.as_str()?)))
+    else {
+        crate::source::drift::missing_field(source, record, "toolCallId");
+        return None;
+    };
+    let tool = data.get("toolName").and_then(|t| t.as_str()).unwrap_or("");
+    Some(if record == TOOL_APPROVAL_REQUESTED {
+        AgentEvent::user_action_request(
+            acting,
+            Some(omp_approval_reason(data, tool)),
+            RequestKeys {
+                tool_use_id: Some(call.to_owned()),
+                ..RequestKeys::default()
+            },
+        )
+    } else if data.get("approved").and_then(Value::as_bool) == Some(true) {
+        // The resume. copilot's approve-emits-nothing shape doesn't fit omp:
+        // the call's block precedes the request, so only this Start can lift
+        // the wait.
+        AgentEvent::ToolUseStart {
+            agent_id: acting,
+            tool_use_id: Some(call.to_owned()),
+            detail: Some(omp_tool_detail(tool, None, None)),
+            copy_id: None,
+        }
+    } else {
+        // A denial lifts the wait now; the isError toolResult that follows
+        // ends nothing more.
+        AgentEvent::ToolUseEnd {
+            agent_id: acting,
+            tool_use_id: Some(call.to_owned()),
+        }
+    })
+}
+
+/// The [`AgentEvent::UserActionRequest`] reason for an approval request: its
+/// `reason` when it says anything (a plain bash gate records none), else the
+/// tool name, else the literal gate.
+fn omp_approval_reason(data: &serde_json::Map<String, Value>, tool: &str) -> String {
+    let wire = data
+        .get("reason")
+        .and_then(|r| r.as_str())
+        .filter(|r| !r.is_empty());
+    match wire {
+        Some(r) => ellipsize(r, MAX_DECODED_FIELD_CHARS),
+        None if !tool.is_empty() => ellipsize(tool, MAX_DECODED_FIELD_CHARS),
+        None => "approval".to_string(),
+    }
+}
+
 // --- extension-bridge hook payloads (#951) ---------------------------------
 
 /// The bridge extension's lifecycle event names, verbatim from omp's
@@ -967,10 +1044,6 @@ const HOOK_SESSION_START: &str = "session_start";
 const HOOK_SESSION_SWITCH: &str = "session_switch";
 const HOOK_SESSION_BRANCH: &str = "session_branch";
 const HOOK_SESSION_SHUTDOWN: &str = "session_shutdown";
-/// The approval pair (`extensibility/extensions/types.ts`) — the state the
-/// transcript can never carry: omp does not persist approval waits.
-const HOOK_APPROVAL_REQUESTED: &str = "tool_approval_requested";
-const HOOK_APPROVAL_RESOLVED: &str = "tool_approval_resolved";
 
 /// The hook event types this decoder turns into events, pinned to the dispatch arms by
 /// `every_exported_set_is_exactly_its_dispatch_arms` and to the TS
@@ -982,8 +1055,6 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
     HOOK_SESSION_SWITCH,
     HOOK_SESSION_BRANCH,
     HOOK_SESSION_SHUTDOWN,
-    HOOK_APPROVAL_REQUESTED,
-    HOOK_APPROVAL_RESOLVED,
 ];
 
 /// Decode one bridge-extension payload (already routed here by
@@ -1076,41 +1147,6 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
             agent_id,
             as_child: parent_key.is_some(),
         }]),
-        HOOK_APPROVAL_REQUESTED | HOOK_APPROVAL_RESOLVED => {
-            let Some(tool_call_id) = obj.get("toolCallId").and_then(|t| t.as_str()) else {
-                crate::source::drift::missing_field(SOURCE_NAME, ty, "toolCallId");
-                return Ok(vec![]);
-            };
-            let tool = obj.get("toolName").and_then(|t| t.as_str()).unwrap_or("");
-            let event = if ty == HOOK_APPROVAL_REQUESTED {
-                AgentEvent::user_action_request(
-                    agent_id,
-                    Some(omp_approval_reason(obj, tool)),
-                    RequestKeys {
-                        tool_use_id: Some(tool_call_id.to_string()),
-                        ..RequestKeys::default()
-                    },
-                )
-            } else if obj.get("approved").and_then(|a| a.as_bool()) == Some(true) {
-                // The resume. copilot's approve-emits-nothing shape doesn't fit
-                // omp: the transcript wrote this call BEFORE the request, so
-                // only this Start can lift the wait.
-                AgentEvent::ToolUseStart {
-                    agent_id,
-                    tool_use_id: Some(tool_call_id.to_string()),
-                    detail: Some(omp_tool_detail(tool, None, None)),
-                    copy_id: None,
-                }
-            } else {
-                // Denial: resolves the gated wait now; the transcript's
-                // isError toolResult later is the deduped/no-op backstop.
-                AgentEvent::ToolUseEnd {
-                    agent_id,
-                    tool_use_id: Some(tool_call_id.to_string()),
-                }
-            };
-            Ok(vec![identity(), event])
-        }
         _ => {
             crate::source::drift::unknown_event(SOURCE_NAME, ty);
             Ok(vec![])
@@ -1136,21 +1172,6 @@ fn omp_hook_session_key(obj: &serde_json::Map<String, Value>) -> Option<(String,
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
         .map(|s| (s.to_string(), None))
-}
-
-/// The [`AgentEvent::UserActionRequest`] reason for an approval gate: the wire's `reason` when it says
-/// anything (a plain bash gate sends none — probe-verified at this source's
-/// `verified_version`), else the tool name, else the literal gate.
-fn omp_approval_reason(obj: &serde_json::Map<String, Value>, tool: &str) -> String {
-    let wire = obj
-        .get("reason")
-        .and_then(|r| r.as_str())
-        .filter(|r| !r.is_empty());
-    match wire {
-        Some(r) => ellipsize(r, MAX_DECODED_FIELD_CHARS),
-        None if !tool.is_empty() => ellipsize(tool, MAX_DECODED_FIELD_CHARS),
-        None => "approval".to_string(),
-    }
 }
 
 #[cfg(test)]
@@ -1930,6 +1951,110 @@ mod tests {
     fn tool_execution_start_custom_entry_is_deliberately_ignored() {
         let line = r#"{"type":"custom","id":"c1","parentId":null,"timestamp":"t","customType":"tool_execution_start","data":{"toolCallId":"toolu_01AAA","toolName":"read","startedAt":"t"}}"#;
         assert!(decode(line).is_empty());
+    }
+
+    /// omp 19.1.0's `approve` run: the request, then the human's approval.
+    const APPROVAL_REQUESTED: &str = r#"{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"call_lpeNXErIg5IcpDCA","toolName":"bash","approvalMode":"always-ask","requestedAt":"2026-11-21T15:40:33.728Z"},"id":"67a99a3e","parentId":"2b584b27","timestamp":"2026-11-21T15:40:33.728Z","runtime":{"version":"19.1.0"}}"#;
+    const APPROVAL_APPROVED: &str = r#"{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_lpeNXErIg5IcpDCA","toolName":"bash","approved":true,"resolvedAt":"2026-11-21T15:40:34.302Z"},"id":"473e3a83","parentId":"67a99a3e","timestamp":"2026-11-21T15:40:34.302Z","runtime":{"version":"19.1.0"}}"#;
+    /// Its headless `permission` run, refused for want of a UI.
+    const APPROVAL_DENIED: &str = r#"{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_sMwsLbJWrnAzGJbI","toolName":"bash","approved":false,"reason":"no interactive UI available","resolvedAt":"2026-11-21T15:40:21.488Z"},"id":"49a328f9","parentId":"2dfc0526","timestamp":"2026-11-21T15:40:21.488Z","runtime":{"version":"19.1.0"}}"#;
+
+    /// `line` with its record's `data` edited by `edit`.
+    fn with_data(line: &str, edit: impl FnOnce(&mut serde_json::Map<String, Value>)) -> String {
+        let mut v: Value = serde_json::from_str(line).unwrap();
+        edit(v["data"].as_object_mut().unwrap());
+        v.to_string()
+    }
+
+    #[test]
+    fn an_approval_request_waits_on_the_call_it_names() {
+        match &decode(APPROVAL_REQUESTED)[..] {
+            [
+                AgentEvent::UserActionRequest {
+                    agent_id,
+                    reason,
+                    tool_use_id,
+                    ..
+                },
+            ] => {
+                assert_eq!(*agent_id, root());
+                assert_eq!(
+                    reason.as_deref(),
+                    Some("bash"),
+                    "no reason: the tool names it"
+                );
+                assert_eq!(tool_use_id.as_deref(), Some("call_lpeNXErIg5IcpDCA"));
+            }
+            other => panic!("expected one UserActionRequest, got {other:?}"),
+        }
+        let reasoned = with_data(APPROVAL_REQUESTED, |d| {
+            d.insert("reason".into(), json!("outside workspace"));
+        });
+        match &decode(&reasoned)[..] {
+            [AgentEvent::UserActionRequest { reason, .. }] => {
+                assert_eq!(reason.as_deref(), Some("outside workspace"))
+            }
+            other => panic!("expected one UserActionRequest, got {other:?}"),
+        }
+        let nameless = with_data(APPROVAL_REQUESTED, |d| {
+            d.remove("toolName");
+        });
+        match &decode(&nameless)[..] {
+            [AgentEvent::UserActionRequest { reason, .. }] => {
+                assert_eq!(reason.as_deref(), Some("approval"))
+            }
+            other => panic!("expected one UserActionRequest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_approval_resumes_its_call_and_a_denial_ends_it() {
+        match &decode(APPROVAL_APPROVED)[..] {
+            [
+                AgentEvent::ToolUseStart {
+                    agent_id,
+                    tool_use_id,
+                    detail,
+                    ..
+                },
+            ] => {
+                assert_eq!(*agent_id, root());
+                assert_eq!(tool_use_id.as_deref(), Some("call_lpeNXErIg5IcpDCA"));
+                assert_eq!(detail.as_ref().map(|d| d.display()), Some("bash"));
+            }
+            other => panic!("expected the resume's ToolUseStart, got {other:?}"),
+        }
+        assert_eq!(
+            decode(APPROVAL_DENIED),
+            [AgentEvent::ToolUseEnd {
+                agent_id: root(),
+                tool_use_id: Some("call_sMwsLbJWrnAzGJbI".to_owned()),
+            }]
+        );
+        let task = with_data(APPROVAL_APPROVED, |d| {
+            d.insert("toolName".into(), json!("task"));
+        });
+        match &decode(&task)[..] {
+            [AgentEvent::ToolUseStart { detail, .. }] => {
+                assert!(detail.as_ref().is_some_and(|d| d.is_task()));
+            }
+            other => panic!("expected the resume's ToolUseStart, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn an_approval_record_naming_no_call_drops_with_a_drift_breadcrumb() {
+        for line in [APPROVAL_REQUESTED, APPROVAL_APPROVED] {
+            let callless = with_data(line, |d| {
+                d.remove("toolCallId");
+            });
+            let out = crate::test_capture::capture_logs(|| {
+                assert!(decode(&callless).is_empty());
+            });
+            for needle in [crate::source::drift::TARGET, "missing_field", "toolCallId"] {
+                assert!(out.contains(needle), "missing {needle:?}\n{out}");
+            }
+        }
     }
 
     #[test]
@@ -2778,127 +2903,20 @@ mod tests {
     }
 
     #[test]
-    fn hook_approval_requested_waits_on_the_named_call_with_identity_ahead() {
-        let evs = hook(serde_json::json!({
-            "type": "tool_approval_requested", "sessionFile": HOOK_ROOT,
-            "sessionId": "x", "cwd": "/repo",
-            "toolCallId": "call_1", "toolName": "bash",
-        }));
-        match &evs[..] {
-            [
-                AgentEvent::Identity { agent_id: iid, .. },
-                AgentEvent::UserActionRequest {
-                    agent_id,
-                    reason: Some(reason),
-                    tool_use_id,
-                    ..
-                },
-            ] => {
-                assert_eq!(iid, agent_id);
-                assert_eq!(*agent_id, hook_id(HOOK_ROOT));
-                assert_eq!(reason, "bash", "empty reason falls back to the tool name");
-                assert_eq!(tool_use_id.as_deref(), Some("call_1"));
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-        // A wire reason wins over the tool-name fallback.
-        let evs = hook(serde_json::json!({
-            "type": "tool_approval_requested", "sessionFile": HOOK_ROOT,
-            "sessionId": "x", "cwd": "/repo",
-            "toolCallId": "call_1", "toolName": "bash", "reason": "outside workspace",
-        }));
-        match &evs[..] {
-            [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                assert_eq!(reason.as_deref(), Some("outside workspace"))
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-        // Neither, which only a drifted wire sends: the gate still names itself.
-        let evs = hook(serde_json::json!({
-            "type": "tool_approval_requested", "sessionFile": HOOK_ROOT,
-            "sessionId": "x", "cwd": "/repo", "toolCallId": "call_1",
-        }));
-        match &evs[..] {
-            [_, AgentEvent::UserActionRequest { reason, .. }] => {
-                assert_eq!(reason.as_deref(), Some("approval"))
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn hook_approval_resolved_approved_resumes_the_call() {
-        let evs = hook(serde_json::json!({
-            "type": "tool_approval_resolved", "sessionFile": HOOK_ROOT,
-            "sessionId": "x", "cwd": "/repo",
-            "toolCallId": "call_1", "toolName": "bash", "approved": true,
-        }));
-        match &evs[..] {
-            [
-                AgentEvent::Identity { .. },
-                AgentEvent::ToolUseStart {
-                    agent_id,
-                    tool_use_id,
-                    detail,
-                    ..
-                },
-            ] => {
-                assert_eq!(*agent_id, hook_id(HOOK_ROOT));
-                assert_eq!(tool_use_id.as_deref(), Some("call_1"));
-                assert_eq!(detail.as_ref().map(|d| d.display()), Some("bash"));
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn hook_approval_resolved_denied_ends_the_call() {
-        let evs = hook(serde_json::json!({
-            "type": "tool_approval_resolved", "sessionFile": HOOK_ROOT,
-            "sessionId": "x", "cwd": "/repo",
-            "toolCallId": "call_1", "toolName": "bash", "approved": false,
-            "reason": "denied by user",
-        }));
-        match &evs[..] {
-            [
-                AgentEvent::Identity { .. },
-                AgentEvent::ToolUseEnd {
-                    agent_id,
-                    tool_use_id,
-                },
-            ] => {
-                assert_eq!(*agent_id, hook_id(HOOK_ROOT));
-                assert_eq!(tool_use_id.as_deref(), Some("call_1"));
-            }
-            other => panic!("unexpected: {other:?}"),
-        }
-    }
-
-    #[test]
     fn an_unknown_hook_type_decodes_to_nothing() {
-        assert!(
-            hook(serde_json::json!({
-                "type": "credential_disabled", "sessionFile": HOOK_ROOT,
-                "sessionId": "x", "cwd": "/repo",
-            }))
-            .is_empty()
-        );
-        assert!(hook(serde_json::json!({"no_type": true})).is_empty());
-    }
-
-    #[test]
-    fn a_task_approval_resume_carries_the_task_detail() {
-        let evs = hook(serde_json::json!({
-            "type": "tool_approval_resolved", "sessionFile": HOOK_ROOT,
-            "sessionId": "x", "cwd": "/repo",
-            "toolCallId": "call_t", "toolName": "task", "approved": true,
-        }));
-        match &evs[..] {
-            [_, AgentEvent::ToolUseStart { detail, .. }] => {
-                assert!(detail.as_ref().is_some_and(|d| d.is_task()));
-            }
-            other => panic!("unexpected: {other:?}"),
+        // An approval an older pixtuoid's extension still forwards from an omp
+        // started before the upgrade: the transcript raises that wait, and a
+        // hook resume can't lift a transcript-raised one (`ActionRequests::resolves`).
+        for ty in ["credential_disabled", TOOL_APPROVAL_REQUESTED] {
+            assert!(
+                hook(serde_json::json!({
+                    "type": ty, "sessionFile": HOOK_ROOT,
+                    "sessionId": "x", "cwd": "/repo", "toolCallId": "call_1",
+                }))
+                .is_empty()
+            );
         }
+        assert!(hook(serde_json::json!({"no_type": true})).is_empty());
     }
 
     #[test]

@@ -9,10 +9,11 @@ use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::HOOK_PAYLOADS;
-use pixtuoid_core::harness::{Drive, Fold};
+use pixtuoid_core::harness::{Drive, Fold, Reach};
 use pixtuoid_core::id::normalize_path_key;
 use pixtuoid_core::source::AgentEvent;
 use pixtuoid_core::source::omp::omp_id_from_path;
+use pixtuoid_core::state::ActivityState;
 use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
 
 fn t0() -> SystemTime {
@@ -222,8 +223,9 @@ fn a_task_round_is_two_linked_lifecycles_under_one_pid() {
 }
 
 /// The omp module doc's load-bearing claim, pinned hermetically per recorded
-/// round: BOTH transports mint one folded AgentId, and the approval round's
-/// Start twins — separated by human latency — count ONE call through a real
+/// round: BOTH transports mint one folded AgentId. An approval round's wait
+/// comes from the transcript alone, and its two Starts of the call (the
+/// block's, then the resume a human later) count ONE call through a real
 /// `Reducer`.
 #[test]
 pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
@@ -259,34 +261,39 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
             assert_eq!(ev.agent_id(), id, "{scenario}: hook half split");
         }
 
-        // The recorded human ordering: the call is written before the approval
-        // round and its result after, so the hook round meets a live slot, not
-        // one the transcript's own end walked out.
-        let cut = jsonl_lines
+        // The recorded order: the bridge's start, the transcript, then its
+        // shutdown. An approval round's transcript is cut past its outcome,
+        // which must have lifted the wait it raised.
+        let approval = scenario != "tool-run-hermetic";
+        let outcome = jsonl_lines
             .iter()
-            .position(|l| {
-                let events = transcript_drive.lines([l]).events;
-                events
-                    .iter()
-                    .any(|e| matches!(e, AgentEvent::ToolUseEnd { .. }))
-            })
-            .expect("the round's tool result");
+            .position(|l| parsed(l)["customType"] == "tool_approval_resolved")
+            .map_or(0, |at| at + 1);
+        assert_eq!(outcome > 0, approval, "{scenario}: its approval outcome");
         let tail = hook_lines.len().saturating_sub(1);
         let mut fold = Fold::default();
-        for (drive, part) in [
-            (&hooks, &hook_lines[..1]),
-            (&transcript_drive, &jsonl_lines[..cut]),
-            (&hooks, &hook_lines[1..tail]),
-            (&transcript_drive, &jsonl_lines[cut..]),
-            (&hooks, &hook_lines[tail..]),
-        ] {
-            fold.feed(drive, part, t0());
+        fold.feed(&hooks, &hook_lines[..tail], t0());
+        fold.feed(&transcript_drive, &jsonl_lines[..outcome], t0());
+        if approval {
+            assert!(
+                fold.driven().reached().contains(&Reach::RequiresAction),
+                "{scenario}: the transcript's request raised no wait"
+            );
+            assert!(
+                !matches!(
+                    fold.driven().scene.agents[&id].state,
+                    ActivityState::RequiresAction { .. }
+                ),
+                "{scenario}: its outcome left the wait standing"
+            );
         }
-        let scene = fold.finish().scene;
-        if scenario != "tool-run-hermetic" {
-            // One gated bash call per round; the cross-transport twins and the
-            // approval resume must fold into ONE count.
-            let count = scene
+        fold.feed(&transcript_drive, &jsonl_lines[outcome..], t0());
+        fold.feed(&hooks, &hook_lines[tail..], t0());
+        if approval {
+            // One gated bash call per round.
+            let count = fold
+                .finish()
+                .scene
                 .agents
                 .get(&id)
                 .expect("the round's slot survives to the shutdown walkout")

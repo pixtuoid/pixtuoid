@@ -652,7 +652,7 @@ impl Reducer {
     /// The `ToolUseStart` arm, for a Start the pre-pass tracker left to it.
     /// A start the agent's action request holds back
     /// ([`ActionRequests::start`](crate::state::requests::ActionRequests::start))
-    /// only counts: a RequiresAction slot shows no call, and the hook resume
+    /// only counts: a RequiresAction slot shows no call, and an approval resume
     /// re-labels from the wire's `toolName` (a label-only cost, pinned by
     /// `the_approval_resume_labels_from_the_wire_tool_name`).
     fn apply_tool_use_start(

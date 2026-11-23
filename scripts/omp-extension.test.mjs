@@ -80,8 +80,7 @@ test("each event reaches the shim as its own type, with only the allowlist", { s
     Object.keys(handlers),
   );
   const at = { sessionFile: "/h/.omp/s.jsonl", sessionId: "u", cwd: "/r", _pid: process.pid };
-  const fields = { previousSessionFile: "/h/.omp/p.jsonl", toolCallId: "c1", toolName: "bash", reason: "why", approved: true };
-  for (const p of payloads) assert.deepEqual(p, { type: p.type, ...at, ...fields });
+  for (const p of payloads) assert.deepEqual(p, { type: p.type, ...at, previousSessionFile: "/h/.omp/p.jsonl" });
   await assertShimContract(SOURCE, argvFile, payloads);
 });
 
