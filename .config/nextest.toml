@@ -31,6 +31,16 @@ threads-required = "num-cpus"
 filter = 'test(no_route_on_a_short_floor_passes_through_a_wall) | test(the_route_sweeps_hold_inside_insets) | test(no_jittered_leg_crosses_blocked_floor)'
 threads-required = "num-test-threads"
 
+# Folding every order of every recorded two-transport run runs long on any
+# profile: it starts first, so it never trails the run, and its bound leaves
+# room for a machine that slows several-fold under load before it counts as
+# hung. Every profile reads the default's overrides after its own
+# (https://nexte.st/docs/configuration/per-test-overrides/, "Override precedence").
+[[profile.default.overrides]]
+filter = 'test(every_order_of_a_two_transport_run_ends_alike)'
+priority = 100
+slow-timeout = { period = "60s", terminate-after = 8 }
+
 # Instrumented, it runs long: it starts first, so it never trails the run, and
 # its bound leaves room for a runner that slows several-fold under load before
 # it counts as hung. Uninstrumented runs keep the default's.

@@ -30,12 +30,13 @@ pub struct Strip {
     pub sentinel_reads: BTreeMap<PathBuf, BTreeSet<String>>,
 }
 
-/// Blank every subtree no decoder reads, so an operator's roster, instructions
-/// and paths leave without anyone naming them. DERIVED, never listed — a subtree
-/// is blanked when blanking it leaves the decoded events identical — because a
-/// hand-kept list drifts in the one direction nothing catches: a field the
-/// decoder stopped reading stays in the bytes. Top-down, so an unread container
-/// collapses whole, element count included.
+/// Blank every subtree no decoder reads but the stamps `kept_key` keeps, so an
+/// operator's roster, instructions and paths leave without anyone naming them.
+/// DERIVED, never listed — a subtree is blanked when blanking it leaves the
+/// decoded events identical — because a hand-kept list drifts in the one
+/// direction nothing catches: a field the decoder stopped reading stays in the
+/// bytes. Top-down, so an unread container collapses whole, element count
+/// included, and an unread transcript line takes its write stamp with it.
 ///
 /// # Errors
 ///
@@ -375,20 +376,39 @@ pub(crate) fn is_shim_stamp(at: &str, key: &str) -> bool {
 pub(crate) enum Spelling {
     /// An RFC 3339 string.
     Rfc3339,
+    /// An RFC 3339 string to the whole second, cut or rounded, so the write is
+    /// within a second either side of it.
+    Rfc3339Secs,
     /// An integer count of seconds since the epoch.
     EpochSecs,
 }
 
-/// Each source whose transcript lines carry their write stamp: the top-level
-/// key it rides, and its spelling.
+impl Spelling {
+    /// The JSON value it writes, the instant in group 1, which a recording's
+    /// canonical form masks ([`canonical_capture`](super::canonical_capture)).
+    pub(crate) fn value_pattern(self) -> &'static str {
+        match self {
+            Self::Rfc3339 | Self::Rfc3339Secs => r#""(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z)""#,
+            Self::EpochSecs => r"([1-9]\d*)",
+        }
+    }
+}
+
+/// The write stamp the merge orders each two-transport source's transcript by:
+/// the top-level key it rides, and its spelling.
 pub(crate) const WRITE_STAMPS: &[(&str, &str, Spelling)] = &[
+    // Its recorded stamps carry no fraction
+    // (`antigravity/fixtures/*/*/.system_generated/logs/transcript.jsonl`).
+    ("antigravity", "created_at", Spelling::Rfc3339Secs),
+    ("claude-code", "timestamp", Spelling::Rfc3339),
     ("codex", "timestamp", Spelling::Rfc3339),
     ("grok", "timestamp", Spelling::EpochSecs),
+    ("omp", "timestamp", Spelling::Rfc3339),
 ];
 
 /// Whether `key` under `at` is a `transcript`'s write stamp, which the strip
-/// keeps though no decoder reads it: the merge test (`tests/sources/merge.rs`)
-/// orders a session's two streams by it.
+/// keeps whether or not a decoder reads it, but on a line it blanks whole: the
+/// merge test (`tests/sources/merge.rs`) orders a session's two streams by it.
 pub(crate) fn is_write_stamp(source: &str, transcript: bool, at: &str, key: &str) -> bool {
     transcript
         && at.is_empty()

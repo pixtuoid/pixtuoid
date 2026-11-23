@@ -1971,11 +1971,44 @@ mod tests {
         assert!(decode(line).is_empty());
     }
 
-    /// `omp/fixtures/approve-hermetic`'s request and approval, verbatim (lines 10-11).
-    const APPROVAL_REQUESTED: &str = r#"{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"call_UC_YjRxxjp6TXcuk","toolName":"bash","approvalMode":"","requestedAt":""},"id":"","parentId":"","timestamp":"","runtime":{}}"#;
-    const APPROVAL_APPROVED: &str = r#"{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_UC_YjRxxjp6TXcuk","toolName":"bash","approved":true,"resolvedAt":""},"id":"","parentId":"","timestamp":"","runtime":{}}"#;
-    /// `omp/fixtures/permission-hermetic`'s headless denial, verbatim (line 11).
-    const APPROVAL_DENIED: &str = r#"{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_94Vh4ZaiDJlI2Ygs","toolName":"","approved":false,"reason":"","resolvedAt":""},"id":"","parentId":"","timestamp":"","runtime":{}}"#;
+    /// The `record` line `scenario` recorded, the outcome `approved` where one
+    /// is named: read from the capture, as a copy would drift on its re-record.
+    fn recorded(scenario: &str, record: &str, approved: Option<bool>) -> String {
+        let root = crate::harness::sources_root();
+        let dir = crate::harness::fixtures_dir(&root, SOURCE_NAME).join(scenario);
+        let transcript =
+            crate::harness::transcript_in(SOURCE_NAME, &dir).expect("one recorded transcript");
+        std::fs::read_to_string(&transcript)
+            .expect("a recorded transcript")
+            .lines()
+            .find(|l| {
+                let v: Value = serde_json::from_str(l).expect("a recorded line is JSON");
+                v["customType"] == record && approved.is_none_or(|a| v["data"]["approved"] == a)
+            })
+            .unwrap_or_else(|| panic!("{scenario} recorded no {record}"))
+            .to_owned()
+    }
+
+    /// `omp/fixtures/approve-hermetic`'s request.
+    fn approval_requested() -> String {
+        recorded("approve-hermetic", TOOL_APPROVAL_REQUESTED, None)
+    }
+
+    /// `omp/fixtures/approve-hermetic`'s approval.
+    fn approval_approved() -> String {
+        recorded("approve-hermetic", TOOL_APPROVAL_RESOLVED, Some(true))
+    }
+
+    /// `omp/fixtures/permission-hermetic`'s headless denial.
+    fn approval_denied() -> String {
+        recorded("permission-hermetic", TOOL_APPROVAL_RESOLVED, Some(false))
+    }
+
+    /// The string `line`'s record's `data` holds at `key`.
+    fn data_str(line: &str, key: &str) -> String {
+        let v: Value = serde_json::from_str(line).unwrap();
+        v["data"][key].as_str().unwrap().to_owned()
+    }
 
     /// `line` with its record's `data` edited by `edit`.
     fn with_data(line: &str, edit: impl FnOnce(&mut serde_json::Map<String, Value>)) -> String {
@@ -1986,7 +2019,8 @@ mod tests {
 
     #[test]
     fn an_approval_request_waits_on_the_call_it_names() {
-        match &decode(APPROVAL_REQUESTED)[..] {
+        let requested = approval_requested();
+        match &decode(&requested)[..] {
             [
                 AgentEvent::UserActionRequest {
                     agent_id,
@@ -1998,14 +2032,17 @@ mod tests {
                 assert_eq!(*agent_id, root());
                 assert_eq!(
                     reason.as_deref(),
-                    Some("bash"),
+                    Some(data_str(&requested, "toolName").as_str()),
                     "no reason: the tool names it"
                 );
-                assert_eq!(tool_use_id.as_deref(), Some("call_UC_YjRxxjp6TXcuk"));
+                assert_eq!(
+                    tool_use_id.as_deref(),
+                    Some(data_str(&requested, "toolCallId").as_str())
+                );
             }
             other => panic!("expected one UserActionRequest, got {other:?}"),
         }
-        let reasoned = with_data(APPROVAL_REQUESTED, |d| {
+        let reasoned = with_data(&requested, |d| {
             d.insert("reason".into(), json!("outside workspace"));
         });
         match &decode(&reasoned)[..] {
@@ -2014,7 +2051,7 @@ mod tests {
             }
             other => panic!("expected one UserActionRequest, got {other:?}"),
         }
-        let nameless = with_data(APPROVAL_REQUESTED, |d| {
+        let nameless = with_data(&requested, |d| {
             d.remove("toolName");
         });
         let out = crate::test_capture::capture_logs(|| match &decode(&nameless)[..] {
@@ -2030,7 +2067,8 @@ mod tests {
 
     #[test]
     fn an_approval_resumes_its_call_and_a_denial_ends_it() {
-        match &decode(APPROVAL_APPROVED)[..] {
+        let (approved, denied) = (approval_approved(), approval_denied());
+        match &decode(&approved)[..] {
             [
                 AgentEvent::ToolUseStart {
                     agent_id,
@@ -2040,19 +2078,25 @@ mod tests {
                 },
             ] => {
                 assert_eq!(*agent_id, root());
-                assert_eq!(tool_use_id.as_deref(), Some("call_UC_YjRxxjp6TXcuk"));
-                assert_eq!(detail.as_ref().map(|d| d.display()), Some("bash"));
+                assert_eq!(
+                    tool_use_id.as_deref(),
+                    Some(data_str(&approved, "toolCallId").as_str())
+                );
+                assert_eq!(
+                    detail.as_ref().map(|d| d.display()),
+                    Some(data_str(&approved, "toolName").as_str())
+                );
             }
             other => panic!("expected the resume's ToolUseStart, got {other:?}"),
         }
         assert_eq!(
-            decode(APPROVAL_DENIED),
+            decode(&denied),
             [AgentEvent::ToolUseEnd {
                 agent_id: root(),
-                tool_use_id: Some("call_94Vh4ZaiDJlI2Ygs".to_owned()),
+                tool_use_id: Some(data_str(&denied, "toolCallId")),
             }]
         );
-        let task = with_data(APPROVAL_APPROVED, |d| {
+        let task = with_data(&approved, |d| {
             d.insert("toolName".into(), json!("task"));
         });
         match &decode(&task)[..] {
@@ -2064,9 +2108,9 @@ mod tests {
         // Only the resume reads the name, so only its absence there is drift;
         // an outcome without its verdict still ends the call.
         for (line, field, drift) in [
-            (APPROVAL_APPROVED, "toolName", true),
-            (APPROVAL_DENIED, "toolName", false),
-            (APPROVAL_APPROVED, "approved", true),
+            (&approved, "toolName", true),
+            (&denied, "toolName", false),
+            (&approved, "approved", true),
         ] {
             let missing = with_data(line, |d| {
                 d.remove(field);
@@ -2085,25 +2129,25 @@ mod tests {
 
     #[test]
     fn an_approved_ask_keeps_its_own_wait_and_a_denied_one_ends() {
-        let ask = |line| {
-            with_data(line, |d| {
+        let ask = |line: String| {
+            with_data(&line, |d| {
                 d.insert("toolName".into(), json!(TOOL_ASK));
             })
         };
         assert!(
-            decode(&ask(APPROVAL_APPROVED)).is_empty(),
+            decode(&ask(approval_approved())).is_empty(),
             "an approved ask's form still waits on its answer"
         );
         assert!(matches!(
-            &decode(&ask(APPROVAL_DENIED))[..],
+            &decode(&ask(approval_denied()))[..],
             [AgentEvent::ToolUseEnd { .. }]
         ));
     }
 
     #[test]
     fn an_approval_record_naming_no_call_drops_with_a_drift_breadcrumb() {
-        for line in [APPROVAL_REQUESTED, APPROVAL_APPROVED] {
-            let callless = with_data(line, |d| {
+        for line in [approval_requested(), approval_approved()] {
+            let callless = with_data(&line, |d| {
                 d.remove("toolCallId");
             });
             let out = crate::test_capture::capture_logs(|| {

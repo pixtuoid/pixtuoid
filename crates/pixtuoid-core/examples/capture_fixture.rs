@@ -714,8 +714,8 @@ mod recorder {
 
     /// Replaces the fixture's bytes whole, where a live recording writes `.new`
     /// beside them: the old ones are git's. A run whose record equals theirs but
-    /// for `captured`, and whose bytes and reads match theirs up to ids, leaves
-    /// both be.
+    /// for `captured`, and whose bytes and reads match theirs up to ids and
+    /// clocks, leaves both be.
     fn promote(
         run: &Path,
         root: &Path,
@@ -804,7 +804,7 @@ mod recorder {
             && canonical_capture(staged.path(), &fresh_record.sentinel_reads)?.as_ref()
                 == Some(&bytes)
         {
-            println!("kept {named}: the run renamed only its ids");
+            println!("kept {named}: the run moved only its ids and clocks");
             return Ok(());
         }
         for old in jsonl_files_under(&dest)

@@ -6,7 +6,7 @@
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 15
+    "blanked": 13
   },
   "aimock": "1.48.0",
   "script": "tests/sources/omp/hermetic/new-session.json",
@@ -19,7 +19,7 @@
     }
   },
   "sentinel_reads": {
-    "2026-11-23T00-27-15-813Z_01a205cc-c5e5-730d-bb67-277088142ad0.jsonl": [
+    "2026-11-23T04-58-13-227Z_01a206c4-d76b-7109-a10f-d664d08e1990.jsonl": [
       "1:/title"
     ]
   }

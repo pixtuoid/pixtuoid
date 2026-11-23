@@ -370,6 +370,12 @@ impl SourceDescriptor {
         matches!(self.kind, SourceKind::Daemon { .. })
     }
 
+    /// Whether pixtuoid hears it over the hook socket: an agent with a hook
+    /// decoder, or a daemon, whose payloads ride the same socket.
+    pub fn is_hook_bearing(&self) -> bool {
+        self.hook().is_some() || self.is_daemon()
+    }
+
     fn transcript(&self) -> Option<&Transcript> {
         match &self.kind {
             SourceKind::Agent { transcript, .. } => transcript.as_ref(),
@@ -945,6 +951,16 @@ mod tests {
             d.presence_decoder().is_some(),
             "a daemon MUST carry a presence decoder"
         );
+    }
+
+    /// The hook socket carries a hooked agent's payloads and a daemon's, which
+    /// has no hook decoding of its own.
+    #[test]
+    fn a_daemon_and_a_hooked_agent_are_hook_bearing_and_a_transcript_only_one_is_not() {
+        let bearing = |name| descriptor_for(name).is_some_and(SourceDescriptor::is_hook_bearing);
+        assert!(bearing(openclaw::SOURCE_NAME));
+        assert!(bearing(crate::source::claude_code::SOURCE_NAME));
+        assert!(!bearing(crate::source::copilot::SOURCE_NAME));
     }
 
     #[test]
