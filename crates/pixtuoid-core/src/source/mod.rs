@@ -158,6 +158,7 @@ pub enum AgentEvent {
         turn: Option<TurnKey>,
     },
     /// The agent is blocked on a permission/input prompt — the slot goes RequiresAction.
+    #[non_exhaustive]
     UserActionRequest {
         /// The agent requiring action.
         agent_id: AgentId,
@@ -176,6 +177,15 @@ pub enum AgentEvent {
         /// The turn the request blocks, when the wire names it.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn: Option<TurnKey>,
+        /// The request's own id, where one call can wait more than once: a
+        /// request under an id its call never met waits again, and one under
+        /// an id it met is a replay (omp `tool_approval_requested`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        request_id: Option<String>,
+        /// The call that dispatched the gated one, when the wire names it:
+        /// its end answers the request too (omp's eval-dispatched calls).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parent_tool_use_id: Option<String>,
     },
     /// A signal that answers the agent's standing request, if one stands; it
     /// ends no item.
@@ -309,6 +319,10 @@ pub struct RequestKeys {
     pub tool_name: Option<String>,
     /// The turn the request blocks.
     pub turn: Option<TurnKey>,
+    /// The request's own id.
+    pub request_id: Option<String>,
+    /// The call that dispatched the gated one.
+    pub parent_tool_use_id: Option<String>,
 }
 
 /// What answered an agent's request: one call, or the whole turn it blocked.
@@ -459,6 +473,8 @@ impl AgentEvent {
             tool_use_id,
             tool_name,
             turn,
+            request_id,
+            parent_tool_use_id,
         } = keys;
         AgentEvent::UserActionRequest {
             agent_id,
@@ -466,6 +482,8 @@ impl AgentEvent {
             tool_use_id,
             tool_name,
             turn,
+            request_id,
+            parent_tool_use_id,
         }
     }
 
@@ -521,6 +539,7 @@ impl AgentEvent {
     /// one is named here, so a field it gains fails to compile until sorted.
     #[doc(hidden)]
     pub fn merge_keys_mut(&mut self) -> MergeKeysMut<'_> {
+        let mut parent = None;
         let (id, turn) = match self {
             AgentEvent::ToolUseStart {
                 agent_id: _,
@@ -544,7 +563,13 @@ impl AgentEvent {
                 tool_use_id,
                 tool_name: _,
                 turn,
-            } => (tool_use_id.as_mut(), turn.as_mut()),
+                // Its call's record scopes it, under the call's own id.
+                request_id: _,
+                parent_tool_use_id,
+            } => {
+                parent = parent_tool_use_id.as_mut();
+                (tool_use_id.as_mut(), turn.as_mut())
+            }
             AgentEvent::UserActionResolved { agent_id: _, by } => match by {
                 Resolution::Call(id) | Resolution::Approved(id) => (Some(id), None),
                 Resolution::Turn(turn) => (None, Some(turn)),
@@ -566,7 +591,7 @@ impl AgentEvent {
             | AgentEvent::ModelInfo { .. }
             | AgentEvent::Backlog { .. } => (None, None),
         };
-        MergeKeysMut { id, turn }
+        MergeKeysMut { id, turn, parent }
     }
 }
 
@@ -579,6 +604,8 @@ pub struct MergeKeysMut<'a> {
     pub id: Option<&'a mut String>,
     /// Its turn.
     pub turn: Option<&'a mut TurnKey>,
+    /// The call that dispatched its call.
+    pub parent: Option<&'a mut String>,
 }
 
 /// The PRIMARY on-disk root a source resolves, through the SAME

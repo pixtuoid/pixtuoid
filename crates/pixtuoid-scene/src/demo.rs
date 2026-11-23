@@ -87,7 +87,7 @@ impl Lap {
 
     fn name(self, event: &mut AgentEvent) {
         let keys = event.merge_keys_mut();
-        if let Some(id) = keys.id {
+        for id in [keys.id, keys.parent].into_iter().flatten() {
             id.push_str(&format!("#{}", self.n));
         }
         match keys.turn {

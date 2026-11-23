@@ -1392,7 +1392,7 @@ mod tests {
 
     #[test]
     fn a_permission_script_calls_no_tool_after_its_gated_call() {
-        // A retried tool raises a second dialog in its turn, which the driver never answers.
+        // A retried tool raises a dialog its row does not list, which the driver never answers.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::Permission) {
                 let script: serde_json::Value = serde_json::from_str(

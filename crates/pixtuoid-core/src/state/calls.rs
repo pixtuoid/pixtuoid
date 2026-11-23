@@ -2,12 +2,13 @@
 //! its facts within a generation, so a call's facts merge in whatever order and
 //! from whichever transport they arrive. A generation opens only where copy ids
 //! mark a reused call id on one ordered stream ([`CallLedger::observe`]), whose
-//! order no merge reorders. The reducer gates each of a call's state changes
-//! on the rise `observe` reports, but two answers to a wait: an approval, once,
-//! since an answered member leaves its request, and a call's first start on
-//! the transport that raised a keyless wait. A fact that does not raise its
-//! record otherwise only merges idempotently (its pending fields, a Task's
-//! tracking, its count flag), so a fact applied twice applies once.
+//! order no merge reorders, and so does a round, where gates name their
+//! requests. The reducer gates each of a call's state changes on the rise
+//! `observe` reports, but two answers to a wait: an approval, once, since an
+//! answered member leaves its request, and a call's first start on the
+//! transport that raised a keyless wait. A fact that does not raise its record
+//! otherwise only merges idempotently (its pending fields, a Task's tracking,
+//! its count flag), so a fact applied twice applies once.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,7 +20,13 @@ use crate::source::{AgentEvent, CopyId, Resolution};
 /// generation raises the call again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Phase {
-    Open(Step),
+    Open {
+        /// The round its gates reached: each request id its call met opens
+        /// one, so a re-asked call waits again past its resume, and a
+        /// replayed gate rises past nothing.
+        round: usize,
+        step: Step,
+    },
     Ended,
 }
 
@@ -30,8 +37,9 @@ pub(crate) enum Fact<'a> {
     PreUse,
     /// It started, under its copy id where its wire names one.
     Start(Option<&'a CopyId>),
-    /// It waits on the user.
-    Gate,
+    /// It waits on the user, under the request's own id where its wire names
+    /// one.
+    Gate(Option<&'a str>),
     /// The user approved it, and it runs on.
     Resume,
     /// It ended.
@@ -56,8 +64,9 @@ impl<'a> Fact<'a> {
             AgentEvent::ToolUsePending { tool_use_id, .. } => (tool_use_id, Fact::PreUse),
             AgentEvent::UserActionRequest {
                 tool_use_id: Some(id),
+                request_id,
                 ..
-            } => (id, Fact::Gate),
+            } => (id, Fact::Gate(request_id.as_deref())),
             AgentEvent::UserActionResolved {
                 by: Resolution::Approved(id),
                 ..
@@ -102,14 +111,16 @@ enum Step {
 }
 
 impl Phase {
+    /// `fact`'s phase in a call's first round.
     fn of(fact: Fact<'_>) -> Self {
-        match fact {
-            Fact::PreUse => Self::Open(Step::PreUse),
-            Fact::Start(_) => Self::Open(Step::Started),
-            Fact::Gate => Self::Open(Step::Gated),
-            Fact::Resume => Self::Open(Step::Resumed),
-            Fact::End => Self::Ended,
-        }
+        let step = match fact {
+            Fact::PreUse => Step::PreUse,
+            Fact::Start(_) => Step::Started,
+            Fact::Gate(_) => Step::Gated,
+            Fact::Resume => Step::Resumed,
+            Fact::End => return Self::Ended,
+        };
+        Self::Open { round: 0, step }
     }
 }
 
@@ -132,6 +143,31 @@ struct Call {
     /// The copy ids its starts named, one per generation.
     copies: Vec<CopyId>,
     counted: bool,
+    /// The request ids its gates named, in the order it met them.
+    requests: Vec<Arc<str>>,
+}
+
+impl Call {
+    /// `fact`'s phase on this call: a gate's round is its request id's place
+    /// among those the call met, an id it never met opening the next, and a
+    /// resume resumes the round the call is in.
+    fn phase_of(&mut self, fact: Fact<'_>) -> Phase {
+        let round = match (fact, self.phase) {
+            (Fact::Gate(Some(id)), _) => match self.requests.iter().position(|r| &**r == id) {
+                Some(at) => at + 1,
+                None => {
+                    self.requests.push(Arc::from(id));
+                    self.requests.len()
+                }
+            },
+            (Fact::Resume, Phase::Open { round, .. }) => round,
+            _ => 0,
+        };
+        match Phase::of(fact) {
+            Phase::Open { step, .. } => Phase::Open { round, step },
+            Phase::Ended => Phase::Ended,
+        }
+    }
 }
 
 /// Every agent's calls, each kept for its slot's life: a replay of any age
@@ -146,25 +182,25 @@ impl CallLedger {
     /// never held, while it holds another, opens the call's next generation,
     /// and a held copy id is that call's replay.
     pub(crate) fn observe(&mut self, agent: AgentId, call: &str, fact: Fact<'_>) -> Observed {
-        let into = Phase::of(fact);
         let (starts, copy) = match fact {
             Fact::Start(copy) => (true, copy),
             _ => (false, None),
         };
         let calls = self.calls.entry(agent).or_default();
         let Some(record) = calls.get_mut(call) else {
-            calls.insert(
-                Arc::from(call),
-                Call {
-                    phase: into,
-                    copies: copy.cloned().into_iter().collect(),
-                    counted: starts,
-                },
-            );
+            let mut record = Call {
+                phase: Phase::of(Fact::PreUse),
+                copies: copy.cloned().into_iter().collect(),
+                counted: starts,
+                requests: Vec::new(),
+            };
+            record.phase = record.phase_of(fact);
+            let ended = record.phase == Phase::Ended;
+            calls.insert(Arc::from(call), record);
             return Observed {
                 rose: true,
                 counts: starts,
-                ended: into == Phase::Ended,
+                ended,
             };
         };
         // A provider reusing an id names a new call (the `copy_id` comment in
@@ -179,7 +215,7 @@ impl CallLedger {
             record.copies.push(c.clone());
         }
         if generation {
-            record.phase = Phase::Open(Step::Started);
+            record.phase = Phase::of(Fact::Start(None));
             return Observed {
                 rose: true,
                 counts: true,
@@ -188,6 +224,7 @@ impl CallLedger {
         }
         let counts = starts && !record.counted;
         record.counted |= starts;
+        let into = record.phase_of(fact);
         let rose = into > record.phase;
         if rose {
             record.phase = into;
@@ -241,7 +278,7 @@ mod tests {
             0 => Fact::PreUse,
             1 => Fact::Start(None),
             2 => Fact::Start(Some(c)),
-            3 => Fact::Gate,
+            3 => Fact::Gate(None),
             4 => Fact::Resume,
             _ => Fact::End,
         }
@@ -329,6 +366,36 @@ mod tests {
         ledger.observe(agent(), "c", Fact::End);
         let echo = ledger.observe(agent(), "c", Fact::Start(Some(&copy)));
         assert_eq!((echo.rose, echo.ended), (false, true));
+    }
+
+    #[test]
+    fn a_second_gate_on_a_resumed_call_waits_again() {
+        let mut ledger = CallLedger::default();
+        ledger.observe(agent(), "c", Fact::Start(None));
+        assert!(ledger.observe(agent(), "c", Fact::Gate(Some("g1"))).rose);
+        assert!(ledger.observe(agent(), "c", Fact::Resume).rose);
+        assert_eq!(
+            ledger.observe(agent(), "c", Fact::Gate(Some("g2"))),
+            Observed {
+                rose: true,
+                counts: false,
+                ended: false,
+            }
+        );
+        assert!(
+            ledger.observe(agent(), "c", Fact::Resume).rose,
+            "its own resume"
+        );
+    }
+
+    #[test]
+    fn a_replayed_gate_adds_no_round() {
+        let mut ledger = CallLedger::default();
+        ledger.observe(agent(), "c", Fact::Gate(Some("g1")));
+        ledger.observe(agent(), "c", Fact::Resume);
+        for replay in [Fact::Gate(Some("g1")), Fact::Gate(None), Fact::Resume] {
+            assert!(!ledger.observe(agent(), "c", replay).rose, "{replay:?}");
+        }
     }
 
     #[test]

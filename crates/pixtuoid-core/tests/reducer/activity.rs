@@ -1099,6 +1099,39 @@ fn an_approval_resume_shows_its_calls_own_start() {
     }
 }
 
+/// omp's resume repair closes a call interrupted mid-approval with its tool
+/// result alone, and an eval's with the eval's (`tool-approval-records.ts:30-36`
+/// at v19.1.0), so the wait of a call the eval dispatched ends with it.
+#[test]
+fn an_interrupted_nested_request_ends_with_its_parents_result() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/n.jsonl");
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("p"),
+        Some("eval"),
+        t0,
+        Transport::Jsonl,
+    );
+    let mut keys = RequestKeys::default();
+    keys.tool_use_id = Some("n".into());
+    keys.parent_tool_use_id = Some("p".into());
+    let nested = AgentEvent::user_action_request(id, Some("bash".into()), keys);
+    r.apply(&mut scene, nested, t0, Transport::Jsonl);
+    assert!(requires_action(&scene, id));
+    let t1 = t0 + Duration::from_secs(2);
+    tool_use_end(&mut r, &mut scene, id, Some("p"), t1, Transport::Jsonl);
+    assert!(
+        !requires_action(&scene, id),
+        "the eval's result left its nested call's wait standing"
+    );
+}
+
 /// The CC shape: a hook Start whose JSONL twin lands however late
 /// (an FSEvents-coalesced poll) counts once.
 #[test]

@@ -76,11 +76,12 @@ pub(crate) struct Gate {
 /// How a scenario's run answers its turn, and so when the turn is over.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Answer {
-    /// Answer its dialog with its gate's `keys` once the scene shows an agent
+    /// Answer each dialog with its gate's `keys` once the scene shows an agent
     /// `shown`: kimi notifies of its dialog without awaiting the notice
     /// (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:178-183`
     /// at `@moonshot-ai/kimi-code@2.4.1`), which an answer on sight can
-    /// outrun. The turn is over once answered and the screen settles.
+    /// outrun. The turn is over once its row's every gate is answered and the
+    /// screen settles.
     Gate { shown: &'static str },
     /// Cancel it with its row's `cancel` keys once the screen shows its reply
     /// streaming; the turn is over once cancelled and the screen settles.
@@ -142,9 +143,12 @@ pub struct Tui {
     /// included; no prompt.
     pub(crate) args: &'static [&'static str],
     pub(crate) composer: Composer,
-    /// Every dialog the turn may raise; one per turn, since its script calls no
-    /// tool after the gate's answer (`a_permission_script_calls_no_tool_after_its_gated_call`).
-    /// One the table doesn't name stalls the run.
+    /// The dialogs the turn raises, in order, each answered once: its script
+    /// calls no tool after its gated call's answer
+    /// (`a_permission_script_calls_no_tool_after_its_gated_call`), so a second
+    /// one is that call asking again. Each one's `shows` tells it from the one
+    /// before, which a single frame can swap it for. One the table doesn't
+    /// name stalls the run.
     pub(crate) gates: &'static [Gate],
     /// What cancels a running turn the way a user would, for a run that
     /// answers [`Answer::Cancel`]; empty for a CLI no scenario cancels.
@@ -243,7 +247,8 @@ pub struct Driver<'a> {
     /// one from before is an earlier turn's.
     roster: String,
     open: Option<Open>,
-    answered: bool,
+    /// How many of its turn's cues it answered.
+    answers: usize,
 }
 
 /// How many leading characters of a submitted line identify it in the
@@ -263,7 +268,7 @@ impl<'a> Driver<'a> {
             changed_at: now,
             roster: String::new(),
             open: None,
-            answered: false,
+            answers: 0,
         }
     }
 
@@ -318,7 +323,7 @@ impl<'a> Driver<'a> {
             // A turn already answered was submitted: a prompt shown after its
             // answer is the conversation's echo.
             Phase::Submitted { mut enter_at }
-                if !self.answered && self.composer_holds(&self.prompt) =>
+                if self.answers == 0 && self.composer_holds(&self.prompt) =>
             {
                 let action = enter_again(&mut enter_at, now);
                 self.phase = Phase::Submitted { enter_at };
@@ -335,7 +340,7 @@ impl<'a> Driver<'a> {
                 if let Some(next) = self.then.take() {
                     self.prompt = next;
                     self.phase = Phase::Typed;
-                    (self.answered, self.open) = (false, None);
+                    (self.answers, self.open) = (0, None);
                     return Action::Type(self.prompt.clone());
                 }
                 self.phase = Phase::Quit { enter_at: now };
@@ -363,18 +368,27 @@ impl<'a> Driver<'a> {
 
     /// Whether the turn still waits on what its answer answers.
     fn owes_answer(&self) -> bool {
-        self.answer.awaits().is_some() && !self.answered
+        self.answer.awaits().is_some() && !self.answered()
     }
 
-    /// Its answer's cue on screen, if one stands: for a gate the first dialog
+    /// Whether its answer is given: every gate its row lists, or its cancel.
+    fn answered(&self) -> bool {
+        self.answers > 0
+            && match self.answer {
+                Answer::Gate { .. } => self.answers == self.tui.gates.len(),
+                Answer::Cancel | Answer::Nothing => true,
+            }
+    }
+
+    /// Its answer's cue on screen, if one stands: for a gate the next dialog
     /// its row lists, for a cancel the reply's first line.
     fn cue(&self) -> Option<Cue> {
         match self.answer {
             Answer::Gate { shown } => self
                 .tui
                 .gates
-                .iter()
-                .find(|g| self.screen.contains(g.shows))
+                .get(self.answers)
+                .filter(|g| self.screen.contains(g.shows))
                 .map(|g| Cue {
                     shows: g.shows,
                     keys: g.keys,
@@ -393,11 +407,11 @@ impl<'a> Driver<'a> {
 
     /// Its answer, once its cue has stood its dwell after the prompt was
     /// submitted and the scene shows it, or has stood [`SCENE_PATIENCE`]; a
-    /// cue before the prompt stalls the run. Once per turn: a frame
+    /// cue before the prompt stalls the run. Once per cue: a frame
     /// drawn before the answer landed still shows its cue, and a second key
     /// would land on the turn.
     fn answer(&mut self, now: Instant) -> Option<Action> {
-        if self.answered {
+        if self.answered() {
             return None;
         }
         let Some(cue) = self.cue() else {
@@ -422,7 +436,9 @@ impl<'a> Driver<'a> {
         if stood < cue.dwell || (unseen && stood < SCENE_PATIENCE) {
             return Some(Action::Wait);
         }
-        self.answered = true;
+        self.answers += 1;
+        // A roster from before the answer shows the wait it answered.
+        self.roster.clear();
         Some(Action::Keys(cue.keys))
     }
 
@@ -936,6 +952,50 @@ mod tests {
         assert_eq!(d.step(CODEX_BOOT, t), Action::Quit(tui.quit));
     }
 
+    /// omp's bash call asks again through the edit tool, a second dialog in
+    /// one turn, which its row lists second.
+    #[test]
+    fn a_rows_next_gate_is_answered_once_the_scene_shows_its_own_wait() {
+        let (tui, answer) = tui_scenario("omp", "re-ask");
+        let [first, second] = tui.gates else {
+            panic!("two gates");
+        };
+        let (asked, again) = (
+            screen!("omp", "re-ask-gate"),
+            screen!("omp", "re-ask-again"),
+        );
+        let t0 = Instant::now();
+        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+        assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
+        assert_eq!(
+            d.step(&typed(OMP_BOOT, OMP_INPUT), t0),
+            Action::Keys(&[Key::Enter])
+        );
+        d.observe(ASKING);
+        let t1 = t0 + Duration::from_millis(1);
+        assert_eq!(d.step(asked, t1), Action::Wait);
+        assert_eq!(d.step(asked, t1 + first.dwell), Action::Keys(first.keys));
+        let t2 = t1 + first.dwell + Duration::from_millis(1);
+        assert_eq!(
+            d.step(asked, t2),
+            Action::Wait,
+            "a frame drawn before the approval landed"
+        );
+        assert_eq!(d.step(again, t2), Action::Wait);
+        assert_eq!(
+            d.step(again, t2 + second.dwell),
+            Action::Wait,
+            "the scene has shown only the wait the first answer lifted"
+        );
+        d.observe(ASKING);
+        assert_eq!(d.step(again, t2 + second.dwell), Action::Keys(second.keys));
+        assert_eq!(
+            d.step(again, t2 + second.dwell + SETTLE),
+            Action::Wait,
+            "a repeat would land on the turn"
+        );
+    }
+
     #[test]
     fn a_run_quits_unanswered_only_where_it_answers_nothing() {
         let (tui, _) = omp();
@@ -1181,7 +1241,7 @@ mod tests {
         const GROK_TURN_ONE: &str = screen!("grok", "turn-one");
         // Each run's boot screen, then the screen each of its turns ended at:
         // the gate it answered or the reply it cancelled, where it answers one.
-        let recorded: [(&str, &str, &str, &[&str]); 22] = [
+        let recorded: [(&str, &str, &str, &[&str]); 24] = [
             ("claude-code", "permission", BOOT, &[GATE]),
             ("codex", "permission", CODEX_BOOT, &[CODEX_GATE]),
             ("codex", "cancel", CODEX_BOOT, &[CODEX_CANCEL]),
@@ -1254,6 +1314,24 @@ mod tests {
                 OMP_BOOT,
                 &[screen!("omp", "approve-gate")],
             ),
+            (
+                "omp",
+                "re-ask",
+                OMP_BOOT,
+                &[
+                    screen!("omp", "re-ask-gate"),
+                    screen!("omp", "re-ask-again"),
+                ],
+            ),
+            (
+                "omp",
+                "nested-approve",
+                OMP_BOOT,
+                &[
+                    screen!("omp", "nested-gate"),
+                    screen!("omp", "nested-again"),
+                ],
+            ),
             ("omp", "ask", OMP_BOOT, &[screen!("omp", "ask-gate")]),
             ("omp", "new-session", OMP_BOOT, &[OMP_NEW]),
             (
@@ -1322,25 +1400,30 @@ mod tests {
             let moved = t0 + Duration::from_millis(1);
             let (first, then) = match scenario.answer() {
                 Answer::Gate { .. } => {
-                    let [gate] = tui.gates else {
-                        panic!("{source}: one gate per row");
-                    };
-                    let (end, rest) = ends.split_first().expect("a gate");
-                    let answers: Vec<Action> = [t0, t0 + gate.dwell]
-                        .map(|t| d.step(end, t))
-                        .into_iter()
-                        .filter(|a| *a != Action::Wait)
-                        .collect();
-                    assert_eq!(answers, [Action::Keys(gate.keys)], "{source}/{name}");
-                    let mut t = t0 + gate.dwell + SETTLE;
-                    assert_eq!(
-                        d.step(end, t),
-                        Action::Wait,
-                        "{source}/{name}: a repeat would land on the turn"
-                    );
+                    // Each gate's own screen, in the order the turn raised them.
+                    let (gated, rest) = ends.split_at(tui.gates.len());
+                    let mut t = t0;
+                    for (gate, end) in tui.gates.iter().zip(gated) {
+                        let answers: Vec<Action> = [t, t + gate.dwell]
+                            .map(|t| d.step(end, t))
+                            .into_iter()
+                            .filter(|a| *a != Action::Wait)
+                            .collect();
+                        assert_eq!(answers, [Action::Keys(gate.keys)], "{source}/{name}");
+                        t += gate.dwell + SETTLE;
+                        assert_eq!(
+                            d.step(end, t),
+                            Action::Wait,
+                            "{source}/{name}: a repeat would land on the turn"
+                        );
+                        d.observe(ASKING);
+                    }
                     let Some(Second::Prompt(second)) = scenario.turn.second else {
                         assert!(rest.is_empty(), "{source}/{name}: one turn");
                         continue;
+                    };
+                    let [gate] = tui.gates else {
+                        panic!("{source}: one gate per turn of two");
                     };
                     // The screen each gate left, and the second turn's gate.
                     let [after, again, last] = rest else {

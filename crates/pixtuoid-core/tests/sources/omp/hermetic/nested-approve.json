@@ -1,0 +1,18 @@
+{
+  "fixtures": [
+    {
+      "match": {"systemMessage": "You name coding-agent sessions"},
+      "response": {"content": "<title>Hermetic</title>"}
+    },
+    {
+      "match": {"hasToolResult": false},
+      "response": {"toolCalls": [{"name": "eval", "arguments": {"i": "Reading the note from a cell", "language": "js", "code": "const read = await tool.bash({ command: \"cat NOTE.txt\" });\nprint(read);"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "{note}"},
+      "response": {"content": "approved"},
+      "latency": 300
+    }
+  ]
+}

@@ -451,6 +451,8 @@ impl Reducer {
                 tool_use_id,
                 tool_name,
                 turn,
+                parent_tool_use_id,
+                ..
             } => {
                 self.apply_user_action_request(
                     scene,
@@ -461,6 +463,7 @@ impl Reducer {
                         tool_name: tool_name.as_deref(),
                         turn: turn.as_ref(),
                         from,
+                        parent: parent_tool_use_id.as_deref(),
                     },
                     now,
                 );
