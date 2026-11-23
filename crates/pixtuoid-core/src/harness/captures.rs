@@ -623,36 +623,51 @@ const ID_FAMILIES: &[IdFamily] = &[
     },
 ];
 
-/// Every token a re-record moves, named: each [`ID_FAMILIES`] row, then each
+/// A kind of token a re-record moves.
+struct Mask {
+    /// Its name in a canonical capture.
+    name: String,
+    /// Its token, or the token's group 1.
+    re: regex::Regex,
+    /// Whether two recordings must share which of its tokens are equal: a
+    /// minted id's pairings are evidence, a clock's are not.
+    numbered: bool,
+}
+
+/// Every token a re-record moves: each [`ID_FAMILIES`] row, then each
 /// transcript write stamp the strip keeps
 /// ([`WRITE_STAMPS`](super::reads::WRITE_STAMPS)).
-static MASKS: std::sync::LazyLock<Vec<(String, regex::Regex)>> = std::sync::LazyLock::new(|| {
+static MASKS: std::sync::LazyLock<Vec<Mask>> = std::sync::LazyLock::new(|| {
     let minted = ID_FAMILIES
         .iter()
-        .map(|f| (f.name.to_owned(), f.pattern.to_owned()));
+        .map(|f| (f.name.to_owned(), f.pattern.to_owned(), true));
     let stamps = super::reads::WRITE_STAMPS
         .iter()
         .map(|&(_, key, spelling)| {
             let pattern = format!(r#""{key}":{}"#, spelling.value_pattern());
-            (format!("{key}:{spelling:?}"), pattern)
+            (format!("{key}:{spelling:?}"), pattern, false)
         });
     minted
         .chain(stamps)
-        .map(|(name, p)| (name, regex::Regex::new(&p).expect("every mask compiles")))
+        .map(|(name, pattern, numbered)| Mask {
+            name,
+            re: regex::Regex::new(&pattern).expect("every mask compiles"),
+            numbered,
+        })
         .collect()
 });
 
-/// `text` with each token a row of `patterns` matches replaced by what `name`
+/// `text` with each token a row of `masks` matches replaced by what `name`
 /// makes of that row and the token.
-fn with_ids_named(
+fn with_masks_named(
     text: &str,
-    patterns: &[(String, regex::Regex)],
+    masks: &[Mask],
     mut name: impl FnMut(usize, &str) -> String,
 ) -> String {
-    let mut found: Vec<(usize, usize, usize)> = patterns
+    let mut found: Vec<(usize, usize, usize)> = masks
         .iter()
         .enumerate()
-        .flat_map(|(row, (_, re))| {
+        .flat_map(|(row, Mask { re, .. })| {
             re.captures_iter(text).filter_map(move |c| {
                 let token = c.get(1).or_else(|| c.get(0))?;
                 Some((token.start(), row, token.end()))
@@ -673,13 +688,14 @@ fn with_ids_named(
     out
 }
 
-/// A capture's files up to the ids its run minted: each file's path from
-/// `dir` and its text, every [`MASKS`] token in either replaced by
-/// `⟨name#n⟩`, `n` its family's order of first appearance across the capture,
-/// so one numbering is the one bijection two recordings must share. Files are
-/// walked in the order of their paths, then their texts, with ids masked, as
-/// a raw sort would order two id-named session dirs at random; none when two
-/// files tie there, as only their ids tell them apart. Then `reads`, a
+/// A capture's files up to the tokens [`MASKS`] names: each file's path from
+/// `dir` and its text, each such token in either replaced by `⟨name#n⟩`, `n`
+/// its row's order of first appearance across the capture, so one numbering is
+/// the one bijection two recordings must share, or by `⟨name⟩` for a row whose
+/// pairings are no evidence ([`Mask::numbered`]). Files are walked in the order
+/// of their paths, then their texts, with tokens masked, as a raw sort would
+/// order two id-named session dirs at random; none when two files tie there,
+/// as only their ids tell them apart. Then `reads`, a
 /// record's reads keyed by each file's path from `dir`
 /// ([`Recorded::sentinel_reads`](super::provenance::Recorded::sentinel_reads)),
 /// rekeyed by that file's numbered path; a key naming no file stays as it is.
@@ -691,7 +707,8 @@ pub fn canonical_capture(
     dir: &Path,
     reads: &BTreeMap<String, BTreeSet<String>>,
 ) -> std::io::Result<Option<Canonical>> {
-    let masked = |text: &str| with_ids_named(text, &MASKS, |row, _| format!("⟨{}⟩", MASKS[row].0));
+    let flat = |row: usize| format!("⟨{}⟩", MASKS[row].name);
+    let masked = |text: &str| with_masks_named(text, &MASKS, |row, _| flat(row));
     let mut files = Vec::new();
     for file in jsonl_files_under(dir) {
         let path = slashed_under(dir, &file)?;
@@ -705,10 +722,13 @@ pub fn canonical_capture(
     let mut seen: Vec<std::collections::HashMap<String, usize>> =
         MASKS.iter().map(|_| Default::default()).collect();
     let mut numbered = |text: &str| {
-        with_ids_named(text, &MASKS, |row, token| {
+        with_masks_named(text, &MASKS, |row, token| {
+            if !MASKS[row].numbered {
+                return flat(row);
+            }
             let next = seen[row].len();
             let n = *seen[row].entry(token.to_owned()).or_insert(next);
-            format!("⟨{}#{n}⟩", MASKS[row].0)
+            format!("⟨{}#{n}⟩", MASKS[row].name)
         })
     };
     let mut names = BTreeMap::new();
@@ -1032,7 +1052,7 @@ mod tests {
 
     #[test]
     fn each_family_renames_what_two_recordings_minted() {
-        for (family, (_, pattern)) in ID_FAMILIES.iter().zip(MASKS.iter()) {
+        for (family, Mask { re: pattern, .. }) in ID_FAMILIES.iter().zip(MASKS.iter()) {
             assert!(!family.renamed.is_empty(), "{}: no pair", family.name);
             for (was, now) in family.renamed {
                 assert!(
@@ -1051,13 +1071,35 @@ mod tests {
 
     #[test]
     fn every_id_family_is_carried_by_the_capture_it_cites() {
-        for (family, (_, pattern)) in ID_FAMILIES.iter().zip(MASKS.iter()) {
+        for (family, Mask { re: pattern, .. }) in ID_FAMILIES.iter().zip(MASKS.iter()) {
             let capture = crate::harness::sources_root().join(family.seen_in);
             let carried = jsonl_files_under(&capture).iter().any(|f| {
                 pattern.is_match(&slashed_under(&capture, f).expect("under"))
                     || pattern.is_match(&std::fs::read_to_string(f).expect("read"))
             });
             assert!(carried, "{}: {} carries none", family.name, family.seen_in);
+        }
+    }
+
+    /// A whole-second stamp splits a re-record's lines across a second
+    /// boundary wherever it falls, so which lines share one is no evidence.
+    #[test]
+    fn lines_that_share_a_whole_second_need_not_share_it_again() {
+        for (key, at, next) in [
+            (
+                "created_at",
+                r#""2026-11-23T04:47:14Z""#,
+                r#""2026-11-23T04:47:15Z""#,
+            ),
+            ("timestamp", "1793078269", "1793078270"),
+        ] {
+            let line = |stamp: &str| format!(r#"{{"{key}":{stamp}}}"#);
+            let shared = format!("{}\n{}", line(at), line(at));
+            let split = format!("{}\n{}", line(at), line(next));
+            assert!(
+                same_up_to_ids(&[("s/t.jsonl", &shared)], &[("s/t.jsonl", &split)]),
+                "{key}"
+            );
         }
     }
 
@@ -1079,7 +1121,7 @@ mod tests {
                             _ => continue,
                         };
                         let mut masked = Vec::new();
-                        with_ids_named(line, &MASKS, |_, token| {
+                        with_masks_named(line, &MASKS, |_, token| {
                             masked.push(token.to_owned());
                             String::new()
                         });

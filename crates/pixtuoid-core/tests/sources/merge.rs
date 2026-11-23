@@ -67,8 +67,8 @@ impl Run {
     }
 
     /// `check` over every order the run's lines can arrive in, folded one at a
-    /// time, as a run can have hundreds of thousands. Returns how many there
-    /// were.
+    /// time, never collected, as a run's orders outgrow memory. Returns how
+    /// many there were.
     fn each(&self, mut check: impl FnMut(&Merged)) -> usize {
         let merges = self.merges().expect("its transcript carries a write stamp");
         let mut orders = 0;
@@ -488,10 +488,11 @@ fn grok_s_hook_set_item_survives_its_last_turn_s_lagging_end() {
 /// (`running_ms`, any `*_at`) and any fact whose value is whichever
 /// transport's copy landed first or last (label, model, effort, an item's
 /// detail, a request's reason). Its presence and `exiting` still read the
-/// clock: the fold ends `harness::CASCADE_TICK` past the last arrival, and a
-/// slot goes once its exit is `EXIT_GRACE_WINDOW` old, so two ends of one slot
-/// landing more than `EXIT_GRACE_WINDOW - CASCADE_TICK` apart can leave it
-/// differently whatever the merge does.
+/// clock: the fold's final tick is the run's last arrival plus
+/// `harness::CASCADE_TICK`, and a slot goes once its exit is
+/// `EXIT_GRACE_WINDOW` old, so a slot whose exit can start on either side of
+/// `EXIT_GRACE_WINDOW` before that tick can be gone in one order and still
+/// exiting in another, whatever the merge does.
 #[derive(Debug, PartialEq)]
 struct Final {
     exiting: bool,
