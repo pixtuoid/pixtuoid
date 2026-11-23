@@ -1,12 +1,12 @@
-//! Walkable-mask construction: stamps every obstacle into a `WalkableMask` so
-//! A* knows where characters can route.
+//! Walkable-mask construction: stamps every obstacle into a
+//! `WalkableMaskBuilder` and freezes it into the `WalkableMask` A* routes over.
 
 use super::decor::{FurnitureDef, GroundAlign};
 use super::{
     Bounds, Furniture, MeetingRoom, PANTRY_FOOTPRINT_DEPTH, Pivot, PlantItem, PodDecorItem, Point,
     Size, WALL_THICK_V, WallDecorItem, Waypoint, WaypointKind, anchored_top_left, furniture_def,
 };
-use crate::walkable::WalkableMask;
+use crate::walkable::{WalkableMask, WalkableMaskBuilder};
 
 /// Stamp a furniture footprint as a collision rect DECLARED relative to its
 /// VISUAL box. The visual top-left comes from `pivot` via `anchored_top_left`
@@ -15,7 +15,7 @@ use crate::walkable::WalkableMask;
 /// [`GroundAlign`] per axis. A footprint-less piece (wall-hung decor) stamps
 /// nothing; runtime-footprint pieces build their rect and call `mark_blocked`
 /// directly. The pad is the row's [`FurnitureDef::pad`].
-fn stamp_ground(mask: &mut WalkableMask, def: &FurnitureDef, pivot: Pivot, pos: Point) {
+fn stamp_ground(mask: &mut WalkableMaskBuilder, def: &FurnitureDef, pivot: Pivot, pos: Point) {
     if let Some((tl, sz)) = def.ground_rect(pivot, pos) {
         mask.mark_blocked(tl.x, tl.y, sz.w, sz.h, def.pad);
     }
@@ -156,7 +156,7 @@ pub(super) fn build_walkable_mask(obs: &MaskObstacles) -> WalkableMask {
         pantry_counter_size,
     } = obs;
 
-    let mut mask = WalkableMask::new(buf_w, buf_h, super::routed_area(inner, top_margin));
+    let mut mask = WalkableMaskBuilder::new(buf_w, buf_h, super::routed_area(inner, top_margin));
 
     // Nothing walks under an inset; the wall band below covers the north one.
     let (east, south) = (inner.right(), inner.bottom());
@@ -269,7 +269,7 @@ pub(super) fn build_walkable_mask(obs: &MaskObstacles) -> WalkableMask {
         stamp_ground(&mut mask, &def, Pivot::Center, pos);
     }
 
-    mask
+    mask.freeze()
 }
 
 #[cfg(test)]
@@ -306,7 +306,7 @@ mod tests {
     fn overhang_footprint_south_anchored_leaves_the_overhang_walkable() {
         // The fixture is a phone booth: a 6-wide sprite 12 tall over a 3-row
         // ground base.
-        let mut mask = WalkableMask::new_open(40, 40);
+        let mut mask = WalkableMaskBuilder::new_open(40, 40);
         let pos = Point { x: 20, y: 20 };
         let (tl, sz) = ground_rect(
             Pivot::Center,
@@ -317,6 +317,7 @@ mod tests {
             GroundAlign::End,
         );
         mask.mark_blocked(tl.x, tl.y, sz.w, sz.h, 0);
+        let mask = mask.freeze();
         let south = sort_row_at(Pivot::Center, pos, 12);
         for dy in 0..3 {
             assert!(
@@ -375,7 +376,7 @@ mod tests {
     #[test]
     fn flat_box_footprint_is_centered_not_south_anchored() {
         // The fixture is a flat box: visual == footprint (vending/printer/table).
-        let mut mask = WalkableMask::new_open(40, 40);
+        let mut mask = WalkableMaskBuilder::new_open(40, 40);
         let pos = Point { x: 20, y: 20 };
         let (tl, sz) = ground_rect(
             Pivot::Center,
@@ -386,6 +387,7 @@ mod tests {
             GroundAlign::Center,
         );
         mask.mark_blocked(tl.x, tl.y, sz.w, sz.h, 0);
+        let mask = mask.freeze();
         assert!(
             !mask.is_walkable(pos.x, pos.y),
             "centered block: center blocked"

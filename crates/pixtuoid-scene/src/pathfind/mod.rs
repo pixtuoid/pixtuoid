@@ -1,7 +1,7 @@
 //! Pathfinding façade — `Router` trait + `AStarRouter` impl.
 //!
 //! `AStarRouter` runs A* on a coarsened cell grid whose primitives
-//! (`cell_walkable`/`snap`/`CoarseGrid`/`CELL_SIZE`) are the SHARED
+//! (`cell_walkable`/`snap`/`CoarseGraph`/`CELL_SIZE`) are the SHARED
 //! `layout::coarse` ones `layout::reach` also rides, so router reachability
 //! can't drift from `ReachSet`. Routes are memoized per `(from, to, aim)` until a
 //! new layout, or the cache outgrowing its cap, clears them.
@@ -13,7 +13,7 @@ use crate::grid::Grid;
 use crate::walkable::WalkableMask;
 
 use crate::layout::{
-    Bounds, COARSE_CELL_SIZE, CoarseGrid, Point, cell_anchor, cell_center, cell_dims, cell_holding,
+    Bounds, COARSE_CELL_SIZE, Point, cell_anchor, cell_center, cell_dims, cell_holding,
     cell_walkable, grid_origin, snap, snap_cell, snap_where,
 };
 use crate::physics::{OCTILE_DIAGONAL_COST, OCTILE_STRAIGHT_COST, octile_cost};
@@ -126,8 +126,7 @@ fn cell_in_zone(mask: &WalkableMask, zone: Option<Bounds>, cx: u16, cy: u16) -> 
     let Some(z) = zone else {
         return false;
     };
-    let cp = cell_center(mask, cx, cy);
-    cp.x >= z.x && cp.x < z.x + z.width && cp.y >= z.y && cp.y < z.y + z.height
+    z.contains(cell_center(mask, cx, cy))
 }
 
 /// Coarse-grid dimensions, or `None` when either axis is 0 — a degenerate grid
@@ -144,7 +143,11 @@ fn grid_dims(mask: &WalkableMask) -> Option<(u16, u16)> {
 const MAX_SNAP_RADIUS: u16 = 12;
 
 /// Run A* on the layout's walkability mask.
-pub(crate) fn find_path(
+///
+/// `#[doc(hidden)] pub` for `benches/routing.rs`: the crate-private
+/// `AStarRouter` caches each pair, so a bench through it would time cache hits.
+#[doc(hidden)]
+pub fn find_path(
     mask: &WalkableMask,
     preferred: Option<Bounds>,
     from: Point,
@@ -156,15 +159,15 @@ pub(crate) fn find_path(
     };
     let cell_near = |p: Point| snap(mask, snap_cell(mask, p), cell_w, cell_h, MAX_SNAP_RADIUS);
     let start = cell_near(from)?;
-    let mut coarse = CoarseGrid::new(mask);
-    let mut search = |goal| Some((goal, a_star(&mut coarse, mask, preferred, start, goal)?));
+    let search = |goal| Some((goal, a_star(mask, preferred, start, goal)?));
     // `aim`'s cell stands in for `to`'s own only where A* reaches it and the last step,
     // from that cell's anchor to `to`, stays on open floor.
     let aimed =
         cell_near(aim).filter(|&(cx, cy)| segment_clear(mask, cell_anchor(mask, cx, cy), to));
-    let (goal, came_from) = match aimed.and_then(&mut search) {
+    let (goal, came_from) = match aimed.and_then(search) {
         Some(reached) => reached,
-        None => search(cell_near(to)?)?,
+        // Skip `to`'s cell when it is the aimed cell, whose search just failed.
+        None => search(cell_near(to).filter(|&goal| aimed != Some(goal))?)?,
     };
     Some(reconstruct(mask, &came_from, goal, from, to))
 }
@@ -174,7 +177,6 @@ pub(crate) fn find_path(
 /// `preferred` get a step-cost discount, so paths hug that zone even when an
 /// off-zone diagonal cut would be slightly shorter.
 fn a_star(
-    coarse: &mut CoarseGrid<'_>,
     mask: &WalkableMask,
     preferred: Option<Bounds>,
     start: (u16, u16),
@@ -203,7 +205,7 @@ fn a_star(
         if current.g > g_score.get_or(current.cell.0, current.cell.1, u32::MAX) {
             continue;
         }
-        for ((nx, ny), diagonal) in coarse.neighbors(current.cell) {
+        for ((nx, ny), diagonal) in mask.coarse().neighbors(current.cell) {
             let base_step = if diagonal {
                 OCTILE_DIAGONAL_COST
             } else {
@@ -235,11 +237,7 @@ fn a_star(
 /// or a transient diagonal corner-graze — yet still be in a walkable routing
 /// cell, exactly like every agent sprite.
 pub fn point_in_walkable_cell(mask: &WalkableMask, p: Point) -> bool {
-    let Some((cell_w, cell_h)) = grid_dims(mask) else {
-        return false;
-    };
-    cell_holding(grid_origin(mask), p)
-        .is_some_and(|(cx, cy)| cx < cell_w && cy < cell_h && cell_walkable(mask, cx, cy))
+    cell_holding(grid_origin(mask), p).is_some_and(|(cx, cy)| cell_walkable(mask, cx, cy))
 }
 
 /// Snap a pixel-space `Point` into the nearest walkable coarse CELL. `None` when the grid is degenerate or no walkable cell exists

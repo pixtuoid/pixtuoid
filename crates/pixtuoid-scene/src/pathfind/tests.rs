@@ -1,5 +1,6 @@
 use super::*;
 use crate::layout::{SceneLayout, WallSegment};
+use crate::walkable::WalkableMaskBuilder;
 
 fn make_layout() -> SceneLayout {
     SceneLayout::compute(crate::layout::Viewport::full(160, 200), Some(4), 0).expect("layout fits")
@@ -31,7 +32,7 @@ fn simplify_collapses_collinear() {
         Point { x: 12, y: 0 },
         Point { x: 12, y: 4 },
     ];
-    let s = simplify_polyline(&WalkableMask::new_open(64, 64), pts);
+    let s = simplify_polyline(&WalkableMaskBuilder::new_open(64, 64).freeze(), pts);
     assert_eq!(s.len(), 3);
 }
 
@@ -46,7 +47,7 @@ fn simplify_collapses_diagonal_collinear() {
         Point { x: 5, y: 5 },
     ];
     assert_eq!(
-        simplify_polyline(&WalkableMask::new_open(64, 64), pts).len(),
+        simplify_polyline(&WalkableMaskBuilder::new_open(64, 64).freeze(), pts).len(),
         2
     );
 }
@@ -59,7 +60,7 @@ fn simplify_keeps_genuine_corner() {
         Point { x: 2, y: 2 },
     ];
     assert_eq!(
-        simplify_polyline(&WalkableMask::new_open(64, 64), pts).len(),
+        simplify_polyline(&WalkableMaskBuilder::new_open(64, 64).freeze(), pts).len(),
         3
     );
 }
@@ -340,7 +341,7 @@ fn router_serves_the_cached_path_instead_of_re_running_astar() {
 fn path_cache_is_bounded_and_still_routes_after_the_clear() {
     // Aimless wander destinations + snap-back/exit origins mint ever-new keys,
     // so without the cap the cache grows without bound in an always-on office.
-    let mask = WalkableMask::new_open(400, 400);
+    let mask = WalkableMaskBuilder::new_open(400, 400).freeze();
     let mut router = AStarRouter::new();
     // On a cell-center (x % 4 == 2) so same-row routes collapse to the
     // straight 2-point polyline.
@@ -419,15 +420,15 @@ fn heuristic_diagonal_uses_octile() {
 
 /// A mask `like`'s size with every pixel blocked.
 fn sealed_like(like: &WalkableMask) -> WalkableMask {
-    let mut sealed = WalkableMask::new_open(like.width(), like.height());
+    let mut sealed = WalkableMaskBuilder::new_open(like.width(), like.height());
     sealed.mark_blocked(0, 0, like.width(), like.height(), 0);
-    sealed
+    sealed.freeze()
 }
 
 /// An open mask whose coarse grid tiles from a corner off the canvas's, off
 /// the cell pitch on both axes.
 fn offset_field() -> WalkableMask {
-    WalkableMask::new(
+    WalkableMaskBuilder::new(
         64,
         64,
         Bounds {
@@ -437,6 +438,7 @@ fn offset_field() -> WalkableMask {
             height: 48,
         },
     )
+    .freeze()
 }
 
 #[test]
@@ -544,11 +546,12 @@ fn cell_in_zone_true_on_inclusive_lower_edges() {
 fn find_path_returns_none_when_target_completely_surrounded() {
     // The mask is oversized so the wall around (100,100) can't saturate to
     // origin and cover `from` too: `snap` must succeed on `from`, fail on the goal.
-    let mut mask = WalkableMask::new_open(200, 200);
+    let mut mask = WalkableMaskBuilder::new_open(200, 200);
     let target = Point { x: 100, y: 100 };
     let wall_size = (MAX_SNAP_RADIUS + 1) * CELL_SIZE * 2;
     let wall_origin = 100u16 - wall_size / 2;
     mask.mark_blocked(wall_origin, wall_origin, wall_size, wall_size, 0);
+    let mask = mask.freeze();
 
     let from = Point { x: 4, y: 4 };
     let result = find_path(&mask, None, from, target, target);
@@ -590,7 +593,7 @@ fn snap_point_to_walkable_returns_walkable_cell() {
 #[test]
 fn degenerate_grid_returns_fallbacks() {
     // Sub-CELL_SIZE on both axes, so `grid_dims` is None.
-    let mask = WalkableMask::new_open(3, 3);
+    let mask = WalkableMaskBuilder::new_open(3, 3).freeze();
     let a = Point { x: 0, y: 0 };
     let b = Point { x: 2, y: 2 };
     assert_eq!(
@@ -609,10 +612,12 @@ fn snap_to_walkable_skips_out_of_bounds_corner_neighbours() {
     // Blocking the bottom-right CORNER cell makes the expanding ring poke PAST
     // the grid's far edge, forcing the out-of-range `continue` before it lands
     // on an interior walkable cell.
-    let mut mask = WalkableMask::new_open(40, 40);
-    let (cell_w, cell_h) = grid_dims(&mask).expect("non-degenerate");
+    let field = || WalkableMaskBuilder::new_open(40, 40);
+    let (cell_w, cell_h) = grid_dims(&field().freeze()).expect("non-degenerate");
     let corner_px = ((cell_w - 1) * CELL_SIZE, (cell_h - 1) * CELL_SIZE);
+    let mut mask = field();
     mask.mark_blocked(corner_px.0, corner_px.1, CELL_SIZE, CELL_SIZE, 0);
+    let mask = mask.freeze();
 
     let result = snap(
         &mask,
@@ -631,9 +636,10 @@ fn snap_to_walkable_skips_out_of_bounds_corner_neighbours() {
 fn find_path_none_when_two_regions_split_by_a_full_wall() {
     // Both endpoints snap successfully, so the None comes from the A* loop
     // EXHAUSTING the open set — distinct from the goal-snap-fails None.
-    let mut mask = WalkableMask::new_open(80, 40);
+    let mut mask = WalkableMaskBuilder::new_open(80, 40);
     // Two fully-blocked cell columns, impassable to the coarse diagonal stepper.
     mask.mark_blocked(36, 0, 8, 40, 0);
+    let mask = mask.freeze();
 
     let from = Point { x: 10, y: 20 };
     let to = Point { x: 70, y: 20 };
@@ -669,11 +675,13 @@ fn octile_cost_is_the_shared_diag_straight_formula() {
 fn snap_lands_on_an_open_pixel_when_the_cell_centre_itself_is_blocked() {
     // The coarse grid calls a cell walkable at `COARSE_CELL_WALKABLE_MIN` of its
     // 16 px open, so the cell it snaps to can have a BLOCKED centre.
-    let mut mask = crate::walkable::WalkableMask::new_open(64, 64);
+    let field = || WalkableMaskBuilder::new_open(64, 64);
     let cell = (4u16, 4u16);
-    let centre = cell_center(&mask, cell.0, cell.1);
+    let centre = cell_center(&field().freeze(), cell.0, cell.1);
     // 2x2 leaves 12 of the cell's 16 px open — walkable to the coarse grid, centre blocked.
+    let mut mask = field();
     mask.mark_blocked(centre.x, centre.y, 2, 2, 0);
+    let mask = mask.freeze();
     assert!(
         !mask.is_walkable(centre.x, centre.y),
         "fixture must block the cell centre, else this pins nothing"
@@ -693,11 +701,19 @@ fn snap_lands_on_an_open_pixel_when_the_cell_centre_itself_is_blocked() {
 
 #[test]
 fn a_route_turns_on_the_open_pixel_nearest_a_blocked_centre() {
-    let mut mask = crate::walkable::WalkableMask::new_open(64, 64);
+    let field = || WalkableMaskBuilder::new_open(64, 64);
     let cell = (4u16, 4u16);
-    let centre = cell_center(&mask, cell.0, cell.1);
+    let centre = cell_center(&field().freeze(), cell.0, cell.1);
     // The cell's south half: still walkable to the coarse grid, centre inside.
-    mask.mark_blocked(centre.x - 2, centre.y, 4, 2, 0);
+    let south_half_blocked = |centre_open: bool| {
+        let mut mask = field();
+        mask.mark_blocked(centre.x - 2, centre.y, 4, 2, 0);
+        if centre_open {
+            mask.mark_walkable(centre.x, centre.y, 1, 1);
+        }
+        mask.freeze()
+    };
+    let mask = south_half_blocked(false);
     assert!(cell_walkable(&mask, cell.0, cell.1));
     assert_eq!(
         cell_anchor(&mask, cell.0, cell.1),
@@ -707,9 +723,8 @@ fn a_route_turns_on_the_open_pixel_nearest_a_blocked_centre() {
         },
         "one step north of the centre is the nearest open pixel"
     );
-    mask.mark_walkable(centre.x, centre.y, 1, 1);
     assert_eq!(
-        cell_anchor(&mask, cell.0, cell.1),
+        cell_anchor(&south_half_blocked(true), cell.0, cell.1),
         centre,
         "an open centre is kept"
     );
@@ -738,7 +753,7 @@ fn a_route_through_a_one_pixel_gap_stays_on_open_floor() {
 fn a_route_comes_in_toward_its_aim_only_where_its_end_stays_on_open_floor() {
     let (from, to) = (Point { x: 2, y: 30 }, Point { x: 30, y: 30 });
     let aim = Point { x: 30, y: 50 };
-    let open = WalkableMask::new_open(64, 64);
+    let open = WalkableMaskBuilder::new_open(64, 64).freeze();
     let mut router = AStarRouter::new();
     let aimed = router.route(&open, from, to, aim);
     let plain = router.route(&open, from, to, to);
@@ -753,8 +768,9 @@ fn a_route_comes_in_toward_its_aim_only_where_its_end_stays_on_open_floor() {
         "the plain leg routed after the aimed one is not served its path"
     );
 
-    let mut walled = WalkableMask::new_open(64, 64);
+    let mut walled = WalkableMaskBuilder::new_open(64, 64);
     walled.mark_blocked(16, 36, 32, 8, 0);
+    let walled = walled.freeze();
     assert_eq!(
         find_path(&walled, None, from, to, aim),
         find_path(&walled, None, from, to, to),
@@ -769,7 +785,7 @@ fn an_aim_a_wall_rings_off_from_the_router_routes_as_the_plain_leg() {
     let (from, to) = (Point { x: 2, y: 30 }, Point { x: 30, y: 30 });
     let aim = Point { x: 30, y: 50 };
     // The ring's one gap is the pixel column the aim's line to `to` runs up.
-    let mut ring = WalkableMask::new_open(64, 64);
+    let mut ring = WalkableMaskBuilder::new_open(64, 64);
     for (x, y, w, h) in [
         (24, 44, 6, 4),
         (31, 44, 5, 4),
@@ -779,6 +795,7 @@ fn an_aim_a_wall_rings_off_from_the_router_routes_as_the_plain_leg() {
     ] {
         ring.mark_blocked(x, y, w, h, 0);
     }
+    let ring = ring.freeze();
     let plain = find_path(&ring, None, from, to, to);
     assert!(plain.is_some(), "premise: `to` routes");
     assert_eq!(

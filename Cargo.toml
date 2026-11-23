@@ -157,6 +157,9 @@ semver             = "1"
 windows-sys        = "0.61"
 # Already in the tree through notify's walkdir: a Windows file id.
 winapi-util        = "0.1"
+# CodSpeed's compat crate, plain criterion when CodSpeed is inactive
+# (codspeed-criterion-compat 6.0.0 `README.md:23`); without its default
+# features (its `Cargo.toml:68-70`) it builds no plotters or rayon.
 criterion          = { package = "codspeed-criterion-compat", version = "6", default-features = false, features = ["cargo_bench_support"] }
 insta              = "1"
 schemars           = "1"

@@ -6,7 +6,7 @@
 
 use super::{Bounds, Point};
 use crate::grid::Grid;
-use crate::walkable::WalkableMask;
+use crate::walkable::{WalkableMask, is_open};
 
 /// Coarse-cell edge in px. Smaller = more accurate paths, more work per query.
 /// `pathfind::CELL_SIZE` re-exports this value.
@@ -33,21 +33,14 @@ pub(crate) fn routed_area(inner: Bounds, top_margin: u16) -> Bounds {
 
 /// The coarse grid's size in cells: the whole cells across `mask`'s routed area.
 pub(crate) fn cell_dims(mask: &WalkableMask) -> (u16, u16) {
-    let routed = mask.routed();
-    (
-        routed.width / COARSE_CELL_SIZE,
-        routed.height / COARSE_CELL_SIZE,
-    )
+    let cells = &mask.coarse().cells;
+    (cells.width(), cells.height())
 }
 
 /// The pixel `mask`'s coarse grid tiles from: its routed area's north-west
 /// corner.
 pub(crate) fn grid_origin(mask: &WalkableMask) -> Point {
-    let routed = mask.routed();
-    Point {
-        x: routed.x,
-        y: routed.y,
-    }
+    cell_corner(mask.routed(), 0, 0)
 }
 
 /// The coarse cell holding pixel `p` on a grid tiled from `origin`, or `None`
@@ -73,18 +66,17 @@ pub(crate) fn snap_cell(mask: &WalkableMask, p: Point) -> (u16, u16) {
     cell_holding(origin, onto).unwrap_or_default()
 }
 
-/// The north-west pixel of `mask`'s coarse cell `(cx, cy)`.
-fn cell_corner(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
-    let origin = grid_origin(mask);
+/// The north-west pixel of coarse cell `(cx, cy)` over `routed`.
+fn cell_corner(routed: Bounds, cx: u16, cy: u16) -> Point {
     Point {
-        x: origin.x + cx * COARSE_CELL_SIZE,
-        y: origin.y + cy * COARSE_CELL_SIZE,
+        x: routed.x + cx * COARSE_CELL_SIZE,
+        y: routed.y + cy * COARSE_CELL_SIZE,
     }
 }
 
 /// The centre pixel of `mask`'s coarse cell `(cx, cy)`.
 pub(crate) fn cell_center(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
-    let corner = cell_corner(mask, cx, cy);
+    let corner = cell_corner(mask.routed(), cx, cy);
     Point {
         x: corner.x + COARSE_CELL_SIZE / 2,
         y: corner.y + COARSE_CELL_SIZE / 2,
@@ -97,8 +89,8 @@ pub(crate) fn cell_center(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
 /// walker turning on the centre would stand in it.
 pub(crate) fn cell_anchor(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
     let centre = cell_center(mask, cx, cy);
-    let piece = walk_piece(mask, cx, cy);
-    cell_pixels(mask, cx, cy)
+    let piece = mask.coarse().cell((cx, cy)).piece;
+    cell_pixels(mask.routed(), cx, cy)
         .filter(|&(bit, _)| piece & bit != 0)
         .map(|(_, p)| p)
         .min_by_key(|p| (p.x.abs_diff(centre.x) + p.y.abs_diff(centre.y), p.y, p.x))
@@ -109,13 +101,13 @@ pub(crate) fn cell_anchor(mask: &WalkableMask, cx: u16, cy: u16) -> Point {
 type CellBits = u16;
 const _: () = assert!(COARSE_CELL_SIZE * COARSE_CELL_SIZE <= CellBits::BITS as u16);
 
-/// Each pixel of `mask`'s coarse cell `(cx, cy)` with its [`CellBits`] bit.
+/// Each pixel of coarse cell `(cx, cy)` over `routed` with its [`CellBits`] bit.
 fn cell_pixels(
-    mask: &WalkableMask,
+    routed: Bounds,
     cx: u16,
     cy: u16,
 ) -> impl Iterator<Item = (CellBits, Point)> + use<> {
-    let Point { x: x0, y: y0 } = cell_corner(mask, cx, cy);
+    let Point { x: x0, y: y0 } = cell_corner(routed, cx, cy);
     (0..COARSE_CELL_SIZE).flat_map(move |dy| {
         (0..COARSE_CELL_SIZE).map(move |dx| {
             (
@@ -146,9 +138,9 @@ const EAST_COLUMN: CellBits = WEST_COLUMN << (COARSE_CELL_SIZE - 1);
 /// piece of its walkable pixels, the first in row order among equals. A wall's
 /// corner can split a cell's open pixels into pieces touching only diagonally,
 /// and a walker crossing between them cuts that corner.
-fn walk_piece(mask: &WalkableMask, cx: u16, cy: u16) -> CellBits {
-    let open_bits = cell_pixels(mask, cx, cy)
-        .filter(|&(_, p)| mask.is_walkable(p.x, p.y))
+fn walk_piece(open: &Grid<bool>, routed: Bounds, cx: u16, cy: u16) -> CellBits {
+    let open_bits = cell_pixels(routed, cx, cy)
+        .filter(|&(_, p)| is_open(open, p.x, p.y))
         .fold(0, |bits, (bit, _)| bits | bit);
     let mut unseen = open_bits;
     let mut largest: CellBits = 0;
@@ -177,7 +169,7 @@ fn walk_piece(mask: &WalkableMask, cx: u16, cy: u16) -> CellBits {
 /// Is coarse cell `(cx, cy)` walkable — ≥ `COARSE_CELL_WALKABLE_MIN` pixels
 /// of [`walk_piece`]?
 pub(crate) fn cell_walkable(mask: &WalkableMask, cx: u16, cy: u16) -> bool {
-    piece_walkable(walk_piece(mask, cx, cy))
+    piece_walkable(mask.coarse().cell((cx, cy)).piece)
 }
 
 /// Is a cell whose [`walk_piece`] is `piece` walkable?
@@ -216,110 +208,120 @@ fn crossable((a, a_piece): ((u16, u16), CellBits), (b, b_piece): ((u16, u16), Ce
     }
 }
 
-/// A once-computed answer, or not yet asked.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Memo {
-    Unknown,
-    No,
-    Yes,
+/// The steps out of a coarse cell, the four orthogonal ones first, in the
+/// order [`CoarseGraph::neighbors`] yields them and A\* pushes them: its `Node`
+/// order ties equal-cost cells and std's `BinaryHeap` documents no order among
+/// equal items (<https://doc.rust-lang.org/std/collections/struct.BinaryHeap.html>),
+/// so this order is part of every route.
+const STEPS: [(i16, i16); 8] = [
+    (1, 0),
+    (-1, 0),
+    (0, 1),
+    (0, -1),
+    (1, 1),
+    (1, -1),
+    (-1, 1),
+    (-1, -1),
+];
+/// How many of [`STEPS`] are orthogonal.
+const ORTHOGONAL_STEPS: usize = 4;
+
+/// A set of [`STEPS`], bit `i` for `STEPS[i]`.
+type StepSet = u8;
+const _: () = assert!(STEPS.len() <= StepSet::BITS as usize);
+
+/// The bit of `StepSet` for step `d`, one of [`STEPS`].
+fn step_bit(d: (i16, i16)) -> StepSet {
+    STEPS.iter().position(|&s| s == d).map_or(0, |i| 1 << i)
 }
 
-/// One search's view of the coarse grid over a `mask`: each
-/// cell's [`walk_piece`] and each edge's crossability is computed at most
-/// once, then read by every step. The A\* expansion and the reach BFS both step
-/// through [`CoarseGrid::neighbors`], so "reachable" and "routable" share ONE
-/// neighbour rule.
-pub(crate) struct CoarseGrid<'a> {
-    mask: &'a WalkableMask,
-    pieces: Grid<Option<CellBits>>,
-    /// Crossability from each cell to its east neighbour.
-    east: Grid<Memo>,
-    /// Crossability from each cell to its south neighbour.
-    south: Grid<Memo>,
+fn steps_where(steps: &[(i16, i16)], can: impl Fn((i16, i16)) -> bool) -> StepSet {
+    steps
+        .iter()
+        .filter(|&&d| can(d))
+        .fold(0, |set, &d| set | step_bit(d))
 }
 
-impl<'a> CoarseGrid<'a> {
-    pub(crate) fn new(mask: &'a WalkableMask) -> Self {
-        let (w, h) = cell_dims(mask);
-        CoarseGrid {
-            mask,
-            pieces: Grid::filled(w, h, None),
-            east: Grid::filled(w, h, Memo::Unknown),
-            south: Grid::filled(w, h, Memo::Unknown),
-        }
-    }
+/// `cell` moved by `d`, or `None` west or north of the grid.
+fn offset(cell: (u16, u16), (dx, dy): (i16, i16)) -> Option<(u16, u16)> {
+    Some((
+        cell.0.checked_add_signed(dx)?,
+        cell.1.checked_add_signed(dy)?,
+    ))
+}
 
-    fn piece(&mut self, (cx, cy): (u16, u16)) -> CellBits {
-        if let Some(piece) = self.pieces.get_or(cx, cy, None) {
-            return piece;
-        }
-        let piece = walk_piece(self.mask, cx, cy);
-        self.pieces.set(cx, cy, Some(piece));
-        piece
-    }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct CoarseCell {
+    /// Its [`walk_piece`].
+    piece: CellBits,
+    steps: StepSet,
+}
 
-    fn crossable(&mut self, a: (u16, u16), b: (u16, u16)) -> bool {
-        let (a_piece, b_piece) = (self.piece(a), self.piece(b));
-        let (lo, edges) = match (a.1 == b.1, a < b) {
-            (true, true) => (a, &mut self.east),
-            (true, false) => (b, &mut self.east),
-            (false, true) => (a, &mut self.south),
-            (false, false) => (b, &mut self.south),
+/// The graph over a [`WalkableMask`]'s coarse grid: each cell's [`walk_piece`] and the
+/// steps out of it, worked out once when the mask freezes. The A\* expansion
+/// and the reach BFS both step through [`CoarseGraph::neighbors`], so
+/// "reachable" and "routable" share ONE neighbour rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CoarseGraph {
+    cells: Grid<CoarseCell>,
+}
+
+impl CoarseGraph {
+    /// The graph over the open pixels of the coarse grid tiled across `routed`.
+    pub(crate) fn new(open: &Grid<bool>, routed: Bounds) -> Self {
+        let (w, h) = (
+            routed.width / COARSE_CELL_SIZE,
+            routed.height / COARSE_CELL_SIZE,
+        );
+        let pieces = Grid::from_fn(w, h, |cx, cy| walk_piece(open, routed, cx, cy));
+        let piece = |c: (u16, u16)| pieces.get_or(c.0, c.1, 0);
+        let orthogonal = |from: (u16, u16), d| {
+            offset(from, d).is_some_and(|to| {
+                piece_walkable(piece(to)) && crossable((from, piece(from)), (to, piece(to)))
+            })
         };
-        memo(edges, lo.0, lo.1, || crossable((a, a_piece), (b, b_piece)))
+        let orthogonals = Grid::from_fn(w, h, |cx, cy| {
+            steps_where(&STEPS[..ORTHOGONAL_STEPS], |d| orthogonal((cx, cy), d))
+        });
+        // A diagonal step needs BOTH orthogonal cells it squeezes between
+        // steppable on the way: a walker's straight leg between two diagonal
+        // cells crosses their shared corner, so a blocked orthogonal cell puts
+        // that corner inside a wall.
+        let stepped = |from: (u16, u16), d| {
+            (orthogonals.get_or(from.0, from.1, 0) & step_bit(d) != 0)
+                .then(|| offset(from, d))
+                .flatten()
+        };
+        let diagonal = |c: (u16, u16), (dx, dy)| {
+            let via = |first, then| stepped(c, first).and_then(|on| stepped(on, then));
+            via((dx, 0), (0, dy)).is_some() && via((0, dy), (dx, 0)).is_some()
+        };
+        CoarseGraph {
+            cells: Grid::from_fn(w, h, |cx, cy| CoarseCell {
+                piece: piece((cx, cy)),
+                steps: orthogonals.get_or(cx, cy, 0)
+                    | steps_where(&STEPS[ORTHOGONAL_STEPS..], |d| diagonal((cx, cy), d)),
+            }),
+        }
+    }
+
+    /// Coarse cell `(cx, cy)`, or one with no piece and no steps off the grid.
+    fn cell(&self, (cx, cy): (u16, u16)) -> CoarseCell {
+        self.cells.get_or(cx, cy, CoarseCell::default())
     }
 
     /// The 8-neighbours of `cell` a walker can step to, each flagged `true`
-    /// when the step is diagonal. An orthogonal step needs the neighbour
-    /// walkable and `crossable`. A diagonal step needs BOTH orthogonal cells it
-    /// squeezes between steppable on the way: a walker's straight leg between
-    /// two diagonal cells crosses their shared corner, so a blocked orthogonal
-    /// cell puts that corner inside a wall.
+    /// when the step is diagonal.
     pub(crate) fn neighbors(
-        &mut self,
+        &self,
         cell: (u16, u16),
     ) -> impl Iterator<Item = ((u16, u16), bool)> + use<> {
-        let [e, w, s, n] = [(1, 0), (-1, 0), (0, 1), (0, -1)].map(|d| self.step(Some(cell), d));
-        let mut diagonal = |a: Option<(u16, u16)>, b: Option<(u16, u16)>, (dx, dy)| {
-            let via_a = self.step(a, (0, dy))?;
-            self.step(b, (dx, 0)).and(Some(via_a))
-        };
-        [
-            (e, false),
-            (w, false),
-            (s, false),
-            (n, false),
-            (diagonal(e, s, (1, 1)), true),
-            (diagonal(e, n, (1, -1)), true),
-            (diagonal(w, s, (-1, 1)), true),
-            (diagonal(w, n, (-1, -1)), true),
-        ]
-        .into_iter()
-        .filter_map(|(c, diag)| c.map(|c| (c, diag)))
-    }
-
-    /// The orthogonal neighbour `from + d`, when it is walkable and crossable.
-    fn step(&mut self, from: Option<(u16, u16)>, (dx, dy): (i32, i32)) -> Option<(u16, u16)> {
-        let from = from?;
-        let to = (
-            u16::try_from(i32::from(from.0) + dx).ok()?,
-            u16::try_from(i32::from(from.1) + dy).ok()?,
-        );
-        let in_grid = to.0 < self.pieces.width() && to.1 < self.pieces.height();
-        (in_grid && piece_walkable(self.piece(to)) && self.crossable(from, to)).then_some(to)
-    }
-}
-
-/// `grid[x, y]`, computing it with `f` on first ask.
-fn memo(grid: &mut Grid<Memo>, x: u16, y: u16, f: impl FnOnce() -> bool) -> bool {
-    match grid.get_or(x, y, Memo::Unknown) {
-        Memo::Yes => true,
-        Memo::No => false,
-        Memo::Unknown => {
-            let v = f();
-            grid.set(x, y, if v { Memo::Yes } else { Memo::No });
-            v
-        }
+        let steps = self.cell(cell).steps;
+        STEPS
+            .into_iter()
+            .enumerate()
+            .filter(move |&(i, _)| steps & (1 << i) != 0)
+            .filter_map(move |(i, d)| Some((offset(cell, d)?, i >= ORTHOGONAL_STEPS)))
     }
 }
 
@@ -377,17 +379,15 @@ pub(crate) fn snap_where(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::walkable::WalkableMaskBuilder;
 
     fn neighbours(mask: &WalkableMask, cell: (u16, u16)) -> Vec<(u16, u16)> {
-        CoarseGrid::new(mask)
-            .neighbors(cell)
-            .map(|(c, _)| c)
-            .collect()
+        mask.coarse().neighbors(cell).map(|(c, _)| c).collect()
     }
 
     #[test]
     fn a_diagonal_step_past_a_blocked_orthogonal_cell_is_refused() {
-        let mut m = WalkableMask::new_open(32, 32);
+        let mut m = WalkableMaskBuilder::new_open(32, 32);
         // Cell (2, 1) blocked: the step (1, 1) -> (2, 2) would cut its corner.
         m.mark_blocked(
             2 * COARSE_CELL_SIZE,
@@ -396,22 +396,29 @@ mod tests {
             COARSE_CELL_SIZE,
             0,
         );
+        let m = m.freeze();
         let n = neighbours(&m, (1, 1));
         assert!(!n.contains(&(2, 2)) && !n.contains(&(2, 0)));
         assert!(
             n.contains(&(0, 2)) && n.contains(&(1, 2)),
             "the open side still steps"
         );
+        let n = neighbours(&m, (2, 2));
+        assert!(
+            !n.contains(&(1, 1)) && !n.contains(&(3, 1)),
+            "nor past a blocked vertical neighbour"
+        );
     }
 
     #[test]
     fn half_open_cells_meeting_at_a_pixel_corner_are_not_crossable() {
-        let mut m = WalkableMask::new_open(32, 32);
+        let mut m = WalkableMaskBuilder::new_open(32, 32);
         let s = COARSE_CELL_SIZE;
         // Cell (1, 1) open only in its north half, cell (2, 1) only in its south
         // half: both walkable, their open halves touching at one pixel corner.
         m.mark_blocked(s, s + s / 2, s, s / 2, 0);
         m.mark_blocked(2 * s, s, s, s / 2, 0);
+        let m = m.freeze();
         assert!(cell_walkable(&m, 1, 1));
         assert!(cell_walkable(&m, 2, 1));
         assert!(!neighbours(&m, (1, 1)).contains(&(2, 1)));
@@ -423,17 +430,26 @@ mod tests {
     /// no piece big enough to stand on.
     #[test]
     fn a_cell_counts_only_its_largest_walk_piece() {
-        let mut m = WalkableMask::new_open(32, 32);
         let s = COARSE_CELL_SIZE;
-        m.mark_blocked(s, s, s, s, 0);
-        m.mark_walkable(s + 1, s, s - 1, s / 2);
-        m.mark_walkable(s, s + s / 2, 1, s / 2);
-        let open = cell_pixels(&m, 1, 1)
+        let cornered = |joined: bool| {
+            let mut m = WalkableMaskBuilder::new_open(32, 32);
+            m.mark_blocked(s, s, s, s, 0);
+            m.mark_walkable(s + 1, s, s - 1, s / 2);
+            m.mark_walkable(s, s + s / 2, 1, s / 2);
+            if joined {
+                m.mark_walkable(s, s + 1, 1, 1);
+            }
+            m.freeze()
+        };
+        let m = cornered(false);
+        let open = cell_pixels(m.routed(), 1, 1)
             .filter(|&(_, p)| m.is_walkable(p.x, p.y))
             .count();
         assert_eq!(open, usize::from(COARSE_CELL_WALKABLE_MIN));
         assert!(!cell_walkable(&m, 1, 1));
-        m.mark_walkable(s, s + 1, 1, 1);
-        assert!(cell_walkable(&m, 1, 1), "joined into one piece, it stands");
+        assert!(
+            cell_walkable(&cornered(true), 1, 1),
+            "joined into one piece, it stands"
+        );
     }
 }
