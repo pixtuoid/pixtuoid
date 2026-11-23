@@ -646,12 +646,17 @@ fn inside_the_end_gate_an_identity_readmits_an_ended_child_only_under_its_parent
     }
 }
 
-/// A grok hook envelope, the shape its recorded subagent run carries.
+/// A grok hook envelope, the shape its recorded subagent run carries: a prompt
+/// names its turn.
 fn grok_hook(event: &str, session: &str) -> serde_json::Value {
-    serde_json::json!({
+    let mut v = serde_json::json!({
         "hookEventName": event, "sessionId": session, "workspaceRoot": "/repo",
         "_pixtuoid_source": "grok",
-    })
+    });
+    if event == "user_prompt_submit" {
+        v["promptId"] = format!("{session}-prompt").into();
+    }
+    v
 }
 
 /// A grok child started under its parent, in the recorded run's hook order.

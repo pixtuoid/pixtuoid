@@ -420,6 +420,9 @@ mod tests {
                 "Notification" => {
                     payload["notificationType"] = serde_json::json!("permission_prompt");
                 }
+                "UserPromptSubmit" => {
+                    payload["promptId"] = serde_json::json!("p1");
+                }
                 "SubagentStart" | "SubagentStop" => {
                     payload["subagentId"] = serde_json::json!("0197fa31-child");
                     payload["subagentType"] = serde_json::json!("explore");

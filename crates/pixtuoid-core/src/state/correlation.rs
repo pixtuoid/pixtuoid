@@ -470,7 +470,7 @@ impl Correlation {
         }
     }
 
-    /// TTL-prune every correlation map.
+    /// Prune the correlation maps a clock bounds.
     ///
     /// A [`Lifecycle`] lives while any clock it carries does: a linked live
     /// child's memory, a child end under [`CHILD_END_RELINK_TTL`] (not the

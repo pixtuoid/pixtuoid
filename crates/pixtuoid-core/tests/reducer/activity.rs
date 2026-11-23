@@ -1294,12 +1294,14 @@ fn a_transcript_twin_past_the_dedup_window_counts_once() {
 }
 
 // ---------------------------------------------------------------------------
-// Turn keys: a bracket stream's turns, and the requests and pending calls they
-// scope (codex: the rollout's brackets and items, the hooks' answers).
+// Turn keys: an agent's turns, and the requests and pending calls they scope
+// (codex: the rollout's brackets and items, the hooks' answers; grok: the
+// hook's starts, the transcript's ends).
 // ---------------------------------------------------------------------------
 
 use pixtuoid_core::source::Resolution;
 use pixtuoid_core::state::TurnKey;
+use pixtuoid_core::state::reducer::STRAGGLER_TTL;
 
 fn turn(k: &str) -> TurnKey {
     TurnKey::Id(k.into())
@@ -1539,25 +1541,18 @@ fn a_turn_start_leaves_a_standing_request_to_its_answer() {
     assert!(requires_action(&scene, id));
 }
 
-/// A start of another turn ends the open one; an end of another turn keyed by
-/// an opaque id proves only its own over.
+/// codex's rollout carries each turn's start and its end in order, so either
+/// edge of another turn proves the open one ended.
 #[test]
-fn a_start_of_another_turn_ends_the_open_one_and_its_end_does_not() {
+fn on_one_ordered_stream_another_turns_start_or_end_ends_the_open_one() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let next_turn_open = ActivityState::Running { item: None };
-    let c1_runs = ActivityState::Running {
-        item: Some(ToolUse {
-            tool_use_id: Some("c1".into()),
-            detail: None,
-            kind: ToolKind::Other,
-        }),
-    };
     for (next, then) in [
         (
             turn_start as fn(AgentId, &str) -> AgentEvent,
             next_turn_open,
         ),
-        (keyed_turn_end, c1_runs),
+        (keyed_turn_end, ActivityState::Idle),
     ] {
         let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
         let id = codex(&mut r, &mut scene);
@@ -1580,6 +1575,115 @@ fn a_start_of_another_turn_ends_the_open_one_and_its_end_does_not() {
         apply(&mut r, &mut scene, next(id, "t2"), t0, Transport::Jsonl);
         assert_eq!(scene.agents[&id].state, then);
     }
+}
+
+/// grok's hook starts a turn and its transcript ends one, in no order between
+/// them, so another turn's end proves only its own over.
+#[test]
+fn on_split_edges_another_turns_end_leaves_the_open_one() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = grok(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "k1"),
+        t0,
+        Transport::Hook,
+    );
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c1"),
+        None,
+        t0,
+        Transport::Hook,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        keyed_turn_end(id, "k2"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert_eq!(
+        scene.agents[&id].state,
+        ActivityState::Running {
+            item: Some(ToolUse {
+                tool_use_id: Some("c1".into()),
+                detail: None,
+                kind: ToolKind::Other,
+            }),
+        }
+    );
+}
+
+/// A dead life's turns are over, so its transcript's late end of one ends
+/// nothing of the revived slot's.
+#[test]
+fn a_dead_lifes_late_turn_end_leaves_the_revived_slots_call() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = grok(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "k1"),
+        t0,
+        Transport::Hook,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        AgentEvent::SessionEnd {
+            agent_id: id,
+            as_child: false,
+        },
+        t0,
+        Transport::Hook,
+    );
+    let revived = t0 + Duration::from_millis(20);
+    apply(
+        &mut r,
+        &mut scene,
+        AgentEvent::SessionStart {
+            agent_id: id,
+            source: "grok".into(),
+            session_id: "abc".into(),
+            cwd: "/".into(),
+            parent_id: None,
+        },
+        revived,
+        Transport::Hook,
+    );
+    assert_eq!(scene.agents[&id].exiting_at, None, "the slot revived");
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c2"),
+        None,
+        revived,
+        Transport::Hook,
+    );
+    apply(
+        &mut r,
+        &mut scene,
+        keyed_turn_end(id, "k1"),
+        revived + STRAGGLER_TTL,
+        Transport::Jsonl,
+    );
+    assert!(
+        matches!(
+            &scene.agents[&id].state,
+            ActivityState::Running {
+                item: Some(ToolUse { tool_use_id: Some(t), .. })
+            } if &**t == "c2"
+        ),
+        "{:?}",
+        scene.agents[&id].state
+    );
 }
 
 /// A late attach: the reducer never saw the turn's start, yet the stream keys

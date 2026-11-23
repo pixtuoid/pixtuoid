@@ -424,7 +424,7 @@ impl AgentEvent {
         }
     }
 
-    /// A bracket stream's turn end, naming its turn.
+    /// A turn end naming its turn.
     pub(crate) fn keyed_turn_end(agent_id: AgentId, turn: TurnKey) -> Self {
         AgentEvent::TurnEnd {
             agent_id,

@@ -11,7 +11,7 @@ use crate::state::correlation::{
 };
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
-use crate::state::turns::{End, Start};
+use crate::state::turns::{Edges, End, Start};
 use crate::state::{
     ActivityState, AgentSlot, SceneState, Today, ToolKind, ToolUse, TurnKey, fsm, scope,
 };
@@ -328,8 +328,8 @@ impl Reducer {
             scene.today = None;
         }
         // What no slot holds: a Task or backlog marker for an id that never
-        // registered, and a gone slot's newest turn position, which
-        // `remove_agent_correlation` keeps through a revive.
+        // registered, and a gone slot's turns, closed and newest, which
+        // `remove_agent_correlation` keeps through a revive: their one release.
         self.corr
             .tasks_in_flight
             .retain(|id, _| scene.agents.contains_key(id));
@@ -856,8 +856,8 @@ impl Reducer {
         }
     }
 
-    /// The `TurnEnd` arm: the agent's work ends, unless the ledger shows the
-    /// turn already closed.
+    /// The `TurnEnd` arm: the agent's work ends, unless the ledger finds the
+    /// end [`End::Stale`].
     fn apply_turn_end(
         &mut self,
         scene: &mut SceneState,
@@ -866,10 +866,16 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        if !scene.agents.contains_key(&agent_id) {
+        let Some(brackets) = scene.agents.get(&agent_id).map(brackets_turns) else {
             return;
-        }
-        let (applies, implied, turnless) = match self.corr.turns.end(agent_id, turn.as_ref()) {
+        };
+        let edges = if brackets {
+            Edges::OneStream
+        } else {
+            Edges::Split
+        };
+        let (applies, implied, turnless) = match self.corr.turns.end(agent_id, turn.as_ref(), edges)
+        {
             End::Applied { implied } => (true, implied, turn.is_none()),
             End::StartUnseen => (true, None, true),
             End::Stale => (false, None, false),
@@ -1683,7 +1689,7 @@ impl Reducer {
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.tasks_in_flight.remove(id);
         self.corr.action_requests.forget(id);
-        self.corr.turns.forget(id);
+        self.corr.turns.end_life(*id);
         self.corr.caught_up.remove(id);
         self.pending_b1_cascades.remove(id);
     }
