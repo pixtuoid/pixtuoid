@@ -276,12 +276,6 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 }
             }
         }
-        // The transcript's `turn_completed` ends every turn. These miss a
-        // subagent's turns, which fire `subagent_stop` instead, and add a
-        // session-end `stop` naming no turn (`stop_gate.rs:241-245`, `:95-111`
-        // under `crates/codegen/xai-grok-shell/src/session/acp_session_impl/`
-        // at `2bdd1d6a63`).
-        "stop" | "stop_failure" | "stop_cancelled" => Ok(vec![]),
         "subagent_start" => {
             let Some(child_session_id) = child_key(obj) else {
                 crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
@@ -984,21 +978,13 @@ mod tests {
     }
 
     #[test]
-    fn no_stop_hook_ends_a_turn() {
-        for event in ["stop", "stop_failure", "stop_cancelled"] {
-            let mut v = envelope(event);
-            v["promptId"] = json!("prompt-1");
-            let evs = decode_all(v);
-            assert!(evs.is_empty(), "{event}: {evs:?}");
-        }
-    }
-
-    #[test]
     fn nothing_to_key_on_is_malformed() {
-        assert!(decode_grok_hook_payload(test_obj(&json!({"hookEventName": "stop"}))).is_err());
+        assert!(
+            decode_grok_hook_payload(test_obj(&json!({"hookEventName": "session_end"}))).is_err()
+        );
         assert!(
             decode_grok_hook_payload(test_obj(
-                &json!({"hookEventName": "stop", "cwd": "", "workspaceRoot": ""})
+                &json!({"hookEventName": "session_end", "cwd": "", "workspaceRoot": ""})
             ))
             .is_err()
         );
@@ -1007,8 +993,16 @@ mod tests {
 
     #[test]
     fn unregistered_events_bail_loudly() {
-        // pre/post_compact are deliberately unregistered.
-        for ev in ["pre_compact", "post_compact", "PreToolUse", "bogus"] {
+        // pre/post_compact and the stop hooks are deliberately unregistered.
+        for ev in [
+            "pre_compact",
+            "post_compact",
+            "stop",
+            "stop_failure",
+            "stop_cancelled",
+            "PreToolUse",
+            "bogus",
+        ] {
             assert!(
                 decode_grok_hook_payload(test_obj(&envelope(ev))).is_err(),
                 "{ev} must bail"

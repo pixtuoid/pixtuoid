@@ -3,60 +3,60 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 15196080239733851834
-    tool_use_id: call_EXgCb1s6fYCJj7BC
+    agent_id: 14730432742626257688
+    tool_use_id: call_zBlKt5MhySOOiBau
     detail:
       Generic:
         display: use_tool
 - ToolUseEnd:
-    agent_id: 15196080239733851834
-    tool_use_id: call_EXgCb1s6fYCJj7BC
+    agent_id: 14730432742626257688
+    tool_use_id: call_zBlKt5MhySOOiBau
 - TurnEnd:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     turn:
-      Id: c8d2f4b7-572f-4569-8e87-198f72fc333e
+      Id: 8db1496f-0b93-42be-9521-b441dadfe1ee
 - SessionEnd:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     as_child: false
 - SessionStart:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     source: grok
-    session_id: 01a20808-2e7d-7322-97a8-b26acb8960bc
+    session_id: 01a2082a-c51a-78b1-98fe-60327b60fa5f
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     source: grok
-    session_id: 01a20808-2e7d-7322-97a8-b26acb8960bc
+    session_id: 01a2082a-c51a-78b1-98fe-60327b60fa5f
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - TurnStart:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     turn:
-      Id: c8d2f4b7-572f-4569-8e87-198f72fc333e
+      Id: 8db1496f-0b93-42be-9521-b441dadfe1ee
 - Identity:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     source: grok
-    session_id: 01a20808-2e7d-7322-97a8-b26acb8960bc
+    session_id: 01a2082a-c51a-78b1-98fe-60327b60fa5f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 15196080239733851834
-    tool_use_id: call_EXgCb1s6fYCJj7BC
+    agent_id: 14730432742626257688
+    tool_use_id: call_zBlKt5MhySOOiBau
     detail:
       Generic:
         display: hermetic__probe
 - Identity:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     source: grok
-    session_id: 01a20808-2e7d-7322-97a8-b26acb8960bc
+    session_id: 01a2082a-c51a-78b1-98fe-60327b60fa5f
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 15196080239733851834
-    tool_use_id: call_EXgCb1s6fYCJj7BC
+    agent_id: 14730432742626257688
+    tool_use_id: call_zBlKt5MhySOOiBau
 - SessionEnd:
-    agent_id: 15196080239733851834
+    agent_id: 14730432742626257688
     as_child: false

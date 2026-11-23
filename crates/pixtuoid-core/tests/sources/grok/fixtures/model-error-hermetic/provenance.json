@@ -6,7 +6,7 @@
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 83
+    "blanked": 56
   },
   "aimock": "1.48.0",
   "script": "tests/sources/grok/hermetic/model-error.json",
@@ -19,8 +19,6 @@
       ],
       "/params/update/event_name": [
         "session_start",
-        "stop",
-        "stop_failure",
         "user_prompt_submit"
       ],
       "/params/update/sessionUpdate": [

@@ -45,9 +45,11 @@ pub(crate) const GROK_EVENTS: &[&str] = &[
     "PostToolUseFailure",
     "PermissionDenied",
     "Notification",
-    "Stop",
-    "StopFailure",
-    "StopCancelled",
+    // No `Stop`, `StopFailure` or `StopCancelled`: the transcript's
+    // `turn_completed` ends every turn, and these miss a subagent's turns and
+    // add a session-end `stop` naming none (`stop_gate.rs:241-245`, `:95-111`
+    // under `crates/codegen/xai-grok-shell/src/session/acp_session_impl/` at
+    // `xai-org/grok-build` `2bdd1d6a63`).
     "SubagentStart",
     "SubagentStop",
     "SessionEnd",
@@ -365,7 +367,7 @@ mod tests {
         );
 
         let mut doc: Value = serde_json::from_str(&installed).unwrap();
-        doc["hooks"]["Stop"][0]["hooks"][0]["env"] = json!({});
+        doc["hooks"]["SessionEnd"][0]["hooks"][0]["env"] = json!({});
         assert!(
             verify_schema(&doc.to_string())
                 .issues
@@ -445,9 +447,6 @@ mod tests {
                 "PostToolUseFailure",
                 "PermissionDenied",
                 "Notification",
-                "Stop",
-                "StopCancelled",
-                "StopFailure",
                 "SubagentStart",
                 "SubagentStop",
                 "SessionEnd",

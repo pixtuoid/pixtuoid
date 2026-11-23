@@ -1,0 +1,10 @@
+{}
+{}
+{"timestamp":0,"timestamp_us":1795433367747386,"method":"","params":{"sessionId":"","update":{"sessionUpdate":"","content":{},"_meta":{"modelId":"grok-4.6","promptIndex":0}},"_meta":{}}}
+{"timestamp":0,"timestamp_us":1795433367797493,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call","toolCallId":"call_e5hkQB1zmTF-vjjQ","title":"run_terminal_command","rawInput":{},"_meta":{}},"_meta":{}}}
+{}
+{}
+{"timestamp":0,"timestamp_us":1795433367875699,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_e5hkQB1zmTF-vjjQ","status":"failed","content":[],"_meta":{}},"_meta":{}}}
+{}
+{"timestamp":0,"timestamp_us":1795433367957561,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"turn_completed","prompt_id":"efeda262-4011-48ce-8000-c2b0313a8ef3","stop_reason":"","usage":{},"elapsed_ms":0},"_meta":{}}}
+{"timestamp":0,"timestamp_us":1795433371432751,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"hook_execution","event_name":"session_end","runs":[]},"_meta":{}}}

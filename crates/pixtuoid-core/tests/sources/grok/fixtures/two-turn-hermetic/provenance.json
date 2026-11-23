@@ -6,7 +6,7 @@
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 188
+    "blanked": 149
   },
   "aimock": "1.48.0",
   "script": "tests/sources/grok/hermetic/two-turn.json",
@@ -21,7 +21,6 @@
         "post_tool_use",
         "pre_tool_use",
         "session_start",
-        "stop",
         "user_prompt_submit"
       ],
       "/params/update/sessionUpdate": [
@@ -39,9 +38,9 @@
       "2:/cwd",
       "3:/cwd",
       "4:/cwd",
+      "5:/cwd",
       "6:/cwd",
-      "7:/cwd",
-      "8:/cwd"
+      "7:/cwd"
     ]
   }
 }

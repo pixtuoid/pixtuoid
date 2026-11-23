@@ -1,0 +1,11 @@
+{}
+{}
+{"timestamp":0,"timestamp_us":1795433387455758,"method":"","params":{"sessionId":"","update":{"sessionUpdate":"","content":{},"_meta":{"modelId":"grok-4.6","promptIndex":0}},"_meta":{}}}
+{"timestamp":0,"timestamp_us":1795433387509794,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call","toolCallId":"call_FUCDGsjjbyTbTxeZ","title":"ask_user_question","rawInput":{},"_meta":{}},"_meta":{}}}
+{}
+{}
+{}
+{"timestamp":0,"timestamp_us":1795433387600923,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_FUCDGsjjbyTbTxeZ","status":"completed","content":[],"rawOutput":{}},"_meta":{}}}
+{}
+{"timestamp":0,"timestamp_us":1795433387695156,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"turn_completed","prompt_id":"52196b9c-8e9f-4a3e-bcd7-e69f6e6f7a78","stop_reason":"","usage":{},"elapsed_ms":0},"_meta":{}}}
+{"timestamp":0,"timestamp_us":1795433387731831,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"hook_execution","event_name":"session_end","runs":[]},"_meta":{}}}

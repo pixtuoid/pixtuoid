@@ -3,68 +3,68 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ModelInfo:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     model: grok-4.6
     effort: ~
 - ToolUseStart:
-    agent_id: 10649186824080028210
-    tool_use_id: call_BIoLXgXI4EB-_UCA
+    agent_id: 14582775302976152319
+    tool_use_id: call_e5hkQB1zmTF-vjjQ
     detail:
       Generic:
         display: run_terminal_command
 - ToolUseEnd:
-    agent_id: 10649186824080028210
-    tool_use_id: call_BIoLXgXI4EB-_UCA
+    agent_id: 14582775302976152319
+    tool_use_id: call_e5hkQB1zmTF-vjjQ
 - TurnEnd:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     turn:
-      Id: fb4ef0ec-c380-4958-9cee-a113f58b1e50
+      Id: efeda262-4011-48ce-8000-c2b0313a8ef3
 - SessionEnd:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     as_child: false
 - SessionStart:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     source: grok
-    session_id: 01a20808-711e-7673-acda-2ef36279a2ca
+    session_id: 01a2082b-07a8-7bf1-9fdd-d4fd297cf54c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - SessionStart:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     source: grok
-    session_id: 01a20808-711e-7673-acda-2ef36279a2ca
+    session_id: 01a2082b-07a8-7bf1-9fdd-d4fd297cf54c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - TurnStart:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     turn:
-      Id: fb4ef0ec-c380-4958-9cee-a113f58b1e50
+      Id: efeda262-4011-48ce-8000-c2b0313a8ef3
 - Identity:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     source: grok
-    session_id: 01a20808-711e-7673-acda-2ef36279a2ca
+    session_id: 01a2082b-07a8-7bf1-9fdd-d4fd297cf54c
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 10649186824080028210
-    tool_use_id: call_BIoLXgXI4EB-_UCA
+    agent_id: 14582775302976152319
+    tool_use_id: call_e5hkQB1zmTF-vjjQ
     detail:
       Generic:
         display: "run_terminal_command: rm NOTE.txt"
 - Identity:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     source: grok
-    session_id: 01a20808-711e-7673-acda-2ef36279a2ca
+    session_id: 01a2082b-07a8-7bf1-9fdd-d4fd297cf54c
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     reason: Tool permission requested
 - Identity:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     source: grok
-    session_id: 01a20808-711e-7673-acda-2ef36279a2ca
+    session_id: 01a2082b-07a8-7bf1-9fdd-d4fd297cf54c
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 10649186824080028210
-    tool_use_id: call_BIoLXgXI4EB-_UCA
+    agent_id: 14582775302976152319
+    tool_use_id: call_e5hkQB1zmTF-vjjQ
 - SessionEnd:
-    agent_id: 10649186824080028210
+    agent_id: 14582775302976152319
     as_child: false
