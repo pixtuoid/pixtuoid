@@ -274,10 +274,7 @@ impl ActionRequests {
         resolved
     }
 
-    /// Whether `id`'s request names `call` on the wire. A Task's End, or the
-    /// Start of one already in flight, answers only such a request (omp's
-    /// approval of a dispatch names it): a subagent returning answers no
-    /// prompt a deduction bound it to (#152).
+    /// Whether `id`'s request names `call` on the wire.
     pub(crate) fn names(&self, id: &AgentId, call: &str) -> bool {
         self.open
             .get(id)
@@ -300,7 +297,8 @@ impl ActionRequests {
     }
 
     /// A drained Task's end, as [`Self::end`], answering only a request that
-    /// [names](Self::names) it.
+    /// [names](Self::names) it: a subagent returning answers no prompt a
+    /// deduction bound it to (#152).
     pub(crate) fn drained(
         &mut self,
         id: AgentId,
@@ -919,7 +917,7 @@ mod tests {
     }
 
     #[test]
-    fn a_drained_last_member_answers_nothing() {
+    fn a_drained_member_bound_by_deduction_answers_nothing() {
         let mut reqs = raised(vec![pending("task", None, HOOK)], raise(None, None, HOOK));
         assert!(!reqs.drained(id(), "task", HOOK, true));
         assert!(reqs.contains(&id()), "#152: the request is kept");
