@@ -379,8 +379,8 @@ pub(crate) enum Spelling {
     /// An RFC 3339 string to the whole second, cut or rounded, so the write is
     /// within a second either side of it.
     Rfc3339Secs,
-    /// An integer count of seconds since the epoch.
-    EpochSecs,
+    /// An integer count of microseconds since the epoch.
+    EpochMicros,
 }
 
 impl Spelling {
@@ -389,7 +389,7 @@ impl Spelling {
     pub(crate) fn value_pattern(self) -> &'static str {
         match self {
             Self::Rfc3339 | Self::Rfc3339Secs => r#""(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z)""#,
-            Self::EpochSecs => r"([1-9]\d*)",
+            Self::EpochMicros => r"([1-9]\d*)",
         }
     }
 }
@@ -402,7 +402,10 @@ pub(crate) const WRITE_STAMPS: &[(&str, &str, Spelling)] = &[
     ("antigravity", "created_at", Spelling::Rfc3339Secs),
     ("claude-code", "timestamp", Spelling::Rfc3339),
     ("codex", "timestamp", Spelling::Rfc3339),
-    ("grok", "timestamp", Spelling::EpochSecs),
+    // Not its `timestamp`, to the whole second (`grok::decode_grok_line`'s
+    // envelope), which lets a line reach the reducer ahead of a hook grok
+    // fired before writing it.
+    ("grok", "timestamp_us", Spelling::EpochMicros),
     ("omp", "timestamp", Spelling::Rfc3339),
 ];
 

@@ -153,7 +153,7 @@ impl ToolKind {
 pub enum ActivityState {
     /// Nothing the wire shows in flight.
     Idle,
-    /// Working: a turn is open, or an item runs.
+    /// Working: an item runs, or its open turn shows.
     Running {
         /// The work in flight; `None` while an open turn shows none.
         item: Option<ToolUse>,

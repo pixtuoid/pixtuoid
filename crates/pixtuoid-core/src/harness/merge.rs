@@ -164,7 +164,7 @@ fn stamp_of(v: &Value, spelling: Spelling) -> Option<(Duration, Duration)> {
             let at = rfc3339_to_epoch(v.as_str()?)?.checked_sub(second)?;
             Some((at, 2 * second))
         }
-        Spelling::EpochSecs => Some((Duration::from_secs(v.as_u64()?), Duration::from_secs(1))),
+        Spelling::EpochMicros => Some((Duration::from_micros(v.as_u64()?), Duration::ZERO)),
     }
 }
 
@@ -730,12 +730,15 @@ mod tests {
     }
 
     #[test]
-    fn an_epoch_seconds_stamp_spans_its_whole_second() {
+    fn an_epoch_microseconds_stamp_is_its_instant() {
         let (at, within) =
-            stamp_of(&json!(1_793_078_269_u64), Spelling::EpochSecs).expect("a stamp");
-        assert_eq!(at, Duration::from_secs(1_793_078_269));
-        assert_eq!(within, Duration::from_secs(1));
-        assert_eq!(stamp_of(&json!("1793078269"), Spelling::EpochSecs), None);
+            stamp_of(&json!(1_795_429_878_652_539_u64), Spelling::EpochMicros).expect("a stamp");
+        assert_eq!(at, Duration::from_micros(1_795_429_878_652_539));
+        assert_eq!(within, Duration::ZERO);
+        assert_eq!(
+            stamp_of(&json!("1795429878652539"), Spelling::EpochMicros),
+            None
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
-/// A turn's correlation key: codex's `turn_id` on its rollout and hooks, and a
-/// daemon's `runId`, else its coarse fallback ([`crate::source::openclaw`]'s
-/// `turn_key`).
+/// A turn's correlation key: codex's `turn_id` on its rollout and hooks, grok's
+/// prompt id on its prompt hook and its transcript, and a daemon's `runId`, else
+/// its coarse fallback ([`crate::source::openclaw`]'s `turn_key`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum TurnKey {
     /// A position on the agent's ordered bracket stream: opencode's durable

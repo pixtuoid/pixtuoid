@@ -128,7 +128,7 @@ pub enum AgentEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn: Option<TurnKey>,
     },
-    /// A turn started, from the agent's ordered bracket stream.
+    /// A turn started.
     TurnStart {
         /// The agent whose turn started.
         agent_id: AgentId,
@@ -140,8 +140,7 @@ pub enum AgentEvent {
     TurnEnd {
         /// The agent whose work ended.
         agent_id: AgentId,
-        /// The turn, from a bracket stream; `None` from a source whose turn
-        /// end names none.
+        /// The turn; `None` from a source whose turn end names none.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         turn: Option<TurnKey>,
     },
@@ -425,7 +424,7 @@ impl AgentEvent {
         }
     }
 
-    /// A bracket stream's turn end, naming its turn.
+    /// A turn end naming its turn.
     pub(crate) fn keyed_turn_end(agent_id: AgentId, turn: TurnKey) -> Self {
         AgentEvent::TurnEnd {
             agent_id,
@@ -477,7 +476,7 @@ impl AgentEvent {
         }
     }
 
-    /// Whether this event is a turn's traffic: a call, a turn edge, or a
+    /// Whether this event is a turn's traffic: a call, a turn bracket, or a
     /// request for the user and its answer; never [`Backlog`](Self::Backlog),
     /// the reader's own word, nor [`ProofOfLife`](Self::ProofOfLife), which
     /// vouches a visible slot and must never create one.

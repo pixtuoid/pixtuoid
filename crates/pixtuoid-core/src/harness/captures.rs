@@ -1110,12 +1110,12 @@ mod tests {
     /// un-blanks is a change, not a clock that moved.
     #[test]
     fn a_blanked_numeric_stamp_is_no_clock() {
-        let blank = [("t.jsonl", r#"{"timestamp":0}"#)];
-        let stamped = [("t.jsonl", r#"{"timestamp":1793078269}"#)];
+        let blank = [("t.jsonl", r#"{"timestamp_us":0}"#)];
+        let stamped = [("t.jsonl", r#"{"timestamp_us":1795429878652539}"#)];
         assert!(!same_up_to_masks(&blank, &stamped));
         assert!(same_up_to_masks(
             &stamped,
-            &[("t.jsonl", r#"{"timestamp":1793078270}"#)]
+            &[("t.jsonl", r#"{"timestamp_us":1795429878652540}"#)]
         ));
     }
 
@@ -1130,7 +1130,7 @@ mod tests {
                 r#""2026-11-23T04:47:14Z""#,
                 r#""2026-11-23T04:47:15Z""#,
             ),
-            ("timestamp", "1793078269", "1793078270"),
+            ("timestamp_us", "1795429878652539", "1795429878652540"),
             (FORWARDED_AT_STAMP, "1795409234391", "1795409234392"),
         ] {
             let line = |stamp: &str| format!(r#"{{"{key}":{stamp}}}"#);

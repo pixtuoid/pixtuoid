@@ -11,7 +11,7 @@ use crate::state::correlation::{
 };
 use crate::state::fsm::SettleCtx;
 use crate::state::requests::{Ended, PendingStart, Raise};
-use crate::state::turns::{End, Start};
+use crate::state::turns::{Brackets, End, Start};
 use crate::state::{
     ActivityState, AgentSlot, SceneState, Today, ToolKind, ToolUse, TurnKey, fsm, scope,
 };
@@ -57,6 +57,11 @@ pub const STALE_SHORT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 /// `slot`'s source's caps; `None` for an unregistered source.
 fn caps_of(slot: &AgentSlot) -> Option<SourceCaps> {
     crate::source::registry::descriptor_for(&slot.source).map(|d| d.caps())
+}
+
+/// Whether `slot`'s source brackets its turns ([`SourceCaps::brackets_turns`]).
+fn brackets_turns(slot: &AgentSlot) -> bool {
+    caps_of(slot).is_some_and(|c| c.brackets_turns)
 }
 
 /// Which Task end arms b1 for `slot`; an unregistered source keeps the drain.
@@ -323,8 +328,8 @@ impl Reducer {
             scene.today = None;
         }
         // What no slot holds: a Task or backlog marker for an id that never
-        // registered, and a gone slot's newest turn position, which
-        // `remove_agent_correlation` keeps through a revive.
+        // registered, and a gone slot's turns, closed and newest, which
+        // `remove_agent_correlation` keeps through a revive: their one release.
         self.corr
             .tasks_in_flight
             .retain(|id, _| scene.agents.contains_key(id));
@@ -689,7 +694,6 @@ impl Reducer {
             return;
         }
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            self.corr.item_started_on.insert(agent_id, from);
             fsm::enter_running(slot, item, now);
         }
     }
@@ -815,9 +819,10 @@ impl Reducer {
         self.end_item(scene, agent_id, resolved, ends_item, now);
     }
 
-    /// The `TurnStart` arm, on a source that brackets its turns: an Idle agent
-    /// works. A thread runs one turn at a time, so a start of another turn
-    /// ends the open one.
+    /// The `TurnStart` arm: the turn scopes the agent's later requests and
+    /// calls, and on a source that brackets its turns an Idle agent works. A
+    /// thread runs one turn at a time, so a start of another turn ends the open
+    /// one.
     fn apply_turn_start(
         &mut self,
         scene: &mut SceneState,
@@ -826,15 +831,10 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        let brackets = scene
-            .agents
-            .get(&agent_id)
-            .and_then(caps_of)
-            .is_some_and(|c| c.brackets_turns);
-        if !brackets {
+        let Some(brackets) = scene.agents.get(&agent_id).map(brackets_turns) else {
             return;
-        }
-        let Start::Opened { superseded } = self.corr.turns.start(agent_id, turn, now) else {
+        };
+        let Start::Opened { superseded } = self.corr.turns.start(agent_id, turn) else {
             return;
         };
         if let Some(open) = superseded {
@@ -851,13 +851,13 @@ impl Reducer {
             );
             self.end_item(scene, agent_id, resolved, true, now);
         }
-        if let Some(slot) = scene.agents.get_mut(&agent_id) {
+        if brackets && let Some(slot) = scene.agents.get_mut(&agent_id) {
             fsm::enter_turn(slot, now);
         }
     }
 
-    /// The `TurnEnd` arm: the agent's work ends, unless the ledger shows the
-    /// turn already closed.
+    /// The `TurnEnd` arm: the agent's work ends, unless the ledger finds the
+    /// end [`End::Stale`].
     fn apply_turn_end(
         &mut self,
         scene: &mut SceneState,
@@ -866,14 +866,21 @@ impl Reducer {
         from: Transport,
         now: SystemTime,
     ) {
-        if !scene.agents.contains_key(&agent_id) {
+        let Some(brackets) = scene.agents.get(&agent_id).map(|slot| {
+            if brackets_turns(slot) {
+                Brackets::OneStream
+            } else {
+                Brackets::Split
+            }
+        }) else {
             return;
-        }
-        let (applies, implied, turnless) = match self.corr.turns.end(agent_id, turn.as_ref(), now) {
-            End::Applied { implied } => (true, implied, turn.is_none()),
-            End::StartUnseen => (true, None, true),
-            End::Stale => (false, None, false),
         };
+        let (applies, implied, turnless) =
+            match self.corr.turns.end(agent_id, turn.as_ref(), brackets) {
+                End::Applied { implied } => (true, implied, turn.is_none()),
+                End::StartUnseen => (true, None, true),
+                End::Stale => (false, None, false),
+            };
         let ended = Ended::Turn {
             turn: turn.as_ref(),
             implied: implied.as_ref(),
@@ -885,12 +892,7 @@ impl Reducer {
             from,
             is_requires_action(scene, agent_id),
         );
-        // grok's transcript reads `turn_completed` past its hooks' next call,
-        // which, id-less, no in-flight ledger would show again.
-        let lags_the_hooks = from == Transport::Jsonl
-            && turn.is_none()
-            && self.corr.item_started_on.get(&agent_id) == Some(&Transport::Hook);
-        self.end_item(scene, agent_id, resolved, applies && !lags_the_hooks, now);
+        self.end_item(scene, agent_id, resolved, applies, now);
     }
 
     /// Settle the slot when its request was answered or the call it shows
@@ -904,7 +906,6 @@ impl Reducer {
         ends_item: bool,
         now: SystemTime,
     ) {
-        let settle_ctx = self.settle_ctx(&agent_id);
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             let ends_item = ends_item && matches!(slot.state, ActivityState::Running { .. });
             if ends_item
@@ -914,19 +915,21 @@ impl Reducer {
                 self.pending_b1_cascades.insert(agent_id, now);
             }
             if resolved || ends_item {
-                fsm::settle(slot, settle_ctx, now);
+                let ctx = self.settle_ctx(slot);
+                fsm::settle(slot, ctx, now);
             }
             slot.last_event_at = now;
         }
     }
 
-    /// What `id`'s settle lands on: its newest call still in flight, a Task
-    /// of its still in flight, or its open turn.
-    fn settle_ctx(&self, id: &AgentId) -> SettleCtx {
+    /// What `slot`'s settle lands on: its newest call still in flight, a Task
+    /// of its still in flight, or its open turn where its source shows one.
+    fn settle_ctx(&self, slot: &AgentSlot) -> SettleCtx {
+        let id = &slot.agent_id;
         SettleCtx {
             in_flight: self.corr.action_requests.newest_in_flight(id),
             task_in_flight: self.corr.any_task_in_flight(id),
-            turn_open: self.corr.turns.open(id).is_some(),
+            turn_shown: brackets_turns(slot) && self.corr.turns.open(id).is_some(),
         }
     }
 
@@ -1297,7 +1300,7 @@ impl Reducer {
             // Route through fsm so an in-flight Running span folds into
             // `running_ms` — a direct `state = Idle` here silently dropped it.
             fsm::resurrect_in_place(slot, now);
-            // Evict the dead life's correlation as `sweep_exited` would have;
+            // Retire the dead life's correlation as `sweep_exited` would have;
             // `recent_proof_of_life` deliberately SURVIVES a resurrect.
             self.remove_agent_correlation(&agent_id);
             if let Some(p) = slot.parent_id {
@@ -1445,7 +1448,8 @@ impl Reducer {
                 matches!(slot.state, ActivityState::RequiresAction { .. }),
             )
         {
-            fsm::settle(slot, self.settle_ctx(&id), now);
+            let ctx = self.settle_ctx(slot);
+            fsm::settle(slot, ctx, now);
         }
         suppress
     }
@@ -1511,7 +1515,6 @@ impl Reducer {
                         )
                     {
                         fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);
-                        self.corr.item_started_on.insert(*agent_id, from);
                     }
                 }
             }
@@ -1559,7 +1562,8 @@ impl Reducer {
                             }
                         ) && (set.is_empty() || shown_drained);
                         if answered || delegation_over {
-                            fsm::settle(slot, self.settle_ctx(agent_id), now);
+                            let ctx = self.settle_ctx(slot);
+                            fsm::settle(slot, ctx, now);
                         }
                     }
                 } else if self
@@ -1678,16 +1682,15 @@ impl Reducer {
         scope::cascade_exit(scene, &stale, scope::StampSeed::Yes, now);
     }
 
-    /// Drop the per-slot correlation a departing agent id owns, reclaimed on
-    /// BOTH a resurrect-in-place and a slot removal. Death-only teardown
+    /// Retire the per-slot correlation a departing life owns, on BOTH a
+    /// resurrect-in-place and a slot removal. Death-only teardown
     /// (`recent_proof_of_life`, the counted ids, [`Correlation::note_removed`])
     /// and the copy-id holders' release deliberately stay at the sweep site —
     /// they must NOT run on a resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.tasks_in_flight.remove(id);
         self.corr.action_requests.forget(id);
-        self.corr.turns.forget(id);
-        self.corr.item_started_on.remove(id);
+        self.corr.turns.end_life(*id);
         self.corr.caught_up.remove(id);
         self.pending_b1_cascades.remove(id);
     }
