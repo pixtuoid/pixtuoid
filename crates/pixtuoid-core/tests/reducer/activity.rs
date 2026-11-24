@@ -616,9 +616,10 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     );
 }
 
-/// An ask's block raises its wait, and the approval omp records for it (where
-/// a mode gates the ask) is the same wait: the slot keeps the ask's intent and
-/// the clock its block started.
+/// An ask's block raises its wait, and the request omp records for it under a
+/// `tools.approval.ask: prompt` override, though no mode gates an ask (the
+/// first-id rule in `state/calls.rs` cites both), is the same wait: the slot
+/// keeps the ask's intent and the clock its block started.
 #[test]
 fn a_gated_omp_ask_keeps_its_wait_through_its_approval_request() {
     use pixtuoid_core::source::omp::decode_omp_line;
@@ -661,7 +662,7 @@ fn a_gated_omp_ask_keeps_its_wait_through_its_approval_request() {
     feed(
         &mut r,
         &mut scene,
-        r#"{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"toolu_01ASK","toolName":"ask","approvalMode":"always-ask","requestedAt":""},"id":"a1b2c3d4","timestamp":"2026-07-05T20:39:46.090Z"}"#,
+        r#"{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"toolu_01ASK","toolName":"ask","requestedAt":""},"id":"a1b2c3d4","timestamp":"2026-07-05T20:39:46.090Z"}"#,
         asked + Duration::from_millis(50),
     );
     assert_eq!(waiting(&scene), Some(before));

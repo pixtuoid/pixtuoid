@@ -143,8 +143,8 @@ struct Call {
     /// The copy ids its starts named, one per generation.
     copies: Vec<CopyId>,
     counted: bool,
-    /// The request ids its gates named, each with the round it opened or
-    /// joined.
+    /// The request ids its generation's gates named, each with the round it
+    /// opened or joined.
     requests: Vec<(Arc<str>, usize)>,
 }
 
@@ -158,8 +158,12 @@ impl Call {
                 None => {
                     let round = match phase {
                         // A first id before any resume is of the call's first
-                        // round, joining a wait a gate naming none raised (omp's
-                        // ask block, before the ask's approval).
+                        // round, joining a wait a gate naming none raised: omp's
+                        // ask block, then the request a `tools.approval.ask:
+                        // prompt` override records, honored in every mode,
+                        // though no mode gates a `read` tool like ask
+                        // (`packages/coding-agent/src/tools/ask.ts:400`,
+                        // `docs/approval-mode.md:24-29`, `:72` at v19.1.0).
                         Phase::Open { round, step }
                             if self.requests.is_empty() && step != Step::Resumed =>
                         {
@@ -228,6 +232,7 @@ impl CallLedger {
         }
         if generation {
             record.phase = Phase::of(Fact::Start(None));
+            record.requests.clear();
             return Observed {
                 rose: true,
                 counts: true,
@@ -411,7 +416,8 @@ mod tests {
     }
 
     /// omp's ask raises its wait from its block, naming no request, and a
-    /// mode that gates the ask then records a request for that same wait.
+    /// `tools.approval.ask: prompt` override then records a request for that
+    /// same wait.
     #[test]
     fn a_keyless_gates_first_request_id_joins_its_wait() {
         let mut ledger = CallLedger::default();
@@ -423,6 +429,33 @@ mod tests {
             ledger.observe(agent(), "c", Fact::Gate(Some("g2"))).rose,
             "a re-ask"
         );
+    }
+
+    #[test]
+    fn a_first_request_id_after_a_resume_waits_again() {
+        let mut ledger = CallLedger::default();
+        for fact in [Fact::Start(None), Fact::Gate(None), Fact::Resume] {
+            ledger.observe(agent(), "c", fact);
+        }
+        assert!(ledger.observe(agent(), "c", Fact::Gate(Some("g1"))).rose);
+        assert!(!ledger.observe(agent(), "c", Fact::Gate(Some("g1"))).rose);
+    }
+
+    #[test]
+    fn a_generation_starts_its_rounds_afresh() {
+        let (first, second) = (CopyId::new("e1@t#0"), CopyId::new("e2@t#0"));
+        let mut ledger = CallLedger::default();
+        for fact in [
+            Fact::Start(Some(&first)),
+            Fact::Gate(None),
+            Fact::Gate(Some("g1")),
+            Fact::End,
+            Fact::Start(Some(&second)),
+        ] {
+            ledger.observe(agent(), "c", fact);
+        }
+        assert!(ledger.observe(agent(), "c", Fact::Gate(None)).rose);
+        assert!(!ledger.observe(agent(), "c", Fact::Gate(Some("g2"))).rose);
     }
 
     #[test]
