@@ -2,7 +2,7 @@
 //! its facts within a generation, so a call's facts merge in whatever order and
 //! from whichever transport they arrive. A generation opens only where copy ids
 //! mark a reused call id on one ordered stream ([`CallLedger::observe`]), whose
-//! order no merge reorders, and so does a round, where gates name their
+//! order no merge reorders. A round opens the same way, where gates name their
 //! requests. The reducer gates each of a call's state changes on the rise
 //! `observe` reports, but two answers to a wait: an approval, once, since an
 //! answered member leaves its request, and a call's first start on the
@@ -111,7 +111,7 @@ enum Step {
 }
 
 impl Phase {
-    /// `fact`'s phase in a call's first round.
+    /// `fact`'s phase before any request id opened a round.
     fn of(fact: Fact<'_>) -> Self {
         let step = match fact {
             Fact::PreUse => Step::PreUse,

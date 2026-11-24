@@ -97,15 +97,16 @@ struct Member {
 
 impl Member {
     /// Whether `call`'s end ends it: its own, or its parent's.
-    fn ends_with(&self, call: &str) -> bool {
+    fn ended_by(&self, call: &str) -> bool {
         &*self.call == call || self.parent.as_deref() == Some(call)
     }
 }
 
 #[derive(Debug, Clone)]
 struct ActionRequest {
-    /// The calls it holds on. The last member's end means the prompt was
-    /// answered; a parallel call's end is no member's, so it cannot.
+    /// The calls it holds on. Its last member's end, or the end of the call
+    /// that dispatched it, means the prompt was answered; a parallel call's
+    /// end is neither, so it cannot.
     members: Vec<Member>,
     /// A raise named its call on the wire.
     named: bool,
@@ -124,8 +125,8 @@ impl ActionRequest {
     }
 
     /// Whether `call`'s end leaves it holding no call.
-    fn ends_with(&self, call: &str) -> bool {
-        !self.members.is_empty() && self.members.iter().all(|m| m.ends_with(call))
+    fn ended_by(&self, call: &str) -> bool {
+        !self.members.is_empty() && self.members.iter().all(|m| m.ended_by(call))
     }
 
     /// The wire gave no key to bind it by, so a call's first start on the
@@ -363,8 +364,8 @@ impl ActionRequests {
             // The other transport's copy of a queued call can land while the
             // human still decides (#951).
             Seen::Start(on) => req.is_keyless() && on.is_none_or(|on| on == req.raised_on),
-            Seen::End(Ended::Call(c), _) => req.ends_with(c),
-            Seen::Resolved(Resolution::Call(c)) => req.ends_with(c),
+            Seen::End(Ended::Call(c), _) => req.ended_by(c),
+            Seen::Resolved(Resolution::Call(c)) => req.ended_by(c),
             Seen::Resolved(Resolution::Approved(c)) => self.names(id, c) && req.is_last_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
             Seen::End(Ended::Unnamed, from) => from == Transport::Hook && !req.named,
@@ -406,11 +407,11 @@ impl ActionRequests {
             .is_some_and(|req| req.member(call).is_some())
     }
 
-    /// `call` ended: it is no longer pending, nor a member, nor are the calls
-    /// it dispatched.
+    /// `call` ended: it is no longer pending nor a member, and the calls it
+    /// dispatched are no longer members.
     pub(crate) fn retire(&mut self, id: &AgentId, call: &str) {
         if let Some(req) = self.open.get_mut(id) {
-            req.members.retain(|m| !m.ends_with(call));
+            req.members.retain(|m| !m.ended_by(call));
         }
         if let Some(starts) = self.pending.get_mut(id) {
             starts.retain(|s| &*s.call != call);

@@ -145,10 +145,10 @@ pub struct Tui {
     pub(crate) composer: Composer,
     /// The dialogs the turn raises, in order, each answered once: its script
     /// calls no tool after its gated call's answer
-    /// (`a_permission_script_calls_no_tool_after_its_gated_call`), so a second
-    /// one is that call asking again. Each one's `shows` tells it from the one
-    /// before, which a single frame can swap it for. One the table doesn't
-    /// name stalls the run.
+    /// (`a_permission_script_calls_no_tool_after_its_gated_call`), so a later
+    /// one is that call asking again, or a call it dispatched (an eval cell's).
+    /// Each one's `shows` tells it from the one before, which a single frame
+    /// can swap it for. One the table doesn't name stalls the run.
     pub(crate) gates: &'static [Gate],
     /// What cancels a running turn the way a user would, for a run that
     /// answers [`Answer::Cancel`]; empty for a CLI no scenario cancels.
@@ -965,22 +965,29 @@ mod tests {
             screen!("omp", "re-ask-again"),
         );
         let t0 = Instant::now();
-        let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
-        assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
-        assert_eq!(
-            d.step(&typed(OMP_BOOT, OMP_INPUT), t0),
-            Action::Keys(&[Key::Enter])
-        );
-        d.observe(ASKING);
         let t1 = t0 + Duration::from_millis(1);
-        assert_eq!(d.step(asked, t1), Action::Wait);
-        assert_eq!(d.step(asked, t1 + first.dwell), Action::Keys(first.keys));
+        // A driver that has answered the first dialog.
+        let first_answered = || {
+            let mut d = Driver::new(tui, answer, PROMPT.to_owned(), t0);
+            assert_eq!(d.step(OMP_BOOT, t0), Action::Type(PROMPT.to_owned()));
+            assert_eq!(
+                d.step(&typed(OMP_BOOT, OMP_INPUT), t0),
+                Action::Keys(&[Key::Enter])
+            );
+            d.observe(ASKING);
+            assert_eq!(d.step(asked, t1), Action::Wait);
+            assert_eq!(d.step(asked, t1 + first.dwell), Action::Keys(first.keys));
+            d
+        };
         let t2 = t1 + first.dwell + Duration::from_millis(1);
+        let mut d = first_answered();
+        d.observe(ASKING);
         assert_eq!(
             d.step(asked, t2),
             Action::Wait,
             "a frame drawn before the approval landed"
         );
+        let mut d = first_answered();
         assert_eq!(d.step(again, t2), Action::Wait);
         assert_eq!(
             d.step(again, t2 + second.dwell),
@@ -1232,15 +1239,13 @@ mod tests {
         assert!(!titled(""));
     }
 
-    /// Each row over its run's recorded boot screen and the screen its turn
-    /// ended at: the gate it answered or the reply it cancelled, where it
-    /// answers one.
+    /// Each row over its run's recorded boot screen and the screens its turns
+    /// ended at: each dialog its turn raised, in order, or the reply it
+    /// cancelled, where it answers one.
     #[test]
     fn each_row_takes_the_prompt_and_ends_the_turn_its_run_recorded_as_it_answers() {
         const CODEX_TURN_ONE: &str = screen!("codex", "turn-one");
         const GROK_TURN_ONE: &str = screen!("grok", "turn-one");
-        // Each run's boot screen, then the screen each of its turns ended at:
-        // the gate it answered or the reply it cancelled, where it answers one.
         let recorded: [(&str, &str, &str, &[&str]); 24] = [
             ("claude-code", "permission", BOOT, &[GATE]),
             ("codex", "permission", CODEX_BOOT, &[CODEX_GATE]),
@@ -1327,10 +1332,7 @@ mod tests {
                 "omp",
                 "nested-approve",
                 OMP_BOOT,
-                &[
-                    screen!("omp", "nested-gate"),
-                    screen!("omp", "nested-again"),
-                ],
+                &[screen!("omp", "nested-eval"), screen!("omp", "nested-bash")],
             ),
             ("omp", "ask", OMP_BOOT, &[screen!("omp", "ask-gate")]),
             ("omp", "new-session", OMP_BOOT, &[OMP_NEW]),
@@ -1400,7 +1402,6 @@ mod tests {
             let moved = t0 + Duration::from_millis(1);
             let (first, then) = match scenario.answer() {
                 Answer::Gate { .. } => {
-                    // Each gate's own screen, in the order the turn raised them.
                     let (gated, rest) = ends.split_at(tui.gates.len());
                     let mut t = t0;
                     for (gate, end) in tui.gates.iter().zip(gated) {

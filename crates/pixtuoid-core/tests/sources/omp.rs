@@ -325,8 +325,9 @@ fn waits(fold: &Fold) -> bool {
 }
 
 /// bash hands a Codex-style patch to the edit tool under its own call id,
-/// which asks again (`tools/bash.ts:1893-1903` at v19.1.0): the call waits
-/// once per request, its first approval between them.
+/// which asks again (`packages/coding-agent/src/tools/bash.ts:1893-1903` at
+/// v19.1.0): the call waits once per request, its first approval between
+/// them.
 #[test]
 fn a_re_asked_call_waits_twice() {
     const SCENARIO: &str = "re-ask-hermetic";

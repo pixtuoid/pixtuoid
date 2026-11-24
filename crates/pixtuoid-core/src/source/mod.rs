@@ -158,6 +158,9 @@ pub enum AgentEvent {
         turn: Option<TurnKey>,
     },
     /// The agent is blocked on a permission/input prompt — the slot goes RequiresAction.
+    ///
+    /// `#[non_exhaustive]`: keeps adding a field non-breaking
+    /// ([Cargo's SemVer guide](https://doc.rust-lang.org/cargo/reference/semver.html#enum-fields-new)).
     #[non_exhaustive]
     UserActionRequest {
         /// The agent requiring action.
@@ -309,7 +312,8 @@ pub enum AgentEvent {
 /// What a [`AgentEvent::UserActionRequest`] names on the wire, each `None`
 /// where it names nothing.
 ///
-/// `#[non_exhaustive]`: keeps adding a key non-breaking.
+/// `#[non_exhaustive]`: keeps adding a key non-breaking
+/// ([Cargo's SemVer guide](https://doc.rust-lang.org/cargo/reference/semver.html#struct-add-public-field-when-no-private)).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct RequestKeys {

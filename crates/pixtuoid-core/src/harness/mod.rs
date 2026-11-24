@@ -170,6 +170,9 @@ pub struct Driven {
     /// Each slot's lifecycle classes, as each was first reached: the one record
     /// [`Self::reached`] unions.
     pub reaches: Vec<(AgentId, Reach)>,
+    /// How many times a slot went RequiresAction, which [`Self::reaches`]
+    /// records once.
+    pub waits: usize,
     /// The drift breadcrumbs the decode and fold logged, each as its fields: a
     /// field whose only use is the breadcrumb its absence logs is still read.
     pub(crate) breadcrumbs: Vec<String>,
@@ -187,6 +190,7 @@ impl Driven {
             unparseable: 0,
             decode_errors: Vec::new(),
             reaches: Vec::new(),
+            waits: 0,
             breadcrumbs: Vec::new(),
         }
     }
@@ -596,8 +600,10 @@ impl Fold {
             }
             Delivered::Wire(event) => event,
         };
+        let waited = waiting(&self.driven.scene);
         self.reducer
             .apply(&mut self.driven.scene, event.clone(), at, transport);
+        self.driven.waits += waiting(&self.driven.scene).difference(&waited).count();
         note_reached(&self.driven.scene, &mut self.driven.reaches);
         self.driven.events.push(event);
     }
@@ -765,6 +771,13 @@ impl tracing::Subscriber for BreadcrumbSink {
     fn enter(&self, _: &tracing::span::Id) {}
 
     fn exit(&self, _: &tracing::span::Id) {}
+}
+
+fn waiting(scene: &SceneState) -> std::collections::HashSet<AgentId> {
+    (scene.agents.iter())
+        .filter(|(_, slot)| matches!(slot.state, ActivityState::RequiresAction { .. }))
+        .map(|(&id, _)| id)
+        .collect()
 }
 
 /// Record the lifecycle class each live slot is in, once per slot and class:

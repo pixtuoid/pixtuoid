@@ -451,8 +451,8 @@ impl Reducer {
                 tool_use_id,
                 tool_name,
                 turn,
+                request_id: _,
                 parent_tool_use_id,
-                ..
             } => {
                 self.apply_user_action_request(
                     scene,

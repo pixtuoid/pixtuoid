@@ -20,9 +20,10 @@ const TUI: tui::Tui = tui::Tui {
     conpty: tui::ConPty::Renders,
 };
 
-/// The approval dialog showing `shows`, answered Approve, the choice it
-/// highlights on mount, with Enter (`packages/tui/src/overlays/approval-dialog.ts:1-17`
-/// at `v18.13.1`).
+/// The approval dialog showing `shows` in its title, which names its tool
+/// (`src/tools/approval.ts:699` at `v19.1.0`), answered Approve, the choice
+/// it highlights on mount, with Enter
+/// (`packages/tui/src/overlays/approval-dialog.ts:1-17` at `v18.13.1`).
 const fn approve(shows: &'static str) -> tui::Gate {
     tui::Gate {
         shows,
@@ -32,16 +33,14 @@ const fn approve(shows: &'static str) -> tui::Gate {
     }
 }
 
-/// [`TUI`] approving its turn's dialog by its title (`src/tools/approval.ts:704`
-/// at `v18.13.1`).
+/// [`TUI`] approving its turn's one dialog, whatever its tool.
 const TUI_APPROVE: tui::Tui = tui::Tui {
     gates: &[approve("Allow tool:")],
     ..TUI
 };
 
 /// [`TUI`] approving a bash call, then the edit tool's dialog that call's
-/// patch raises: each title names its tool (`src/tools/approval.ts:699` at
-/// `v19.1.0`).
+/// patch raises.
 const TUI_RE_ASK: tui::Tui = tui::Tui {
     gates: &[approve("Allow tool: bash"), approve("Allow tool: edit")],
     ..TUI

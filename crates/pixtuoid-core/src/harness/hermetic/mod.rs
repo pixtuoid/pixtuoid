@@ -833,6 +833,15 @@ impl Scenario {
         }
     }
 
+    /// How many times its turn waits on the user, where its shape waits: once
+    /// per dialog its TUI row lists, and at least once.
+    pub(crate) fn waits(&self) -> usize {
+        match self.surface {
+            Surface::Tui { row } => row.gates.len().max(1),
+            Surface::Headless => 1,
+        }
+    }
+
     /// The driver of its TUI run, typing `prompt` and then its second turn's;
     /// `None` for a headless one.
     pub fn tui_driver(
