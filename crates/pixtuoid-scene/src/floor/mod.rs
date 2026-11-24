@@ -803,11 +803,9 @@ pub(crate) fn step_floor(
     Some(SteppedFloor { layout, frame })
 }
 
-/// A lit level's fade on vacancy, a floor's lights' or an offline office's
-/// frame's ([`PerOffice`]): a vacant floor holds full light for
-/// `VACANCY_DEBOUNCE_MS` (so agents briefly disappearing between transcripts don't
-/// flicker it) then eases toward `MIN_LEVEL`; its vacancy ending snaps the
-/// target straight back to 1.0.
+/// A fade on vacancy, a floor's lights' or an offline office's frame's
+/// ([`PerOffice`]): a vacancy holds full light for `VACANCY_DEBOUNCE_MS`, then
+/// eases toward `MIN_LEVEL`; its ending snaps the target straight back to 1.0.
 #[derive(Debug)]
 pub struct VacancyDim {
     level: f32,
@@ -823,9 +821,9 @@ impl Default for VacancyDim {
 }
 
 impl VacancyDim {
-    /// Floor of the smoothed lit level — a vacant floor dims to here, never to black.
+    /// Floor of the smoothed lit level — a vacancy dims it to here, never to black.
     pub(crate) const MIN_LEVEL: f32 = 0.10;
-    /// How long a vacant floor holds full light before it starts fading (ms).
+    /// How long a vacancy holds full light before it starts fading (ms).
     pub const VACANCY_DEBOUNCE_MS: u64 = 5_000;
     /// Time constant of the exponential lit-level ease (ms).
     pub(crate) const FADE_TAU_MS: u64 = 800;

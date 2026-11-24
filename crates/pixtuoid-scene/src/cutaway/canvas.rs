@@ -57,7 +57,7 @@ pub struct Repaint {
     pub(crate) carpet: bool,
     /// A strike's lift of the room.
     pub(crate) flash: bool,
-    /// The frame's dim: its host's modal's and its office's offline fade's.
+    /// The dim the frame is drawn under ([`frame_dim`](crate::floor::frame_dim)).
     pub(crate) dim: bool,
 }
 

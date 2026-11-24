@@ -76,8 +76,8 @@ pub(crate) struct DisplayList<'a> {
     pub(super) carpet: Dithered<Carpet>,
     /// How far lightning lifts the room: a change repaints the whole frame.
     pub(super) flash: crate::display::light::Flash,
-    /// The brightness the host's modal and the office's offline fade leave the
-    /// frame, painted last: a change repaints the whole frame.
+    /// The dim the frame is drawn under ([`frame_dim`](crate::floor::frame_dim)),
+    /// painted last: a change repaints the whole frame.
     pub(super) dim: crate::look::Dim,
     /// What of the frame flashes, for a painter's hold.
     pub(super) flash_phase: crate::screen::FlashPhase,

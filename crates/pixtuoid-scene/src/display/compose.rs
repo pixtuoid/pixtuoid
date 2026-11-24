@@ -236,7 +236,7 @@ pub struct Showing<'a> {
     /// The wall board, the classic painter's
     /// ([`build_board`](crate::neon_sign::build_board)).
     pub board: &'a crate::neon_sign::BoardModel,
-    /// The brightness the host's modal and the office's offline fade leave it.
+    /// The dim it is drawn under, as [`render`](crate::look::render) passes it.
     pub dim: crate::look::Dim,
     /// Who sets its world text.
     pub text: crate::look::WorldText,
