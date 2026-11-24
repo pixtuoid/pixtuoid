@@ -28,7 +28,8 @@ pub struct Step {
     /// transcript line is a read of its own, and its seed rides in with it.
     pub line: usize,
     /// When it reached the reducer.
-    pub at: SystemTime,
+    #[cfg(test)]
+    at: SystemTime,
     /// The event.
     pub event: AgentEvent,
     /// Its agent's state once it applied; `None` with no slot to hold it.
@@ -356,6 +357,7 @@ fn arrive(
         steps.push(Step {
             transport,
             line: w.line,
+            #[cfg(test)]
             at: *last,
             event: event.clone(),
             state: (fold.driven.scene.agents.get(&event.agent_id())).map(|s| s.state.clone()),
