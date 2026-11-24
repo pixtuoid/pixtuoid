@@ -932,6 +932,53 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_requires_action(
     );
 }
 
+/// #152: a subagent returning answers a prompt only when the prompt named its
+/// Task on the wire, never one a deduction bound to it.
+#[test]
+fn a_drained_task_answers_only_a_request_naming_it() {
+    for (what, names, answered) in [
+        ("bound by deduction", None, false),
+        ("naming the Task", Some("task-T"), true),
+    ] {
+        let mut scene = SceneState::uniform(8);
+        let mut r = Reducer::new();
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-152-named", t0);
+        let t1 = t0 + Duration::from_secs(1);
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            parent,
+            Some("task-T"),
+            Some("Agent"),
+            t1,
+            Transport::Hook,
+        );
+        user_action_request_for(
+            &mut r,
+            &mut scene,
+            parent,
+            "permission",
+            names,
+            t1 + Duration::from_millis(100),
+            Transport::Hook,
+        );
+        tool_use_end(
+            &mut r,
+            &mut scene,
+            parent,
+            Some("task-T"),
+            t1 + Duration::from_secs(1),
+            Transport::Hook,
+        );
+        let waits = matches!(
+            scene.agents[&parent].state,
+            ActivityState::RequiresAction { .. }
+        );
+        assert_eq!(waits, !answered, "{what}");
+    }
+}
+
 /// A parent that dispatched one Task at `t1`, by hook.
 fn dispatching(slug: &str) -> (Reducer, SceneState, AgentId, SystemTime) {
     let mut scene = SceneState::uniform(8);
