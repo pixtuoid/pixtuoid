@@ -27,10 +27,8 @@ use crate::install::{io, merge};
 use pixtuoid_core::source::kimi::SOURCE_NAME;
 
 /// Events we register == events we decode, enforced by
-/// `every_registered_kimi_event_decodes`. The two `*Failure` variants and
-/// `Interrupt` close a failed tool/turn or a cancelled turn via the source's
-/// custom `Extend` decoder — a failed tool fires `PostToolUseFailure`, which
-/// must still end the activity.
+/// `every_registered_kimi_event_decodes`. `PostToolUseFailure` ends a failed
+/// tool, and `StopFailure` and `Interrupt` a failed or a cancelled turn.
 pub(crate) const KIMI_EVENTS: &[&str] = &[
     "SessionStart",
     "PreToolUse",

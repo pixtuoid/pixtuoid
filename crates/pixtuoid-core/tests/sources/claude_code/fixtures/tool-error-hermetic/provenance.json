@@ -1,0 +1,39 @@
+{
+  "origin": "recorded",
+  "cli": "claude",
+  "version": "2.1.330 (Claude Code)",
+  "captured": "2026-11-24",
+  "command": "just hermetic --record claude-code",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 210
+  },
+  "aimock": "1.48.0",
+  "script": "tests/sources/claude_code/hermetic/tool-error.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/message/content/*/type": [
+        "text"
+      ],
+      "/type": [
+        "api-request",
+        "api-request-blob",
+        "api-request-shape",
+        "atis-latch",
+        "attachment",
+        "cost-state",
+        "last-prompt",
+        "queue-operation",
+        "tools-used",
+        "user"
+      ]
+    }
+  },
+  "sentinel_reads": {
+    "84c45725-5209-4945-ad04-87c8cbc73f5d.jsonl": [
+      "19:/message/usage/cache_creation_input_tokens",
+      "25:/message/usage/cache_creation_input_tokens"
+    ]
+  }
+}

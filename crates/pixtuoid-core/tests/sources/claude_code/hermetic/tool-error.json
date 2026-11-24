@@ -1,0 +1,15 @@
+{
+  "fixtures": [
+    {
+      "match": { "toolResultContains": "Exit code 1" },
+      "response": { "content": "failed", "usage": { "input_tokens": 12, "output_tokens": 7 } }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": {
+        "toolCalls": [ { "name": "Bash", "arguments": { "command": "cat MISSING.txt", "description": "Read the missing file" } } ],
+        "usage": { "input_tokens": 12, "output_tokens": 7 }
+      }
+    }
+  ]
+}

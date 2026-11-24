@@ -14,6 +14,7 @@ pub(crate) const EVENTS: &[&str] = &[
     "SessionStart",
     "PreToolUse",
     "PostToolUse",
+    "PostToolUseFailure",
     "Notification",
     // A tool gate arrives as `PermissionRequest`. The decoder has read this
     // event since Codex needed it — unregistered, the bytes never came.
@@ -498,6 +499,7 @@ mod tests {
                 "SessionStart",
                 "PreToolUse",
                 "PostToolUse",
+                "PostToolUseFailure",
                 "Notification",
                 "PermissionRequest",
                 "SubagentStart",
