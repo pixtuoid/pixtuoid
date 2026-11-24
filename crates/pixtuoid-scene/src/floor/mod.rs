@@ -1,7 +1,7 @@
 //! Multi-floor office partitioning: the floor arithmetic, the per-floor
 //! rendering context ([`FloorCtx`]), the stepped frame every look draws
-//! (`step_floor`), the per-floor fade states ([`VacancyDim`], the neon
-//! sign's), and the per-office [`CoffeeState`] bookkeeping.
+//! (`step_floor`), the fade states ([`VacancyDim`], the neon sign's), and the
+//! per-office [`CoffeeState`] bookkeeping.
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
@@ -542,10 +542,9 @@ pub struct PerOffice {
     pub(crate) audio: AudioObserver,
     /// The office's raster state, shared by every floor's.
     pub raster: crate::look::OfficeRaster,
-    /// The fade [`frame_dim`] darkens an offline office's frame by. It keys on
-    /// [`Conditions::offline`] alone, so a floor already vacant online fades
-    /// from undimmed, and is the office's, as the condition is, so every floor
-    /// and a slide between two show one dim.
+    /// The fade [`frame_dim`] darkens an offline office's frame by: the
+    /// office's, as [`Conditions::offline`] is, so every floor and a slide
+    /// between two show one dim.
     pub(crate) offline_dim: VacancyDim,
 }
 
@@ -621,7 +620,7 @@ impl PerOffice {
 pub struct FloorSession {
     /// This session's single floor — its sim stores + raster, and its last frame.
     view: FloorView,
-    /// The office-wide cross-frame state (coffee, chitchat, audio) shared across floors.
+    /// The office-wide cross-frame state shared across floors, its [`PerOffice`].
     pub office: PerOffice,
     /// The seed its floor lays out from.
     floor_seed: u64,
@@ -842,9 +841,10 @@ impl VacancyDim {
         }
     }
 
-    /// Whether the debounce has run out — the floor's VERDICT that it is vacant:
-    /// empty, or [`Conditions::offline`]. Read this, never `level() < 1.0`: the
-    /// level trails the verdict by the length of its ease.
+    /// Whether the debounce has run out — the VERDICT that it is vacant: a
+    /// floor's when empty or [`Conditions::offline`], an office's when offline.
+    /// Read this, never `level() < 1.0`: the level trails the verdict by the
+    /// length of its ease.
     pub(crate) fn dimmed(&self) -> bool {
         self.dimmed
     }

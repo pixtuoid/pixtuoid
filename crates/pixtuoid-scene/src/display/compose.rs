@@ -310,7 +310,7 @@ pub(crate) fn compose_at<'a>(
         ambient,
         carpet: moment.look.carpet(theme),
         flash: crate::display::light::Flash::of(&moment.sky),
-        // [`compose`] sets the host's, from its `Showing`.
+        // [`compose`] sets it from its `Showing`.
         dim: crate::look::Dim::NONE,
         flash_phase: crate::screen::FlashPhase::of(&moment.sky, frame),
         hovers: pieces.iter().filter_map(Piece::hover).collect(),

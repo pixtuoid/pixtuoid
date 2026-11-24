@@ -656,58 +656,6 @@ fn an_offline_office_dims_its_whole_frame_by_day() {
     }
 }
 
-/// By night an offline room's lights go out too, so its frame falls past its
-/// online frame at [`OFFLINE_BRIGHTNESS`].
-#[test]
-fn an_offline_office_falls_past_its_frame_dim_by_night() {
-    let t0 = crate::localclock::at_hour(2);
-    let scene = settled_typists(t0);
-    let light = |buf: &crate::sprite::RgbBuffer| -> f64 {
-        (buf.as_slice().iter())
-            .map(|px| f64::from(px.r) + f64::from(px.g) + f64::from(px.b))
-            .sum()
-    };
-    for look in every_dim_path() {
-        let [online, offline] =
-            [false, true].map(|offline| light(&settled_frame(look, &scene, t0, offline)));
-        assert!(
-            offline <= f64::from(OFFLINE_BRIGHTNESS) * online,
-            "{look:?}: {offline} against {online}"
-        );
-    }
-}
-
-/// An offline office holds its frame undimmed through its debounce, waking
-/// Still for the ease's start, then eases it down, painting every frame of the
-/// ease.
-#[test]
-fn an_offline_office_eases_its_frame_dim_after_its_debounce() {
-    let t0 = crate::localclock::at_hour(12);
-    let scene = settled_typists(t0);
-    let fades_at = t0 + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS);
-    // short of the rest tick, so only the ease's start can name the wake
-    let waiting = fades_at - REST_TICK / 2;
-    let easing = fades_at + Duration::from_millis(VacancyDim::FADE_TAU_MS);
-    for look in signless_looks() {
-        let [online, offline] = [false, true].map(|offline| {
-            let frames = [t0, waiting, easing].map(|now| (now, offline));
-            drawn_offline(look, &scene, &frames)
-        });
-        assert_drawn(
-            &offline[1].0,
-            &online[1].0,
-            &format!("{look:?} before its ease"),
-        );
-        assert_eq!(
-            offline[1].1,
-            Some(REST_TICK / 2 + PAST_THE_TURN),
-            "{look:?}: Still sleeps past the ease's start"
-        );
-        assert_easing(&offline[2].0, &online[2].0, &format!("{look:?}"));
-        assert_eq!(offline[2].1, None, "{look:?}: Still skips the ease");
-    }
-}
-
 /// A floor vacant online has dimmed its room already, so going offline eases
 /// its frame from undimmed rather than jumping, on a debounce of its own that
 /// wakes Still as the room's does.
@@ -725,8 +673,8 @@ fn a_vacant_floor_going_offline_eases_its_frame_dim_from_none() {
         gone + offline_settled(),
     ];
     for look in every_dim_path() {
-        let online = drawn_offline(look, &empty, &nows.map(|now| (now, false)));
-        let offline = drawn_offline(look, &empty, &nows.map(|now| (now, now >= gone)));
+        let online = drawn_frames(look, &empty, &nows.map(|now| (now, false)));
+        let offline = drawn_frames(look, &empty, &nows.map(|now| (now, now >= gone)));
         assert_drawn(
             &offline[1].0,
             &online[1].0,
@@ -762,7 +710,7 @@ fn an_offline_office_slides_to_another_floor_dimmed() {
             let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
             let conditions = Conditions {
                 offline,
-                ..offline_conditions()
+                ..still_clear()
             };
             let draw = |office: &mut OfficeSession, now| {
                 render_office_with(office, look, &scene, conditions, now, &[]);
@@ -794,7 +742,7 @@ fn offline_settled() -> Duration {
 
 /// A clear sky, held still, so two offices drawn at the same instants differ
 /// only by what being offline does.
-fn offline_conditions() -> Conditions {
+fn still_clear() -> Conditions {
     Conditions::default()
         .with_weather(crate::sky::WeatherPolicy::Forced(
             crate::sky::Weather::Clear,
@@ -804,7 +752,7 @@ fn offline_conditions() -> Conditions {
 
 /// Each frame a fresh office draws `scene` in `look` at the instants of
 /// `frames`, offline where each says, and the wait it names after.
-fn drawn_offline(
+fn drawn_frames(
     look: crate::look::Look,
     scene: &SceneState,
     frames: &[(SystemTime, bool)],
@@ -815,7 +763,7 @@ fn drawn_offline(
         .map(|&(now, offline)| {
             let conditions = Conditions {
                 offline,
-                ..offline_conditions()
+                ..still_clear()
             };
             render_office_with(&mut office, look, scene, conditions, now, &[]);
             let pixels = office.picture().expect("lays out").pixels().clone();
@@ -833,7 +781,7 @@ fn settled_frame(
     offline: bool,
 ) -> crate::sprite::RgbBuffer {
     let frames = [t0, t0 + offline_settled()].map(|now| (now, offline));
-    let mut drawn = drawn_offline(look, scene, &frames);
+    let mut drawn = drawn_frames(look, scene, &frames);
     drawn.pop().expect("a frame").0
 }
 

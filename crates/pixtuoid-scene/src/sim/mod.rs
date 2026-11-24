@@ -342,6 +342,7 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     let indoor_scale = stores
         .vacancy_dim
         .tick(scene.agents.is_empty() || conditions.offline, now);
+    // offline alone: a floor already vacant online fades its frame from undimmed
     stores.offline_dim.tick(conditions.offline, now);
     for dim in [&*stores.vacancy_dim, &*stores.offline_dim] {
         if let Some(at) = dim.fades_at() {

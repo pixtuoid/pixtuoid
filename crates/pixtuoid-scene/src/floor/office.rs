@@ -447,7 +447,7 @@ impl OfficeSession {
         self.views.iter_mut().map(|view| &mut view.floor)
     }
 
-    /// The office-wide state: coffee, chitchat, audio, the shared raster.
+    /// The office-wide state, its [`PerOffice`].
     #[doc(hidden)]
     pub fn office(&self) -> &PerOffice {
         &self.office
