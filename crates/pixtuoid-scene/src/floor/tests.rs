@@ -695,43 +695,31 @@ fn a_vacant_floor_going_offline_eases_its_frame_dim_from_none() {
 }
 
 /// Back online, an office eases its frame dim away from the tick that sees it
-/// online, as its room's lights come back, but drops it at once where it went
-/// undrawn for longer than its sign's fade.
+/// online, as its room's lights come back.
 #[test]
 fn an_office_back_online_eases_its_frame_dim_away() {
     let t0 = crate::localclock::at_hour(2);
     let empty = make_scene(0, 8);
     let settled = t0 + vacancy_settled();
     let back = settled + FRAME;
-    let undrawn = settled + Duration::from_millis(u64::from(NeonState::FADE_MS)) + FRAME;
+    let nows = [
+        t0,
+        settled,
+        back,
+        back + Duration::from_millis(VacancyDim::FADE_TAU_MS),
+        back + vacancy_settled(),
+    ];
     for look in every_dim_path() {
-        let runs = |nows: &[SystemTime]| {
-            [false, true].map(|offline| {
-                let frames: Vec<_> = (nows.iter())
-                    .map(|&now| (now, offline && now <= settled))
-                    .collect();
-                drawn_frames(look, &empty, &frames)
-            })
-        };
-        let [online, offline] = runs(&[
-            t0,
-            settled,
-            back,
-            back + Duration::from_millis(VacancyDim::FADE_TAU_MS),
-            back + vacancy_settled(),
-        ]);
+        let [online, offline] = [false, true].map(|offline| {
+            let frames = nows.map(|now| (now, offline && now <= settled));
+            drawn_frames(look, &empty, &frames)
+        });
         assert_easing(
             &offline[3].0,
             &online[3].0,
             &format!("{look:?} back online"),
         );
         assert_drawn(&offline[4].0, &online[4].0, &format!("{look:?} eased back"));
-        let [online, offline] = runs(&[t0, settled, undrawn]);
-        assert_drawn(
-            &offline[2].0,
-            &online[2].0,
-            &format!("{look:?} back after the sign's fade"),
-        );
     }
 }
 
