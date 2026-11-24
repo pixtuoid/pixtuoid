@@ -369,8 +369,7 @@ pub(crate) fn sit_down_on(
     for n in 1..=1200u64 {
         let frame = crate::floor::step_floor(
             &mut per_floor,
-            &mut office.coffee,
-            &mut office.chitchat,
+            office.stores(),
             crate::floor::FloorInputs {
                 scene: &floor_scene,
                 now: now0 + Duration::from_millis(100 * n),

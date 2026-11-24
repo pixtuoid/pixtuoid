@@ -52,6 +52,7 @@ pub(crate) struct SimStores<'a> {
     pub history: &'a mut PoseHistory,
     pub walks: &'a mut HashMap<AgentId, WalkState>,
     pub vacancy_dim: &'a mut VacancyDim,
+    pub offline_dim: &'a mut VacancyDim,
     pub neon: &'a mut crate::floor::NeonState,
     pub chitchat: &'a mut HashMap<VenueKey, ActiveChitchat>,
     pub creatures: &'a mut HashMap<CreatureKey, CreatureWalk>,
@@ -338,11 +339,17 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     take_grip(stores, &agents, layout, now);
     let mut next_change = SelfChange::default();
 
+    // its debounce rides out agents briefly gone between transcripts
     let indoor_scale = stores
         .vacancy_dim
         .tick(scene.agents.is_empty() || conditions.offline, now);
-    if let Some(at) = stores.vacancy_dim.fades_at() {
-        next_change.at(at);
+    // offline alone, so a floor already vacant online fades its frame from
+    // undimmed; its debounce rides out a brief drop of the host's feed
+    stores.offline_dim.tick(conditions.offline, now);
+    for dim in [&*stores.vacancy_dim, &*stores.offline_dim] {
+        if let Some(at) = dim.fades_at() {
+            next_change.at(at);
+        }
     }
     let neon = stores.neon.tick(
         crate::neon_sign::OfficeMood::of(crate::tally::scene_stats(scene)),

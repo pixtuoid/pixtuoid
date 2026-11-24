@@ -447,7 +447,7 @@ impl OfficeSession {
         self.views.iter_mut().map(|view| &mut view.floor)
     }
 
-    /// The office-wide state: coffee, chitchat, audio, the shared raster.
+    /// The office-wide state, its [`PerOffice`].
     #[doc(hidden)]
     pub fn office(&self) -> &PerOffice {
         &self.office
@@ -512,7 +512,8 @@ impl OfficeSession {
                 let (slide, flashes) = self
                     .slide
                     .get_or_insert_with(|| (RgbBuffer::filled(0, 0, gap), Default::default()));
-                compose_slide(slide, (leaving, arriving), t, to > from, inputs.dim.of(gap));
+                let gap = super::frame_dim(inputs.dim, &self.office.offline_dim).of(gap);
+                compose_slide(slide, (leaving, arriving), t, to > from, gap);
                 *flashes = crate::screen::Flashes::of_slide(
                     self.views[from].flash(),
                     self.views[to].flash(),
@@ -631,8 +632,8 @@ impl OfficeSession {
     }
 
     /// Whether the floor showing's last frame changes between beats: someone
-    /// walks, the sign's or the room's light is mid-fade, a token sheet falls or
-    /// a petted pet's hearts rise. Otherwise its frame holds per beat
+    /// walks, the sign's, the room's or the frame's light is mid-fade, a token
+    /// sheet falls or a petted pet's hearts rise. Otherwise its frame holds per beat
     /// (`both_painters_paint_one_frame_per_beat`) but for a change its floor
     /// scheduled, so [`Self::until_next_paint`] waits for the sooner of the two
     /// only while this is false.
