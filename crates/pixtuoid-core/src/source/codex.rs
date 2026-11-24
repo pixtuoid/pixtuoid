@@ -1,7 +1,7 @@
 //! Codex CLI source. Watches the Codex session transcript
 //! (`~/.codex/sessions/**/rollout-<ts>-<UUID>.jsonl`) via `JsonlWatcher` for
 //! the lifecycle signals the shared hook socket lacks: the turns, the calls'
-//! starts, and a failed call's end (`function_call_output`).
+//! starts, and a failed call's end.
 //!
 //! Coalescing: a root's hook `session_id` (a child's: its `agent_id`) ==
 //! session_meta.id == filename UUID (verified), so both transports merge onto
