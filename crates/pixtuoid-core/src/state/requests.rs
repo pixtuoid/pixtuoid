@@ -1,7 +1,7 @@
 //! The agents' open user-action requests (a slot's `RequiresAction`), with the
-//! two rules every event meets them through: `bind`, which of the call
-//! ledger's pending calls a request holds, and `resolves`, which event answers
-//! it.
+//! two rules every event meets them through: `binds`, which of the call
+//! ledger's pending calls a request holds by name, and `resolves`, which event
+//! answers it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -94,7 +94,9 @@ struct ActionRequest {
     members: Vec<Member>,
     /// A raise named its call on the wire.
     named: bool,
-    tool_name: Option<Arc<str>>,
+    /// The tools its raises naming no call named: its keys to their pending
+    /// calls in its turn.
+    tool_names: Vec<Arc<str>>,
     turn: Option<TurnKey>,
     raised_on: Transport,
 }
@@ -117,7 +119,15 @@ impl ActionRequest {
     /// raised it, its call's first there or one naming no call, is the agent
     /// working again.
     fn is_keyless(&self) -> bool {
-        self.members.is_empty() && self.tool_name.is_none()
+        self.members.is_empty() && self.tool_names.is_empty()
+    }
+
+    /// Whether it holds `pending` by the name of its tool. Hooks may rewrite a
+    /// call's input but never its name, so the name is the key.
+    fn binds(&self, pending: &PendingCall<'_>) -> bool {
+        pending
+            .tool_name
+            .is_some_and(|name| self.tool_names.iter().any(|t| &**t == name))
     }
 
     fn holds(&mut self, call: &Arc<str>, named: bool, parent: Option<&str>) {
@@ -159,7 +169,7 @@ impl ActionRequests {
             let mut fresh = ActionRequest {
                 members: Vec::new(),
                 named: false,
-                tool_name: raise.tool_name.map(Arc::from),
+                tool_names: Vec::new(),
                 turn: raise.turn.cloned(),
                 raised_on: raise.from,
             };
@@ -177,25 +187,37 @@ impl ActionRequests {
             }
             self.open.insert(id, fresh);
         }
-        if let Some(req) = self.open.get_mut(&id) {
-            bind(req, calls.pending_in(&id, raise.turn), raise);
-        }
-    }
-
-    /// A pre-use or start registered `call` pending: a request naming its tool
-    /// binds it now, so a pre-use delivered after its request still joins
-    /// (#242).
-    pub(crate) fn join(&mut self, id: AgentId, call: &str, calls: &CallLedger) {
         let Some(req) = self.open.get_mut(&id) else {
             return;
         };
-        let Some(name) = req.tool_name.as_deref() else {
+        // The strongest key the raise gives: the call it names, else the tool.
+        if let Some(call) = raise.call {
+            req.holds(&Arc::from(call), true, raise.parent);
+            req.named = true;
+        } else if let Some(name) = raise.tool_name {
+            if !req.tool_names.iter().any(|t| &**t == name) {
+                req.tool_names.push(Arc::from(name));
+            }
+            let turn = req.turn.clone();
+            for p in calls.pending_in(&id, turn.as_ref()) {
+                if req.binds(&p) {
+                    req.holds(p.call, false, None);
+                }
+            }
+        }
+    }
+
+    /// A pre-use or start registered `call` pending: the standing request
+    /// binds it now as its raise would have, so a pre-use delivered after its
+    /// request still joins (#242).
+    pub(crate) fn join(&mut self, id: AgentId, call: &str, calls: &CallLedger) {
+        let Some(req) = self.open.get_mut(&id) else {
             return;
         };
         let turn = req.turn.clone();
         let joins = calls
             .pending_in(&id, turn.as_ref())
-            .find(|p| &**p.call == call && p.tool_name == Some(name));
+            .find(|p| &**p.call == call && req.binds(p));
         if let Some(p) = joins {
             req.holds(p.call, false, None);
         }
@@ -342,24 +364,6 @@ impl ActionRequests {
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         self.open.len()
-    }
-}
-
-/// The calls `raise`'s own key binds: the call it names, else every `pending`
-/// call of the tool it names. Hooks may rewrite a call's input but never its
-/// name, so the name is the key.
-fn bind<'a>(
-    req: &mut ActionRequest,
-    pending: impl Iterator<Item = PendingCall<'a>>,
-    raise: Raise<'_>,
-) {
-    if let Some(call) = raise.call {
-        req.holds(&Arc::from(call), true, raise.parent);
-        req.named = true;
-    } else if let Some(name) = raise.tool_name {
-        for p in pending.filter(|p| p.tool_name == Some(name)) {
-            req.holds(p.call, false, None);
-        }
     }
 }
 
@@ -556,6 +560,35 @@ mod tests {
         );
         agent.raise(raise(Some("y"), None, HOOK), true);
         assert_eq!(agent.members(), ["a", "y"]);
+    }
+
+    /// A raise naming its call binds that call alone, whichever side of it
+    /// another call of its tool lands.
+    #[test]
+    fn a_raise_naming_its_call_binds_no_other_call_of_its_tool() {
+        let mut agent = raised(
+            vec![("y", Some("Bash"), HOOK)],
+            raise(Some("x"), Some("Bash"), HOOK),
+        );
+        agent.pre_use(("z", Some("Bash"), HOOK));
+        assert_eq!(agent.members(), ["x"]);
+    }
+
+    /// A re-raise's tool binds its calls whichever side of the re-raise their
+    /// pre-use lands (#242), after a first raise for another tool or for none.
+    #[test]
+    fn a_re_raises_tool_binds_its_calls_whichever_side_of_it_their_pre_use_lands() {
+        let edit = ("e", Some("Edit"), HOOK);
+        for first in [raise(None, None, HOOK), raise(None, Some("Bash"), HOOK)] {
+            let mut early = raised(vec![edit], first);
+            early.raise(raise(None, Some("Edit"), HOOK), true);
+            let mut late = raised(vec![], first);
+            late.raise(raise(None, Some("Edit"), HOOK), true);
+            late.pre_use(edit);
+            for (side, agent) in [("before", early), ("after", late)] {
+                assert_eq!(agent.members(), ["e"], "{first:?}, a pre-use {side} it");
+            }
+        }
     }
 
     fn turn_end(k: Option<&TurnKey>) -> Ended<'_> {
