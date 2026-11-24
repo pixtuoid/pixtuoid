@@ -31,9 +31,8 @@ pub(crate) enum Ended<'a> {
 /// An event as a request's resolution reads it.
 #[derive(Clone, Copy, Debug)]
 enum Seen<'a> {
-    /// A call started: the transport this start came on, `None` for a start
-    /// naming no call.
-    Start(Option<Transport>),
+    /// A call started, on this transport.
+    Start(Transport),
     /// An end, and the transport it arrived on.
     End(Ended<'a>, Transport),
     Resolved(&'a Resolution),
@@ -52,6 +51,8 @@ pub(crate) struct Raise<'a> {
     /// Its own turn, else the agent's open one.
     pub(crate) turn: Option<&'a TurnKey>,
     pub(crate) from: Transport,
+    /// The call that dispatched the one it names, when the wire names it.
+    pub(crate) parent: Option<&'a str>,
 }
 
 /// A call that started and has not ended, as a request binds it.
@@ -87,12 +88,24 @@ struct Member {
     /// The wire named it, so its approval answers for it (#951), and a
     /// drained Task answers for it alone (#152).
     named: bool,
+    /// The call that dispatched it, whose end ends it too: omp closes an
+    /// interrupted eval's nested requests with the eval's tool result alone
+    /// (`session/tool-approval-records.ts:30-36` at v19.1.0).
+    parent: Option<Arc<str>>,
+}
+
+impl Member {
+    /// Whether `call`'s end ends it: its own, or its parent's.
+    fn ended_by(&self, call: &str) -> bool {
+        &*self.call == call || self.parent.as_deref() == Some(call)
+    }
 }
 
 #[derive(Debug, Clone)]
 struct ActionRequest {
-    /// The calls it holds on. The last member's end means the prompt was
-    /// answered; a parallel call's end is no member's, so it cannot.
+    /// The calls it holds on. Its last member's end, or the end of the call
+    /// that dispatched it, means the prompt was answered; a parallel call's
+    /// end is neither, so it cannot.
     members: Vec<Member>,
     /// A raise named its call on the wire.
     named: bool,
@@ -110,18 +123,24 @@ impl ActionRequest {
         matches!(&self.members[..], [m] if &*m.call == call)
     }
 
-    /// The wire gave no key to bind it by, so a call's first start on the
-    /// transport that raised it, or a start naming no call, is the agent working
-    /// again.
+    /// Whether `call`'s end leaves it holding no call.
+    fn ended_by(&self, call: &str) -> bool {
+        !self.members.is_empty() && self.members.iter().all(|m| m.ended_by(call))
+    }
+
+    /// The wire gave no key to bind it by, so a start on the transport that
+    /// raised it, its call's first there or one naming no call, is the agent
+    /// working again.
     fn is_keyless(&self) -> bool {
         self.members.is_empty() && self.tool_name.is_none()
     }
 
-    fn holds(&mut self, call: &Arc<str>, named: bool) {
+    fn holds(&mut self, call: &Arc<str>, named: bool, parent: Option<&str>) {
         if self.member(call).is_none() {
             self.members.push(Member {
                 call: Arc::clone(call),
                 named,
+                parent: parent.map(Arc::from),
             });
         }
     }
@@ -170,7 +189,7 @@ impl ActionRequests {
                 && raise.tool_name.is_none()
                 && let [sole] = in_scope(pending, raise.turn, raise.from).as_slice()
             {
-                fresh.holds(&sole.call, false);
+                fresh.holds(&sole.call, false, None);
             }
             self.open.insert(id, fresh);
         }
@@ -227,20 +246,15 @@ impl ActionRequests {
         if let Some(req) = self.open.get_mut(&id)
             && req.binds_by_name(pending)
         {
-            req.holds(&pending.call, false);
+            req.holds(&pending.call, false, None);
         }
         first_here
     }
 
-    /// A start that raised its call's record, or its call's first start on
-    /// `on`, which is `None` for a start naming no call: whether the slot runs
-    /// it, else it only counts. `requires_action` is whether a request stands.
-    pub(crate) fn start(
-        &mut self,
-        id: AgentId,
-        requires_action: bool,
-        on: Option<Transport>,
-    ) -> bool {
+    /// A start on `on` that raised its call's record, its call's first start
+    /// there, or one naming no call: whether the slot runs it, else it only
+    /// counts. `requires_action` is whether a request stands.
+    pub(crate) fn start(&mut self, id: AgentId, requires_action: bool, on: Transport) -> bool {
         let resolved = !requires_action || self.resolves(&id, Seen::Start(on));
         if resolved {
             self.open.remove(&id);
@@ -343,9 +357,9 @@ impl ActionRequests {
             // start answers nothing, and an approval resumes by its own fact.
             // The other transport's copy of a queued call can land while the
             // human still decides (#951).
-            Seen::Start(on) => req.is_keyless() && on.is_none_or(|on| on == req.raised_on),
-            Seen::End(Ended::Call(c), _) => req.is_last_member(c),
-            Seen::Resolved(Resolution::Call(c)) => req.is_last_member(c),
+            Seen::Start(on) => req.is_keyless() && on == req.raised_on,
+            Seen::End(Ended::Call(c), _) => req.ended_by(c),
+            Seen::Resolved(Resolution::Call(c)) => req.ended_by(c),
             Seen::Resolved(Resolution::Approved(c)) => self.names(id, c) && req.is_last_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
             Seen::End(Ended::Unnamed, from) => from == Transport::Hook && !req.named,
@@ -387,10 +401,11 @@ impl ActionRequests {
             .is_some_and(|req| req.member(call).is_some())
     }
 
-    /// `call` ended: it is no longer pending nor a member.
+    /// `call` ended: it is no longer pending nor a member, and the calls it
+    /// dispatched are no longer members.
     pub(crate) fn retire(&mut self, id: &AgentId, call: &str) {
         if let Some(req) = self.open.get_mut(id) {
-            req.members.retain(|m| &*m.call != call);
+            req.members.retain(|m| !m.ended_by(call));
         }
         if let Some(starts) = self.pending.get_mut(id) {
             starts.retain(|s| &*s.call != call);
@@ -451,12 +466,12 @@ fn in_scope<'a>(pending: &'a [Pending], turn: Option<&TurnKey>, on: Transport) -
 /// but never its name, so the name is the key.
 fn bind(req: &mut ActionRequest, pending: &[Pending], raise: Raise<'_>) {
     if let Some(call) = raise.call {
-        req.holds(&Arc::from(call), true);
+        req.holds(&Arc::from(call), true, raise.parent);
         req.named = true;
     } else if let Some(name) = raise.tool_name {
         for start in in_scope(pending, raise.turn, raise.from) {
             if start.tool_name.as_deref() == Some(name) {
-                req.holds(&start.call, false);
+                req.holds(&start.call, false, None);
             }
         }
     }
@@ -536,6 +551,7 @@ mod tests {
             tool_name,
             turn: None,
             from,
+            parent: None,
         }
     }
 
@@ -634,7 +650,7 @@ mod tests {
         reqs.register(id(), pending("a", Some("Bash"), HOOK));
         assert_eq!(members(&reqs), ["a"]);
         assert!(
-            !reqs.start(id(), true, Some(HOOK)),
+            !reqs.start(id(), true, HOOK),
             "a request naming its tool takes no start"
         );
     }
@@ -682,6 +698,7 @@ mod tests {
             reqs
         };
         let ran = Resolution::Call("x".into());
+        let dispatcher_ran = Resolution::Call("p".into());
         let approved = Resolution::Approved("x".into());
         let stopped = Resolution::Turn(t1.clone());
         for (what, reqs, seen, want) in [
@@ -700,37 +717,31 @@ mod tests {
             (
                 "a named request, a start",
                 named(),
-                Seen::Start(Some(HOOK)),
+                Seen::Start(HOOK),
                 false,
             ),
             (
                 "a bound request, a start",
                 bound(),
-                Seen::Start(Some(HOOK)),
+                Seen::Start(HOOK),
                 false,
             ),
             (
                 "a keyless request, its transport's start",
                 keyless(HOOK),
-                Seen::Start(Some(HOOK)),
+                Seen::Start(HOOK),
                 true,
             ),
             (
                 "a keyless request, the other transport's start",
                 keyless(HOOK),
-                Seen::Start(Some(JSONL)),
+                Seen::Start(JSONL),
                 false,
-            ),
-            (
-                "a keyless request, a start naming no call",
-                keyless(HOOK),
-                Seen::Start(None),
-                true,
             ),
             (
                 "a request waiting on its tool",
                 scoped(),
-                Seen::Start(Some(HOOK)),
+                Seen::Start(HOOK),
                 false,
             ),
             (
@@ -746,6 +757,18 @@ mod tests {
                 false,
             ),
             ("a member's run", bound(), Seen::Resolved(&ran), true),
+            (
+                "the run of the call that dispatched a member",
+                raised(
+                    vec![],
+                    Raise {
+                        parent: Some("p"),
+                        ..raise(Some("n"), None, HOOK)
+                    },
+                ),
+                Seen::Resolved(&dispatcher_ran),
+                true,
+            ),
             ("its turn's stop", scoped(), Seen::Resolved(&stopped), true),
             (
                 "a turnless request's stop",
@@ -884,6 +907,21 @@ mod tests {
     }
 
     #[test]
+    fn a_calls_end_answers_for_the_calls_it_dispatched() {
+        let nested = Raise {
+            parent: Some("p"),
+            ..raise(Some("n"), None, JSONL)
+        };
+        let mut reqs = raised(vec![], nested);
+        reqs.raise(id(), raise(Some("x"), None, JSONL), true);
+        assert!(!reqs.end(id(), Ended::Call("p"), JSONL, true), "x waits");
+        assert_eq!(members(&reqs), ["x"], "p's end retired n");
+        let mut reqs = raised(vec![], nested);
+        assert!(reqs.end(id(), Ended::Call("p"), JSONL, true));
+        assert!(!reqs.contains(&id()));
+    }
+
+    #[test]
     fn a_drained_member_bound_by_deduction_answers_nothing() {
         let mut reqs = raised(vec![pending("task", None, HOOK)], raise(None, None, HOOK));
         assert!(!reqs.drained(id(), "task", HOOK, true));
@@ -907,7 +945,7 @@ mod tests {
     #[test]
     fn a_start_outside_a_wait_runs_and_drops_a_stale_request() {
         let mut reqs = raised(vec![], raise(Some("x"), None, HOOK));
-        assert!(reqs.start(id(), false, Some(JSONL)));
+        assert!(reqs.start(id(), false, JSONL));
         assert!(!reqs.contains(&id()));
     }
 
