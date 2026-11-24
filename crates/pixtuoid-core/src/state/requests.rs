@@ -479,7 +479,7 @@ mod tests {
                 vec!["a"],
             ),
             (
-                "the sole pending start",
+                "the sole pending call",
                 vec![("a", None, HOOK), ("j", None, JSONL)],
                 raise(None, None, HOOK),
                 vec!["a"],
@@ -491,7 +491,7 @@ mod tests {
                 vec![],
             ),
             (
-                "none: a name no pending start has",
+                "none: a name no pending call has",
                 two(),
                 raise(None, Some("Edit"), HOOK),
                 vec![],
@@ -504,7 +504,7 @@ mod tests {
     /// A tool's name binds its pending calls on either transport, as a call's
     /// id binds its call.
     #[test]
-    fn a_raise_binds_a_pending_call_whichever_transport_started_it() {
+    fn a_raise_binds_a_pending_call_whichever_transport_saw_it() {
         let agent = raised(
             vec![("a", Some("Bash"), JSONL)],
             raise(None, Some("Bash"), HOOK),
@@ -516,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn a_named_request_binds_every_pending_start_of_its_tool_in_its_turn() {
+    fn a_named_request_binds_every_pending_call_of_its_tool_in_its_turn() {
         let mut agent = Agent::default();
         for (call, t) in [("a", "t1"), ("b", "t1"), ("c", "t0")] {
             agent.pre_use_in((call, Some("Bash"), HOOK), Some(&turn(t)));
