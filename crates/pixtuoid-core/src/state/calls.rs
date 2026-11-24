@@ -7,8 +7,8 @@
 //! `observe` reports, but two answers to a wait: an approval, once, since an
 //! answered member leaves its request, and a call's first start on the
 //! transport that raised a keyless wait. A fact that does not raise its record
-//! otherwise only merges idempotently (its pending fields, its count flag), so
-//! a fact applied twice applies once. Its pending fields are all the agent's
+//! otherwise only merges idempotently (its registration, its count flag), so a
+//! fact applied twice applies once. Its registration is all the agent's
 //! requests bind, its settle shows and its delegation reads of the call.
 
 use std::collections::HashMap;
@@ -179,7 +179,7 @@ struct Call {
     /// opened or joined.
     requests: Vec<(Arc<str>, usize)>,
     /// What its open generation's pre-use and starts said; its end clears it.
-    pending: Pending,
+    registration: Registration,
 }
 
 impl Call {
@@ -221,7 +221,7 @@ impl Call {
 
     /// Whether its first start dispatched a Task that has not ended.
     fn is_task(&self) -> bool {
-        self.pending
+        self.registration
             .shows
             .as_ref()
             .is_some_and(|(_, item)| item.kind == ToolKind::Task)
@@ -229,13 +229,13 @@ impl Call {
 
     fn end(&mut self) {
         self.phase = Phase::Ended;
-        self.pending = Pending::default();
+        self.registration = Registration::default();
     }
 }
 
 /// What an open call's pre-use and starts said of it.
 #[derive(Debug, Clone, Default)]
-struct Pending {
+struct Registration {
     /// Its tool's wire name, which a request naming that tool binds it by.
     tool_name: Option<Arc<str>>,
     /// Its own turn, else the agent's open one.
@@ -258,7 +258,7 @@ struct Calls {
     /// The calls a pre-use or start registered that have not ended, oldest
     /// first: what a request binds and a settle lands on, read without walking
     /// every call the slot's life kept.
-    open: Vec<Arc<str>>,
+    pending: Vec<Arc<str>>,
     /// The place of the next call to start.
     next_start: u64,
 }
@@ -280,7 +280,7 @@ impl Calls {
                 copies: copy.cloned().into_iter().collect(),
                 counted: starts,
                 requests: Vec::new(),
-                pending: Pending::default(),
+                registration: Registration::default(),
             };
             record.phase = record.phase_of(fact);
             let ended = record.phase == Phase::Ended;
@@ -339,13 +339,13 @@ impl Calls {
         }
     }
 
-    /// `call` ended: its record keeps none of what its open generation said,
-    /// and it leaves the open calls.
+    /// `call` ended: its record drops its registration, and it leaves the
+    /// pending calls.
     fn end(&mut self, call: &str) {
         if let Some(record) = self.by_id.get_mut(call) {
             record.end();
         }
-        self.open.retain(|c| **c != *call);
+        self.pending.retain(|c| **c != *call);
     }
 
     /// `call`, open, met `fact` on `on` while `open_turn` is open: a pre-use or
@@ -366,15 +366,15 @@ impl Calls {
         };
         let Self {
             by_id,
-            open,
+            pending,
             next_start,
         } = self;
         let key = Arc::clone(by_id.get_key_value(call)?.0);
-        if !open.contains(&key) {
-            open.push(Arc::clone(&key));
+        if !pending.contains(&key) {
+            pending.push(Arc::clone(&key));
         }
         let record = by_id.get_mut(call)?;
-        let p = &mut record.pending;
+        let p = &mut record.registration;
         if p.tool_name.is_none() {
             p.tool_name = tool_name.map(Arc::from);
         }
@@ -467,15 +467,15 @@ impl CallLedger {
         let Some(calls) = self.calls.get_mut(agent) else {
             return;
         };
-        let closed: Vec<Arc<str>> = (calls.open.iter())
+        let closed: Vec<Arc<str>> = (calls.pending.iter())
             .filter(|call| {
-                (calls.by_id.get(*call)).is_some_and(|r| closes(r.pending.turn.as_ref()))
+                (calls.by_id.get(*call)).is_some_and(|r| closes(r.registration.turn.as_ref()))
             })
             .cloned()
             .collect();
         for call in closed {
             match calls.by_id.get_mut(&call) {
-                Some(record) if record.is_task() => record.pending.outlived_turn = true,
+                Some(record) if record.is_task() => record.registration.outlived_turn = true,
                 _ => calls.end(&call),
             }
         }
@@ -486,7 +486,7 @@ impl CallLedger {
     pub(crate) fn end_life(&mut self, agent: &AgentId) {
         if let Some(calls) = self.calls.get_mut(agent) {
             calls.by_id.values_mut().for_each(Call::end);
-            calls.open.clear();
+            calls.pending.clear();
         }
     }
 
@@ -503,8 +503,8 @@ impl CallLedger {
     ) -> impl Iterator<Item = PendingCall<'a>> + use<'a> {
         let calls = self.calls.get(agent);
         calls.into_iter().flat_map(move |calls| {
-            calls.open.iter().filter_map(move |call| {
-                let p = &calls.by_id.get(call)?.pending;
+            calls.pending.iter().filter_map(move |call| {
+                let p = &calls.by_id.get(call)?.registration;
                 (!p.outlived_turn && p.turn.as_ref() == turn).then_some(PendingCall {
                     call,
                     tool_name: p.tool_name.as_deref(),
@@ -521,7 +521,7 @@ impl CallLedger {
             .get(agent)?
             .by_id
             .get(call)?
-            .pending
+            .registration
             .shows
             .as_ref()?;
         Some(item.clone())
@@ -531,9 +531,9 @@ impl CallLedger {
     pub(crate) fn newest_in_flight(&self, agent: &AgentId) -> Option<ToolUse> {
         let calls = self.calls.get(agent)?;
         let (_, item) = calls
-            .open
+            .pending
             .iter()
-            .filter_map(|call| calls.by_id.get(call)?.pending.shows.as_ref())
+            .filter_map(|call| calls.by_id.get(call)?.registration.shows.as_ref())
             .max_by_key(|(at, _)| *at)?;
         Some(item.clone())
     }
@@ -550,7 +550,7 @@ impl CallLedger {
     pub(crate) fn any_task_in_flight(&self, agent: &AgentId) -> bool {
         self.calls.get(agent).is_some_and(|calls| {
             calls
-                .open
+                .pending
                 .iter()
                 .any(|call| calls.by_id.get(call).is_some_and(Call::is_task))
         })

@@ -868,7 +868,7 @@ impl Reducer {
         }
     }
 
-    /// `id`'s pending calls in `turn`.
+    /// [`CallLedger::pending_in`](crate::state::calls::CallLedger::pending_in), by call id.
     #[cfg(test)]
     pub(crate) fn pending_in(&self, id: &AgentId, turn: Option<&TurnKey>) -> Vec<String> {
         let pending = self.corr.calls.pending_in(id, turn);
