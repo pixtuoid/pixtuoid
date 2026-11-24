@@ -253,7 +253,7 @@ fn work_counts_once() {
             &[Start, HookDispatch, Both(0, 0)],
         ),
         (
-            "nor one whose end came first, past the tracker that takes the rest",
+            "nor one whose end came first, past the delegation that takes the rest",
             &[Start, HookCallEnd("t1"), HookDispatch, Both(0, 0)],
         ),
         (

@@ -265,10 +265,10 @@ enum Preprocessed {
     /// holds.
     Drop,
     /// Survived the pre-pass, with what its call's record made of it, for a
-    /// fact naming a call, and whether the Task tracker owns it.
+    /// fact naming a call, and whether delegation applied it.
     Dispatch {
         observed: Option<Observed>,
-        tracked: bool,
+        delegated: bool,
     },
 }
 
@@ -366,8 +366,10 @@ impl Reducer {
         from: Transport,
     ) {
         let id = event.agent_id();
-        let Preprocessed::Dispatch { observed, tracked } =
-            self.preprocess(scene, &event, id, now, from)
+        let Preprocessed::Dispatch {
+            observed,
+            delegated,
+        } = self.preprocess(scene, &event, id, now, from)
         else {
             return;
         };
@@ -391,9 +393,9 @@ impl Reducer {
                 from,
                 now,
             ),
-            // The tracker owns every Task-dispatch Start that names its call,
+            // Delegation applies every Task-dispatch Start that names its call,
             // replays included.
-            AgentEvent::ToolUseStart { .. } if tracked => {}
+            AgentEvent::ToolUseStart { .. } if delegated => {}
             AgentEvent::ToolUseStart {
                 agent_id,
                 tool_use_id,
@@ -411,9 +413,9 @@ impl Reducer {
                 self.apply_tool_use_start(scene, agent_id, start, from, now);
             }
             // A call's End acts only on its record's rise, and never for a Task
-            // the tracker drained, which must not also end an id-less call the
+            // delegation drained, which must not also end an id-less call the
             // parent shows: an End ends any shown call that names none.
-            AgentEvent::ToolUseEnd { .. } if tracked || !observed.is_none_or(|o| o.rose) => {}
+            AgentEvent::ToolUseEnd { .. } if delegated || !observed.is_none_or(|o| o.rose) => {}
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id,
@@ -575,9 +577,9 @@ impl Reducer {
             None => None,
         };
 
-        let tracked = self.track_tasks_in_flight(scene, event, observed, now, from);
+        let delegated = self.apply_delegation(scene, event, observed, now, from);
 
-        // After tracking, or a cancelling dispatch at the grace boundary evicts
+        // After delegation, or a cancelling dispatch at the grace boundary evicts
         // its own live subtree; and a payload's registration lands ahead of its
         // dispatch start, so firing on it would evict the subtree that start
         // keeps alive.
@@ -585,10 +587,13 @@ impl Reducer {
             self.fire_pending_b1_cascades(scene, starts_untracked_task(event), now);
         }
 
-        Preprocessed::Dispatch { observed, tracked }
+        Preprocessed::Dispatch {
+            observed,
+            delegated,
+        }
     }
 
-    /// The `ToolUseStart` arm, for a Start the pre-pass tracker left to it.
+    /// The `ToolUseStart` arm, for a Start delegation left to it.
     /// Only a start that raises its call's record ([`Observed::rose`]), or one
     /// naming no call, runs the call, and one the agent's action request holds
     /// back
@@ -694,7 +699,7 @@ impl Reducer {
         today.as_mut()
     }
 
-    /// The `ToolUseEnd` arm, for an End the pre-pass tracker left to it. It
+    /// The `ToolUseEnd` arm, for an End delegation left to it. It
     /// settles the slot when it answers its request, or ends the call the slot
     /// shows: the one it names, or any when the slot's names none. An end naming
     /// no call never ends a named one.
@@ -1398,9 +1403,9 @@ impl Reducer {
     /// b1 subagent-completion inference, where [`ChildEndInference`] says so:
     /// a drained parent Task means the subtree returned — cascade EXIT to the
     /// DESCENDANTS, not the parent, so they leave before
-    /// [`STALE_IDLE_TIMEOUT`]. Returns whether it owns `event`: every Task
+    /// [`STALE_IDLE_TIMEOUT`]. Returns whether it applied `event`: every Task
     /// dispatch Start that names its call, and the End that drained one.
-    fn track_tasks_in_flight(
+    fn apply_delegation(
         &mut self,
         scene: &mut SceneState,
         event: &AgentEvent,
