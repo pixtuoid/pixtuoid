@@ -234,6 +234,7 @@ fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>
                         .map(str::to_owned),
                     tool_name: tool_name(),
                     turn,
+                    ..RequestKeys::default()
                 },
             ),
         ],
