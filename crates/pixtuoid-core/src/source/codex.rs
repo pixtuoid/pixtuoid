@@ -1,7 +1,7 @@
 //! Codex CLI source. Watches the Codex session transcript
 //! (`~/.codex/sessions/**/rollout-<ts>-<UUID>.jsonl`) via `JsonlWatcher` for
-//! the lifecycle signals the shared hook socket lacks — most importantly the
-//! post-approval resume (`function_call_output`).
+//! what the shared hook socket lacks: the turns, the calls' starts, and a
+//! failed call's end (`function_call_output`).
 //!
 //! Coalescing: a root's hook `session_id` (a child's: its `agent_id`) ==
 //! session_meta.id == filename UUID (verified), so both transports merge onto
@@ -108,9 +108,10 @@ const PARENT_THREAD_ID: &str = "parent_thread_id";
 /// The field naming the turn on codex's rollout payloads and hooks.
 const TURN_ID: &str = "turn_id";
 
-/// Codex's source-specific hook arms. The hooks carry only what the rollout
-/// lacks: a call about to run, the approval prompt, and its answers; the
-/// rollout owns the turns and the items. `SubagentStart`/`SubagentStop`
+/// Codex's source-specific hook arms. The hooks carry what the rollout lacks,
+/// a call about to run, the approval prompt and its answers, and a
+/// successful call's end, which the rollout's output repeats; the rollout
+/// owns the turns and the calls' starts. `SubagentStart`/`SubagentStop`
 /// change the event's SUBJECT to a child's AgentId; every other session event
 /// falls through to the shared arms, a child's under its own id.
 pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
@@ -169,7 +170,7 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
             }]))
         }
         "PreToolUse" | "PostToolUse" | "PermissionRequest" | "Stop" => {
-            decode_approval_hook(obj, event).map(Some)
+            decode_call_hook(obj, event).map(Some)
         }
         // A child's other events name it in `agent_id` beside the root's
         // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:282-285`,
@@ -178,12 +179,13 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
     }
 }
 
-/// The approval's hooks, on their [`HookSubject`]. `PreToolUse` fires only for
-/// a tool with a pre-use payload (`codex-rs/core/src/tools/registry.rs:1173` at
-/// rust-v0.171.0), so it is no item: the rollout's call is. `PostToolUse`
-/// fires only on a call's success (`:1025-1032`), so either it or the
-/// rollout's output ends a successful call, and the output alone a failed one.
-fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
+/// The hooks around a call, its approval's included, on their
+/// [`HookSubject`]. `PreToolUse` fires only for a tool with a pre-use payload
+/// (`codex-rs/core/src/tools/registry.rs:1173` at rust-v0.171.0), so it is no
+/// item: the rollout's call is. `PostToolUse` fires only on a call's success
+/// (`:1025-1032`), so either it or the rollout's output ends a successful
+/// call, and the output alone a failed one.
+fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
     let session_id = match HookSubject::of(obj).child {
         Some(child) => child.to_owned(),
         None => hook_session_id(obj, SOURCE_NAME, event)?,
@@ -785,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn the_hooks_carry_only_what_the_rollout_lacks() {
+    fn a_pre_use_a_prompt_and_a_stop_carry_their_keys() {
         const TURN: &str = "01a14e36-7827-7f92-a603-b700dc3aa71c";
         let turn = Some(TurnKey::Id(TURN.into()));
         let tool = json!({"tool_name": "Bash", "tool_input": {"command": "rm NOTE.txt"},
