@@ -173,8 +173,8 @@ pub enum AgentEvent {
         /// `tool_approval_requested`, kimi `tool_call_id`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_use_id: Option<String>,
-        /// The gated tool's wire name, when the wire names one: the request
-        /// holds that tool's pending calls.
+        /// The gated tool's wire name, when the wire names one: a request
+        /// naming no call holds that tool's pending calls.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_name: Option<String>,
         /// The turn the request blocks, when the wire names it.
