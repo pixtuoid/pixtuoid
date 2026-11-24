@@ -21,7 +21,7 @@ its desk.
 | The agent | Claude Code's hooks | At each step of its work, Claude Code runs the hook command pixtuoid installed and writes one JSON object to its stdin. | A hook fires as the agent acts, so the sprite moves with it. pixtuoid also reads the transcript the agent writes, for what no hook reports, such as token use. |
 | The shim | `pixtuoid-hook` | A small program stamps the line with the agent's name, its process id and the time, writes it to pixtuoid's local socket (a named pipe on Windows), and exits 0. | The agent waits for its hook. The shim gives up on a closed or slow pixtuoid within a fixed bound and still exits 0, so the office never holds your agent up. |
 | The decoder | `decode_hook_payload` | The stamped name picks the decoder for that agent, which turns the line into events every agent shares. | Each agent words its hooks its own way. What one agent's format means lives in its decoder, so nothing past this stop asks which agent it is. |
-| The office | `Reducer::apply` | The reducer folds the events into one picture of the office: who is here, at which desk, doing what. | Hooks and transcripts feed one channel into one reducer, so a step both report counts once, and every painter reads the same picture. |
+| The office | `Reducer::apply` | The reducer folds the events into one picture of the office: who is here, at which desk, doing what. | Hooks and transcripts feed one channel into one reducer, which keeps one record per call and turn, so a step both report counts once, and every painter reads the same picture. |
 | The frame | `look::render` | The engine draws that picture. The same call paints the terminal, the desktop window and the website. | The engine knows no terminal or window. Each painter only copies its pixels out, so the office looks the same wherever it runs. |
 
 ## The whole pipeline
@@ -55,8 +55,8 @@ flowchart TB
 - **The transcript.** `JsonlWatcher` tails each agent's transcript and decodes
   its lines with that agent's own decoder. A first-sight gate keeps a session
   that ended before pixtuoid started from walking back in. Every source tags
-  its events with how they arrived (`Transport`), and a hook wins over its
-  transcript echo.
+  its events with how they arrived (`Transport`); a step both transports
+  report merges on its call's record whatever order they arrive in.
 - **A second instance.** Its `HookRouter` subscribes to the socket's owner for
   the same lines, so each instance keeps its own reducer and viewport, and it
   takes the socket when that owner exits.

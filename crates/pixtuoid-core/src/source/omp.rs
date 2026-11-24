@@ -30,7 +30,7 @@ use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
-use crate::source::{AgentEvent, CopyId, RequestKeys, ToolDetail};
+use crate::source::{AgentEvent, CopyId, RequestKeys, Resolution, ToolDetail};
 
 #[cfg(feature = "native")]
 mod native;
@@ -1015,20 +1015,17 @@ fn omp_approval(
     };
     Some(match data.get("approved").and_then(Value::as_bool) {
         // The resume. copilot's approve-emits-nothing shape doesn't fit omp:
-        // the call's block precedes the request, so only this Start can lift
-        // the wait.
+        // the call's block precedes the request, so only this can lift the
+        // wait.
         Some(true) => {
-            let name = tool();
             // An ask's form opens only once approved, so the wait its block
-            // raised lasts until its toolResult; this Start would lift it.
-            if name == TOOL_ASK {
+            // raised lasts until its toolResult; this resume would lift it.
+            if tool() == TOOL_ASK {
                 return None;
             }
-            AgentEvent::ToolUseStart {
+            AgentEvent::UserActionResolved {
                 agent_id: acting,
-                tool_use_id: Some(call.to_owned()),
-                detail: Some(omp_tool_detail(name, None, None)),
-                copy_id: None,
+                by: Resolution::Approved(call.to_owned()),
             }
         }
         // A denial lifts the wait now; the isError toolResult that follows
@@ -2066,29 +2063,15 @@ mod tests {
     }
 
     #[test]
-    fn an_approval_resumes_its_call_and_a_denial_ends_it() {
+    fn an_approved_record_resumes_its_call_and_a_denial_ends_it() {
         let (approved, denied) = (approval_approved(), approval_denied());
-        match &decode(&approved)[..] {
-            [
-                AgentEvent::ToolUseStart {
-                    agent_id,
-                    tool_use_id,
-                    detail,
-                    ..
-                },
-            ] => {
-                assert_eq!(*agent_id, root());
-                assert_eq!(
-                    tool_use_id.as_deref(),
-                    Some(data_str(&approved, "toolCallId").as_str())
-                );
-                assert_eq!(
-                    detail.as_ref().map(|d| d.display()),
-                    Some(data_str(&approved, "toolName").as_str())
-                );
-            }
-            other => panic!("expected the resume's ToolUseStart, got {other:?}"),
-        }
+        assert_eq!(
+            decode(&approved),
+            [AgentEvent::UserActionResolved {
+                agent_id: root(),
+                by: Resolution::Approved(data_str(&approved, "toolCallId")),
+            }]
+        );
         assert_eq!(
             decode(&denied),
             [AgentEvent::ToolUseEnd {
@@ -2096,17 +2079,8 @@ mod tests {
                 tool_use_id: Some(data_str(&denied, "toolCallId")),
             }]
         );
-        let task = with_data(&approved, |d| {
-            d.insert("toolName".into(), json!("task"));
-        });
-        match &decode(&task)[..] {
-            [AgentEvent::ToolUseStart { detail, .. }] => {
-                assert!(detail.as_ref().is_some_and(|d| d.is_task()));
-            }
-            other => panic!("expected the resume's ToolUseStart, got {other:?}"),
-        }
-        // Only the resume reads the name, so only its absence there is drift;
-        // an outcome without its verdict still ends the call.
+        // Only the resume reads the name, to tell an ask, so only its absence
+        // there is drift; an outcome without its verdict still ends the call.
         for (line, field, drift) in [
             (&approved, "toolName", true),
             (&denied, "toolName", false),
@@ -3007,8 +2981,8 @@ mod tests {
     #[test]
     fn an_unknown_hook_type_decodes_to_nothing() {
         // An approval an older pixtuoid's extension still forwards from an omp
-        // started before the upgrade: the transcript raises that wait, and a
-        // hook resume can't lift a transcript-raised one (`ActionRequests::resolves`).
+        // started before the upgrade: the transcript carries every approval
+        // (`install/omp_extension.ts`'s header).
         for ty in ["credential_disabled", "tool_approval_requested"] {
             assert!(
                 hook(serde_json::json!({

@@ -1074,8 +1074,8 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
             now,
             Transport::Hook,
         );
-        // An ORPHAN Task (no SessionStart or Identity) registers no slot, so its
-        // tasks_in_flight entry is the tick's to reap.
+        // An ORPHAN Task (no SessionStart or Identity) registers no slot, so it
+        // keeps no record.
         r.apply(
             &mut scene,
             AgentEvent::ToolUseStart {
@@ -1107,9 +1107,9 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
     }
 }
 
-/// A transcript tool or backlog line registers no slot, yet a Task it starts and
-/// a backlog marker it carries are kept by id: the tick reaps both while no slot
-/// holds it.
+/// A transcript tool or backlog line registers no slot: a Task it starts keeps
+/// no record, and a backlog marker it carries is kept by id, which the tick
+/// reaps while no slot holds it.
 #[test]
 fn the_tick_reaps_what_an_id_no_slot_holds_left() {
     use crate::AgentId;
@@ -1135,13 +1135,12 @@ fn the_tick_reaps_what_an_id_no_slot_holds_left() {
     r.apply(&mut scene, backlog, t0, Transport::Jsonl);
     assert!(!scene.agents.contains_key(&id), "premise: no slot");
     assert!(
-        r.corr.tasks_in_flight.contains_key(&id),
-        "premise: a Task kept"
+        !r.corr.tasks_in_flight.contains_key(&id) && r.corr.calls.len() == 0,
+        "a Task with no slot keeps nothing"
     );
     assert!(r.corr.caught_up.contains(&id), "premise: a marker kept");
 
     r.tick(&mut scene, t0);
-    assert!(!r.corr.tasks_in_flight.contains_key(&id));
     assert!(!r.corr.caught_up.contains(&id));
 }
 
@@ -1614,47 +1613,187 @@ fn every_order_of_two_turns_and_a_gated_request_keeps_the_property() {
     assert_eq!(orders, 120, "5! orders");
 }
 
-/// A drained Task's End read past its tombstone reaches the request ledger,
-/// where only the drain's retirement of the call keeps it from answering a
-/// prompt still standing (#152).
+/// Every interleaving of one call's hook facts, in any order (per-connection
+/// delivery, #242), with its transcript's start and end, in file order, at any
+/// lag between arrivals: no step after an end shows the call, and every
+/// interleaving ends alike with the call counted once.
 #[test]
-fn a_drained_tasks_end_past_its_tombstone_resolves_no_standing_prompt() {
-    use crate::source::{AgentEvent, RequestKeys, Transport};
-    use crate::state::ActivityState;
-    use crate::state::correlation::DRAINED_TASK_TOMBSTONE_TTL;
+fn every_interleaving_of_a_calls_two_streams_ends_alike() {
+    use crate::source::{AgentEvent, CopyId, ToolDetail, Transport};
+    use crate::state::{ActivityState, ToolUse};
     use crate::{AgentId, Reducer, SceneState};
     use std::path::PathBuf;
     use std::time::{Duration, SystemTime};
-    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
-    let id = AgentId::from_parts("omp", "/p/tombstone.jsonl");
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
-    let start = AgentEvent::SessionStart {
-        agent_id: id,
-        source: "omp".into(),
-        session_id: "p".into(),
-        cwd: PathBuf::from("/repo"),
-        parent_id: None,
-    };
-    r.apply(&mut scene, start, t0, Transport::Hook);
-    let task = AgentEvent::tool_use_start(id, Some("task-T".into()), Some("Agent".into()));
-    r.apply(&mut scene, task, t0, Transport::Hook);
-    let prompt =
-        AgentEvent::user_action_request(id, Some("permission".into()), RequestKeys::default());
-    r.apply(&mut scene, prompt, t0, Transport::Hook);
+
+    let id = AgentId::from_parts("claude-code", "two-streams");
+    let call = "toolu_c";
+    let start =
+        || AgentEvent::tool_use_start(id, Some(call.into()), Some(ToolDetail::from("Bash: ls")));
     let end = || AgentEvent::ToolUseEnd {
         agent_id: id,
-        tool_use_id: Some("task-T".into()),
+        tool_use_id: Some(call.into()),
     };
-    let drained = t0 + Duration::from_secs(1);
-    r.apply(&mut scene, end(), drained, Transport::Hook);
-    let late = drained + DRAINED_TASK_TOMBSTONE_TTL + Duration::from_secs(1);
-    r.apply(&mut scene, end(), late, Transport::Jsonl);
-    assert!(
-        matches!(
-            scene.agents[&id].state,
-            ActivityState::RequiresAction { .. }
-        ),
-        "{:?}",
-        scene.agents[&id].state
+    let hooks = [
+        AgentEvent::ToolUsePending {
+            agent_id: id,
+            tool_use_id: call.into(),
+            tool_name: Some("Bash".into()),
+            turn: None,
+        },
+        start(),
+        end(),
+    ];
+    let transcript = [start().with_copy_id(CopyId::new(call)), end()];
+    let lags = [
+        Duration::ZERO,
+        Duration::from_secs(1),
+        Duration::from_secs(10 * 60),
+    ];
+    let perms = [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0],
+    ];
+    let slots = hooks.len() + transcript.len();
+    let gaps = u32::try_from(slots - 1).expect("a handful of gaps");
+    let mut first: Option<ActivityState> = None;
+    let mut runs = 0;
+    for perm in perms {
+        // Which arrivals are the transcript's: its lines stay in file order.
+        for mask in (0u32..1 << slots).filter(|m| m.count_ones() == 2) {
+            for lag_code in 0..lags.len().pow(gaps) {
+                let (mut h, mut t) = (perm.iter(), transcript.iter());
+                let order: Vec<(Transport, &AgentEvent)> = (0..slots)
+                    .map(|k| match mask & (1 << k) {
+                        0 => (Transport::Hook, &hooks[*h.next().expect("three hooks")]),
+                        _ => (Transport::Jsonl, t.next().expect("two lines")),
+                    })
+                    .collect();
+                let mut scene = SceneState::uniform(2);
+                let mut r = Reducer::new();
+                let mut at = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+                r.apply(
+                    &mut scene,
+                    AgentEvent::SessionStart {
+                        agent_id: id,
+                        source: "claude-code".into(),
+                        session_id: "two-streams".into(),
+                        cwd: PathBuf::from("/repo"),
+                        parent_id: None,
+                    },
+                    at,
+                    Transport::Hook,
+                );
+                let mut code = lag_code;
+                let mut ended = false;
+                for (k, (from, event)) in order.iter().enumerate() {
+                    if k > 0 {
+                        at += lags[code % lags.len()];
+                        code /= lags.len();
+                    }
+                    r.apply(&mut scene, (*event).clone(), at, *from);
+                    ended |= matches!(event, AgentEvent::ToolUseEnd { .. });
+                    let shows = matches!(
+                        &scene.agents[&id].state,
+                        ActivityState::Running {
+                            item: Some(ToolUse { tool_use_id: Some(shown), .. }),
+                        } if &**shown == call
+                    );
+                    assert!(
+                        !(ended && shows),
+                        "{order:?} at lags {lag_code}: step {k} shows the ended call"
+                    );
+                }
+                let slot = &scene.agents[&id];
+                assert_eq!(slot.tool_call_count, 1, "{order:?} at lags {lag_code}");
+                match &first {
+                    None => first = Some(slot.state.clone()),
+                    Some(state) => assert_eq!(
+                        &slot.state, state,
+                        "{order:?} at lags {lag_code} ends otherwise"
+                    ),
+                }
+                runs += 1;
+            }
+        }
+    }
+    assert_eq!(
+        runs,
+        6 * 10 * 81,
+        "3! hook orders, 5C2 placements, 3^4 lags"
     );
+}
+
+/// A turn's end answers a wait that named its call, and a tool end naming no
+/// call answers one bound by deduction, which named none: either lifts the
+/// wait and closes its request.
+#[test]
+fn a_turn_end_or_an_unnamed_end_answers_a_wait_and_closes_its_request() {
+    use crate::source::{AgentEvent, RequestKeys, ToolDetail, Transport};
+    use crate::state::ActivityState;
+    use crate::{AgentId, Reducer, SceneState};
+    use std::path::PathBuf;
+    use std::time::{Duration, SystemTime};
+
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for turn in [true, false] {
+        let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+        let id = AgentId::from_parts("claude-code", "answered");
+        let start = AgentEvent::SessionStart {
+            agent_id: id,
+            source: "claude-code".into(),
+            session_id: "answered".into(),
+            cwd: PathBuf::from("/repo"),
+            parent_id: None,
+        };
+        r.apply(&mut scene, start, t0, Transport::Hook);
+        let mut keys = RequestKeys::default();
+        if turn {
+            keys.tool_use_id = Some("call_1".into());
+        } else {
+            let call = AgentEvent::tool_use_start(
+                id,
+                Some("call_1".into()),
+                Some(ToolDetail::from("Bash")),
+            );
+            r.apply(&mut scene, call, t0, Transport::Hook);
+        }
+        let raise = AgentEvent::user_action_request(id, Some("permission".into()), keys);
+        r.apply(&mut scene, raise, t0, Transport::Hook);
+        assert!(
+            matches!(
+                scene.agents[&id].state,
+                ActivityState::RequiresAction { .. }
+            ) && r.corr.action_requests.contains(&id),
+            "turn: {turn}: premise"
+        );
+        let end = if turn {
+            AgentEvent::turn_end(id)
+        } else {
+            AgentEvent::ToolUseEnd {
+                agent_id: id,
+                tool_use_id: None,
+            }
+        };
+        r.apply(
+            &mut scene,
+            end,
+            t0 + Duration::from_secs(1),
+            Transport::Hook,
+        );
+        assert!(
+            !matches!(
+                scene.agents[&id].state,
+                ActivityState::RequiresAction { .. }
+            ),
+            "turn: {turn}: the end left the wait standing"
+        );
+        assert!(
+            !r.corr.action_requests.contains(&id),
+            "turn: {turn}: the answered request stayed open"
+        );
+    }
 }

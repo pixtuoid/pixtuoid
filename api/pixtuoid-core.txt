@@ -1091,6 +1091,7 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::source::AgentEvent
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::source::AgentEvent
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::source::AgentEvent
 #[non_exhaustive] pub enum pixtuoid_core::source::Resolution
+pub pixtuoid_core::source::Resolution::Approved(alloc::string::String)
 pub pixtuoid_core::source::Resolution::Call(alloc::string::String)
 pub pixtuoid_core::source::Resolution::Turn(pixtuoid_core::state::TurnKey)
 impl core::clone::Clone for pixtuoid_core::source::Resolution

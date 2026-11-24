@@ -11,15 +11,28 @@ use crate::state::TurnKey;
 /// layer.
 pub(crate) const DEFAULT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Which transport produced an event — used by the reducer for hook-wins
-/// dedup. Lives on the source side because every `Source` implementor must
-/// tag its own events; the reducer is downstream.
+/// Which transport produced an event. The reducer reads it for:
+///
+/// - a session's lifecycle: what may create, end or revive it
+///   (`Reducer::authorizes`), and only a hook's `Identity` registers one;
+/// - whether an event counts as live work or as a replay;
+/// - which pending calls a request binds by tool name or by deduction: those
+///   seen on the transport that raised it;
+/// - which start answers a request the wire gave no key: its call's first
+///   start on the transport that raised it, or one naming no call;
+/// - whether a tool end naming no call answers a request: only a hook's does;
+/// - whether an unnamed child's activity under its parent's key is dropped:
+///   only a hook's is.
+///
+/// A call's facts merge on its record whatever transport carries them. Lives
+/// on the source side because every `Source` implementor must tag its own
+/// events; the reducer is downstream.
 ///
 /// `#[non_exhaustive]`: keeps adding a transport a non-breaking change.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Transport {
-    /// Arrived over the hook socket/named pipe — live; wins hook-vs-JSONL dedup.
+    /// Arrived over the hook socket/named pipe — live.
     Hook,
     /// Read from a transcript JSONL file (may be a historical replay).
     Jsonl,
@@ -97,7 +110,7 @@ pub enum AgentEvent {
     ToolUseStart {
         /// The acting agent.
         agent_id: AgentId,
-        /// The tool call's id, used to pair with its `ToolUseEnd` (hook-wins dedup).
+        /// The tool call's id, which pairs it with its `ToolUseEnd`.
         tool_use_id: Option<String>,
         /// Structured tool detail (e.g. a subagent-dispatch `Task`), when known.
         detail: Option<ToolDetail>,
@@ -254,8 +267,7 @@ pub enum AgentEvent {
     /// A FRESH-token spend observation from a source's wire — cache READS are
     /// re-served context, not new spend, and are excluded. Each event is that
     /// reading's DELTA; the reducer accumulates onto an EXISTING slot only
-    /// (unknown id = no-op — usage never registers a session). It names no call,
-    /// so it never enters hook-wins dedup.
+    /// (unknown id = no-op — usage never registers a session).
     #[non_exhaustive]
     Usage {
         /// The agent whose token spend this reading records.
@@ -309,6 +321,9 @@ pub enum Resolution {
     Call(String),
     /// The turn stopped with nothing left pending (codex's `Stop`).
     Turn(TurnKey),
+    /// The user approved the call its wait named, which runs on (omp's
+    /// `tool_approval_resolved`, dsh's `approval_decided`).
+    Approved(String),
 }
 
 /// An id unique across every transcript of its source, so a line repeating it
@@ -500,6 +515,70 @@ impl AgentEvent {
             | AgentEvent::Backlog { .. } => false,
         }
     }
+
+    /// Each wire id this event names a record by, mutably, for a host that
+    /// replays a script under fresh ids. Every field of a variant carrying
+    /// one is named here, so a field it gains fails to compile until sorted.
+    #[doc(hidden)]
+    pub fn merge_keys_mut(&mut self) -> MergeKeysMut<'_> {
+        let (id, turn) = match self {
+            AgentEvent::ToolUseStart {
+                agent_id: _,
+                tool_use_id,
+                detail: _,
+                copy_id: _,
+            }
+            | AgentEvent::ToolUseEnd {
+                agent_id: _,
+                tool_use_id,
+            } => (tool_use_id.as_mut(), None),
+            AgentEvent::ToolUsePending {
+                agent_id: _,
+                tool_use_id,
+                tool_name: _,
+                turn,
+            } => (Some(tool_use_id), turn.as_mut()),
+            AgentEvent::UserActionRequest {
+                agent_id: _,
+                reason: _,
+                tool_use_id,
+                tool_name: _,
+                turn,
+            } => (tool_use_id.as_mut(), turn.as_mut()),
+            AgentEvent::UserActionResolved { agent_id: _, by } => match by {
+                Resolution::Call(id) | Resolution::Approved(id) => (Some(id), None),
+                Resolution::Turn(turn) => (None, Some(turn)),
+            },
+            AgentEvent::TurnStart { agent_id: _, turn } => (None, Some(turn)),
+            AgentEvent::TurnEnd { agent_id: _, turn } => (None, turn.as_mut()),
+            AgentEvent::Usage {
+                agent_id: _,
+                fresh_tokens: _,
+                reading_id,
+                copy_id: _,
+            } => (reading_id.as_mut(), None),
+            AgentEvent::SessionStart { .. }
+            | AgentEvent::Rename { .. }
+            | AgentEvent::LabelHint { .. }
+            | AgentEvent::SessionEnd { .. }
+            | AgentEvent::ProofOfLife { .. }
+            | AgentEvent::Identity { .. }
+            | AgentEvent::ModelInfo { .. }
+            | AgentEvent::Backlog { .. } => (None, None),
+        };
+        MergeKeysMut { id, turn }
+    }
+}
+
+/// The wire ids an event names its records by ([`AgentEvent::merge_keys_mut`]).
+#[doc(hidden)]
+#[derive(Debug)]
+#[non_exhaustive]
+pub struct MergeKeysMut<'a> {
+    /// Its call's or its reading's id.
+    pub id: Option<&'a mut String>,
+    /// Its turn.
+    pub turn: Option<&'a mut TurnKey>,
 }
 
 /// The PRIMARY on-disk root a source resolves, through the SAME

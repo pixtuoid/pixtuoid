@@ -8,18 +8,9 @@ use std::time::{Duration, SystemTime};
 
 use crate::AgentId;
 use crate::source::{CopyId, DEFAULT_POLL_INTERVAL, Transport};
+use crate::state::calls::CallLedger;
 use crate::state::requests::ActionRequests;
 use crate::state::turns::TurnLedger;
-
-/// Window in which a Hook event suppresses a later Jsonl event with the same
-/// tool_use_id. The suppression is asymmetric by event kind — see
-/// [`ToolEventKind`] (#150).
-///
-// `pub` + `#[doc(hidden)]`: these tuning knobs are visible only so this crate's
-// integration tests derive their timing offsets from them; cargo-semver-checks skips a path docs hide:
-// https://github.com/obi1kenobi/trustfall-rustdoc-adapter/blob/b24088502d1cc1fcdbdb5037407e3a90c4e33b18/src/rustdoc_schema.graphql#L1360-L1365
-#[doc(hidden)]
-pub const HOOK_WINS_WINDOW: Duration = Duration::from_millis(500);
 
 /// How long the trailing events of a life a hook ended, or of a child's
 /// [`ChildEnd::Reported`] end, are refused (#242, either transport), and how long a top-level life a hook
@@ -29,6 +20,10 @@ pub const HOOK_WINS_WINDOW: Duration = Duration::from_millis(500);
 /// re-register the ended session with NO SessionEnd left to remove it. The
 /// window covers same-machine scheduling jitter while never visibly delaying a
 /// genuine revival.
+///
+// `pub` + `#[doc(hidden)]`: these tuning knobs are visible only so this crate's
+// integration tests derive their timing offsets from them; cargo-semver-checks skips a path docs hide:
+// https://github.com/obi1kenobi/trustfall-rustdoc-adapter/blob/b24088502d1cc1fcdbdb5037407e3a90c4e33b18/src/rustdoc_schema.graphql#L1360-L1365
 #[doc(hidden)]
 pub const STRAGGLER_TTL: Duration = Duration::from_secs(5);
 
@@ -56,15 +51,6 @@ pub const CHILD_END_GATE_TTL: Duration = DEFAULT_POLL_INTERVAL.saturating_add(HA
 /// freshness check, so a retained-but-stale record gates nothing.
 #[doc(hidden)]
 pub const CHILD_END_RELINK_TTL: Duration = Duration::from_secs(300);
-
-/// How long a drained Task `tool_use_id` is remembered, so a lagged JSONL
-/// replay of its Start re-tracks nothing and its End stays the tracker's: the
-/// batched Start+End pair replays after the drain, where the Start would clobber
-/// a RequiresAction the parent raised in the gap and the End an id-less call it
-/// shows. Sized past the `scan_root` poll backstop; a `tool_use_id` is never
-/// legitimately re-dispatched, so generosity costs only the tombstone's map entry.
-pub(crate) const DRAINED_TASK_TOMBSTONE_TTL: Duration =
-    DEFAULT_POLL_INTERVAL.saturating_add(HALF_A_POLL);
 
 /// How long an [`AgentEvent::ProofOfLife`](crate::AgentEvent::ProofOfLife) vouch exempts its slot from the
 /// staleness sweeps (#220). The probe is ground truth that the OWNING PROCESS
@@ -111,21 +97,6 @@ impl ChildEnd {
             Self::Reported(at) | Self::Inferred(at) => at,
         }
     }
-}
-
-/// Kind half of a hook-wins dedup record, driving the asymmetric drop matrix
-/// (#150): an End record suppresses BOTH JSONL kinds — the tool is over, so a
-/// lagged JSONL Start replay would falsely re-Activate a settled slot — while
-/// a Start record suppresses only Starts. A JSONL End
-/// must never be eaten by its own tool's dispatch record: when the best-effort
-/// PostToolUse hook drops, an eaten Task self-End leaks `tasks_in_flight` for the
-/// rest of the session. Don't "simplify" this to exact-kind matching — it
-/// would orphan the lagged-pair case (pinned by
-/// `late_batched_jsonl_pair_after_delivered_hook_end_is_fully_dropped`).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum ToolEventKind {
-    Start,
-    End,
 }
 
 /// Per agent, the wire ids already counted. Nested (not `(AgentId, String)`-keyed)
@@ -264,10 +235,6 @@ impl CopyHolders {
 /// (`pending_b1_cascades` and its fire pass) stay on `Reducer`.
 #[derive(Debug, Default, Clone)]
 pub(super) struct Correlation {
-    /// Recent hook-derived events, so JSONL duplicates can be dropped. A hook
-    /// End overwrites its tool's Start entry (kind-in-the-VALUE, not the key),
-    /// which is what lets one End record cover the whole lagged JSONL pair.
-    pub(super) recent_hook_tool_uses: HashMap<(AgentId, String), (SystemTime, ToolEventKind)>,
     /// One record per id, outliving its slot, read by
     /// [`Reducer::authorizes`](super::reducer::Reducer::authorizes).
     pub(super) lifecycles: HashMap<AgentId, Lifecycle>,
@@ -275,24 +242,13 @@ pub(super) struct Correlation {
     /// stays Delegating while one is, an unnamed child's hook activity is
     /// dropped, and the set's drain may arm b1.
     pub(super) tasks_in_flight: HashMap<AgentId, HashSet<String>>,
-    /// Tombstones for Task tool_use_ids whose drain already completed. A lagged
-    /// JSONL pair-replay past the dedup window must neither re-track the tuid
-    /// nor re-enter Delegating over a
-    /// [`AgentEvent::UserActionRequest`](crate::AgentEvent::UserActionRequest) raised since,
-    /// and its End is the tracker's, so it ends no id-less call the parent shows.
-    pub(super) recent_task_drains: HashMap<(AgentId, String), SystemTime>,
     /// Sweep-exemption timestamps from [`AgentEvent::ProofOfLife`](crate::AgentEvent::ProofOfLife) (#220):
     /// a slot vouched for within [`PROOF_OF_LIFE_TTL`] is skipped by
     /// `sweep_stale`'s candidate collection.
     pub(super) recent_proof_of_life: HashMap<AgentId, SystemTime>,
     pub(super) action_requests: ActionRequests,
     pub(super) turns: TurnLedger,
-    /// Tool calls already counted into `tool_call_count`, so the SAME logical
-    /// call started twice counts once: omp's approval resume repeats its call's
-    /// Start a human later, and a hook Start's transcript twin can land past
-    /// [`HOOK_WINS_WINDOW`]. Never swept, only forgotten with the slot, as
-    /// `counted_readings` is.
-    pub(super) counted_calls: Counted,
+    pub(super) calls: CallLedger,
     /// Usage readings already counted into `tokens_used`, by the id a wire that
     /// repeats one gives it. Never swept, only forgotten with the slot: a
     /// rewritten transcript re-reads readings of any age.
@@ -312,30 +268,26 @@ pub(super) struct Correlation {
 impl Correlation {
     /// Each map's name and size, read off an exhaustive destructure: a map
     /// added to the struct fails to compile here until it is measured.
-    pub(super) fn sizes(&self) -> [(&'static str, usize); 12] {
+    pub(super) fn sizes(&self) -> [(&'static str, usize); 10] {
         let Self {
-            recent_hook_tool_uses,
             lifecycles,
             tasks_in_flight,
-            recent_task_drains,
             recent_proof_of_life,
             action_requests,
             turns,
-            counted_calls,
+            calls,
             counted_readings,
             call_holders,
             reading_holders,
             caught_up,
         } = self;
         [
-            ("recent_hook_tool_uses", recent_hook_tool_uses.len()),
             ("lifecycles", lifecycles.len()),
             ("tasks_in_flight", tasks_in_flight.len()),
-            ("recent_task_drains", recent_task_drains.len()),
             ("recent_proof_of_life", recent_proof_of_life.len()),
             ("action_requests", action_requests.len()),
             ("turns", turns.len()),
-            ("counted_calls", counted_calls.len()),
+            ("calls", calls.len()),
             ("counted_readings", counted_readings.len()),
             ("call_holders", call_holders.len()),
             ("reading_holders", reading_holders.len()),
@@ -476,12 +428,8 @@ impl Correlation {
     /// child's memory, a child end under [`CHILD_END_RELINK_TTL`] (not the
     /// gate's TTL), or a hook end under [`STRAGGLER_TTL`].
     pub(super) fn gc(&mut self, now: SystemTime) {
-        self.recent_hook_tool_uses
-            .retain(|_, (ts, _)| is_fresh(now, *ts, HOOK_WINS_WINDOW));
         self.recent_proof_of_life
             .retain(|_, ts| is_fresh(now, *ts, PROOF_OF_LIFE_TTL));
-        self.recent_task_drains
-            .retain(|_, ts| is_fresh(now, *ts, DRAINED_TASK_TOMBSTONE_TTL));
         self.call_holders.expire(now);
         self.reading_holders.expire(now);
         self.lifecycles.retain(|_, l| {
@@ -605,18 +553,6 @@ mod tests {
         let young = AgentId::from_parts("claude-code", "young");
         let step = Duration::from_millis(1);
         let mut corr = Correlation::default();
-        corr.recent_hook_tool_uses
-            .insert((old, "t1".into()), (t0(), ToolEventKind::Start));
-        corr.recent_hook_tool_uses
-            .insert((young, "t2".into()), (t0() + step, ToolEventKind::End));
-        corr.gc(t0() + HOOK_WINS_WINDOW);
-        assert!(!corr.recent_hook_tool_uses.contains_key(&(old, "t1".into())));
-        assert!(
-            corr.recent_hook_tool_uses
-                .contains_key(&(young, "t2".into()))
-        );
-
-        let mut corr = Correlation::default();
         corr.note_end(old, Transport::Hook, false, t0());
         corr.note_end(young, Transport::Hook, false, t0() + step);
         corr.gc(t0() + STRAGGLER_TTL);
@@ -629,14 +565,6 @@ mod tests {
         corr.gc(t0() + PROOF_OF_LIFE_TTL);
         assert!(!corr.recent_proof_of_life.contains_key(&old));
         assert!(corr.recent_proof_of_life.contains_key(&young));
-
-        let mut corr = Correlation::default();
-        corr.recent_task_drains.insert((old, "t1".into()), t0());
-        corr.recent_task_drains
-            .insert((young, "t2".into()), t0() + step);
-        corr.gc(t0() + DRAINED_TASK_TOMBSTONE_TTL);
-        assert!(!corr.recent_task_drains.contains_key(&(old, "t1".into())));
-        assert!(corr.recent_task_drains.contains_key(&(young, "t2".into())));
 
         let mut corr = Correlation::default();
         corr.note_end(old, Transport::Jsonl, true, t0());

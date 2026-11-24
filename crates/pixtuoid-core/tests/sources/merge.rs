@@ -4,14 +4,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
 
 use pixtuoid_core::harness::Drive;
 use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::merge::{Merged, Merges, Step};
 use pixtuoid_core::source::{AgentEvent, registry};
 use pixtuoid_core::state::TurnKey;
-use pixtuoid_core::state::reducer::HOOK_WINS_WINDOW;
 use pixtuoid_core::{ActivityState, AgentId, ToolUse, Transport};
 use serde_json::Value;
 
@@ -298,52 +296,6 @@ fn a_hook_set_item_survives_a_lagging_jsonl_turn_end(run: &Run) {
     );
 }
 
-/// A transcript start lagging its call's hook end by less than the hook-wins
-/// window is that call's echo: it never reopens the call, in every order.
-fn a_lagging_jsonl_start_never_reopens_its_call(run: &Run) {
-    let mut lagged = false;
-    run.each(|m| {
-        let mut ended: BTreeMap<(AgentId, &str), SystemTime> = BTreeMap::new();
-        for s in &m.steps {
-            let agent = s.event.agent_id();
-            match &s.event {
-                AgentEvent::ToolUseEnd {
-                    tool_use_id: Some(id),
-                    ..
-                } if s.transport == Transport::Hook => {
-                    ended.insert((agent, id.as_str()), s.at);
-                }
-                AgentEvent::ToolUseStart {
-                    tool_use_id: Some(id),
-                    ..
-                } if s.transport == Transport::Jsonl
-                    && ended.get(&(agent, id.as_str())).is_some_and(|end| {
-                        s.at.duration_since(*end)
-                            .is_ok_and(|d| d < HOOK_WINS_WINDOW)
-                    }) =>
-                {
-                    lagged = true;
-                    assert!(
-                        !matches!(&s.state, Some(ActivityState::Running { item: Some(ToolUse {
-                            tool_use_id: Some(running),
-                            ..
-                        }) }) if **running == **id),
-                        "{}: a Jsonl start at line {} reopened {id}, which the hook ended",
-                        run.name,
-                        s.line
-                    );
-                }
-                _ => {}
-            }
-        }
-    });
-    assert!(
-        lagged,
-        "{}: no order lags a Jsonl start behind its call's hook end",
-        run.name
-    );
-}
-
 /// On a source that brackets its turns (codex's registry row), a turn the
 /// stream delivered open shows its agent working in `m`'s order: its start
 /// arrived, and its end has not.
@@ -468,18 +420,6 @@ fn a_code_mode_cell_s_gated_call_stands_until_its_resolution() {
 }
 
 #[test]
-fn a_lagging_jsonl_start_never_reopens_a_call_the_hook_ended() {
-    for scenario in [
-        "tool-run-hermetic",
-        "tool-error-hermetic",
-        "permission-hermetic",
-        "ask-user-hermetic",
-    ] {
-        a_lagging_jsonl_start_never_reopens_its_call(&Run::of("grok", scenario));
-    }
-}
-
-#[test]
 fn grok_s_hook_set_item_survives_its_last_turn_s_lagging_end() {
     a_hook_set_item_survives_a_lagging_jsonl_turn_end(&Run::of("grok", "two-turn-hermetic"));
 }
@@ -551,12 +491,74 @@ fn runs_of(source: &str) -> Vec<Run> {
         .collect()
 }
 
-/// Every order of every recorded run of a two-transport source ends alike. A
-/// source with no write stamp proves nothing, nor does a run whose lines admit
-/// one order.
+/// Asserts that no step of `m`'s order after an end of a call shows that
+/// call or raises a wait from a gate naming it, and returns whether a fact of
+/// a call applied after its end.
+fn assert_ended_calls_stay_ended(run: &Run, m: &Merged) -> bool {
+    let mut ended: BTreeSet<(AgentId, &str)> = BTreeSet::new();
+    let mut before: BTreeMap<AgentId, Option<&ActivityState>> = BTreeMap::new();
+    let mut echoed = false;
+    let raised =
+        |s: Option<&ActivityState>| matches!(s, Some(ActivityState::RequiresAction { .. }));
+    for s in &m.steps {
+        let agent = s.event.agent_id();
+        let was = before.insert(agent, s.state.as_ref()).flatten();
+        match &s.event {
+            AgentEvent::ToolUseStart {
+                tool_use_id: Some(call),
+                ..
+            } => echoed |= ended.contains(&(agent, call.as_str())),
+            AgentEvent::ToolUseEnd {
+                tool_use_id: Some(call),
+                ..
+            } => {
+                ended.insert((agent, call.as_str()));
+            }
+            AgentEvent::UserActionRequest {
+                tool_use_id: Some(call),
+                ..
+            } if ended.contains(&(agent, call.as_str())) => {
+                echoed = true;
+                assert!(
+                    raised(was) || !raised(s.state.as_ref()),
+                    "{}: {:?} line {} raised a wait from a gate of {call}, which ended",
+                    run.name,
+                    s.transport,
+                    s.line
+                );
+            }
+            _ => {}
+        }
+        if let Some(ActivityState::Running {
+            item:
+                Some(ToolUse {
+                    tool_use_id: Some(shown),
+                    ..
+                }),
+        }) = &s.state
+        {
+            assert!(
+                !ended.contains(&(agent, &**shown)),
+                "{}: {:?} line {} ({:?}) shows {shown}, which ended",
+                run.name,
+                s.transport,
+                s.line,
+                s.event
+            );
+        }
+    }
+    echoed
+}
+
+/// Every order of every recorded run of a two-transport source ends alike, and
+/// shows no call again once an end of it applied; some order applies a fact of
+/// an ended call after its end. A source with no write stamp proves nothing, nor
+/// does a run whose lines admit one order. One walk folds each order once for
+/// both checks.
 #[test]
 fn every_order_of_a_two_transport_run_ends_alike() {
     let mut unstamped = Vec::new();
+    let mut echoed = false;
     for source in two_transport_sources() {
         let runs = runs_of(source);
         assert!(
@@ -569,15 +571,18 @@ fn every_order_of_a_two_transport_run_ends_alike() {
         }
         for run in &runs {
             let mut first = None;
-            let orders = run.each(|m| match &first {
-                None => first = Some((m.arrivals(), finals(m))),
-                Some((order, first_finals)) => assert_eq!(
-                    finals(m),
-                    *first_finals,
-                    "{}: {:?} leaves its slots otherwise than {order:?}",
-                    run.name,
-                    m.arrivals()
-                ),
+            let orders = run.each(|m| {
+                echoed |= assert_ended_calls_stay_ended(run, m);
+                match &first {
+                    None => first = Some((m.arrivals(), finals(m))),
+                    Some((order, first_finals)) => assert_eq!(
+                        finals(m),
+                        *first_finals,
+                        "{}: {:?} leaves its slots otherwise than {order:?}",
+                        run.name,
+                        m.arrivals()
+                    ),
+                }
             });
             assert!(orders >= 2, "{}: one order", run.name);
         }
@@ -586,4 +591,5 @@ fn every_order_of_a_two_transport_run_ends_alike() {
         unstamped.is_empty(),
         "no write stamp (`harness::reads::WRITE_STAMPS`) for {unstamped:?}"
     );
+    assert!(echoed, "no order applies a fact of a call after its end");
 }
