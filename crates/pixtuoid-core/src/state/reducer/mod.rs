@@ -868,7 +868,7 @@ impl Reducer {
         }
     }
 
-    /// The calls of `id`'s that a request raised in `turn` binds.
+    /// `id`'s pending calls in `turn`.
     #[cfg(test)]
     pub(crate) fn pending_in(&self, id: &AgentId, turn: Option<&TurnKey>) -> Vec<String> {
         let pending = self.corr.calls.pending_in(id, turn);

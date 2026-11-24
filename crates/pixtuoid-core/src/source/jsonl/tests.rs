@@ -2514,7 +2514,8 @@ async fn oversized_attach_re_emits_the_last_turn_bracket() {
 }
 
 /// The skip's start goes ahead of its turn's in-flight dispatch, so the
-/// dispatch registers in that turn and the turn's keyed end retires it.
+/// dispatch registers in that turn, whose keyed end takes it out of the turn's
+/// requests while its subagent runs on.
 #[tokio::test]
 async fn oversized_attach_re_emits_a_turns_start_before_its_dispatch() {
     let started = serde_json::json!({"type": "event_msg",
@@ -2570,7 +2571,7 @@ async fn oversized_attach_re_emits_a_turns_start_before_its_dispatch() {
     assert_eq!(
         r.pending_in(&id, Some(&t2)),
         Vec::<String>::new(),
-        "t2's end retires its dispatch"
+        "t2's end takes its dispatch out of its requests"
     );
 }
 
