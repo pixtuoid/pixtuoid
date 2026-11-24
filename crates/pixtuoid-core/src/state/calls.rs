@@ -419,7 +419,7 @@ mod tests {
     /// `tools.approval.ask: prompt` override then records a request for that
     /// same wait.
     #[test]
-    fn a_keyless_gates_first_request_id_joins_its_wait() {
+    fn a_first_request_id_joins_the_wait_a_gate_naming_none_raised() {
         let mut ledger = CallLedger::default();
         ledger.observe(agent(), "c", Fact::Start(None));
         assert!(ledger.observe(agent(), "c", Fact::Gate(None)).rose);
