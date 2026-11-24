@@ -324,7 +324,7 @@ pub struct RequestKeys {
     /// The turn the request blocks.
     pub turn: Option<TurnKey>,
     /// The request's own id.
-    pub request_id: Option<String>,
+    pub(crate) request_id: Option<String>,
     /// The call that dispatched the gated one.
     pub parent_tool_use_id: Option<String>,
 }
