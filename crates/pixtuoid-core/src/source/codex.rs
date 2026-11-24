@@ -1,7 +1,7 @@
 //! Codex CLI source. Watches the Codex session transcript
 //! (`~/.codex/sessions/**/rollout-<ts>-<UUID>.jsonl`) via `JsonlWatcher` for
 //! the lifecycle signals the shared hook socket lacks: the turns, the calls'
-//! starts, and a failed call's end.
+//! starts, and the ends no `PostToolUse` reports.
 //!
 //! Coalescing: a root's hook `session_id` (a child's: its `agent_id`) ==
 //! session_meta.id == filename UUID (verified), so both transports merge onto
@@ -178,10 +178,10 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
 }
 
 /// The hooks around a call and `Stop`, on their [`HookSubject`]. `PreToolUse`
-/// fires only for a tool with a pre-use payload (`codex-rs/core/src/tools/registry.rs:1173`
-/// at rust-v0.171.0), so it is no item: the rollout's call is. `PostToolUse`
-/// fires only on success (`:1025-1032`), so it or the rollout's output ends a
-/// successful call, and the output alone a failed one.
+/// fires only for a tool with a pre-use payload, and `PostToolUse` only on a
+/// success whose tool has a post-use payload (`codex-rs/core/src/tools/registry.rs:1173`,
+/// `:141-148`, `:1025-1032` at rust-v0.171.0), so the rollout's call is the
+/// item, and its output the one end of a call no `PostToolUse` reports.
 fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
     let session_id = match HookSubject::of(obj).child {
         Some(child) => child.to_owned(),
