@@ -514,7 +514,7 @@ mod tests {
     /// A tool's name binds its pending calls on either transport, as a call's
     /// id binds its call.
     #[test]
-    fn a_raise_binds_a_pending_call_whichever_transport_saw_it() {
+    fn a_raise_naming_a_tool_binds_its_calls_whichever_transport_saw_them() {
         let agent = raised(
             vec![("a", Some("Bash"), JSONL)],
             raise(None, Some("Bash"), HOOK),
@@ -570,6 +570,9 @@ mod tests {
         );
         agent.raise(raise(Some("y"), None, HOOK), true);
         assert_eq!(agent.members(), ["a", "y"]);
+        agent.pre_use(("e", Some("Edit"), HOOK));
+        agent.raise(raise(None, Some("Edit"), HOOK), true);
+        assert_eq!(agent.members(), ["a", "y", "e"]);
     }
 
     /// A raise naming its call binds that call alone, whichever side of it
@@ -590,7 +593,7 @@ mod tests {
     fn a_re_raises_tool_binds_its_calls_whichever_side_of_it_their_pre_use_lands() {
         let edit = ("e", Some("Edit"), HOOK);
         for first in [raise(None, None, HOOK), raise(None, Some("Bash"), HOOK)] {
-            let mut early = raised(vec![edit], first);
+            let mut early = raised(vec![edit, ("j", None, HOOK)], first);
             early.raise(raise(None, Some("Edit"), HOOK), true);
             let mut late = raised(vec![], first);
             late.raise(raise(None, Some("Edit"), HOOK), true);
