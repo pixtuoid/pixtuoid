@@ -329,14 +329,13 @@ pub struct RequestKeys {
     pub parent_tool_use_id: Option<String>,
 }
 
-/// What answered an agent's request: one call, or the whole turn it blocked.
+/// What answered an agent's request: an approval of one call, or the whole
+/// turn it blocked.
 ///
 /// `#[non_exhaustive]`: keeps adding a resolution non-breaking.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Resolution {
-    /// The call ran (codex's `PostToolUse`).
-    Call(String),
     /// The turn stopped with nothing left pending (codex's `Stop`).
     Turn(TurnKey),
     /// The user approved the call its wait named, which runs on (omp's
@@ -575,7 +574,7 @@ impl AgentEvent {
                 (tool_use_id.as_mut(), turn.as_mut())
             }
             AgentEvent::UserActionResolved { agent_id: _, by } => match by {
-                Resolution::Call(id) | Resolution::Approved(id) => (Some(id), None),
+                Resolution::Approved(id) => (Some(id), None),
                 Resolution::Turn(turn) => (None, Some(turn)),
             },
             AgentEvent::TurnStart { agent_id: _, turn } => (None, Some(turn)),

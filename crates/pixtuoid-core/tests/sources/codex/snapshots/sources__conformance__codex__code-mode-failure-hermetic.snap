@@ -63,10 +63,9 @@ expression: events
     source: codex
     session_id: 01a1f9e2-c067-74d2-91f3-8be90bbc5b53
     cwd: /private/tmp/pixtuoid-capture/proj
-- UserActionResolved:
+- ToolUseEnd:
     agent_id: 12474779673383475758
-    by:
-      Call: exec-a4fffede-7b9e-4117-9116-f5d170d5eb68
+    tool_use_id: exec-a4fffede-7b9e-4117-9116-f5d170d5eb68
 - UserActionResolved:
     agent_id: 12474779673383475758
     by:

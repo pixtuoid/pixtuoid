@@ -313,7 +313,6 @@ impl ActionRequests {
     pub(crate) fn resolved(&mut self, id: AgentId, by: &Resolution, requires_action: bool) -> bool {
         let resolved = requires_action && self.resolves(&id, Seen::Resolved(by));
         match by {
-            Resolution::Call(c) => self.retire(&id, c),
             // An answered member leaves its request, so a replayed approval
             // answers nothing; an approved call runs on, so it leaves only the
             // request.
@@ -357,7 +356,6 @@ impl ActionRequests {
             // human still decides (#951).
             Seen::Start(on) => req.is_keyless() && on == req.raised_on,
             Seen::End(Ended::Call(c), _) => req.ended_by(c),
-            Seen::Resolved(Resolution::Call(c)) => req.ended_by(c),
             Seen::Resolved(Resolution::Approved(c)) => self.names(id, c) && req.is_last_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
             Seen::End(Ended::Unnamed, from) => from == Transport::Hook && !req.named,
@@ -703,8 +701,6 @@ mod tests {
             );
             reqs
         };
-        let ran = Resolution::Call("x".into());
-        let dispatcher_ran = Resolution::Call("p".into());
         let approved = Resolution::Approved("x".into());
         let stopped = Resolution::Turn(t1.clone());
         for (what, reqs, seen, want) in [
@@ -762,9 +758,14 @@ mod tests {
                 Seen::End(Ended::Call("y"), HOOK),
                 false,
             ),
-            ("a member's run", bound(), Seen::Resolved(&ran), true),
             (
-                "the run of the call that dispatched a member",
+                "a bound member's end",
+                bound(),
+                Seen::End(Ended::Call("x"), HOOK),
+                true,
+            ),
+            (
+                "the end of the call that dispatched a member",
                 raised(
                     vec![],
                     Raise {
@@ -772,7 +773,7 @@ mod tests {
                         ..raise(Some("n"), None, HOOK)
                     },
                 ),
-                Seen::Resolved(&dispatcher_ran),
+                Seen::End(Ended::Call("p"), JSONL),
                 true,
             ),
             ("its turn's stop", scoped(), Seen::Resolved(&stopped), true),
@@ -953,16 +954,6 @@ mod tests {
         let mut reqs = raised(vec![], raise(Some("x"), None, HOOK));
         assert!(reqs.start(id(), false, JSONL));
         assert!(!reqs.contains(&id()));
-    }
-
-    #[test]
-    fn an_answer_retires_its_call_from_the_pending_starts() {
-        let mut reqs = raised(
-            vec![pending("x", Some("Bash"), HOOK)],
-            raise(None, Some("Bash"), HOOK),
-        );
-        assert!(reqs.resolved(id(), &Resolution::Call("x".into()), true));
-        assert!(reqs.pending[&id()].is_empty());
     }
 
     #[test]

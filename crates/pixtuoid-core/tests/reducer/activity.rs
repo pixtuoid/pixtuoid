@@ -1268,8 +1268,10 @@ fn requires_action(scene: &SceneState, id: AgentId) -> bool {
     )
 }
 
+const CODEX_SESSION: &str = "019e7762-9ded-7e33-be41-946ecf105bf4";
+
 fn codex(r: &mut Reducer, scene: &mut SceneState) -> AgentId {
-    let id = AgentId::from_parts("codex", "019e7762-9ded-7e33-be41-946ecf105bf4");
+    let id = AgentId::from_parts("codex", CODEX_SESSION);
     start_as(r, scene, id, "codex");
     id
 }
@@ -1759,7 +1761,10 @@ fn a_codex_request_resolves_on_its_calls_run_its_turns_stop_or_its_turns_end() {
     let answers: [(&str, Answer, Transport, bool); 4] = [
         (
             "its call ran",
-            |id| resolved(id, Resolution::Call("c1".into())),
+            |id| AgentEvent::ToolUseEnd {
+                agent_id: id,
+                tool_use_id: Some("c1".into()),
+            },
             Transport::Hook,
             true,
         ),
@@ -2353,16 +2358,56 @@ fn a_call_first_seen_turnless_takes_its_pre_uses_turn() {
         Transport::Hook,
     );
     assert!(requires_action(&scene, id));
-    apply(
-        &mut r,
-        &mut scene,
-        resolved(id, Resolution::Call("c".into())),
-        t0,
-        Transport::Hook,
-    );
+    tool_use_end(&mut r, &mut scene, id, Some("c"), t0, Transport::Hook);
     assert_eq!(
         scene.agents[&id].state,
         ActivityState::Idle,
         "the approved call's run answers the prompt"
+    );
+}
+
+/// codex's PostToolUse, which fires on a call's success, ends the call the
+/// rollout started, so the rollout's output lands on an ended call.
+#[test]
+fn a_codex_post_tool_use_ends_the_call_its_rollout_started() {
+    let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+    let id = codex(&mut r, &mut scene);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    apply(
+        &mut r,
+        &mut scene,
+        turn_start(id, "t1"),
+        t0,
+        Transport::Jsonl,
+    );
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c"),
+        Some("exec_command"),
+        t0,
+        Transport::Jsonl,
+    );
+    let ran = t0 + Duration::from_secs(1);
+    let post = serde_json::json!({"hook_event_name": "PostToolUse", "session_id": CODEX_SESSION,
+        "turn_id": "t1", "cwd": "/repo", "tool_name": "Bash", "tool_use_id": "c",
+        "_pixtuoid_source": "codex"});
+    let post = pixtuoid_core::source::decoder::decode_hook_payload(post).expect("decodes");
+    feed(&mut r, &mut scene, post, ran);
+    let slot = &scene.agents[&id];
+    assert_eq!(slot.state, ActivityState::Running { item: None });
+    assert_eq!(slot.state_started_at, ran);
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        id,
+        Some("c"),
+        ran + Duration::from_secs(1),
+        Transport::Jsonl,
+    );
+    assert_eq!(
+        scene.agents[&id].state_started_at, ran,
+        "the rollout's output changes nothing"
     );
 }

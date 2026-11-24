@@ -71,10 +71,8 @@ impl<'a> Fact<'a> {
                 by: Resolution::Approved(id),
                 ..
             } => (id, Fact::Resume),
-            // codex's PostToolUse answers its request and leaves its call's
-            // end to the rollout.
             AgentEvent::UserActionResolved {
-                by: Resolution::Call(_) | Resolution::Turn(_),
+                by: Resolution::Turn(_),
                 ..
             }
             | AgentEvent::ToolUseStart {
