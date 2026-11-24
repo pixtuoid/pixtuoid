@@ -1761,9 +1761,9 @@ fn a_pre_use_delivered_after_its_request_joins_it() {
 }
 
 /// #951: a keyless wait the hooks raised (CC's Notification, grok's
-/// `permission_prompt`) is answered by a call's first start on the hooks, never
-/// by a transcript-only copy of a queued call, which can land on either side of
-/// the wait.
+/// `permission_prompt`) is answered by a call's first start on the hooks, a
+/// dispatch's included, never by a transcript-only copy of a queued call, which
+/// can land on either side of the wait.
 #[test]
 fn a_keyless_hook_wait_takes_a_calls_first_hook_start_in_either_order() {
     use pixtuoid_core::source::CopyId;
@@ -1771,13 +1771,16 @@ fn a_keyless_hook_wait_takes_a_calls_first_hook_start_in_either_order() {
     let mut wrong = Vec::new();
     // CC's PreToolUse decodes a pre-use beside its start, and its transcript
     // line names a copy id; grok's names neither.
-    for (source, pre_use, copy) in [("claude-code", true, true), ("grok", false, false)] {
+    let shapes = [("claude-code", true, true), ("grok", false, false)];
+    for ((source, pre_use, copy), task) in shapes.into_iter().flat_map(|s| [(s, false), (s, true)])
+    {
+        let queued = if task { "Agent" } else { "Bash: ls" };
         for transcript_first in [false, true] {
             let mut scene = SceneState::uniform(4);
             let mut r = Reducer::new();
             let id = AgentId::from_parts(source, "keyless");
             start_as(&mut r, &mut scene, id, source);
-            let hook_start = |r: &mut Reducer, scene: &mut SceneState, call: &str| {
+            let hook_start = |r: &mut Reducer, scene: &mut SceneState, call: &str, detail| {
                 if pre_use {
                     let pending = AgentEvent::ToolUsePending {
                         agent_id: id,
@@ -1787,28 +1790,20 @@ fn a_keyless_hook_wait_takes_a_calls_first_hook_start_in_either_order() {
                     };
                     r.apply(scene, pending, t0, Transport::Hook);
                 }
-                tool_use_start(
-                    r,
-                    scene,
-                    id,
-                    Some(call),
-                    Some("Bash: ls"),
-                    t0,
-                    Transport::Hook,
-                );
+                tool_use_start(r, scene, id, Some(call), Some(detail), t0, Transport::Hook);
             };
             let transcript = |r: &mut Reducer, scene: &mut SceneState| {
                 let mut line =
-                    AgentEvent::tool_use_start(id, Some("c3".into()), Some("Bash: ls".into()));
+                    AgentEvent::tool_use_start(id, Some("c3".into()), Some(queued.into()));
                 if copy {
                     line = line.with_copy_id(CopyId::new("c3"));
                 }
                 r.apply(scene, line, t0, Transport::Jsonl);
             };
-            let what = format!("{source}, transcript first: {transcript_first}");
+            let what = format!("{source}, {queued}, transcript first: {transcript_first}");
             // Two calls in flight, so the wait binds neither by deduction.
             for call in ["c1", "c2"] {
-                hook_start(&mut r, &mut scene, call);
+                hook_start(&mut r, &mut scene, call, "Bash: ls");
             }
             if transcript_first {
                 transcript(&mut r, &mut scene);
@@ -1820,15 +1815,17 @@ fn a_keyless_hook_wait_takes_a_calls_first_hook_start_in_either_order() {
             if !requires_action(&scene, id) {
                 wrong.push(format!("{what}: the copy answered"));
             }
-            hook_start(&mut r, &mut scene, "c3");
+            hook_start(&mut r, &mut scene, "c3", queued);
             let slot = &scene.agents[&id];
             let shows_c3 = matches!(
                 &slot.state,
                 ActivityState::Running {
-                    item: Some(ToolUse { tool_use_id: Some(c), .. })
-                } if &**c == "c3"
+                    item: Some(ToolUse { tool_use_id: Some(c), kind, .. })
+                } if &**c == "c3" && (*kind == pixtuoid_core::state::ToolKind::Task) == task
             );
-            if !shows_c3 || slot.tool_call_count != 3 {
+            // A dispatch counts no call.
+            let calls = if task { 2 } else { 3 };
+            if !shows_c3 || slot.tool_call_count != calls {
                 wrong.push(format!(
                     "{what}: then {:?}, {} calls",
                     slot.state, slot.tool_call_count
