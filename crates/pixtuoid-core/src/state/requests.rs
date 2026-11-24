@@ -556,7 +556,10 @@ mod tests {
 
     #[test]
     fn a_re_raise_keeps_the_first_raise_and_adds_only_its_own_key() {
-        let mut agent = raised(vec![("a", None, HOOK)], raise(None, None, HOOK));
+        let mut agent = raised(
+            vec![("a", None, HOOK), ("j", None, JSONL)],
+            raise(None, None, HOOK),
+        );
         agent.raise(raise(None, None, JSONL), true);
         assert_eq!(
             agent.members(),
