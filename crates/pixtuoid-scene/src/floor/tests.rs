@@ -859,10 +859,11 @@ fn assert_easing(drawn: &crate::sprite::RgbBuffer, online: &crate::sprite::RgbBu
     let dimmed = offline_dimmed(online);
     let channels = |px: &Rgb| [px.r, px.g, px.b];
     let (drawn, online, dimmed) = (drawn.as_slice(), online.as_slice(), dimmed.as_slice());
-    let between = drawn.iter().zip(online).zip(dimmed).all(|((d, on), dim)| {
-        (channels(d).into_iter().zip(channels(on)).zip(channels(dim)))
-            .all(|((d, on), dim)| (dim..=on).contains(&d))
-    });
+    let between = drawn.len() == online.len()
+        && drawn.iter().zip(online).zip(dimmed).all(|((d, on), dim)| {
+            (channels(d).into_iter().zip(channels(on)).zip(channels(dim)))
+                .all(|((d, on), dim)| (dim..=on).contains(&d))
+        });
     assert!(between, "{what}: a pixel outside the ease");
     assert!(drawn != online && drawn != dimmed, "{what}: not mid-ease");
 }
