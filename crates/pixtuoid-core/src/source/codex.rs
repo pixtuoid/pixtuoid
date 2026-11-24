@@ -784,7 +784,7 @@ mod tests {
     }
 
     #[test]
-    fn a_pre_use_a_prompt_and_a_stop_carry_their_keys() {
+    fn a_pre_use_a_permission_request_and_a_stop_carry_their_keys() {
         const TURN: &str = "01a14e36-7827-7f92-a603-b700dc3aa71c";
         let turn = Some(TurnKey::Id(TURN.into()));
         let tool = json!({"tool_name": "Bash", "tool_input": {"command": "rm NOTE.txt"},
