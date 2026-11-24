@@ -442,6 +442,15 @@ mod tests {
     }
 
     #[test]
+    fn a_request_id_after_another_waits_again() {
+        let mut ledger = CallLedger::default();
+        ledger.observe(agent(), "c", Fact::Start(None));
+        assert!(ledger.observe(agent(), "c", Fact::Gate(Some("g1"))).rose);
+        assert!(ledger.observe(agent(), "c", Fact::Gate(Some("g2"))).rose);
+        assert!(!ledger.observe(agent(), "c", Fact::Gate(Some("g1"))).rose);
+    }
+
+    #[test]
     fn a_generation_starts_its_rounds_afresh() {
         let (first, second) = (CopyId::new("e1@t#0"), CopyId::new("e2@t#0"));
         let mut ledger = CallLedger::default();
