@@ -57,7 +57,7 @@ pub struct Repaint {
     pub(crate) carpet: bool,
     /// A strike's lift of the room.
     pub(crate) flash: bool,
-    /// The host's modal dim.
+    /// The frame's dim: its host's modal's and its office's offline fade's.
     pub(crate) dim: bool,
 }
 
@@ -1437,8 +1437,7 @@ mod tests {
             let mut office = crate::floor::PerOffice::new();
             crate::floor::step_floor(
                 &mut crate::floor::PerFloor::new(Arc::clone(&pack)),
-                &mut office.coffee,
-                &mut office.chitchat,
+                office.stores(),
                 crate::floor::FloorInputs {
                     scene: &crate::floor::project_floor_scene(scene, floor),
                     now: crate::localclock::at_hour(12),

@@ -225,8 +225,8 @@ pub struct Office<'a> {
 }
 
 /// The conditions a frame shows under, when, what its wall board says, how far
-/// the host's modal dims it, and who sets its world text: what moves a frame
-/// beyond its office and the sim's world.
+/// it is dimmed, and who sets its world text: what moves a frame beyond its
+/// office and the sim's world.
 #[derive(Debug, Clone, Copy)]
 pub struct Showing<'a> {
     /// What the host decides about how it reads.
@@ -236,7 +236,7 @@ pub struct Showing<'a> {
     /// The wall board, the classic painter's
     /// ([`build_board`](crate::neon_sign::build_board)).
     pub board: &'a crate::neon_sign::BoardModel,
-    /// The brightness the host's modal leaves it.
+    /// The brightness the host's modal and the office's offline fade leave it.
     pub dim: crate::look::Dim,
     /// Who sets its world text.
     pub text: crate::look::WorldText,

@@ -2537,6 +2537,7 @@ fn cwd_backfill_invalidates_cached_outfit_frames() {
 struct OwnedSimStores {
     route: pose::RouteRig<crate::pathfind::AStarRouter>,
     vacancy_dim: VacancyDim,
+    offline_dim: VacancyDim,
     neon: crate::floor::NeonState,
     chitchat: std::collections::HashMap<crate::chitchat::VenueKey, crate::chitchat::ActiveChitchat>,
     creatures:
@@ -2549,6 +2550,7 @@ impl OwnedSimStores {
         Self {
             route: pose::RouteRig::new(crate::pathfind::AStarRouter::new()),
             vacancy_dim: VacancyDim::new(),
+            offline_dim: VacancyDim::new(),
             neon: crate::floor::NeonState::new(),
             chitchat: std::collections::HashMap::new(),
             creatures: std::collections::HashMap::new(),
@@ -2562,6 +2564,7 @@ impl OwnedSimStores {
             history: &mut self.route.history,
             walks: &mut self.route.walks,
             vacancy_dim: &mut self.vacancy_dim,
+            offline_dim: &mut self.offline_dim,
             neon: &mut self.neon,
             chitchat: &mut self.chitchat,
             creatures: &mut self.creatures,

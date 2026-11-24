@@ -317,8 +317,7 @@ fn a_stepped_frame_stands_where_its_projection_does() {
     let mut office = PerOffice::new();
     let stepped = step_floor(
         &mut floor,
-        &mut office.coffee,
-        &mut office.chitchat,
+        office.stores(),
         FloorInputs {
             scene: &floor_scene,
             now: t0(),
@@ -641,6 +640,268 @@ fn step_through_vacancy(
             (frame, session.floor().ctx.vacancy_dim.dimmed())
         })
         .collect()
+}
+
+/// By day the room's lights are nothing beside the sun, so an offline office
+/// past its debounce and ease is its online frame at [`OFFLINE_BRIGHTNESS`],
+/// every pixel of it.
+#[test]
+fn an_offline_office_dims_its_whole_frame_by_day() {
+    let t0 = crate::localclock::at_hour(12);
+    let scene = settled_typists(t0);
+    for look in signless_looks() {
+        let [online, offline] =
+            [false, true].map(|offline| settled_frame(look, &scene, t0, offline));
+        assert_drawn(&offline, &offline_dimmed(&online), &format!("{look:?}"));
+    }
+}
+
+/// By night an offline room's lights go out too, so its frame falls past its
+/// online frame at [`OFFLINE_BRIGHTNESS`].
+#[test]
+fn an_offline_office_falls_past_its_frame_dim_by_night() {
+    let t0 = crate::localclock::at_hour(2);
+    let scene = settled_typists(t0);
+    let light = |buf: &crate::sprite::RgbBuffer| -> f64 {
+        (buf.as_slice().iter())
+            .map(|px| f64::from(px.r) + f64::from(px.g) + f64::from(px.b))
+            .sum()
+    };
+    for look in every_dim_path() {
+        let [online, offline] =
+            [false, true].map(|offline| light(&settled_frame(look, &scene, t0, offline)));
+        assert!(
+            offline <= f64::from(OFFLINE_BRIGHTNESS) * online,
+            "{look:?}: {offline} against {online}"
+        );
+    }
+}
+
+/// An offline office holds its frame undimmed through its debounce, waking
+/// Still for the ease's start, then eases it down, painting every frame of the
+/// ease.
+#[test]
+fn an_offline_office_eases_its_frame_dim_after_its_debounce() {
+    let t0 = crate::localclock::at_hour(12);
+    let scene = settled_typists(t0);
+    let fades_at = t0 + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS);
+    // short of the rest tick, so only the ease's start can name the wake
+    let waiting = fades_at - REST_TICK / 2;
+    let easing = fades_at + Duration::from_millis(VacancyDim::FADE_TAU_MS);
+    for look in signless_looks() {
+        let [online, offline] = [false, true].map(|offline| {
+            let frames = [t0, waiting, easing].map(|now| (now, offline));
+            drawn_offline(look, &scene, &frames)
+        });
+        assert_drawn(
+            &offline[1].0,
+            &online[1].0,
+            &format!("{look:?} before its ease"),
+        );
+        assert_eq!(
+            offline[1].1,
+            Some(REST_TICK / 2 + PAST_THE_TURN),
+            "{look:?}: Still sleeps past the ease's start"
+        );
+        assert_easing(&offline[2].0, &online[2].0, &format!("{look:?}"));
+        assert_eq!(offline[2].1, None, "{look:?}: Still skips the ease");
+    }
+}
+
+/// A floor vacant online has dimmed its room already, so going offline eases
+/// its frame from undimmed rather than jumping, on a debounce of its own that
+/// wakes Still as the room's does.
+#[test]
+fn a_vacant_floor_going_offline_eases_its_frame_dim_from_none() {
+    let t0 = crate::localclock::at_hour(2);
+    let empty = make_scene(0, 8);
+    let gone = t0 + offline_settled();
+    let fades_at = gone + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS);
+    let nows = [
+        t0,
+        gone,
+        fades_at - REST_TICK / 2,
+        fades_at + Duration::from_millis(VacancyDim::FADE_TAU_MS),
+        gone + offline_settled(),
+    ];
+    for look in every_dim_path() {
+        let online = drawn_offline(look, &empty, &nows.map(|now| (now, false)));
+        let offline = drawn_offline(look, &empty, &nows.map(|now| (now, now >= gone)));
+        assert_drawn(
+            &offline[1].0,
+            &online[1].0,
+            &format!("{look:?} going offline"),
+        );
+        assert_eq!(
+            offline[2].1,
+            Some(REST_TICK / 2 + PAST_THE_TURN),
+            "{look:?}: Still sleeps past the ease's start"
+        );
+        assert_easing(&offline[3].0, &online[3].0, &format!("{look:?}"));
+        assert_eq!(offline[3].1, None, "{look:?}: Still skips the ease");
+        assert_drawn(
+            &offline[4].0,
+            &offline_dimmed(&online[4].0),
+            &format!("{look:?} settled"),
+        );
+    }
+}
+
+/// Being offline is the office's, so its frame's dim is: a slide to a floor
+/// never drawn offline shows both floors and the gap between them dimmed, and
+/// lands dimmed.
+#[test]
+fn an_offline_office_slides_to_another_floor_dimmed() {
+    let t0 = crate::localclock::at_hour(12);
+    let scene = make_scene(3, 2);
+    let settled = t0 + offline_settled();
+    let sliding = settled + Duration::from_millis(TRANSITION_DURATION_MS / 2);
+    let landed = settled + Duration::from_millis(TRANSITION_DURATION_MS) + FRAME;
+    for look in signless_looks() {
+        let [online, offline] = [false, true].map(|offline| {
+            let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+            let conditions = Conditions {
+                offline,
+                ..offline_conditions()
+            };
+            let draw = |office: &mut OfficeSession, now| {
+                render_office_with(office, look, &scene, conditions, now, &[]);
+                office.picture().expect("lays out").pixels().clone()
+            };
+            draw(&mut office, t0);
+            draw(&mut office, settled);
+            assert!(office.navigate(1, settled), "a second floor to slide to");
+            [sliding, landed].map(|now| draw(&mut office, now))
+        });
+        assert_drawn(
+            &offline[0],
+            &offline_dimmed(&online[0]),
+            &format!("{look:?} sliding"),
+        );
+        assert_drawn(
+            &offline[1],
+            &offline_dimmed(&online[1]),
+            &format!("{look:?} landed"),
+        );
+    }
+}
+
+/// How long an office offline from its first frame takes to land on its
+/// frame's dim: its debounce, then its ease run to rest.
+fn offline_settled() -> Duration {
+    Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 10 * VacancyDim::FADE_TAU_MS)
+}
+
+/// A clear sky, held still, so two offices drawn at the same instants differ
+/// only by what being offline does.
+fn offline_conditions() -> Conditions {
+    Conditions::default()
+        .with_weather(crate::sky::WeatherPolicy::Forced(
+            crate::sky::Weather::Clear,
+        ))
+        .with_motion(Motion::Still)
+}
+
+/// Each frame a fresh office draws `scene` in `look` at the instants of
+/// `frames`, offline where each says, and the wait it names after.
+fn drawn_offline(
+    look: crate::look::Look,
+    scene: &SceneState,
+    frames: &[(SystemTime, bool)],
+) -> Vec<(crate::sprite::RgbBuffer, Option<Duration>)> {
+    let mut office = OfficeSession::new(Arc::new(crate::pack::test_office()));
+    frames
+        .iter()
+        .map(|&(now, offline)| {
+            let conditions = Conditions {
+                offline,
+                ..offline_conditions()
+            };
+            render_office_with(&mut office, look, scene, conditions, now, &[]);
+            let pixels = office.picture().expect("lays out").pixels().clone();
+            (pixels, office.until_next_paint(now))
+        })
+        .collect()
+}
+
+/// The frame a fresh office draws of `scene` in `look`, offline or not, once
+/// an offline one would have settled after `t0`.
+fn settled_frame(
+    look: crate::look::Look,
+    scene: &SceneState,
+    t0: SystemTime,
+    offline: bool,
+) -> crate::sprite::RgbBuffer {
+    let frames = [t0, t0 + offline_settled()].map(|now| (now, offline));
+    let mut drawn = drawn_offline(look, scene, &frames);
+    drawn.pop().expect("a frame").0
+}
+
+/// The looks that hang no sign, which an offline office starves with its
+/// room's dim rather than its frame's.
+fn signless_looks() -> [crate::look::Look; 2] {
+    use crate::look::{Look, WorldText};
+    let scale = crate::render_scale::RenderScale::new(2).expect("nonzero");
+    [
+        Look::Classic {
+            scale,
+            text: WorldText::Hidden,
+        },
+        Look::Cutaway {
+            scale,
+            text: WorldText::Hidden,
+        },
+    ]
+}
+
+/// A look down each path a frame is dimmed on: the half-blocks', the scaled
+/// classic's and the cutaway's.
+fn every_dim_path() -> [crate::look::Look; 3] {
+    use crate::look::{Look, WorldText};
+    let scale = crate::render_scale::RenderScale::new(2).expect("nonzero");
+    [
+        Look::HALF_BLOCKS,
+        Look::Classic {
+            scale,
+            text: WorldText::Baked,
+        },
+        Look::Cutaway {
+            scale,
+            text: WorldText::Baked,
+        },
+    ]
+}
+
+/// `online` at the brightness an offline office's frame fades to.
+fn offline_dimmed(online: &crate::sprite::RgbBuffer) -> crate::sprite::RgbBuffer {
+    let mut dimmed = online.clone();
+    crate::look::Dim::from_brightness(OFFLINE_BRIGHTNESS).apply(&mut dimmed);
+    dimmed
+}
+
+/// Asserts `drawn` is `want`, naming how many of its pixels are not.
+fn assert_drawn(drawn: &crate::sprite::RgbBuffer, want: &crate::sprite::RgbBuffer, what: &str) {
+    let (drawn, want) = (drawn.as_slice(), want.as_slice());
+    let differ = drawn.iter().zip(want).filter(|(a, b)| a != b).count();
+    assert!(
+        drawn.len() == want.len() && differ == 0,
+        "{what}: {differ} of {} pixels differ",
+        want.len()
+    );
+}
+
+/// Asserts `drawn` is mid-ease from `online` to its full offline dim: each
+/// channel of each pixel between the two, and the frame neither.
+fn assert_easing(drawn: &crate::sprite::RgbBuffer, online: &crate::sprite::RgbBuffer, what: &str) {
+    let dimmed = offline_dimmed(online);
+    let channels = |px: &Rgb| [px.r, px.g, px.b];
+    let (drawn, online, dimmed) = (drawn.as_slice(), online.as_slice(), dimmed.as_slice());
+    let between = drawn.iter().zip(online).zip(dimmed).all(|((d, on), dim)| {
+        (channels(d).into_iter().zip(channels(on)).zip(channels(dim)))
+            .all(|((d, on), dim)| (dim..=on).contains(&d))
+    });
+    assert!(between, "{what}: a pixel outside the ease");
+    assert!(drawn != online && drawn != dimmed, "{what}: not mid-ease");
 }
 
 /// A one-floor session steps only the agents at its desks, as it draws them:
@@ -1194,8 +1455,7 @@ fn stepping_a_projected_floor_keeps_other_floors_coffee() {
     let floor_scene = project_floor_scene(&scene, 1);
     let stepped = step_floor(
         &mut upstairs,
-        &mut office.coffee,
-        &mut office.chitchat,
+        office.stores(),
         crate::floor::FloorInputs {
             scene: &floor_scene,
             now: t0(),

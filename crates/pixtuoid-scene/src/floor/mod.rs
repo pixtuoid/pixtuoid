@@ -80,8 +80,8 @@ pub struct Conditions {
     pub weather: crate::sky::WeatherPolicy,
     /// How its loops and walks move: [`Motion`](crate::anim::Motion).
     pub motion: crate::anim::Motion,
-    /// Whether its host has lost the feed that fills it, which dims it as an
-    /// emptied floor dims.
+    /// Whether its host has lost the feed that fills it, which dims its rooms
+    /// as an emptied floor's dim and darkens its whole frame.
     pub offline: bool,
 }
 
@@ -210,16 +210,19 @@ impl FloorCtx {
         self.next_change
     }
 
-    /// This floor's stores for one `sim_step`, beside the office's `chitchat`.
+    /// This floor's stores for one `sim_step`, beside the office's `chitchat`
+    /// and `offline_dim`.
     pub(crate) fn sim_stores<'a>(
         &'a mut self,
         chitchat: &'a mut HashMap<VenueKey, ActiveChitchat>,
+        offline_dim: &'a mut VacancyDim,
     ) -> SimStores<'a> {
         SimStores {
             router: &mut self.router,
             history: &mut self.history,
             walks: &mut self.walks,
             vacancy_dim: &mut self.vacancy_dim,
+            offline_dim,
             neon: &mut self.neon,
             chitchat,
             creatures: &mut self.creatures,
@@ -539,6 +542,23 @@ pub struct PerOffice {
     pub(crate) audio: AudioObserver,
     /// The office's raster state, shared by every floor's.
     pub raster: crate::look::OfficeRaster,
+    /// The fade [`frame_dim`] darkens an offline office's frame by. It keys on
+    /// [`Conditions::offline`] alone, so a floor already vacant online fades
+    /// from undimmed, and is the office's, as the condition is, so every floor
+    /// and a slide between two show one dim.
+    pub(crate) offline_dim: VacancyDim,
+}
+
+/// The brightness an offline office's frame fades to.
+const OFFLINE_BRIGHTNESS: f32 = 0.7;
+
+/// The dim a frame is drawn under: `host`'s, with an office's `offline_dim`
+/// eased toward [`OFFLINE_BRIGHTNESS`] on it.
+pub(crate) fn frame_dim(host: crate::look::Dim, offline_dim: &VacancyDim) -> crate::look::Dim {
+    let lit = (offline_dim.level() - VacancyDim::MIN_LEVEL) / (1.0 - VacancyDim::MIN_LEVEL);
+    crate::look::Dim::from_brightness(
+        host.brightness() * (OFFLINE_BRIGHTNESS + (1.0 - OFFLINE_BRIGHTNESS) * lit),
+    )
 }
 
 /// The office stores one floor's frame steps and draws with.
@@ -550,6 +570,8 @@ pub struct OfficeStores<'a> {
     pub(crate) chitchat: &'a mut HashMap<VenueKey, ActiveChitchat>,
     /// See [`PerOffice::raster`].
     pub(crate) raster: &'a mut crate::look::OfficeRaster,
+    /// See [`PerOffice::offline_dim`].
+    pub(crate) offline_dim: &'a mut VacancyDim,
 }
 
 impl OfficeStores<'_> {
@@ -559,6 +581,7 @@ impl OfficeStores<'_> {
             coffee: self.coffee,
             chitchat: self.chitchat,
             raster: self.raster,
+            offline_dim: self.offline_dim,
         }
     }
 }
@@ -575,6 +598,7 @@ impl PerOffice {
             coffee: &mut self.coffee,
             chitchat: &mut self.chitchat,
             raster: &mut self.raster,
+            offline_dim: &mut self.offline_dim,
         }
     }
 
@@ -726,8 +750,7 @@ impl FloorSession {
         let floor_scene = self.ground(world.scene);
         step_floor(
             &mut self.view.floor,
-            &mut self.office.coffee,
-            &mut self.office.chitchat,
+            self.office.stores(),
             world.on(&floor_scene),
             viewport,
         )
@@ -737,16 +760,21 @@ impl FloorSession {
 /// [`FloorSession::step`] minus eviction, which a projected `world.scene` would turn on other floors.
 pub(crate) fn step_floor(
     floor: &mut PerFloor,
-    coffee: &mut CoffeeState,
-    chitchat: &mut HashMap<VenueKey, ActiveChitchat>,
+    office: OfficeStores<'_>,
     world: FloorInputs<'_>,
     viewport: Viewport,
 ) -> Option<SteppedFloor> {
+    let OfficeStores {
+        coffee,
+        chitchat,
+        offline_dim,
+        ..
+    } = office;
     let PerFloor { ctx: fctx, raster } = floor;
     let layout = fctx.frame_layout(viewport, world.scene.floor_seed(), world.now)?;
     let door_anim_max_ms = fctx.door_anim_max_ms;
     let frame = sim_step(
-        &mut fctx.sim_stores(chitchat),
+        &mut fctx.sim_stores(chitchat, offline_dim),
         SimInputs {
             world,
             pack: raster.pack(),
@@ -769,13 +797,15 @@ pub(crate) fn step_floor(
         || fctx.creatures.values().any(|w| w.walks_at(world.now))
         || fctx.neon.fading(world.now)
         || fctx.vacancy_dim.easing()
+        || offline_dim.easing()
         || frame.desks.iter().any(|desk| desk.sheet_fall.is_some())
         || frame.pet.as_ref().is_some_and(|pet| pet.hearts_rise);
     fctx.next_change = frame.next_change;
     Some(SteppedFloor { layout, frame })
 }
 
-/// Per-floor indoor-lighting fade state: a vacant floor holds full light for
+/// A lit level's fade on vacancy, a floor's lights' or an offline office's
+/// frame's ([`PerOffice`]): a vacant floor holds full light for
 /// `VACANCY_DEBOUNCE_MS` (so agents briefly disappearing between transcripts don't
 /// flicker it) then eases toward `MIN_LEVEL`; repopulating or coming back online
 /// snaps the target straight back to 1.0.

@@ -52,6 +52,7 @@ pub(crate) struct SimStores<'a> {
     pub history: &'a mut PoseHistory,
     pub walks: &'a mut HashMap<AgentId, WalkState>,
     pub vacancy_dim: &'a mut VacancyDim,
+    pub offline_dim: &'a mut VacancyDim,
     pub neon: &'a mut crate::floor::NeonState,
     pub chitchat: &'a mut HashMap<VenueKey, ActiveChitchat>,
     pub creatures: &'a mut HashMap<CreatureKey, CreatureWalk>,
@@ -341,8 +342,11 @@ pub(crate) fn sim_step(stores: &mut SimStores<'_>, inputs: SimInputs<'_>) -> Sim
     let indoor_scale = stores
         .vacancy_dim
         .tick(scene.agents.is_empty() || conditions.offline, now);
-    if let Some(at) = stores.vacancy_dim.fades_at() {
-        next_change.at(at);
+    stores.offline_dim.tick(conditions.offline, now);
+    for dim in [&*stores.vacancy_dim, &*stores.offline_dim] {
+        if let Some(at) = dim.fades_at() {
+            next_change.at(at);
+        }
     }
     let neon = stores.neon.tick(
         crate::neon_sign::OfficeMood::of(crate::tally::scene_stats(scene)),
