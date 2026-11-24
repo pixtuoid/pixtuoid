@@ -1,7 +1,7 @@
 //! The agents' open user-action requests (a slot's `RequiresAction`), with the
-//! two rules every event meets them through: `bound`, which of the call
-//! ledger's pending calls a request holds by name, and `resolves`, which event
-//! answers it.
+//! two rules every event meets them through: which of the call ledger's pending
+//! calls a request holds (the call its raise names, the sole one by deduction,
+//! its tools' by `by_name`), and `resolves`, which event answers it.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -129,7 +129,7 @@ impl ActionRequest {
     /// #permissionrequest-decision-control), and codex's outputs name no tool
     /// (`codex-rs/hooks/schema/generated/pre-tool-use.command.output.schema.json:12-43`,
     /// `permission-request.command.output.schema.json:12-40` at rust-v0.171.0).
-    fn bound<'a>(
+    fn by_name<'a>(
         &'a self,
         id: &AgentId,
         calls: &'a CallLedger,
@@ -208,7 +208,10 @@ impl ActionRequests {
             if !req.tool_names.iter().any(|t| &**t == name) {
                 req.tool_names.push(Arc::from(name));
             }
-            let bound: Vec<Arc<str>> = req.bound(&id, calls).map(|p| Arc::clone(p.call)).collect();
+            let bound: Vec<Arc<str>> = req
+                .by_name(&id, calls)
+                .map(|p| Arc::clone(p.call))
+                .collect();
             for call in &bound {
                 req.holds(call, false, None);
             }
@@ -222,7 +225,7 @@ impl ActionRequests {
         let Some(req) = self.open.get_mut(&id) else {
             return;
         };
-        let joins = (req.bound(&id, calls))
+        let joins = (req.by_name(&id, calls))
             .find(|p| &**p.call == call)
             .map(|p| Arc::clone(p.call));
         if let Some(call) = joins {
