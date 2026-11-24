@@ -288,8 +288,8 @@ mod tests {
         AgentId::from_parts("claude-code", "s")
     }
 
-    /// A fact by index, its start naming the one copy id `c` or none, so no
-    /// start opens a generation.
+    /// A fact by index, its start naming the one copy id `c` or none and its
+    /// gate no request, so no start opens a generation and no gate a round.
     fn fact(n: u8, c: &CopyId) -> Fact<'_> {
         match n {
             0 => Fact::PreUse,
