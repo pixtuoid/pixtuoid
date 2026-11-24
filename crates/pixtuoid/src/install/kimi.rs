@@ -476,8 +476,8 @@ command = "terminal-notifier -message done"
     }
 
     // MEMBERSHIP pin — the completeness half `every_registered_kimi_event_decodes`
-    // can't see; the two `*Failure` variants and `Interrupt` are serviced ONLY
-    // by the custom Extend decoder, so update this pin deliberately.
+    // can't see; `StopFailure` and `Interrupt` are serviced only by
+    // `source::kimi::decode_kimi_hook_custom`, so update this pin deliberately.
     #[test]
     fn kimi_events_pins_the_exact_registered_set() {
         crate::install::assert_event_roster(

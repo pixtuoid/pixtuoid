@@ -621,8 +621,8 @@ pub(crate) fn shared_hook_arms(
             evs.extend(hook_effort(agent_id, obj));
             Ok(evs)
         }
-        // A call that started and failed fires PostToolUseFailure in
-        // PostToolUse's place (hooks.md, PostToolUseFailure;
+        // A failed call fires PostToolUseFailure in PostToolUse's place
+        // (hooks.md, PostToolUseFailure;
         // `packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:347-361`
         // at `@moonshot-ai/kimi-code@2.7.3`).
         "PostToolUse" | "PostToolUseFailure" => {
