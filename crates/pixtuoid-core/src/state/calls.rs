@@ -258,7 +258,7 @@ struct Calls {
     /// The calls a pre-use or start registered that have not ended, oldest
     /// first: what a request binds and a settle lands on, read without walking
     /// every call the slot's life kept.
-    pending: Vec<Arc<str>>,
+    open: Vec<Arc<str>>,
     /// The place of the next call to start.
     next_start: u64,
 }
@@ -340,12 +340,12 @@ impl Calls {
     }
 
     /// `call` ended: its record keeps none of what its open generation said,
-    /// and it leaves the pending calls.
+    /// and it leaves the open calls.
     fn end(&mut self, call: &str) {
         if let Some(record) = self.by_id.get_mut(call) {
             record.end();
         }
-        self.pending.retain(|c| **c != *call);
+        self.open.retain(|c| **c != *call);
     }
 
     /// `call`, open, met `fact` on `on` while `open_turn` is open: a pre-use or
@@ -366,12 +366,12 @@ impl Calls {
         };
         let Self {
             by_id,
-            pending,
+            open,
             next_start,
         } = self;
         let key = Arc::clone(by_id.get_key_value(call)?.0);
-        if !pending.contains(&key) {
-            pending.push(Arc::clone(&key));
+        if !open.contains(&key) {
+            open.push(Arc::clone(&key));
         }
         let record = by_id.get_mut(call)?;
         let p = &mut record.pending;
@@ -467,7 +467,7 @@ impl CallLedger {
         let Some(calls) = self.calls.get_mut(agent) else {
             return;
         };
-        let closed: Vec<Arc<str>> = (calls.pending.iter())
+        let closed: Vec<Arc<str>> = (calls.open.iter())
             .filter(|call| {
                 (calls.by_id.get(*call)).is_some_and(|r| closes(r.pending.turn.as_ref()))
             })
@@ -486,7 +486,7 @@ impl CallLedger {
     pub(crate) fn end_life(&mut self, agent: &AgentId) {
         if let Some(calls) = self.calls.get_mut(agent) {
             calls.by_id.values_mut().for_each(Call::end);
-            calls.pending.clear();
+            calls.open.clear();
         }
     }
 
@@ -503,7 +503,7 @@ impl CallLedger {
     ) -> impl Iterator<Item = PendingCall<'a>> + use<'a> {
         let calls = self.calls.get(agent);
         calls.into_iter().flat_map(move |calls| {
-            calls.pending.iter().filter_map(move |call| {
+            calls.open.iter().filter_map(move |call| {
                 let p = &calls.by_id.get(call)?.pending;
                 (!p.outlived_turn && p.turn.as_ref() == turn).then_some(PendingCall {
                     call,
@@ -531,7 +531,7 @@ impl CallLedger {
     pub(crate) fn newest_in_flight(&self, agent: &AgentId) -> Option<ToolUse> {
         let calls = self.calls.get(agent)?;
         let (_, item) = calls
-            .pending
+            .open
             .iter()
             .filter_map(|call| calls.by_id.get(call)?.pending.shows.as_ref())
             .max_by_key(|(at, _)| *at)?;
@@ -550,7 +550,7 @@ impl CallLedger {
     pub(crate) fn any_task_in_flight(&self, agent: &AgentId) -> bool {
         self.calls.get(agent).is_some_and(|calls| {
             calls
-                .pending
+                .open
                 .iter()
                 .any(|call| calls.by_id.get(call).is_some_and(Call::is_task))
         })
@@ -790,7 +790,7 @@ mod tests {
         assert_eq!(ledger.len(), 0);
     }
 
-    fn in_flight(ledger: &CallLedger) -> Option<String> {
+    fn newest(ledger: &CallLedger) -> Option<String> {
         Some(ledger.newest_in_flight(&agent())?.tool_use_id?.to_string())
     }
 
@@ -798,24 +798,24 @@ mod tests {
     fn the_newest_call_in_flight_is_the_last_to_start_and_not_end() {
         let mut ledger = CallLedger::default();
         observe(&mut ledger, "a", PRE_USE);
-        assert_eq!(in_flight(&ledger), None, "a pre-use starts nothing");
+        assert_eq!(newest(&ledger), None, "a pre-use starts nothing");
         observe(&mut ledger, "b", start(None));
         observe(&mut ledger, "a", start(None));
         assert_eq!(
-            in_flight(&ledger).as_deref(),
+            newest(&ledger).as_deref(),
             Some("a"),
             "a's start came last, though its pre-use came first"
         );
         ledger.observe(agent(), "b", start(None), JSONL, None);
         assert_eq!(
-            in_flight(&ledger).as_deref(),
+            newest(&ledger).as_deref(),
             Some("a"),
             "a second start of b is no newer"
         );
         observe(&mut ledger, "a", Fact::End);
-        assert_eq!(in_flight(&ledger).as_deref(), Some("b"));
+        assert_eq!(newest(&ledger).as_deref(), Some("b"));
         observe(&mut ledger, "b", Fact::End);
-        assert_eq!(in_flight(&ledger), None);
+        assert_eq!(newest(&ledger), None);
     }
 
     /// A pre-use and its start, or the two transports' starts of one call,
@@ -887,7 +887,7 @@ mod tests {
         assert_eq!(pending(&ledger, Some(&t2)), ["b"]);
         ledger.end_turn(&agent(), |t| t.is_none());
         assert_eq!(pending(&ledger, None), Vec::<String>::new());
-        assert_eq!(in_flight(&ledger).as_deref(), Some("task"));
+        assert_eq!(newest(&ledger).as_deref(), Some("task"));
         assert!(observe(&mut ledger, "task", Fact::End).drained);
         assert!(!ledger.any_task_in_flight(&agent()));
     }
