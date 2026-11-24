@@ -1413,6 +1413,55 @@ fn a_turn_end_while_delegating_keeps_the_delegating_clock() {
     assert_eq!(scene.agents[&parent].state_started_at, dispatched);
 }
 
+/// A Task its turn's end left running delegates on outside the later turns'
+/// requests, so a keyless prompt still binds the one call of its own turn,
+/// whose end answers it.
+#[test]
+fn a_task_that_outlived_its_turn_binds_no_later_request() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let parent = AgentId::from_transcript_path("/p/outlived.jsonl");
+    start(&mut r, &mut scene, parent);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let at = |s| t0 + Duration::from_secs(s);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        at(1),
+        Transport::Hook,
+    );
+    turn_end(&mut r, &mut scene, parent, at(2), Transport::Hook);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("c"),
+        Some("Bash: ls"),
+        at(3),
+        Transport::Hook,
+    );
+    user_action_request(
+        &mut r,
+        &mut scene,
+        parent,
+        "permission",
+        at(4),
+        Transport::Hook,
+    );
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("c"),
+        at(5),
+        Transport::Hook,
+    );
+    assert_delegating(&scene, parent, "c's end answered the prompt");
+}
+
 /// The drain settles only a slot showing a Task: a parent showing its own call,
 /// named or not, keeps it until that call ends.
 #[test]
