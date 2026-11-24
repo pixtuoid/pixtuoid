@@ -108,10 +108,10 @@ const PARENT_THREAD_ID: &str = "parent_thread_id";
 /// The field naming the turn on codex's rollout payloads and hooks.
 const TURN_ID: &str = "turn_id";
 
-/// Codex's source-specific hook arms: [`decode_call_hook`]'s around a call,
-/// and `SubagentStart`/`SubagentStop`, which change the event's SUBJECT to a
-/// child's AgentId; every other session event falls through to the shared
-/// arms, a child's under its own id.
+/// Codex's source-specific hook arms: [`decode_call_hook`]'s, around a call
+/// and `Stop`, and `SubagentStart`/`SubagentStop`, which change the event's
+/// SUBJECT to a child's AgentId; every other session event falls through to
+/// the shared arms, a child's under its own id.
 pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
         .get("hook_event_name")
@@ -177,8 +177,8 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
     }
 }
 
-/// The hooks around a call, on their [`HookSubject`]. `PreToolUse` fires only
-/// for a tool with a pre-use payload (`codex-rs/core/src/tools/registry.rs:1173`
+/// The hooks around a call and `Stop`, on their [`HookSubject`]. `PreToolUse`
+/// fires only for a tool with a pre-use payload (`codex-rs/core/src/tools/registry.rs:1173`
 /// at rust-v0.171.0), so it is no item: the rollout's call is. `PostToolUse`
 /// fires only on success (`:1025-1032`), so it or the rollout's output ends a
 /// successful call, and the output alone a failed one.
