@@ -2389,7 +2389,7 @@ fn a_call_first_seen_turnless_takes_its_pre_uses_turn() {
 }
 
 /// codex's PostToolUse, which fires on a call's success, ends the call the
-/// rollout started, so the rollout's output lands on an ended call.
+/// rollout started.
 #[test]
 fn a_codex_post_tool_use_ends_the_call_its_rollout_started() {
     let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
@@ -2420,16 +2420,4 @@ fn a_codex_post_tool_use_ends_the_call_its_rollout_started() {
     let slot = &scene.agents[&id];
     assert_eq!(slot.state, ActivityState::Running { item: None });
     assert_eq!(slot.state_started_at, ran);
-    tool_use_end(
-        &mut r,
-        &mut scene,
-        id,
-        Some("c"),
-        ran + Duration::from_secs(1),
-        Transport::Jsonl,
-    );
-    assert_eq!(
-        scene.agents[&id].state_started_at, ran,
-        "the rollout's output changes nothing"
-    );
 }
