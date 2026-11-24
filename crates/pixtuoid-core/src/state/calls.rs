@@ -220,7 +220,7 @@ impl Call {
     }
 
     /// Whether its first start dispatched a Task that has not ended.
-    fn is_task(&self) -> bool {
+    fn is_task_in_flight(&self) -> bool {
         self.registration
             .shows
             .as_ref()
@@ -322,7 +322,7 @@ impl Calls {
         let into = record.phase_of(fact);
         let rose = into > record.phase;
         let ends = rose && into == Phase::Ended;
-        let drained = ends && record.is_task();
+        let drained = ends && record.is_task_in_flight();
         let ended = ends || record.phase == Phase::Ended;
         if ends {
             self.end(call);
@@ -475,7 +475,9 @@ impl CallLedger {
             .collect();
         for call in closed {
             match calls.by_id.get_mut(&call) {
-                Some(record) if record.is_task() => record.registration.outlived_turn = true,
+                Some(record) if record.is_task_in_flight() => {
+                    record.registration.outlived_turn = true
+                }
                 _ => calls.end(&call),
             }
         }
@@ -543,7 +545,7 @@ impl CallLedger {
         self.calls
             .get(agent)
             .and_then(|calls| calls.by_id.get(call))
-            .is_some_and(Call::is_task)
+            .is_some_and(Call::is_task_in_flight)
     }
 
     /// Whether `agent` dispatched a Task that has not ended.
@@ -552,7 +554,7 @@ impl CallLedger {
             calls
                 .pending
                 .iter()
-                .any(|call| calls.by_id.get(call).is_some_and(Call::is_task))
+                .any(|call| calls.by_id.get(call).is_some_and(Call::is_task_in_flight))
         })
     }
 
