@@ -918,7 +918,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                 as_child: omp_parent_key_from_path(path).is_some(),
             }],
             Some(record @ (TOOL_APPROVAL_REQUESTED | TOOL_APPROVAL_RESOLVED)) => {
-                omp_approval(acting, source, record, obj.get("data"))
+                omp_approval(acting, source, record, obj)
                     .into_iter()
                     .collect()
             }
@@ -973,8 +973,8 @@ fn omp_ask_reason(intent: Option<&str>) -> String {
     )
 }
 
-/// The event an approval `record` carries for the call its `data` names: the
-/// wait, then its resume or its end (`data`'s shape:
+/// The event an approval `record` `entry` carries for the call its `data`
+/// names: the wait, then its resume or its end (`data`'s shape:
 /// `session/tool-approval-records.ts:9-26` at v19.1.0). The call id, the tool
 /// name and `approved` are REQUIRED there, so any missing where it is read is
 /// drift.
@@ -982,9 +982,10 @@ fn omp_approval(
     acting: AgentId,
     source: &str,
     record: &str,
-    data: Option<&Value>,
+    entry: &serde_json::Map<String, Value>,
 ) -> Option<AgentEvent> {
-    let Some((data, call)) = data
+    let Some((data, call)) = entry
+        .get("data")
         .and_then(Value::as_object)
         .and_then(|d| Some((d, d.get("toolCallId")?.as_str()?)))
     else {
@@ -1005,6 +1006,9 @@ fn omp_approval(
             Some(omp_approval_reason(data, tool())),
             RequestKeys {
                 tool_use_id: Some(call.to_owned()),
+                // Unique in its session, as `entry_copy` cites, so in its call.
+                request_id: non_empty(entry, "id").map(str::to_owned),
+                parent_tool_use_id: non_empty(data, "parentToolCallId").map(str::to_owned),
                 ..RequestKeys::default()
             },
         ));
@@ -1968,9 +1972,9 @@ mod tests {
         assert!(decode(line).is_empty());
     }
 
-    /// The `record` line `scenario` recorded, the outcome `approved` where one
-    /// is named: read from the capture, as a copy would drift on its re-record.
-    fn recorded(scenario: &str, record: &str, approved: Option<bool>) -> String {
+    /// The `record` line `scenario` recorded whose `data` `picks`: read from
+    /// the capture, as a copy would drift on its re-record.
+    fn recorded(scenario: &str, record: &str, picks: impl Fn(&Value) -> bool) -> String {
         let root = crate::harness::sources_root();
         let dir = crate::harness::fixtures_dir(&root, SOURCE_NAME).join(scenario);
         let transcript =
@@ -1980,7 +1984,7 @@ mod tests {
             .lines()
             .find(|l| {
                 let v: Value = serde_json::from_str(l).expect("a recorded line is JSON");
-                v["customType"] == record && approved.is_none_or(|a| v["data"]["approved"] == a)
+                v["customType"] == record && picks(&v["data"])
             })
             .unwrap_or_else(|| panic!("{scenario} recorded no {record}"))
             .to_owned()
@@ -1988,17 +1992,21 @@ mod tests {
 
     /// `omp/fixtures/approve-hermetic`'s request.
     fn approval_requested() -> String {
-        recorded("approve-hermetic", TOOL_APPROVAL_REQUESTED, None)
+        recorded("approve-hermetic", TOOL_APPROVAL_REQUESTED, |_| true)
     }
 
     /// `omp/fixtures/approve-hermetic`'s approval.
     fn approval_approved() -> String {
-        recorded("approve-hermetic", TOOL_APPROVAL_RESOLVED, Some(true))
+        recorded("approve-hermetic", TOOL_APPROVAL_RESOLVED, |d| {
+            d["approved"] == true
+        })
     }
 
     /// `omp/fixtures/permission-hermetic`'s headless denial.
     fn approval_denied() -> String {
-        recorded("permission-hermetic", TOOL_APPROVAL_RESOLVED, Some(false))
+        recorded("permission-hermetic", TOOL_APPROVAL_RESOLVED, |d| {
+            d["approved"] == false
+        })
     }
 
     /// The string `line`'s record's `data` holds at `key`.
@@ -2059,6 +2067,31 @@ mod tests {
         });
         for needle in [crate::source::drift::TARGET, "missing_field", "toolName"] {
             assert!(out.contains(needle), "missing {needle:?}\n{out}");
+        }
+    }
+
+    #[test]
+    fn a_request_carries_its_own_id_and_the_call_that_dispatched_its_call() {
+        // The request of the call `nested-approve`'s eval cell made.
+        let nested = recorded("nested-approve-hermetic", TOOL_APPROVAL_REQUESTED, |d| {
+            d["parentToolCallId"].is_string()
+        });
+        let v: Value = serde_json::from_str(&nested).unwrap();
+        match &decode(&nested)[..] {
+            [
+                AgentEvent::UserActionRequest {
+                    request_id,
+                    parent_tool_use_id,
+                    ..
+                },
+            ] => {
+                assert_eq!(request_id.as_deref(), v["id"].as_str());
+                assert_eq!(
+                    parent_tool_use_id.as_deref(),
+                    v["data"]["parentToolCallId"].as_str()
+                );
+            }
+            other => panic!("expected one UserActionRequest, got {other:?}"),
         }
     }
 

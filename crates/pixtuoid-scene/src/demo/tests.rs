@@ -1,6 +1,6 @@
 use super::*;
 use pixtuoid_core::source::{
-    CopyId, Resolution, claude_code, codex, copilot, hermes, openclaw, opencode,
+    CopyId, RequestKeys, Resolution, claude_code, codex, copilot, hermes, openclaw, opencode,
 };
 use pixtuoid_core::state::{ActivityState, DaemonInstanceId, ToolKind};
 
@@ -490,12 +490,12 @@ fn a_lap_names_every_merge_key_apart() {
     let agent_id = lead().id();
     let id = || "x".to_owned();
     let turn_id = || TurnKey::Id("t".into());
-    let request = || AgentEvent::UserActionRequest {
-        agent_id,
-        reason: None,
-        tool_use_id: Some(id()),
-        tool_name: None,
-        turn: Some(turn_id()),
+    let request = || {
+        let mut keys = RequestKeys::default();
+        keys.tool_use_id = Some(id());
+        keys.turn = Some(turn_id());
+        keys.parent_tool_use_id = Some("p".to_owned());
+        AgentEvent::user_action_request(agent_id, None, keys)
     };
     let pending = || AgentEvent::ToolUsePending {
         agent_id,
@@ -528,6 +528,12 @@ fn a_lap_names_every_merge_key_apart() {
             "{event:?}"
         );
     }
+    let mut nested = request();
+    lap.name(&mut nested);
+    assert_eq!(
+        nested.merge_keys_mut().parent.cloned(),
+        Some("p#3".to_owned())
+    );
     for (mut event, want) in [
         (
             AgentEvent::TurnStart {
