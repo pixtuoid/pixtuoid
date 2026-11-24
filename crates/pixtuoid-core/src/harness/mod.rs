@@ -172,7 +172,7 @@ pub struct Driven {
     pub reaches: Vec<(AgentId, Reach)>,
     /// How many times a slot went RequiresAction, which [`Self::reaches`]
     /// records once.
-    pub waits: usize,
+    pub(crate) waits: usize,
     /// The drift breadcrumbs the decode and fold logged, each as its fields: a
     /// field whose only use is the breadcrumb its absence logs is still read.
     pub(crate) breadcrumbs: Vec<String>,

@@ -339,15 +339,22 @@ fn a_re_asked_call_waits_twice() {
         .map(|v| v["data"]["toolCallId"].as_str().expect("named").to_owned())
         .collect();
     assert_eq!(requested.len(), 1, "one call asks: {requested:?}");
-    let (mut fold, mut raised, mut waiting) = (Fold::default(), 0, false);
+    let (mut fold, mut raised, mut answered, mut waiting) = (Fold::default(), 0, 0, false);
     for line in &lines {
+        // Each approval lands before the call's toolResult, which would end
+        // the wait too.
+        let approval = parsed(line)["customType"] == "tool_approval_resolved";
+        assert!(!approval || waiting, "an approval answers a standing wait");
         fold.feed(&drive, std::slice::from_ref(line), t0());
         let now = waits(&fold);
+        assert!(!(approval && now), "its approval lifted the wait");
+        answered += usize::from(approval);
         raised += usize::from(now && !waiting);
         waiting = now;
     }
     fold.driven().assert_clean(SCENARIO);
     assert_eq!(raised, 2, "each of the call's requests waits");
+    assert_eq!(answered, 2, "each of the call's requests is approved");
     assert!(!waiting, "its last approval lifted the wait");
 }
 

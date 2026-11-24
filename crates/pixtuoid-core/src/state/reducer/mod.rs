@@ -638,8 +638,7 @@ impl Reducer {
             self.count_call(scene, agent_id, ids.copy, counts, from, now);
         }
         let rose = observed.is_none_or(|o| o.rose);
-        let on = ids.own.map(|_| from);
-        if !self.start_shows(scene, agent_id, rose, first_here, on) {
+        if !self.start_shows(scene, agent_id, rose, first_here, from) {
             return;
         }
         let shown = ids
@@ -654,15 +653,14 @@ impl Reducer {
     /// Whether a start shows its call. One that raised its call's record
     /// (`rose`) runs unless a request holds it back; one that did not shows its
     /// call only by answering the standing wait, which takes only its call's
-    /// first start on its transport (`first_here`). `on` is that transport,
-    /// `None` for a start naming no call.
+    /// first start on its transport, `on` (`first_here`).
     fn start_shows(
         &mut self,
         scene: &SceneState,
         agent_id: AgentId,
         rose: bool,
         first_here: bool,
-        on: Option<Transport>,
+        on: Transport,
     ) -> bool {
         let requires_action = is_requires_action(scene, agent_id);
         (rose || (first_here && requires_action))
@@ -1474,7 +1472,7 @@ impl Reducer {
                         self.register_pending(*agent_id, tuid, None, None, from, Some(item));
                 }
                 let rose = observed.is_some_and(|o| o.rose);
-                if self.start_shows(scene, *agent_id, rose, first_here, Some(from))
+                if self.start_shows(scene, *agent_id, rose, first_here, from)
                     && let Some(slot) = scene.agents.get_mut(agent_id)
                 {
                     fsm::enter_delegating(slot, Some(Arc::<str>::from(tuid.as_str())), now);

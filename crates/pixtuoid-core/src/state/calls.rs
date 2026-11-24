@@ -21,9 +21,9 @@ use crate::source::{AgentEvent, CopyId, Resolution};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Phase {
     Open {
-        /// The round its gates reached: each request id its call met opens
-        /// one, so a re-asked call waits again past its resume, and a
-        /// replayed gate rises past nothing.
+        /// The round its gates reached: a request id its call meets after a
+        /// resume or after another id opens the next, so a re-asked call waits
+        /// again past its resume, and a replayed gate rises past nothing.
         round: usize,
         step: Step,
     },
@@ -143,21 +143,33 @@ struct Call {
     /// The copy ids its starts named, one per generation.
     copies: Vec<CopyId>,
     counted: bool,
-    /// The request ids its gates named, in the order it met them.
-    requests: Vec<Arc<str>>,
+    /// The request ids its gates named, each with the round it opened or
+    /// joined.
+    requests: Vec<(Arc<str>, usize)>,
 }
 
 impl Call {
-    /// `fact`'s phase on this call: a gate's round is its request id's place
-    /// among those the call met, an id it never met opening the next, and a
-    /// resume resumes the round the call is in.
+    /// `fact`'s phase on this call: a gate's round is the one its request id
+    /// opened or joined, and a resume resumes the round the call is in.
     fn phase_of(&mut self, fact: Fact<'_>) -> Phase {
         let round = match (fact, self.phase) {
-            (Fact::Gate(Some(id)), _) => match self.requests.iter().position(|r| &**r == id) {
-                Some(at) => at + 1,
+            (Fact::Gate(Some(id)), phase) => match self.requests.iter().find(|(r, _)| &**r == id) {
+                Some(&(_, round)) => round,
                 None => {
-                    self.requests.push(Arc::from(id));
-                    self.requests.len()
+                    let round = match phase {
+                        // A first id before any resume is of the call's first
+                        // round, joining a wait a gate naming none raised (omp's
+                        // ask block, before the ask's approval).
+                        Phase::Open { round, step }
+                            if self.requests.is_empty() && step != Step::Resumed =>
+                        {
+                            round
+                        }
+                        Phase::Open { round, .. } => round + 1,
+                        Phase::Ended => 0,
+                    };
+                    self.requests.push((Arc::from(id), round));
+                    round
                 }
             },
             (Fact::Resume, Phase::Open { round, .. }) => round,
@@ -396,6 +408,21 @@ mod tests {
         for replay in [Fact::Gate(Some("g1")), Fact::Gate(None), Fact::Resume] {
             assert!(!ledger.observe(agent(), "c", replay).rose, "{replay:?}");
         }
+    }
+
+    /// omp's ask raises its wait from its block, naming no request, and a
+    /// mode that gates the ask then records a request for that same wait.
+    #[test]
+    fn a_keyless_gates_first_request_id_joins_its_wait() {
+        let mut ledger = CallLedger::default();
+        ledger.observe(agent(), "c", Fact::Start(None));
+        assert!(ledger.observe(agent(), "c", Fact::Gate(None)).rose);
+        assert!(!ledger.observe(agent(), "c", Fact::Gate(Some("g1"))).rose);
+        assert!(ledger.observe(agent(), "c", Fact::Resume).rose);
+        assert!(
+            ledger.observe(agent(), "c", Fact::Gate(Some("g2"))).rose,
+            "a re-ask"
+        );
     }
 
     #[test]

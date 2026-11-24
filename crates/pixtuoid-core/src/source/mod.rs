@@ -18,8 +18,8 @@ pub(crate) const DEFAULT_POLL_INTERVAL: std::time::Duration = std::time::Duratio
 /// - whether an event counts as live work or as a replay;
 /// - which pending calls a request binds by tool name or by deduction: those
 ///   seen on the transport that raised it;
-/// - which start answers a request the wire gave no key: its call's first
-///   start on the transport that raised it, or one naming no call;
+/// - which start answers a request the wire gave no key: one on the
+///   transport that raised it, its call's first there or one naming no call;
 /// - whether a tool end naming no call answers a request: only a hook's does;
 /// - whether an unnamed child's activity under its parent's key is dropped:
 ///   only a hook's is.
