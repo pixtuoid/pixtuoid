@@ -567,7 +567,7 @@ impl Reducer {
                 }
                 let open = self.corr.turns.open(&id);
                 let observed = self.corr.calls.observe(id, call, fact, from, open);
-                if !observed.ended && matches!(fact, Fact::PreUse { .. } | Fact::Start { .. }) {
+                if observed.registered {
                     self.corr.action_requests.join(id, call, &self.corr.calls);
                 }
                 Some(observed)

@@ -160,6 +160,8 @@ pub(crate) struct Observed {
     pub(crate) counts: bool,
     /// The call has ended.
     pub(crate) ended: bool,
+    /// It is a pre-use or start of the open call, which registered it pending.
+    pub(crate) registered: bool,
     /// It is a start of the open call on a transport none of its starts came
     /// on before.
     pub(crate) first_here: bool,
@@ -287,6 +289,7 @@ impl Calls {
                 rose: true,
                 counts: starts,
                 ended,
+                registered: false,
                 first_here: false,
                 drained: false,
             };
@@ -309,6 +312,7 @@ impl Calls {
                 rose: true,
                 counts: true,
                 ended: false,
+                registered: false,
                 first_here: false,
                 drained: false,
             };
@@ -317,52 +321,59 @@ impl Calls {
         record.counted |= starts;
         let into = record.phase_of(fact);
         let rose = into > record.phase;
-        let drained = rose && into == Phase::Ended && record.is_task();
-        if rose && into == Phase::Ended {
-            record.end();
-            self.pending.retain(|c| **c != *call);
+        let ends = rose && into == Phase::Ended;
+        let drained = ends && record.is_task();
+        let ended = ends || record.phase == Phase::Ended;
+        if ends {
+            self.end(call);
         } else if rose {
             record.phase = into;
         }
         Observed {
             rose,
             counts,
-            ended: record.phase == Phase::Ended,
+            ended,
+            registered: false,
             first_here: false,
             drained,
         }
     }
 
+    /// `call` ended: its record keeps none of what its open generation said,
+    /// and it leaves the pending calls.
+    fn end(&mut self, call: &str) {
+        if let Some(record) = self.by_id.get_mut(call) {
+            record.end();
+        }
+        self.pending.retain(|c| **c != *call);
+    }
+
     /// `call`, open, met `fact` on `on` while `open_turn` is open: a pre-use or
     /// start registers it pending and merges what it says. Whether it is a
-    /// start on a transport none of the call's starts came on before.
+    /// start on a transport none of the call's starts came on before; `None`
+    /// for a fact that registers nothing.
     fn register(
         &mut self,
         call: &str,
         fact: Fact<'_>,
         on: Transport,
         open_turn: Option<&TurnKey>,
-    ) -> bool {
+    ) -> Option<bool> {
         let (tool_name, turn, detail) = match fact {
             Fact::PreUse { tool_name, turn } => (tool_name, turn.or(open_turn), None),
             Fact::Start { detail, .. } => (None, open_turn, Some(detail)),
-            Fact::Gate(_) | Fact::Resume | Fact::End => return false,
+            Fact::Gate(_) | Fact::Resume | Fact::End => return None,
         };
         let Self {
             by_id,
             pending,
             next_start,
         } = self;
-        let Some((key, _)) = by_id.get_key_value(call) else {
-            return false;
-        };
-        let key = Arc::clone(key);
+        let key = Arc::clone(by_id.get_key_value(call)?.0);
         if !pending.contains(&key) {
             pending.push(Arc::clone(&key));
         }
-        let Some(record) = by_id.get_mut(call) else {
-            return false;
-        };
+        let record = by_id.get_mut(call)?;
         let p = &mut record.pending;
         if p.tool_name.is_none() {
             p.tool_name = tool_name.map(Arc::from);
@@ -376,7 +387,7 @@ impl Calls {
             p.seen_on.push(on);
         }
         let Some(detail) = detail else {
-            return false;
+            return Some(false);
         };
         // A call's first start makes it the newest in flight.
         if p.shows.is_none() {
@@ -387,7 +398,7 @@ impl Calls {
         if first_here {
             p.started_on.push(on);
         }
-        first_here
+        Some(first_here)
     }
 }
 
@@ -431,8 +442,11 @@ impl CallLedger {
     ) -> Observed {
         let calls = self.calls.entry(agent).or_default();
         let mut observed = calls.phase(call, fact);
-        if !observed.ended {
-            observed.first_here = calls.register(call, fact, on, open_turn);
+        if !observed.ended
+            && let Some(first_here) = calls.register(call, fact, on, open_turn)
+        {
+            observed.registered = true;
+            observed.first_here = first_here;
         }
         observed
     }
@@ -441,12 +455,8 @@ impl CallLedger {
     /// dropped before any record met it; a call the ledger never met stays
     /// unrecorded.
     pub(crate) fn end(&mut self, agent: &AgentId, call: &str) {
-        let Some(Calls { by_id, pending, .. }) = self.calls.get_mut(agent) else {
-            return;
-        };
-        if let Some(record) = by_id.get_mut(call) {
-            record.end();
-            pending.retain(|c| **c != *call);
+        if let Some(calls) = self.calls.get_mut(agent) {
+            calls.end(call);
         }
     }
 
@@ -454,23 +464,21 @@ impl CallLedger {
     /// calls with them, but a Task, whose subagent runs on past its turn: it
     /// leaves the turn's requests and stays in flight until its own end.
     pub(crate) fn end_turn(&mut self, agent: &AgentId, closes: impl Fn(Option<&TurnKey>) -> bool) {
-        let Some(Calls { by_id, pending, .. }) = self.calls.get_mut(agent) else {
+        let Some(calls) = self.calls.get_mut(agent) else {
             return;
         };
-        pending.retain(|call| {
-            let Some(record) = by_id.get_mut(call) else {
-                return false;
-            };
-            if !closes(record.pending.turn.as_ref()) {
-                return true;
+        let closed: Vec<Arc<str>> = (calls.pending.iter())
+            .filter(|call| {
+                (calls.by_id.get(*call)).is_some_and(|r| closes(r.pending.turn.as_ref()))
+            })
+            .cloned()
+            .collect();
+        for call in closed {
+            match calls.by_id.get_mut(&call) {
+                Some(record) if record.is_task() => record.pending.outlived_turn = true,
+                _ => calls.end(&call),
             }
-            if record.is_task() {
-                record.pending.outlived_turn = true;
-                return true;
-            }
-            record.end();
-            false
-        });
+        }
     }
 
     /// `agent`'s slot revived: every call its dead life left open ended with
@@ -662,6 +670,7 @@ mod tests {
                 rose: true,
                 counts: true,
                 ended: false,
+                registered: true,
                 first_here: true,
                 drained: false,
             }
@@ -696,6 +705,7 @@ mod tests {
                 rose: true,
                 counts: false,
                 ended: false,
+                registered: false,
                 first_here: false,
                 drained: false,
             }
