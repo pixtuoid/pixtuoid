@@ -1574,7 +1574,7 @@ impl Reducer {
     /// release deliberately stay at the sweep site — they must NOT run on a
     /// resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
-        self.corr.action_requests.forget(id);
+        self.corr.action_requests.end_life(id);
         self.corr.turns.end_life(*id);
         self.corr.calls.end_life(id);
         self.corr.caught_up.remove(id);

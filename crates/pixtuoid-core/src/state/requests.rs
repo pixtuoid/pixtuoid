@@ -360,8 +360,9 @@ impl ActionRequests {
         }
     }
 
-    /// The slot went: its request with it.
-    pub(crate) fn forget(&mut self, id: &AgentId) {
+    /// The slot's life ended, by its removal or a resurrect in place: its
+    /// request with it.
+    pub(crate) fn end_life(&mut self, id: &AgentId) {
         self.open.remove(id);
     }
 
@@ -576,6 +577,13 @@ mod tests {
         agent.pre_use(("e", Some("Edit"), HOOK));
         agent.raise(raise(None, Some("Edit"), HOOK), true);
         assert_eq!(agent.members(), ["a", "y", "e"]);
+        agent.raise(raise(None, Some("Bash"), HOOK), true);
+        agent.pre_use(("f", Some("Edit"), HOOK));
+        assert_eq!(
+            agent.members(),
+            ["a", "y", "e", "f"],
+            "each raise's tool stays a key"
+        );
     }
 
     /// A raise naming its call binds that call alone, whichever side of it
