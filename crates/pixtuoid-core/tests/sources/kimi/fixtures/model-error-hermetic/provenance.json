@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "kimi",
-  "version": "2.7.2",
-  "captured": "2026-11-20",
+  "version": "2.7.3",
+  "captured": "2026-11-23",
   "command": "just hermetic --record kimi",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 6
   },
-  "aimock": "1.47.0",
+  "aimock": "1.48.0",
   "script": "tests/sources/kimi/hermetic/model-error.json",
   "dropped": {
     "os": "macos",

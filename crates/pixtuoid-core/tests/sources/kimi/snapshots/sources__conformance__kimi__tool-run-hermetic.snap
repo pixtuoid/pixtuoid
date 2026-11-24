@@ -3,42 +3,42 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 16324582854483691729
+    agent_id: 8033585883864460328
     source: kimi
-    session_id: session_328197a8-caf5-42cc-9197-2c1ab5e3f444
+    session_id: session_a1c35dbb-27a9-48e3-a541-c4b764f73200
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 16324582854483691729
+    agent_id: 8033585883864460328
     model: __kimi_env_model__
     effort: ~
 - Identity:
-    agent_id: 16324582854483691729
+    agent_id: 8033585883864460328
     source: kimi
-    session_id: session_328197a8-caf5-42cc-9197-2c1ab5e3f444
+    session_id: session_a1c35dbb-27a9-48e3-a541-c4b764f73200
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 16324582854483691729
-    tool_use_id: call_ASxVGSu_sFIxFEEm
+    agent_id: 8033585883864460328
+    tool_use_id: call_6M8Ku8xN45RA68d8
     tool_name: Read
 - ToolUseStart:
-    agent_id: 16324582854483691729
-    tool_use_id: call_ASxVGSu_sFIxFEEm
+    agent_id: 8033585883864460328
+    tool_use_id: call_6M8Ku8xN45RA68d8
     detail:
       Generic:
         display: Read
 - Identity:
-    agent_id: 16324582854483691729
+    agent_id: 8033585883864460328
     source: kimi
-    session_id: session_328197a8-caf5-42cc-9197-2c1ab5e3f444
+    session_id: session_a1c35dbb-27a9-48e3-a541-c4b764f73200
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 16324582854483691729
-    tool_use_id: call_ASxVGSu_sFIxFEEm
+    agent_id: 8033585883864460328
+    tool_use_id: call_6M8Ku8xN45RA68d8
 - Identity:
-    agent_id: 16324582854483691729
+    agent_id: 8033585883864460328
     source: kimi
-    session_id: session_328197a8-caf5-42cc-9197-2c1ab5e3f444
+    session_id: session_a1c35dbb-27a9-48e3-a541-c4b764f73200
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 16324582854483691729
+    agent_id: 8033585883864460328
