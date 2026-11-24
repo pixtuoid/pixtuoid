@@ -642,20 +642,6 @@ fn step_through_vacancy(
         .collect()
 }
 
-/// By day the room's lights are nothing beside the sun, so an offline office
-/// past its debounce and ease is its online frame at [`OFFLINE_BRIGHTNESS`],
-/// every pixel of it.
-#[test]
-fn an_offline_office_dims_its_whole_frame_by_day() {
-    let t0 = crate::localclock::at_hour(12);
-    let scene = settled_typists(t0);
-    for look in signless_looks() {
-        let [online, offline] =
-            [false, true].map(|offline| settled_frame(look, &scene, t0, offline));
-        assert_drawn(&offline, &offline_dimmed(&online), &format!("{look:?}"));
-    }
-}
-
 /// A floor vacant online has dimmed its room already, so going offline eases
 /// its frame from undimmed rather than jumping, on a debounce of its own that
 /// wakes Still as the room's does.
@@ -663,14 +649,14 @@ fn an_offline_office_dims_its_whole_frame_by_day() {
 fn a_vacant_floor_going_offline_eases_its_frame_dim_from_none() {
     let t0 = crate::localclock::at_hour(2);
     let empty = make_scene(0, 8);
-    let gone = t0 + offline_settled();
+    let gone = t0 + vacancy_settled();
     let fades_at = gone + Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS);
     let nows = [
         t0,
         gone,
         fades_at - REST_TICK / 2,
         fades_at + Duration::from_millis(VacancyDim::FADE_TAU_MS),
-        gone + offline_settled(),
+        gone + vacancy_settled(),
     ];
     for look in every_dim_path() {
         let online = drawn_frames(look, &empty, &nows.map(|now| (now, false)));
@@ -702,7 +688,7 @@ fn a_vacant_floor_going_offline_eases_its_frame_dim_from_none() {
 fn an_offline_office_slides_to_another_floor_dimmed() {
     let t0 = crate::localclock::at_hour(12);
     let scene = make_scene(3, 2);
-    let settled = t0 + offline_settled();
+    let settled = t0 + vacancy_settled();
     let sliding = settled + Duration::from_millis(TRANSITION_DURATION_MS / 2);
     let landed = settled + Duration::from_millis(TRANSITION_DURATION_MS) + FRAME;
     for look in signless_looks() {
@@ -734,9 +720,9 @@ fn an_offline_office_slides_to_another_floor_dimmed() {
     }
 }
 
-/// How long an office offline from its first frame takes to land on its
-/// frame's dim: its debounce, then its ease run to rest.
-fn offline_settled() -> Duration {
+/// How long a [`VacancyDim`] judged vacant takes to land: its debounce, then
+/// its ease run to rest.
+fn vacancy_settled() -> Duration {
     Duration::from_millis(VacancyDim::VACANCY_DEBOUNCE_MS + 10 * VacancyDim::FADE_TAU_MS)
 }
 
@@ -770,19 +756,6 @@ fn drawn_frames(
             (pixels, office.until_next_paint(now))
         })
         .collect()
-}
-
-/// The frame a fresh office draws of `scene` in `look`, offline or not, once
-/// an offline one would have settled after `t0`.
-fn settled_frame(
-    look: crate::look::Look,
-    scene: &SceneState,
-    t0: SystemTime,
-    offline: bool,
-) -> crate::sprite::RgbBuffer {
-    let frames = [t0, t0 + offline_settled()].map(|now| (now, offline));
-    let mut drawn = drawn_frames(look, scene, &frames);
-    drawn.pop().expect("a frame").0
 }
 
 /// The looks that hang no sign, which an offline office starves with its

@@ -806,8 +806,8 @@ pub(crate) fn step_floor(
 /// A lit level's fade on vacancy, a floor's lights' or an offline office's
 /// frame's ([`PerOffice`]): a vacant floor holds full light for
 /// `VACANCY_DEBOUNCE_MS` (so agents briefly disappearing between transcripts don't
-/// flicker it) then eases toward `MIN_LEVEL`; repopulating or coming back online
-/// snaps the target straight back to 1.0.
+/// flicker it) then eases toward `MIN_LEVEL`; its vacancy ending snaps the
+/// target straight back to 1.0.
 #[derive(Debug)]
 pub struct VacancyDim {
     level: f32,
@@ -841,10 +841,9 @@ impl VacancyDim {
         }
     }
 
-    /// Whether the debounce has run out — the VERDICT that it is vacant: a
-    /// floor's when empty or [`Conditions::offline`], an office's when offline.
-    /// Read this, never `level() < 1.0`: the level trails the verdict by the
-    /// length of its ease.
+    /// Whether the debounce has run out: the VERDICT that it is vacant. Read
+    /// this, never `level() < 1.0`: the level trails the verdict by the length
+    /// of its ease.
     pub(crate) fn dimmed(&self) -> bool {
         self.dimmed
     }
