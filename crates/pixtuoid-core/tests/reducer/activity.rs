@@ -536,6 +536,28 @@ fn a_turn_end_settles_a_call_whose_own_end_never_came() {
     }
 }
 
+/// A turn's end ends the calls it leaves open, so a copy of one that lands
+/// after it, the transcript's lagging the hook's, meets an ended call, and no
+/// later settle lands on it.
+#[test]
+fn a_calls_copy_after_its_turns_end_stays_ended() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/late-copy.jsonl");
+    start(&mut r, &mut scene, id);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let at = |s| t0 + Duration::from_secs(s);
+    let call = |r: &mut Reducer, scene: &mut SceneState, call, s, tp| {
+        tool_use_start(r, scene, id, Some(call), Some("Bash: ls"), at(s), tp);
+    };
+    call(&mut r, &mut scene, "c", 1, Transport::Hook);
+    turn_end(&mut r, &mut scene, id, at(2), Transport::Hook);
+    call(&mut r, &mut scene, "c", 3, Transport::Jsonl);
+    call(&mut r, &mut scene, "d", 4, Transport::Hook);
+    tool_use_end(&mut r, &mut scene, id, Some("d"), at(5), Transport::Hook);
+    assert_eq!(scene.agents[&id].state, ActivityState::Idle);
+}
+
 // A transcript line can race in just after a fresh hook PermissionRequest, so
 // only a HOOK end naming no call may resolve a RequiresAction.
 #[test]

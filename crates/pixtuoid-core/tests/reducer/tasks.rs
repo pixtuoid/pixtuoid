@@ -724,7 +724,7 @@ fn oversized_attach_synthesized_task_start_arms_b1() {
     assert_delegating(
         &scene,
         parent,
-        "the synthesized Jsonl Task start must seed tasks_in_flight",
+        "the synthesized Jsonl Task start must seed a Task in flight",
     );
 
     tool_use_end(
@@ -1883,7 +1883,7 @@ fn jsonl_task_self_end_drains_when_hook_end_drops() {
     );
     assert!(
         scene.agents.get(&child).unwrap().exiting_at.is_some(),
-        "the JSONL Task self-END must drain tasks_in_flight and fire the b1 cascade (after the #151 grace) — it is the fallback for the dropped hook END"
+        "the JSONL Task self-END must drain its Task in flight and fire the b1 cascade (after the #151 grace) — it is the fallback for the dropped hook END"
     );
     tool_use_start(
         &mut r,

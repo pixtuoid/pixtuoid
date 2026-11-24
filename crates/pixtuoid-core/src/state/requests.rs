@@ -1,14 +1,15 @@
-//! The agents' open user-action requests (a slot's `RequiresAction`) and the
-//! calls pending that one can hold, with the two rules every event meets them
-//! through: `bind`, which calls a request holds, and `resolves`, which event
-//! answers it.
+//! The agents' open user-action requests (a slot's `RequiresAction`), with the
+//! two rules every event meets them through: `bind`, which of the call
+//! ledger's pending calls a request holds, and `resolves`, which event answers
+//! it.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::AgentId;
 use crate::source::{Resolution, Transport};
-use crate::state::{ToolUse, TurnKey};
+use crate::state::TurnKey;
+use crate::state::calls::{CallLedger, PendingCall};
 
 /// What an end names.
 #[derive(Clone, Copy, Debug)]
@@ -28,6 +29,17 @@ pub(crate) enum Ended<'a> {
     },
 }
 
+impl Ended<'_> {
+    /// Whether it ends what `scope` scopes: that turn, or what no turn scoped.
+    pub(crate) fn closes(&self, scope: Option<&TurnKey>) -> bool {
+        match (self, scope) {
+            (Ended::Turn { turn, implied, .. }, Some(t)) => Some(t) == *turn || Some(t) == *implied,
+            (Ended::Turn { turnless, .. }, None) => *turnless,
+            (Ended::Call(_) | Ended::Unnamed, _) => false,
+        }
+    }
+}
+
 /// An event as a request's resolution reads it.
 #[derive(Clone, Copy, Debug)]
 enum Seen<'a> {
@@ -36,9 +48,9 @@ enum Seen<'a> {
     /// An end, and the transport it arrived on.
     End(Ended<'a>, Transport),
     Resolved(&'a Resolution),
-    /// An unnamed child's event, dropped while these Tasks are in flight: the
-    /// child resumed.
-    ChildResumed(&'a HashSet<String>),
+    /// An unnamed child's event, dropped while its parent's Tasks are in
+    /// flight: the child resumed.
+    ChildResumed(&'a CallLedger),
 }
 
 /// A raise as the wire gives it, its turn already scoped.
@@ -53,33 +65,6 @@ pub(crate) struct Raise<'a> {
     pub(crate) from: Transport,
     /// The call that dispatched the one it names, when the wire names it.
     pub(crate) parent: Option<&'a str>,
-}
-
-/// A call that started and has not ended, as a request binds it.
-#[derive(Debug)]
-pub(crate) struct PendingStart {
-    pub(crate) call: Arc<str>,
-    /// The tool's wire name, when the start names it.
-    pub(crate) tool_name: Option<Arc<str>>,
-    /// Its own turn, else the agent's open one.
-    pub(crate) turn: Option<TurnKey>,
-    pub(crate) on: Transport,
-    /// The item its start shows; `None` for a pre-use, which starts nothing.
-    pub(crate) item: Option<ToolUse>,
-}
-
-/// A pending call, once per id however many of its starts arrive: a pre-use
-/// and its start, or the two transports' starts of one call.
-#[derive(Debug, Clone)]
-struct Pending {
-    call: Arc<str>,
-    tool_name: Option<Arc<str>>,
-    turn: Option<TurnKey>,
-    seen_on: Vec<Transport>,
-    /// The transports its starts came on, a pre-use's aside.
-    started_on: Vec<Transport>,
-    /// What its start showed, once it started: the call is in flight.
-    item: Option<ToolUse>,
 }
 
 #[derive(Debug, Clone)]
@@ -144,31 +129,28 @@ impl ActionRequest {
             });
         }
     }
-
-    /// Whether `pending` is a call this request binds by its tool name.
-    fn binds_by_name(&self, pending: &Pending) -> bool {
-        self.tool_name.is_some() && pending.tool_name == self.tool_name && pending.turn == self.turn
-    }
 }
 
-/// Every agent's open request and pending starts. A request lives until an
-/// event answers it or its slot goes; whether it stands is the slot's
-/// `RequiresAction`. A pending start lives until its call's end, its turn's
-/// end, or its slot goes.
+/// Every agent's open request. A request lives until an event answers it or
+/// its slot goes; whether it stands is the slot's `RequiresAction`.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ActionRequests {
     open: HashMap<AgentId, ActionRequest>,
-    pending: HashMap<AgentId, Vec<Pending>>,
 }
 
 impl ActionRequests {
-    /// `id` raised a request. `requires_action` is whether one already
-    /// stands: a second raise keeps the first one's members and identity, and
-    /// adds only the calls its own key binds. A raise for another turn replaces
-    /// it: a thread runs one turn at a time, so the standing request's turn is
-    /// over, and its lagging ends must not answer this one.
-    pub(crate) fn raise(&mut self, id: AgentId, raise: Raise<'_>, requires_action: bool) {
-        let pending = self.pending.get(&id).map_or(&[][..], Vec::as_slice);
+    /// `id` raised a request over `calls`. `requires_action` is whether one
+    /// already stands: a second raise keeps the first one's members and
+    /// identity, and adds only the calls its own key binds. A raise for another
+    /// turn replaces it: a thread runs one turn at a time, so the standing
+    /// request's turn is over, and its lagging ends must not answer this one.
+    pub(crate) fn raise(
+        &mut self,
+        id: AgentId,
+        raise: Raise<'_>,
+        requires_action: bool,
+        calls: &CallLedger,
+    ) {
         let standing = self.open.get(&id).filter(|req| {
             requires_action
                 && !matches!((&req.turn, raise.turn), (Some(standing), Some(new)) if standing != new)
@@ -181,72 +163,42 @@ impl ActionRequests {
                 turn: raise.turn.cloned(),
                 raised_on: raise.from,
             };
-            // The sole pending start is a deduction, not a key, so only a
-            // fresh request the wire gave no key draws it.
-            if raise.call.is_none()
-                && raise.tool_name.is_none()
-                && let [sole] = in_scope(pending, raise.turn, raise.from).as_slice()
-            {
-                fresh.holds(&sole.call, false, None);
+            // The sole pending call is a deduction, not a key, so only a fresh
+            // request the wire gave no key draws it, and only from the calls
+            // seen on its transport: the other's copy of a queued call can land
+            // while the human still decides (#951).
+            if raise.call.is_none() && raise.tool_name.is_none() {
+                let mut seen_here = calls
+                    .pending_in(&id, raise.turn)
+                    .filter(|p| p.seen_on(raise.from));
+                if let (Some(sole), None) = (seen_here.next(), seen_here.next()) {
+                    fresh.holds(sole.call, false, None);
+                }
             }
             self.open.insert(id, fresh);
         }
         if let Some(req) = self.open.get_mut(&id) {
-            bind(req, pending, raise);
+            bind(req, calls.pending_in(&id, raise.turn), raise);
         }
     }
 
-    /// A call started without ending yet, on `start.on`: whether it is a start,
-    /// its call's first on that transport. A request naming its tool binds it
-    /// now, so a pre-use delivered after its request still joins (#242).
-    pub(crate) fn register(&mut self, id: AgentId, start: PendingStart) -> bool {
-        let starts_it = start.item.is_some();
-        let starts = self.pending.entry(id).or_default();
-        let mut at = match starts.iter().position(|p| p.call == start.call) {
-            Some(at) => at,
-            None => {
-                starts.push(Pending {
-                    call: start.call,
-                    tool_name: None,
-                    turn: None,
-                    seen_on: Vec::new(),
-                    started_on: Vec::new(),
-                    item: None,
-                });
-                starts.len() - 1
-            }
+    /// A pre-use or start registered `call` pending: a request naming its tool
+    /// binds it now, so a pre-use delivered after its request still joins
+    /// (#242).
+    pub(crate) fn join(&mut self, id: AgentId, call: &str, calls: &CallLedger) {
+        let Some(req) = self.open.get_mut(&id) else {
+            return;
         };
-        // A call's first start makes it the newest in flight.
-        if let Some(item) = start.item
-            && starts[at].item.is_none()
-        {
-            let mut started = starts.remove(at);
-            started.item = Some(item);
-            starts.push(started);
-            at = starts.len() - 1;
+        let Some(name) = req.tool_name.as_deref() else {
+            return;
+        };
+        let turn = req.turn.clone();
+        let joins = calls
+            .pending_in(&id, turn.as_ref())
+            .find(|p| &**p.call == call && p.tool_name == Some(name));
+        if let Some(p) = joins {
+            req.holds(p.call, false, None);
         }
-        let pending = &mut starts[at];
-        if pending.tool_name.is_none() {
-            pending.tool_name = start.tool_name;
-        }
-        // A start seen while no turn was open (an oversized skip, a late
-        // attach) takes the turn a later registration names.
-        if pending.turn.is_none() {
-            pending.turn = start.turn;
-        }
-        if !pending.seen_on.contains(&start.on) {
-            pending.seen_on.push(start.on);
-        }
-        let first_here = starts_it && !pending.started_on.contains(&start.on);
-        if first_here {
-            pending.started_on.push(start.on);
-        }
-        if let Some(req) = self.open.get_mut(&id)
-            && req.binds_by_name(pending)
-        {
-            req.holds(&pending.call, false, None);
-        }
-        first_here
     }
 
     /// A start on `on` that raised its call's record, its call's first start
@@ -262,8 +214,7 @@ impl ActionRequests {
 
     /// An end on `from`: whether it answers the standing request. A call's
     /// end retires that call whether or not it answered (a denial, or a
-    /// parallel call that was a member too); a turn's end retires its pending
-    /// starts.
+    /// parallel call that was a member too).
     pub(crate) fn end(
         &mut self,
         id: AgentId,
@@ -272,14 +223,8 @@ impl ActionRequests {
         requires_action: bool,
     ) -> bool {
         let resolved = requires_action && self.resolves(&id, Seen::End(ended, from));
-        match ended {
-            Ended::Call(c) => self.retire(&id, c),
-            Ended::Turn {
-                turn,
-                implied,
-                turnless,
-            } => self.retire_turn(&id, turn, implied, turnless),
-            Ended::Unnamed => {}
+        if let Ended::Call(c) = ended {
+            self.retire(&id, c);
         }
         if resolved {
             self.open.remove(&id);
@@ -329,15 +274,15 @@ impl ActionRequests {
         resolved
     }
 
-    /// An unnamed child's event dropped while `tasks` are in flight: whether
-    /// it answers the standing request, which it then closes.
+    /// An unnamed child's event dropped while `id`'s Tasks in `calls` are in
+    /// flight: whether it answers the standing request, which it then closes.
     pub(crate) fn child_resumed(
         &mut self,
         id: AgentId,
-        tasks: &HashSet<String>,
+        calls: &CallLedger,
         requires_action: bool,
     ) -> bool {
-        let resolved = requires_action && self.resolves(&id, Seen::ChildResumed(tasks));
+        let resolved = requires_action && self.resolves(&id, Seen::ChildResumed(calls));
         if resolved {
             self.open.remove(&id);
         }
@@ -359,36 +304,14 @@ impl ActionRequests {
             Seen::Resolved(Resolution::Approved(c)) => self.names(id, c) && req.is_last_member(c),
             // Reasonix: its prompt and its tool's end both name no call.
             Seen::End(Ended::Unnamed, from) => from == Transport::Hook && !req.named,
-            Seen::End(
-                Ended::Turn {
-                    turn,
-                    implied,
-                    turnless,
-                },
-                _,
-            ) => match &req.turn {
-                Some(t) => Some(t) == turn || Some(t) == implied,
-                None => turnless,
-            },
+            Seen::End(ended @ Ended::Turn { .. }, _) => ended.closes(req.turn.as_ref()),
             Seen::Resolved(Resolution::Turn(k)) => req.turn.as_ref() == Some(k),
             // The child resumed, unless a member is the parent's own call.
-            Seen::ChildResumed(tasks) => req.members.iter().all(|m| tasks.contains(&*m.call)),
+            Seen::ChildResumed(calls) => req
+                .members
+                .iter()
+                .all(|m| calls.is_task_in_flight(id, &m.call)),
         }
-    }
-
-    /// The item `call`'s start showed, while it has not ended.
-    pub(crate) fn in_flight(&self, id: &AgentId, call: &str) -> Option<ToolUse> {
-        let starts = self.pending.get(id)?;
-        starts.iter().find(|p| &*p.call == call)?.item.clone()
-    }
-
-    /// The item of `id`'s newest call that started and has not ended.
-    pub(crate) fn newest_in_flight(&self, id: &AgentId) -> Option<ToolUse> {
-        self.pending
-            .get(id)?
-            .iter()
-            .rev()
-            .find_map(|p| p.item.clone())
     }
 
     pub(crate) fn is_member(&self, id: &AgentId, call: &str) -> bool {
@@ -397,39 +320,17 @@ impl ActionRequests {
             .is_some_and(|req| req.member(call).is_some())
     }
 
-    /// `call` ended: it is no longer pending nor a member, and the calls it
-    /// dispatched are no longer members.
+    /// `call` ended: it is no longer a member, nor are the calls it
+    /// dispatched.
     pub(crate) fn retire(&mut self, id: &AgentId, call: &str) {
         if let Some(req) = self.open.get_mut(id) {
             req.members.retain(|m| !m.ended_by(call));
         }
-        if let Some(starts) = self.pending.get_mut(id) {
-            starts.retain(|s| &*s.call != call);
-        }
     }
 
-    /// The pending starts a turn's end retires: its turn's and the implied
-    /// one's, and the turnless ones when it is `turnless`.
-    fn retire_turn(
-        &mut self,
-        id: &AgentId,
-        turn: Option<&TurnKey>,
-        implied: Option<&TurnKey>,
-        turnless: bool,
-    ) {
-        let Some(starts) = self.pending.get_mut(id) else {
-            return;
-        };
-        starts.retain(|p| match &p.turn {
-            Some(t) => Some(t) != turn && Some(t) != implied,
-            None => !turnless,
-        });
-    }
-
-    /// The slot went: its request and pending starts with it.
+    /// The slot went: its request with it.
     pub(crate) fn forget(&mut self, id: &AgentId) {
         self.open.remove(id);
-        self.pending.remove(id);
     }
 
     #[cfg(test)]
@@ -437,38 +338,27 @@ impl ActionRequests {
         self.open.contains_key(id)
     }
 
-    /// How many requests stand and calls are pending.
+    /// How many requests stand.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
-        let Self { open, pending } = self;
-        open.len() + pending.values().map(Vec::len).sum::<usize>()
+        self.open.len()
     }
 }
 
-impl Pending {
-    /// Whether it is pending on `on` in `turn`.
-    fn is_in(&self, turn: Option<&TurnKey>, on: Transport) -> bool {
-        self.seen_on.contains(&on) && self.turn.as_ref() == turn
-    }
-}
-
-/// The calls pending on `on` in `turn`.
-fn in_scope<'a>(pending: &'a [Pending], turn: Option<&TurnKey>, on: Transport) -> Vec<&'a Pending> {
-    pending.iter().filter(|p| p.is_in(turn, on)).collect()
-}
-
-/// The calls `raise`'s own key binds: the call it names, else every pending
-/// start of the tool it names in its turn. Hooks may rewrite a call's input
-/// but never its name, so the name is the key.
-fn bind(req: &mut ActionRequest, pending: &[Pending], raise: Raise<'_>) {
+/// The calls `raise`'s own key binds: the call it names, else every `pending`
+/// call of the tool it names. Hooks may rewrite a call's input but never its
+/// name, so the name is the key.
+fn bind<'a>(
+    req: &mut ActionRequest,
+    pending: impl Iterator<Item = PendingCall<'a>>,
+    raise: Raise<'_>,
+) {
     if let Some(call) = raise.call {
         req.holds(&Arc::from(call), true, raise.parent);
         req.named = true;
     } else if let Some(name) = raise.tool_name {
-        for start in pending {
-            if start.tool_name.as_deref() == Some(name) && start.turn.as_ref() == raise.turn {
-                req.holds(&start.call, false, None);
-            }
+        for p in pending.filter(|p| p.tool_name == Some(name)) {
+            req.holds(p.call, false, None);
         }
     }
 }
@@ -476,6 +366,8 @@ fn bind(req: &mut ActionRequest, pending: &[Pending], raise: Raise<'_>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::ToolDetail;
+    use crate::state::calls::Fact;
 
     const HOOK: Transport = Transport::Hook;
     const JSONL: Transport = Transport::Jsonl;
@@ -488,53 +380,50 @@ mod tests {
         TurnKey::Id(k.into())
     }
 
-    fn pending(call: &str, tool_name: Option<&str>, on: Transport) -> PendingStart {
-        PendingStart {
-            call: call.into(),
-            tool_name: tool_name.map(Arc::from),
-            turn: None,
-            on,
-            item: None,
+    /// A pre-use of a call on a transport, naming its tool where it says one.
+    type PreUse = (&'static str, Option<&'static str>, Transport);
+
+    /// An agent's calls and its request.
+    #[derive(Default)]
+    struct Agent {
+        calls: CallLedger,
+        reqs: ActionRequests,
+    }
+
+    impl Agent {
+        /// `call`'s pre-use, scoped to `turn`.
+        fn pre_use_in(&mut self, (call, tool_name, on): PreUse, turn: Option<&TurnKey>) {
+            let fact = Fact::PreUse { tool_name, turn };
+            self.calls.observe(id(), call, fact, on, None);
+            self.reqs.join(id(), call, &self.calls);
         }
-    }
 
-    fn started(call: &str) -> PendingStart {
-        PendingStart {
-            item: Some(ToolUse {
-                tool_use_id: Some(call.into()),
-                detail: None,
-                kind: crate::state::ToolKind::Other,
-            }),
-            ..pending(call, None, HOOK)
+        fn pre_use(&mut self, pre_use: PreUse) {
+            self.pre_use_in(pre_use, None);
         }
-    }
 
-    fn in_flight(reqs: &ActionRequests) -> Option<String> {
-        Some(reqs.newest_in_flight(&id())?.tool_use_id?.to_string())
-    }
+        /// `call`'s start on `on`, showing `detail`.
+        fn start(&mut self, call: &str, detail: Option<&ToolDetail>, on: Transport) {
+            let fact = Fact::Start { copy: None, detail };
+            self.calls.observe(id(), call, fact, on, None);
+            self.reqs.join(id(), call, &self.calls);
+        }
 
-    #[test]
-    fn the_newest_call_in_flight_is_the_last_to_start_and_not_end() {
-        let mut reqs = ActionRequests::default();
-        reqs.register(id(), pending("a", Some("Bash"), HOOK));
-        assert_eq!(in_flight(&reqs), None, "a pre-use starts nothing");
-        reqs.register(id(), started("b"));
-        reqs.register(id(), started("a"));
-        assert_eq!(
-            in_flight(&reqs).as_deref(),
-            Some("a"),
-            "a's start came last, though its pre-use came first"
-        );
-        reqs.register(id(), started("b"));
-        assert_eq!(
-            in_flight(&reqs).as_deref(),
-            Some("a"),
-            "a second start of b is no newer"
-        );
-        reqs.end(id(), Ended::Call("a"), HOOK, false);
-        assert_eq!(in_flight(&reqs).as_deref(), Some("b"));
-        reqs.end(id(), Ended::Call("b"), HOOK, false);
-        assert_eq!(in_flight(&reqs), None);
+        fn raise(&mut self, r: Raise<'_>, requires_action: bool) {
+            self.reqs.raise(id(), r, requires_action, &self.calls);
+        }
+
+        fn members(&self) -> Vec<&str> {
+            self.reqs.open[&id()]
+                .members
+                .iter()
+                .map(|m| &*m.call)
+                .collect()
+        }
+
+        fn resolves(&self, seen: Seen<'_>) -> bool {
+            self.reqs.resolves(&id(), seen)
+        }
     }
 
     fn raise(
@@ -551,29 +440,28 @@ mod tests {
         }
     }
 
-    /// A standing request raised on `from` over `starts`.
-    fn raised(starts: Vec<PendingStart>, r: Raise<'_>) -> ActionRequests {
-        let mut reqs = ActionRequests::default();
-        for s in starts {
-            reqs.register(id(), s);
+    /// A standing request raised over `pre_uses`.
+    fn raised(pre_uses: Vec<PreUse>, r: Raise<'_>) -> Agent {
+        let mut agent = Agent::default();
+        for p in pre_uses {
+            agent.pre_use(p);
         }
-        reqs.raise(id(), r, false);
-        reqs
+        agent.raise(r, false);
+        agent
     }
 
-    fn members(reqs: &ActionRequests) -> Vec<&str> {
-        reqs.open[&id()].members.iter().map(|m| &*m.call).collect()
+    /// A standing request raised over a dispatched Task.
+    fn raised_over_a_task(r: Raise<'_>) -> Agent {
+        let mut agent = Agent::default();
+        agent.start("task", Some(&ToolDetail::Task), HOOK);
+        agent.raise(r, false);
+        agent
     }
 
     #[test]
     fn bind_takes_the_strongest_key_the_wire_gives() {
-        let two = || {
-            vec![
-                pending("a", Some("Bash"), HOOK),
-                pending("b", Some("Read"), HOOK),
-            ]
-        };
-        for (what, starts, r, want) in [
+        let two = || vec![("a", Some("Bash"), HOOK), ("b", Some("Read"), HOOK)];
+        for (what, pre_uses, r, want) in [
             (
                 "a named call",
                 two(),
@@ -588,7 +476,7 @@ mod tests {
             ),
             (
                 "the sole pending start",
-                vec![pending("a", None, HOOK), pending("j", None, JSONL)],
+                vec![("a", None, HOOK), ("j", None, JSONL)],
                 raise(None, None, HOOK),
                 vec!["a"],
             ),
@@ -605,7 +493,7 @@ mod tests {
                 vec![],
             ),
         ] {
-            assert_eq!(members(&raised(starts, r)), want, "{what}");
+            assert_eq!(raised(pre_uses, r).members(), want, "{what}");
         }
     }
 
@@ -613,64 +501,61 @@ mod tests {
     /// id binds its call.
     #[test]
     fn a_raise_binds_a_pending_call_whichever_transport_started_it() {
-        let reqs = raised(
-            vec![pending("a", Some("Bash"), JSONL)],
+        let agent = raised(
+            vec![("a", Some("Bash"), JSONL)],
             raise(None, Some("Bash"), HOOK),
         );
-        assert_eq!(members(&reqs), ["a"], "a raise after its call");
-        let mut reqs = raised(vec![], raise(None, Some("Bash"), HOOK));
-        reqs.register(id(), pending("a", Some("Bash"), JSONL));
-        assert_eq!(members(&reqs), ["a"], "a pre-use after its raise");
+        assert_eq!(agent.members(), ["a"], "a raise after its call");
+        let mut agent = raised(vec![], raise(None, Some("Bash"), HOOK));
+        agent.pre_use(("a", Some("Bash"), JSONL));
+        assert_eq!(agent.members(), ["a"], "a pre-use after its raise");
     }
 
     #[test]
     fn a_named_request_binds_every_pending_start_of_its_tool_in_its_turn() {
-        let mut reqs = ActionRequests::default();
+        let mut agent = Agent::default();
         for (call, t) in [("a", "t1"), ("b", "t1"), ("c", "t0")] {
-            reqs.register(
-                id(),
-                PendingStart {
-                    turn: Some(turn(t)),
-                    ..pending(call, Some("Bash"), HOOK)
-                },
-            );
+            agent.pre_use_in((call, Some("Bash"), HOOK), Some(&turn(t)));
         }
         let t1 = turn("t1");
-        reqs.raise(
-            id(),
+        agent.raise(
             Raise {
                 turn: Some(&t1),
                 ..raise(None, Some("Bash"), HOOK)
             },
             false,
         );
-        assert_eq!(members(&reqs), ["a", "b"]);
+        assert_eq!(agent.members(), ["a", "b"]);
     }
 
     #[test]
     fn a_pre_use_delivered_after_its_request_joins_it() {
-        let mut reqs = raised(vec![], raise(None, Some("Bash"), HOOK));
-        reqs.register(id(), pending("other", Some("Read"), HOOK));
-        reqs.register(id(), pending("a", Some("Bash"), HOOK));
-        assert_eq!(members(&reqs), ["a"]);
+        let mut agent = raised(vec![], raise(None, Some("Bash"), HOOK));
+        agent.pre_use(("other", Some("Read"), HOOK));
+        agent.pre_use(("a", Some("Bash"), HOOK));
+        assert_eq!(agent.members(), ["a"]);
         assert!(
-            !reqs.start(id(), true, HOOK),
+            !agent.reqs.start(id(), true, HOOK),
             "a request naming its tool takes no start"
         );
     }
 
     #[test]
     fn a_re_raise_keeps_the_first_raise_and_adds_only_its_own_key() {
-        let mut reqs = raised(vec![pending("a", None, HOOK)], raise(None, None, HOOK));
-        reqs.raise(id(), raise(None, None, JSONL), true);
-        assert_eq!(members(&reqs), ["a"], "a raise with no key changes nothing");
+        let mut agent = raised(vec![("a", None, HOOK)], raise(None, None, HOOK));
+        agent.raise(raise(None, None, JSONL), true);
         assert_eq!(
-            reqs.open[&id()].raised_on,
+            agent.members(),
+            ["a"],
+            "a raise with no key changes nothing"
+        );
+        assert_eq!(
+            agent.reqs.open[&id()].raised_on,
             HOOK,
             "and keeps the transport that raised it"
         );
-        reqs.raise(id(), raise(Some("y"), None, HOOK), true);
-        assert_eq!(members(&reqs), ["a", "y"]);
+        agent.raise(raise(Some("y"), None, HOOK), true);
+        assert_eq!(agent.members(), ["a", "y"]);
     }
 
     fn turn_end(k: Option<&TurnKey>) -> Ended<'_> {
@@ -683,27 +568,26 @@ mod tests {
 
     #[test]
     fn resolves_holds_each_rule() {
-        let none = HashSet::new();
-        let tasks: HashSet<String> = ["task".to_string()].into();
+        let none = CallLedger::default();
+        let tasks = raised_over_a_task(raise(None, None, HOOK)).calls;
         let (t1, t2) = (turn("t1"), turn("t2"));
         let named = || raised(vec![], raise(Some("x"), None, HOOK));
-        let bound = || raised(vec![pending("x", None, HOOK)], raise(None, None, HOOK));
+        let bound = || raised(vec![("x", None, HOOK)], raise(None, None, HOOK));
         let keyless = |from| raised(vec![], raise(None, None, from));
         let scoped = || {
-            let mut reqs = ActionRequests::default();
-            reqs.raise(
-                id(),
+            let mut agent = Agent::default();
+            agent.raise(
                 Raise {
                     turn: Some(&t1),
                     ..raise(None, Some("Bash"), HOOK)
                 },
                 false,
             );
-            reqs
+            agent
         };
         let approved = Resolution::Approved("x".into());
         let stopped = Resolution::Turn(t1.clone());
-        for (what, reqs, seen, want) in [
+        for (what, agent, seen, want) in [
             (
                 "a named member's approval",
                 named(),
@@ -859,7 +743,7 @@ mod tests {
             ),
             (
                 "a child under its Task's prompt",
-                raised(vec![pending("task", None, HOOK)], raise(None, None, HOOK)),
+                raised_over_a_task(raise(None, None, HOOK)),
                 Seen::ChildResumed(&tasks),
                 true,
             ),
@@ -876,7 +760,7 @@ mod tests {
                 true,
             ),
         ] {
-            assert_eq!(reqs.resolves(&id(), seen), want, "{what}");
+            assert_eq!(agent.resolves(seen), want, "{what}");
         }
         assert!(
             !ActionRequests::default().resolves(&id(), Seen::End(turn_end(None), HOOK)),
@@ -891,23 +775,29 @@ mod tests {
             turn: Some(t),
             ..raise(Some(call), None, HOOK)
         };
-        let mut reqs = ActionRequests::default();
-        reqs.raise(id(), scoped("xn", &n), false);
-        reqs.raise(id(), scoped("xn2", &n), true);
-        assert_eq!(members(&reqs), ["xn", "xn2"], "the same turn's raise joins");
-        reqs.raise(id(), scoped("xm", &m), true);
-        assert_eq!(members(&reqs), ["xm"]);
-        assert!(!reqs.resolves(&id(), Seen::End(turn_end(Some(&n)), JSONL)));
-        assert!(reqs.resolves(&id(), Seen::End(turn_end(Some(&m)), JSONL)));
+        let mut agent = Agent::default();
+        agent.raise(scoped("xn", &n), false);
+        agent.raise(scoped("xn2", &n), true);
+        assert_eq!(
+            agent.members(),
+            ["xn", "xn2"],
+            "the same turn's raise joins"
+        );
+        agent.raise(scoped("xm", &m), true);
+        assert_eq!(agent.members(), ["xm"]);
+        assert!(!agent.resolves(Seen::End(turn_end(Some(&n)), JSONL)));
+        assert!(agent.resolves(Seen::End(turn_end(Some(&m)), JSONL)));
     }
 
     #[test]
     fn only_the_last_member_answers() {
-        let mut reqs = raised(vec![], raise(Some("x"), None, HOOK));
-        reqs.raise(id(), raise(Some("y"), None, HOOK), true);
+        let mut agent = raised(vec![], raise(Some("x"), None, HOOK));
+        agent.raise(raise(Some("y"), None, HOOK), true);
+        let reqs = &mut agent.reqs;
         let x = Resolution::Approved("x".into());
         assert!(!reqs.resolved(id(), &x, true), "y still waits");
-        assert_eq!(members(&reqs), ["y"], "x's approval retired it");
+        assert_eq!(agent.members(), ["y"], "x's approval retired it");
+        let reqs = &mut agent.reqs;
         assert!(!reqs.end(id(), Ended::Call("z"), HOOK, true));
         assert!(reqs.end(id(), Ended::Call("y"), JSONL, true), "a denial");
         assert!(!reqs.contains(&id()));
@@ -919,92 +809,42 @@ mod tests {
             parent: Some("p"),
             ..raise(Some("n"), None, JSONL)
         };
-        let mut reqs = raised(vec![], nested);
-        reqs.raise(id(), raise(Some("x"), None, JSONL), true);
-        assert!(!reqs.end(id(), Ended::Call("p"), JSONL, true), "x waits");
-        assert_eq!(members(&reqs), ["x"], "p's end retired n");
-        let mut reqs = raised(vec![], nested);
-        assert!(reqs.end(id(), Ended::Call("p"), JSONL, true));
-        assert!(!reqs.contains(&id()));
+        let mut agent = raised(vec![], nested);
+        agent.raise(raise(Some("x"), None, JSONL), true);
+        assert!(
+            !agent.reqs.end(id(), Ended::Call("p"), JSONL, true),
+            "x waits"
+        );
+        assert_eq!(agent.members(), ["x"], "p's end retired n");
+        let mut agent = raised(vec![], nested);
+        assert!(agent.reqs.end(id(), Ended::Call("p"), JSONL, true));
+        assert!(!agent.reqs.contains(&id()));
     }
 
     #[test]
     fn a_drained_member_bound_by_deduction_answers_nothing() {
-        let mut reqs = raised(vec![pending("task", None, HOOK)], raise(None, None, HOOK));
-        assert!(!reqs.drained(id(), "task", HOOK, true));
-        assert!(reqs.contains(&id()), "#152: the request is kept");
-        assert!(
-            reqs.pending.get(&id()).is_none_or(Vec::is_empty),
-            "nor is the Task pending"
-        );
+        let mut agent = raised_over_a_task(raise(None, None, HOOK));
+        assert_eq!(agent.members(), ["task"], "premise: bound by deduction");
+        assert!(!agent.reqs.drained(id(), "task", HOOK, true));
+        assert!(agent.reqs.contains(&id()), "#152: the request is kept");
     }
 
     #[test]
     fn a_resumed_child_closes_its_parents_request_only_while_it_waits() {
-        let tasks: HashSet<String> = ["task".to_string()].into();
-        let mut reqs = raised(vec![pending("task", None, HOOK)], raise(None, None, HOOK));
-        assert!(!reqs.child_resumed(id(), &tasks, false), "no wait stood");
-        assert!(reqs.contains(&id()));
-        assert!(reqs.child_resumed(id(), &tasks, true));
-        assert!(!reqs.contains(&id()));
+        let mut agent = raised_over_a_task(raise(None, None, HOOK));
+        assert!(
+            !agent.reqs.child_resumed(id(), &agent.calls, false),
+            "no wait stood"
+        );
+        assert!(agent.reqs.contains(&id()));
+        assert!(agent.reqs.child_resumed(id(), &agent.calls, true));
+        assert!(!agent.reqs.contains(&id()));
     }
 
     #[test]
     fn a_start_outside_a_wait_runs_and_drops_a_stale_request() {
-        let mut reqs = raised(vec![], raise(Some("x"), None, HOOK));
-        assert!(reqs.start(id(), false, JSONL));
-        assert!(!reqs.contains(&id()));
-    }
-
-    #[test]
-    fn a_turn_end_retires_its_turns_pending_starts() {
-        let (t1, t2) = (turn("t1"), turn("t2"));
-        let mut reqs = ActionRequests::default();
-        for (call, t, on) in [
-            ("a", Some(&t1), HOOK),
-            ("b", Some(&t2), HOOK),
-            ("c", None, HOOK),
-            ("d", None, JSONL),
-        ] {
-            reqs.register(
-                id(),
-                PendingStart {
-                    turn: t.cloned(),
-                    ..pending(call, None, on)
-                },
-            );
-        }
-        let calls = |reqs: &ActionRequests| -> Vec<String> {
-            reqs.pending[&id()]
-                .iter()
-                .map(|s| s.call.to_string())
-                .collect()
-        };
-        reqs.end(id(), turn_end(Some(&t1)), JSONL, false);
-        assert_eq!(calls(&reqs), ["b", "c", "d"]);
-        reqs.end(id(), turn_end(None), JSONL, false);
-        assert_eq!(
-            calls(&reqs),
-            ["b"],
-            "a turnless end retires the turnless, whichever transport started them"
-        );
-    }
-
-    /// A pre-use and its start, or the two transports' starts of one call,
-    /// are one pending call.
-    #[test]
-    fn a_calls_second_registration_is_idempotent() {
-        let mut reqs = ActionRequests::default();
-        reqs.register(id(), pending("a", Some("Bash"), HOOK));
-        reqs.register(id(), pending("a", None, HOOK));
-        let once = format!("{:?}", reqs.pending[&id()]);
-        reqs.register(id(), pending("a", Some("Bash"), HOOK));
-        assert_eq!(format!("{:?}", reqs.pending[&id()]), once);
-        reqs.register(id(), pending("a", None, JSONL));
-        let [a] = &reqs.pending[&id()][..] else {
-            panic!("one entry per call: {:?}", reqs.pending[&id()]);
-        };
-        assert_eq!(a.tool_name.as_deref(), Some("Bash"), "the name is kept");
-        assert_eq!(a.seen_on, [HOOK, JSONL]);
+        let mut agent = raised(vec![], raise(Some("x"), None, HOOK));
+        assert!(agent.reqs.start(id(), false, JSONL));
+        assert!(!agent.reqs.contains(&id()));
     }
 }

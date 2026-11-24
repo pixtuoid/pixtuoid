@@ -495,7 +495,7 @@ fn duplicate_root_session_start_does_not_resurrect_a_live_session() {
     assert!(
         matches!(slot.state, ActivityState::Running { .. }),
         "a duplicate root start on a LIVE session must NOT reset it to Idle: a \
-         resurrect here (the surviving mutant) drops Running + evicts tasks_in_flight"
+         resurrect here (the surviving mutant) drops Running + ends its Tasks in flight"
     );
 }
 

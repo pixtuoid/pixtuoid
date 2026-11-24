@@ -238,10 +238,6 @@ pub(super) struct Correlation {
     /// One record per id, outliving its slot, read by
     /// [`Reducer::authorizes`](super::reducer::Reducer::authorizes).
     pub(super) lifecycles: HashMap<AgentId, Lifecycle>,
-    /// Per-agent set of Task tool_use_ids currently in flight: the parent
-    /// stays Delegating while one is, an unnamed child's hook activity is
-    /// dropped, and the set's drain may arm b1.
-    pub(super) tasks_in_flight: HashMap<AgentId, HashSet<String>>,
     /// Sweep-exemption timestamps from [`AgentEvent::ProofOfLife`](crate::AgentEvent::ProofOfLife) (#220):
     /// a slot vouched for within [`PROOF_OF_LIFE_TTL`] is skipped by
     /// `sweep_stale`'s candidate collection.
@@ -268,10 +264,9 @@ pub(super) struct Correlation {
 impl Correlation {
     /// Each map's name and size, read off an exhaustive destructure: a map
     /// added to the struct fails to compile here until it is measured.
-    pub(super) fn sizes(&self) -> [(&'static str, usize); 10] {
+    pub(super) fn sizes(&self) -> [(&'static str, usize); 9] {
         let Self {
             lifecycles,
-            tasks_in_flight,
             recent_proof_of_life,
             action_requests,
             turns,
@@ -283,7 +278,6 @@ impl Correlation {
         } = self;
         [
             ("lifecycles", lifecycles.len()),
-            ("tasks_in_flight", tasks_in_flight.len()),
             ("recent_proof_of_life", recent_proof_of_life.len()),
             ("action_requests", action_requests.len()),
             ("turns", turns.len()),
@@ -320,15 +314,6 @@ pub(super) fn elapsed_past(now: SystemTime, ts: SystemTime, ttl: Duration) -> bo
 }
 
 impl Correlation {
-    /// An arbitrary Task of `id`'s in flight. The CHOICE among several is
-    /// deliberately unspecified — a Delegating slot only needs proof that
-    /// *some* delegation is live, and the set is a `HashSet` with no ordering
-    /// to promise.
-    pub(super) fn any_task_in_flight(&self, id: &AgentId) -> Option<Arc<str>> {
-        let tasks = self.tasks_in_flight.get(id)?;
-        tasks.iter().next().map(|t| Arc::<str>::from(t.as_str()))
-    }
-
     /// Whether a child end of `id` landed after `since`, however old.
     pub(super) fn child_ended_since(&self, id: AgentId, since: SystemTime) -> bool {
         self.lifecycles

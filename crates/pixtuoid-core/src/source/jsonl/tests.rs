@@ -2560,18 +2560,16 @@ async fn oversized_attach_re_emits_a_turns_start_before_its_dispatch() {
     for (from, ev) in events {
         r.apply(&mut scene, ev, t0, from);
     }
-    assert!(
-        r.newest_in_flight(&id).is_some(),
-        "the dispatch is in flight"
-    );
+    let t2 = crate::state::TurnKey::Id("t2".into());
+    assert_eq!(r.pending_in(&id, Some(&t2)), ["call_s"]);
     let end = AgentEvent::TurnEnd {
         agent_id: id,
-        turn: Some(crate::state::TurnKey::Id("t2".into())),
+        turn: Some(t2.clone()),
     };
     r.apply(&mut scene, end, t0, Transport::Jsonl);
     assert_eq!(
-        r.newest_in_flight(&id),
-        None,
+        r.pending_in(&id, Some(&t2)),
+        Vec::<String>::new(),
         "t2's end retires its dispatch"
     );
 }

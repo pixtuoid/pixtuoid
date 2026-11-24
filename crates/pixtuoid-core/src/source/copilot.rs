@@ -374,7 +374,7 @@ pub(crate) fn decode_copilot_line(
 /// [`crate::source::decoder::make_tool_detail`] (which flags a Task on the mere
 /// PRESENCE of a `subagent_type` input key) would let a model-authored /
 /// hallucinated `subagent_type` arg spoof an ordinary tool into a delegation,
-/// prematurely draining `tasks_in_flight` and evicting real children.
+/// prematurely draining a Task in flight and evicting real children.
 fn copilot_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     if tool == "task" {
         return ToolDetail::Task;
