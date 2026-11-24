@@ -208,8 +208,8 @@ impl ActionRequests {
     }
 
     /// A pre-use or start registered `call` pending: the standing request
-    /// binds it now as its raise would have, so a pre-use delivered after its
-    /// request still joins (#242).
+    /// binds it now by the tools its raises named, so a pre-use delivered
+    /// after its request still joins (#242).
     pub(crate) fn join(&mut self, id: AgentId, call: &str, calls: &CallLedger) {
         let Some(req) = self.open.get_mut(&id) else {
             return;
