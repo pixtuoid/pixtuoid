@@ -526,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn a_named_request_binds_every_pending_call_of_its_tool_in_its_turn() {
+    fn a_raise_naming_a_tool_binds_every_pending_call_of_it_in_its_turn() {
         let mut agent = Agent::default();
         for (call, t) in [("a", "t1"), ("b", "t1"), ("c", "t0")] {
             agent.pre_use_in((call, Some("Bash"), HOOK), Some(&turn(t)));
