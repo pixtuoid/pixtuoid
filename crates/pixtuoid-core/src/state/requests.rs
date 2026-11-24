@@ -1,5 +1,5 @@
 //! The agents' open user-action requests (a slot's `RequiresAction`), with the
-//! two rules every event meets them through: `binds`, which of the call
+//! two rules every event meets them through: `bound`, which of the call
 //! ledger's pending calls a request holds by name, and `resolves`, which event
 //! answers it.
 
@@ -122,16 +122,22 @@ impl ActionRequest {
         self.members.is_empty() && self.tool_names.is_empty()
     }
 
-    /// Whether it holds `pending` by the name of its tool, which neither Claude
-    /// Code's hooks nor codex's rewrite: Claude Code's may replace a call's
-    /// input alone (code.claude.com/docs/en/hooks#pretooluse-decision-control,
+    /// The pending calls of its turn it holds by the name of their tool, which
+    /// neither Claude Code's hooks nor codex's rewrite: Claude Code's may
+    /// replace a call's input alone
+    /// (code.claude.com/docs/en/hooks#pretooluse-decision-control,
     /// #permissionrequest-decision-control), and codex's outputs name no tool
     /// (`codex-rs/hooks/schema/generated/pre-tool-use.command.output.schema.json:12-43`,
     /// `permission-request.command.output.schema.json:12-40` at rust-v0.171.0).
-    fn binds(&self, pending: &PendingCall<'_>) -> bool {
-        pending
-            .tool_name
-            .is_some_and(|name| self.tool_names.iter().any(|t| &**t == name))
+    fn bound<'a>(
+        &'a self,
+        id: &AgentId,
+        calls: &'a CallLedger,
+    ) -> impl Iterator<Item = PendingCall<'a>> + use<'a> {
+        calls.pending_in(id, self.turn.as_ref()).filter(|p| {
+            p.tool_name
+                .is_some_and(|name| self.tool_names.iter().any(|t| &**t == name))
+        })
     }
 
     fn holds(&mut self, call: &Arc<str>, named: bool, parent: Option<&str>) {
@@ -202,11 +208,9 @@ impl ActionRequests {
             if !req.tool_names.iter().any(|t| &**t == name) {
                 req.tool_names.push(Arc::from(name));
             }
-            let turn = req.turn.clone();
-            for p in calls.pending_in(&id, turn.as_ref()) {
-                if req.binds(&p) {
-                    req.holds(p.call, false, None);
-                }
+            let bound: Vec<Arc<str>> = req.bound(&id, calls).map(|p| Arc::clone(p.call)).collect();
+            for call in &bound {
+                req.holds(call, false, None);
             }
         }
     }
@@ -218,12 +222,11 @@ impl ActionRequests {
         let Some(req) = self.open.get_mut(&id) else {
             return;
         };
-        let turn = req.turn.clone();
-        let joins = calls
-            .pending_in(&id, turn.as_ref())
-            .find(|p| &**p.call == call && req.binds(p));
-        if let Some(p) = joins {
-            req.holds(p.call, false, None);
+        let joins = (req.bound(&id, calls))
+            .find(|p| &**p.call == call)
+            .map(|p| Arc::clone(p.call));
+        if let Some(call) = joins {
+            req.holds(&call, false, None);
         }
     }
 
