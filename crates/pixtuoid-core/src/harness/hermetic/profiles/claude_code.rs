@@ -92,6 +92,20 @@ pub(crate) const PROFILE: Profile = Profile {
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
             turn: Turn::PROFILE,
         },
+        // A Bash call that runs and exits non-zero: a call its validation
+        // rejects fires no hook (hooks.md, PostToolUseFailure).
+        Scenario {
+            name: "tool-error",
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "PreToolUse",
+                "PostToolUseFailure",
+                "SessionEnd",
+            ],
+            turn: Turn::PROFILE,
+        },
         // Ultracode on enters, a prompt naming ultrathink adds its effort,
         // and the resumed turn, ultracode off, exits (`GQr`, `jQr` in the
         // 2.1.302 bundle).

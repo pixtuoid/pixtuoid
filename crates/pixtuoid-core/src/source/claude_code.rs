@@ -557,6 +557,7 @@ mod tests {
         for event in [
             "PreToolUse",
             "PostToolUse",
+            "PostToolUseFailure",
             "Notification",
             "PermissionRequest",
         ] {

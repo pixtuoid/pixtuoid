@@ -1,0 +1,72 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- ModelInfo:
+    agent_id: 18226196370449848224
+    model: claude-opus-5-5
+    effort: ~
+- Usage:
+    agent_id: 18226196370449848224
+    fresh_tokens: 19
+    reading_id: msg_q9qsNt-ie5LnUwIC
+    copy_id: msg_q9qsNt-ie5LnUwIC
+- ToolUseStart:
+    agent_id: 18226196370449848224
+    tool_use_id: toolu_MM_1UuhqWHem3_Vh
+    detail:
+      Generic:
+        display: "Bash: cat MISSING.txt"
+    copy_id: toolu_MM_1UuhqWHem3_Vh
+- ToolUseEnd:
+    agent_id: 18226196370449848224
+    tool_use_id: toolu_MM_1UuhqWHem3_Vh
+- ModelInfo:
+    agent_id: 18226196370449848224
+    model: claude-opus-5-5
+    effort: ~
+- Usage:
+    agent_id: 18226196370449848224
+    fresh_tokens: 19
+    reading_id: msg_0ywUggt4ICDHndZP
+    copy_id: msg_0ywUggt4ICDHndZP
+- SessionStart:
+    agent_id: 18226196370449848224
+    source: claude-code
+    session_id: 84c45725-5209-4945-ad04-87c8cbc73f5d
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- Identity:
+    agent_id: 18226196370449848224
+    source: claude-code
+    session_id: 84c45725-5209-4945-ad04-87c8cbc73f5d
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUsePending:
+    agent_id: 18226196370449848224
+    tool_use_id: toolu_MM_1UuhqWHem3_Vh
+    tool_name: Bash
+- ToolUseStart:
+    agent_id: 18226196370449848224
+    tool_use_id: toolu_MM_1UuhqWHem3_Vh
+    detail:
+      Generic:
+        display: "Bash: cat MISSING.txt"
+- ModelInfo:
+    agent_id: 18226196370449848224
+    model: ~
+    effort: medium
+- Identity:
+    agent_id: 18226196370449848224
+    source: claude-code
+    session_id: 84c45725-5209-4945-ad04-87c8cbc73f5d
+    cwd: /private/tmp/pixtuoid-capture/proj
+- ToolUseEnd:
+    agent_id: 18226196370449848224
+    tool_use_id: toolu_MM_1UuhqWHem3_Vh
+- ModelInfo:
+    agent_id: 18226196370449848224
+    model: ~
+    effort: medium
+- SessionEnd:
+    agent_id: 18226196370449848224
+    as_child: false

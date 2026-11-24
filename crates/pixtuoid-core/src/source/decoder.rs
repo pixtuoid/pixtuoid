@@ -621,7 +621,11 @@ pub(crate) fn shared_hook_arms(
             evs.extend(hook_effort(agent_id, obj));
             Ok(evs)
         }
-        "PostToolUse" => {
+        // A failed call fires PostToolUseFailure in PostToolUse's place
+        // (hooks.md, PostToolUseFailure;
+        // `packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:347-361`
+        // at `@moonshot-ai/kimi-code@2.7.3`).
+        "PostToolUse" | "PostToolUseFailure" => {
             let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
             let mut evs = vec![
                 hook_identity(agent_id, source, &session_id, obj),
@@ -1182,6 +1186,29 @@ mod tests {
             ),
             "{evs:?}"
         );
+    }
+
+    /// A failed call's hook ends it as a successful one's does, under the
+    /// call-id key each source spells.
+    #[test]
+    fn a_post_tool_use_failure_ends_its_call() {
+        for (source, key) in [("claude-code", "tool_use_id"), ("kimi", "tool_call_id")] {
+            let decode = |event: &str| {
+                let mut v = json!({
+                    "_pixtuoid_source": source, "hook_event_name": event,
+                    "session_id": "s", "cwd": "/repo", "tool_name": "Bash",
+                });
+                v[key] = json!("t1");
+                decode_hook_payload(v).expect("decodes")
+            };
+            let failed = decode("PostToolUseFailure");
+            assert!(
+                failed.iter().any(|e| matches!(e,
+                    AgentEvent::ToolUseEnd { tool_use_id: Some(id), .. } if id == "t1")),
+                "{source}: {failed:?}"
+            );
+            assert_eq!(failed, decode("PostToolUse"), "{source}");
+        }
     }
 
     #[test]

@@ -86,33 +86,32 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// (`Ok(None)`) for the rest, so the CC-shaped remainder falls through to
 /// `decoder::decode_hook_payload`'s shared arms.
 ///
-/// - `PostToolUseFailure` — a FAILED tool fires this beside/instead of
-///   `PostToolUse`, decoded as that shared arm, or the tool's `ToolUseStart`
-///   lingers Running. Firing BOTH is harmless: the second `ToolUseEnd` no-ops
-///   on an already-idle slot.
-/// - `Stop`, and `StopFailure` and `Interrupt`, a failed and a cancelled turn
-///   end decoded as `Stop` — kimi's only per-turn hooks (`KIMI_EVENTS`), so
-///   each claims its session: a chat-only session running before the office,
-///   or swept since, registers on its next turn end. Claimed here, not in the
-///   shared `Stop` arm, whose CC children an `Identity` would re-create past
-///   their cascade.
+/// `Stop`, and `StopFailure` and `Interrupt`, a failed and a cancelled turn
+/// end decoded as `Stop` — kimi's only per-turn hooks (`KIMI_EVENTS`), so each
+/// claims its session: a chat-only session running before the office, or
+/// swept since, registers on its next turn end. Claimed here, not in the
+/// shared `Stop` arm, whose CC children an `Identity` would re-create past
+/// their cascade.
 pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    let (event, shared) = match obj.get("hook_event_name").and_then(|s| s.as_str()) {
-        Some(event @ "PostToolUseFailure") => (event, "PostToolUse"),
+    let event = match obj.get("hook_event_name").and_then(|s| s.as_str()) {
         // A cancelled turn fires `Interrupt` in place of `Stop`
         // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:422-424`
         // at `@moonshot-ai/kimi-code@2.5.3`).
-        Some(event @ ("Stop" | "StopFailure" | "Interrupt")) => (event, "Stop"),
+        Some(event @ ("Stop" | "StopFailure" | "Interrupt")) => event,
         _ => return Ok(None),
     };
     // Read under the event's own name, so a missing id breadcrumbs as sent.
     let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
-    let claim = (shared == "Stop").then(|| hook_identity(agent_id, SOURCE_NAME, &session_id, obj));
+    let mut evs = vec![hook_identity(agent_id, SOURCE_NAME, &session_id, obj)];
     let mut own = obj.clone();
-    own.insert("hook_event_name".into(), Value::from(shared));
-    let arms = shared_hook_arms(&own, SOURCE_NAME, registry::descriptor_for(SOURCE_NAME))?;
-    Ok(Some(claim.into_iter().chain(arms).collect()))
+    own.insert("hook_event_name".into(), Value::from("Stop"));
+    evs.extend(shared_hook_arms(
+        &own,
+        SOURCE_NAME,
+        registry::descriptor_for(SOURCE_NAME),
+    )?);
+    Ok(Some(evs))
 }
 
 #[cfg(test)]
@@ -121,87 +120,20 @@ mod tests {
     use crate::source::decoder::test_obj;
     use serde_json::json;
 
-    #[test]
-    fn post_tool_use_failure_closes_activity_with_identity() {
-        let evs = decode_kimi_hook_custom(test_obj(&json!({
-            "hook_event_name": "PostToolUseFailure",
-            "session_id": "session_abc",
-            "cwd": "/Users/dev/proj",
-            "tool_name": "Bash",
-            "tool_call_id": "t1"
-        })))
-        .expect("decodes")
-        .expect("claims the event");
-        assert_eq!(evs.len(), 2, "Identity + ToolUseEnd, got {evs:?}");
-        match &evs[0] {
-            AgentEvent::Identity {
-                agent_id,
-                source,
-                session_id,
-                cwd,
-                pid: None,
-            } => {
-                assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "session_abc"));
-                assert_eq!(source, SOURCE_NAME);
-                assert_eq!(session_id, "session_abc");
-                assert_eq!(
-                    cwd.as_deref(),
-                    Some(std::path::Path::new("/Users/dev/proj"))
-                );
-            }
-            other => panic!("expected leading Identity, got {other:?}"),
-        }
-        match &evs[1] {
-            AgentEvent::ToolUseEnd {
-                agent_id,
-                tool_use_id,
-            } => {
-                assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, "session_abc"));
-                assert_eq!(tool_use_id.as_deref(), Some("t1"));
-            }
-            other => panic!("expected ToolUseEnd, got {other:?}"),
-        }
-    }
-
-    /// A failure or a cancel decodes as the shared arm it stands in for, so an
-    /// empty call id names no call there either.
+    /// A failed or a cancelled turn's end decodes as `Stop` does.
     #[test]
     fn a_failure_or_cancel_decodes_as_its_shared_arm() {
-        for (variant, shared) in [
-            ("PostToolUseFailure", "PostToolUse"),
-            ("StopFailure", "Stop"),
-            ("Interrupt", "Stop"),
-        ] {
+        for variant in ["StopFailure", "Interrupt"] {
             let decode = |event| {
                 crate::source::decoder::decode_hook_payload(json!({
                     "hook_event_name": event,
                     "session_id": "s",
                     "cwd": "/repo",
-                    "tool_name": "Read",
-                    "tool_call_id": "",
                     "_pixtuoid_source": SOURCE_NAME,
                 }))
                 .expect("decodes")
             };
-            assert_eq!(decode(variant), decode(shared), "{variant}");
-        }
-    }
-
-    #[test]
-    fn post_tool_use_failure_without_cwd_has_none_cwd() {
-        let evs = decode_kimi_hook_custom(test_obj(&json!({
-            "hook_event_name": "PostToolUseFailure",
-            "session_id": "s",
-            "cwd": "",
-            "tool_name": "Read"
-        })))
-        .unwrap()
-        .unwrap();
-        match &evs[0] {
-            AgentEvent::Identity { cwd, .. } => {
-                assert_eq!(*cwd, None, "empty cwd must map to None, not Some(\"\")")
-            }
-            other => panic!("expected Identity, got {other:?}"),
+            assert_eq!(decode(variant), decode("Stop"), "{variant}");
         }
     }
 
@@ -213,6 +145,7 @@ mod tests {
             "SessionStart",
             "PreToolUse",
             "PostToolUse",
+            "PostToolUseFailure",
             "PermissionRequest",
             "SessionEnd",
             "UserPromptSubmit",
@@ -235,7 +168,7 @@ mod tests {
     #[test]
     fn a_claimed_event_without_session_id_errs_and_breadcrumbs() {
         use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
-        for ev in ["PostToolUseFailure", "Stop", "StopFailure", "Interrupt"] {
+        for ev in ["Stop", "StopFailure", "Interrupt"] {
             for payload in [
                 json!({ "hook_event_name": ev, "cwd": "/repo" }),
                 json!({ "hook_event_name": ev, "session_id": "" }),
