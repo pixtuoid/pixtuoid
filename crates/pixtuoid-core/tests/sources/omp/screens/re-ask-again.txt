@@ -1,0 +1,34 @@
+
+                                            ████████████    
+                                               ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
+                                               ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
+                                               ▒▒  ██                  █
+                                                   ██       v19.1.0
+
+                         Tip: No native tool_calling? Inference provider botches parsing them?
+                              `PI_DIALECT=glm|kimi|anthropic…` rolls it locally for them!
+
+                                                                                                                        
+ Read NOTE.txt, then list this directory, then read NOTE.txt again.                                                     
+                                                                                                                        
+
+╭─── Copying the note by patch ────────────────────────────────────────────────────────────────────────────────────────╮
+│   apply_patch ⟵ text ↓                                                                                               │
+│     text · heredoc «EOF»                                                                                             │
+│     *** Begin Patch                                                                                                  │
+│     *** Add File: COPY.txt                                                                                           │
+│     +pong                                                                                                            │
+│     *** End Patch                                                                                                    │
+╰─── elapsed 1.0s ─────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  ⎋ Copying the note by patch                                                                                           
+╭─ Allow tool: edit ───────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ File: COPY.txt                                                                                                       │
+│ ❯ Approve                                                                                                            │
+│   Approve edit for this session                                                                                      │
+│   Deny                                                                                                               │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ↑/↓ choose · ⏎ select · ⌃⏎/⌃Q approve · ⎋ deny · ⌃O details · type to deny and steer                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⠸ 4s > ◒ gpt-4.1 > 🗑 pixtuoid-capture/proj > ⑂ main > $0.01 ▶─0.3%──────────────────────────────────────────┃───────1M─
+╰─

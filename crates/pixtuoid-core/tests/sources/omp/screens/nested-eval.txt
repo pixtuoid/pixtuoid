@@ -1,0 +1,30 @@
+
+                                            ████████████    
+                                               ██  ██       ▄▀▀▄ █▀▄▀▄ █▀▀▄
+                                               ██  ██       ▀▄▄▀ █ █ █ █▄▄▀
+                                               ▒▒  ██                  █
+                                                   ██       v19.1.0
+
+                        Tip: Need a cheap nested model call? Use `completion(x...)`. Have a big
+                                         batch of tasks? Ask clanker to use it!
+
+                                                                                                                        
+ Read NOTE.txt, then list this directory, then read NOTE.txt again.                                                     
+                                                                                                                        
+
+╭─── 🟨 ⣟ running ─────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ const read = await tool.bash({ command: "cat NOTE.txt" });                                                           │
+│ print(read);                                                                                                         │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+  ⎋ Reading the note from a cell                                                                                        
+╭─ Allow tool: eval ───────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ Language: javascript · Code: const read = await tool.bash({ command: "cat NOTE.txt" }); …                            │
+│ ❯ Approve                                                                                                            │
+│   Approve eval for this session                                                                                      │
+│   Deny                                                                                                               │
+├──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ ↑/↓ choose · ⏎ select · ⌃⏎/⌃Q approve · ⎋ deny · ⌃O details · type to deny and steer                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+ ⠧ 3s > ◒ gpt-4.1 > 🗑 pixtuoid-capture/proj > ⑂ main > $0.01 ▶─0.3%────────────────────────────────
+╰─

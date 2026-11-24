@@ -1,0 +1,45 @@
+{
+  "origin": "recorded",
+  "cli": "omp",
+  "version": "omp/19.1.0",
+  "captured": "2026-11-23",
+  "command": "just hermetic --record omp",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 130
+  },
+  "seed": "tests/sources/omp/hermetic/re-ask",
+  "aimock": "1.48.0",
+  "script": "tests/sources/omp/hermetic/re-ask.json",
+  "dropped": {
+    "os": "macos",
+    "at": {
+      "/customType": [
+        "date-cwd-reminder",
+        "system-prompt-digest",
+        "tool_execution_start"
+      ],
+      "/message/content/*/type": [
+        "text"
+      ],
+      "/message/role": [
+        "user"
+      ],
+      "/type": [
+        "custom",
+        "message",
+        "model_change"
+      ]
+    }
+  },
+  "sentinel_reads": {
+    "2026-11-23T19-00-13-299Z_01a209c7-b773-77d7-95f5-fdd605744508.jsonl": [
+      "13:/usage/cacheWrite",
+      "14:/usage/cacheWrite",
+      "17:/message/usage/cacheWrite",
+      "18:/usage/cacheWrite",
+      "20:/usage/cacheWrite",
+      "8:/message/usage/cacheWrite"
+    ]
+  }
+}

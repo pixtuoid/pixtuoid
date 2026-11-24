@@ -302,6 +302,119 @@ pub(super) fn each_bridge_round_coalesces_both_transports_onto_one_id() {
     }
 }
 
+/// The transcript `scenario` recorded, as the watcher reads it: its drive,
+/// seeded as first sight is, and its lines.
+fn transcript_of(scenario: &str) -> (Drive, Vec<String>) {
+    let t = super::captures::transcript_in(
+        &super::captures::sources_root()
+            .join("omp/fixtures")
+            .join(scenario),
+    );
+    let drive = Drive::transcript_at("omp", &t)
+        .expect("omp has a line decoder")
+        .seeded();
+    (drive, super::captures::fixture_lines(&t))
+}
+
+fn waits(fold: &Fold) -> bool {
+    fold.driven()
+        .scene
+        .agents
+        .values()
+        .any(|s| matches!(s.state, ActivityState::RequiresAction { .. }))
+}
+
+/// bash hands a Codex-style patch to the edit tool under its own call id,
+/// which asks again (`packages/coding-agent/src/tools/bash.ts:1893-1903` at
+/// v19.1.0): the call waits once per request, its first approval between
+/// them.
+#[test]
+fn a_re_asked_call_waits_twice() {
+    const SCENARIO: &str = "re-ask-hermetic";
+    let (drive, lines) = transcript_of(SCENARIO);
+    let requested: std::collections::BTreeSet<String> = lines
+        .iter()
+        .map(|l| parsed(l))
+        .filter(|v| v["customType"] == "tool_approval_requested")
+        .map(|v| v["data"]["toolCallId"].as_str().expect("named").to_owned())
+        .collect();
+    assert_eq!(requested.len(), 1, "one call asks: {requested:?}");
+    let (mut fold, mut raised, mut answered, mut waiting) = (Fold::default(), 0, 0, false);
+    for line in &lines {
+        // Each approval lands before the call's toolResult, which would end
+        // the wait too.
+        let approval = parsed(line)["customType"] == "tool_approval_resolved";
+        assert!(!approval || waiting, "an approval answers a standing wait");
+        fold.feed(&drive, std::slice::from_ref(line), t0());
+        let now = waits(&fold);
+        assert!(!(approval && now), "its approval lifted the wait");
+        answered += usize::from(approval);
+        raised += usize::from(now && !waiting);
+        waiting = now;
+    }
+    fold.driven().assert_clean(SCENARIO);
+    assert_eq!(raised, 2, "each of the call's requests waits");
+    assert_eq!(answered, 2, "each of the call's requests is approved");
+    assert!(!waiting, "its last approval lifted the wait");
+}
+
+/// An eval cell's tool call waits on its own approval, naming the eval call
+/// that dispatched it: once approved, the slot shows the eval it runs under.
+#[test]
+fn a_nested_approval_leaves_its_parent_shown() {
+    const SCENARIO: &str = "nested-approve-hermetic";
+    let (drive, lines) = transcript_of(SCENARIO);
+    let raw: Vec<serde_json::Value> = lines.iter().map(|l| parsed(l)).collect();
+    let asked = raw
+        .iter()
+        .position(|v| {
+            v["customType"] == "tool_approval_requested"
+                && v["data"]["parentToolCallId"].is_string()
+        })
+        .expect("a nested call asks");
+    let (call, parent) = (
+        raw[asked]["data"]["toolCallId"].as_str().expect("named"),
+        raw[asked]["data"]["parentToolCallId"]
+            .as_str()
+            .expect("named"),
+    );
+    let approved = raw
+        .iter()
+        .position(|v| {
+            v["customType"] == "tool_approval_resolved"
+                && v["data"]["toolCallId"] == call
+                && v["data"]["approved"] == true
+        })
+        .expect("the nested call's approval");
+    let mut fold = Fold::default();
+    fold.feed(&drive, &lines[..=asked], t0());
+    assert!(waits(&fold), "the nested call's request waits");
+    fold.feed(&drive, &lines[asked + 1..=approved], t0());
+    let d = fold.finish();
+    d.assert_clean(SCENARIO);
+    assert!(
+        d.events.iter().any(|e| matches!(
+            e,
+            AgentEvent::UserActionRequest {
+                tool_use_id: Some(c),
+                parent_tool_use_id: Some(p),
+                ..
+            } if c == call && p == parent
+        )),
+        "the request names the call that dispatched its own"
+    );
+    let shown: Vec<Option<&str>> = d
+        .scene
+        .agents
+        .values()
+        .map(|s| match &s.state {
+            ActivityState::Running { item: Some(item) } => item.tool_use_id.as_deref(),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(shown, [Some(parent)], "the eval runs on");
+}
+
 /// A real in-TUI `/new`: the switch fires with the NEW session already
 /// current, and the decoder turns it into End(previous) + Start(current) —
 /// the previous slot leaves without waiting for the stale sweep.

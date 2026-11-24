@@ -616,6 +616,58 @@ fn omp_ask_round_waits_then_answer_clears_through_the_reducer() {
     );
 }
 
+/// An ask's block raises its wait, and the request omp records for it under a
+/// `tools.approval.ask: prompt` override, though no mode gates an ask (the
+/// first-id rule in `state/calls.rs` cites both), is the same wait: the slot
+/// keeps the ask's intent and the clock its block started.
+#[test]
+fn a_gated_omp_ask_keeps_its_wait_through_its_approval_request() {
+    use pixtuoid_core::source::omp::decode_omp_line;
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let path = "/h/.omp/agent/sessions/-p/2026-07-05T20-37-08-710Z_01000000-0000-7000-8000-000000000003.jsonl";
+    let id = AgentId::from_parts(
+        "omp",
+        "2026-07-05T20-37-08-710Z_01000000-0000-7000-8000-000000000003",
+    );
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let feed = |r: &mut Reducer, scene: &mut SceneState, line: &str, at: SystemTime| {
+        for ev in decode_omp_line(path, "omp", serde_json::from_str(line).unwrap()) {
+            r.apply(scene, ev, at, Transport::Jsonl);
+        }
+    };
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"session","version":3,"id":"01000000-0000-7000-8000-000000000003","timestamp":"2026-07-05T20:37:08.710Z","cwd":"/repo"}"#,
+        t0,
+    );
+    let asked = t0 + Duration::from_millis(100);
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"message","id":"f689ad6c","timestamp":"2026-07-05T20:39:46.078Z","message":{"role":"assistant","content":[{"type":"toolCall","id":"toolu_01ASK","name":"ask","arguments":{"html":"<form></form>"},"intent":"Resolving packages/ui collision"}]}}"#,
+        asked,
+    );
+    let waiting = |scene: &SceneState| {
+        let slot = &scene.agents[&id];
+        match &slot.state {
+            ActivityState::RequiresAction { reason } => {
+                Some((reason.as_deref().map(str::to_owned), slot.state_started_at))
+            }
+            _ => None,
+        }
+    };
+    let before = waiting(&scene).expect("the ask's block waits");
+    feed(
+        &mut r,
+        &mut scene,
+        r#"{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"toolu_01ASK","toolName":"ask","requestedAt":""},"id":"a1b2c3d4","timestamp":"2026-07-05T20:39:46.090Z"}"#,
+        asked + Duration::from_millis(50),
+    );
+    assert_eq!(waiting(&scene), Some(before));
+}
+
 /// An ask that precedes a sibling call in one message: the sibling's start
 /// only counts while the ask stands, and once the ask is answered the slot
 /// shows the sibling, still running, until its own result (CodeRabbit on
@@ -1097,6 +1149,39 @@ fn an_approval_resume_shows_its_calls_own_start() {
         }
         other => panic!("expected Running after the resume, got {other:?}"),
     }
+}
+
+/// omp's resume repair closes a call interrupted mid-approval with its tool
+/// result alone, and an eval's with the eval's (`tool-approval-records.ts:30-36`
+/// at v19.1.0), so the wait of a call the eval dispatched ends with it.
+#[test]
+fn an_interrupted_nested_request_ends_with_its_parents_result() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/n.jsonl");
+    start_as(&mut r, &mut scene, id, HOOK_AND_TRANSCRIPT);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        Some("p"),
+        Some("eval"),
+        t0,
+        Transport::Jsonl,
+    );
+    let mut keys = RequestKeys::default();
+    keys.tool_use_id = Some("n".into());
+    keys.parent_tool_use_id = Some("p".into());
+    let nested = AgentEvent::user_action_request(id, Some("bash".into()), keys);
+    r.apply(&mut scene, nested, t0, Transport::Jsonl);
+    assert!(requires_action(&scene, id));
+    let t1 = t0 + Duration::from_secs(2);
+    tool_use_end(&mut r, &mut scene, id, Some("p"), t1, Transport::Jsonl);
+    assert!(
+        !requires_action(&scene, id),
+        "the eval's result left its nested call's wait standing"
+    );
 }
 
 /// The CC shape: a hook Start whose JSONL twin lands however late
@@ -1880,6 +1965,41 @@ fn the_other_transports_copy_of_a_started_call_answers_no_wait() {
         Some("h1"),
         Some("Bash: ls"),
         t0 + Duration::from_secs(10 * 60),
+        Transport::Hook,
+    );
+    assert!(matches!(
+        scene.agents[&id].state,
+        ActivityState::Running { .. }
+    ));
+}
+
+/// A start naming no call is the agent working again only on the transport
+/// that raised the keyless wait: the other's can be a call queued before it.
+#[test]
+fn an_unnamed_start_answers_a_keyless_wait_only_on_its_transport() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_transcript_path("/p/unnamed-start.jsonl");
+    start(&mut r, &mut scene, id);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    user_action_request(&mut r, &mut scene, id, "permission", t0, Transport::Hook);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        None,
+        Some("Read: a"),
+        t0,
+        Transport::Jsonl,
+    );
+    assert!(requires_action(&scene, id), "the transcript's start");
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        id,
+        None,
+        Some("Bash: ls"),
+        t0,
         Transport::Hook,
     );
     assert!(matches!(

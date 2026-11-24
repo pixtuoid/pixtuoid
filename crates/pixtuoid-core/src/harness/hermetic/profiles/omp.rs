@@ -20,17 +20,35 @@ const TUI: tui::Tui = tui::Tui {
     conpty: tui::ConPty::Renders,
 };
 
-/// [`TUI`] answering its approval dialog Approve, the choice it highlights on
-/// mount, with Enter (`packages/tui/src/overlays/approval-dialog.ts:1-17` at
-/// `v18.13.1`).
-const TUI_APPROVE: tui::Tui = tui::Tui {
-    gates: &[tui::Gate {
-        // Its title (`src/tools/approval.ts:704` at `v18.13.1`).
-        shows: "Allow tool:",
+/// The approval dialog showing `shows` in its title, which names its tool
+/// (`src/tools/approval.ts:699` at `v19.1.0`), answered Approve, the choice
+/// it highlights on mount, with Enter
+/// (`packages/tui/src/overlays/approval-dialog.ts:1-17` at `v18.13.1`).
+const fn approve(shows: &'static str) -> tui::Gate {
+    tui::Gate {
+        shows,
         keys: &[tui::Key::Enter],
         // `APPROVE_ARM_MS`, which Enter is ignored for after mount (`:44`).
         dwell: std::time::Duration::from_millis(500),
-    }],
+    }
+}
+
+/// [`TUI`] approving its turn's one dialog, whatever its tool.
+const TUI_APPROVE: tui::Tui = tui::Tui {
+    gates: &[approve("Allow tool:")],
+    ..TUI
+};
+
+/// [`TUI`] approving a bash call, then the edit tool's dialog that call's
+/// patch raises.
+const TUI_RE_ASK: tui::Tui = tui::Tui {
+    gates: &[approve("Allow tool: bash"), approve("Allow tool: edit")],
+    ..TUI
+};
+
+/// [`TUI`] approving an eval call, then the bash call its cell makes.
+const TUI_NESTED: tui::Tui = tui::Tui {
+    gates: &[approve("Allow tool: eval"), approve("Allow tool: bash")],
     ..TUI
 };
 
@@ -149,6 +167,32 @@ startup:
             name: "approve",
             shape: Shape::Permission,
             surface: Surface::Tui { row: &TUI_APPROVE },
+            expects: &["session_start", "session_shutdown"],
+            turn: Turn::PROFILE,
+        },
+        // bash hands a Codex-style `apply_patch` to the edit tool under its
+        // own call id, through that tool's own approval, when no such program
+        // is on PATH (`src/tools/bash.ts:1893-1903` at `v19.1.0`): one call
+        // waits twice. The edit tool takes that wire name only in its
+        // apply-patch mode (`docs/tools/edit.md:28` at `v19.1.0`), which the
+        // seed's project config selects.
+        Scenario {
+            name: "re-ask",
+            shape: Shape::Permission,
+            surface: Surface::Tui { row: &TUI_RE_ASK },
+            expects: &["session_start", "session_shutdown"],
+            turn: Turn {
+                seed: Some("re-ask"),
+                ..Turn::PROFILE
+            },
+        },
+        // An eval cell's tool call waits on its own approval, naming the eval
+        // call that dispatched it (`docs/tools/eval.md:160`,
+        // `src/extensibility/extensions/wrapper.ts:416-418` at `v19.1.0`).
+        Scenario {
+            name: "nested-approve",
+            shape: Shape::Permission,
+            surface: Surface::Tui { row: &TUI_NESTED },
             expects: &["session_start", "session_shutdown"],
             turn: Turn::PROFILE,
         },
