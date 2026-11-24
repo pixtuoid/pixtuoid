@@ -266,7 +266,7 @@ struct Calls {
 impl Calls {
     /// `call` met `fact`: its phase rises to the fact's, or its record or next
     /// generation opens.
-    fn phase(&mut self, call: &str, fact: Fact<'_>) -> Observed {
+    fn advance(&mut self, call: &str, fact: Fact<'_>) -> Observed {
         let (starts, copy) = match fact {
             Fact::Start { copy, .. } => (true, copy),
             _ => (false, None),
@@ -441,7 +441,7 @@ impl CallLedger {
         open_turn: Option<&TurnKey>,
     ) -> Observed {
         let calls = self.calls.entry(agent).or_default();
-        let mut observed = calls.phase(call, fact);
+        let mut observed = calls.advance(call, fact);
         if !observed.ended
             && let Some(first_here) = calls.register(call, fact, on, open_turn)
         {
