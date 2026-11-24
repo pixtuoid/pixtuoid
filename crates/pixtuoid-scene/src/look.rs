@@ -232,7 +232,8 @@ impl<'a> RenderInputs<'a, pixtuoid_core::state::SceneState> {
 }
 
 /// A brightness multiplier, from black to unchanged, each pixel takes: a
-/// host modal's backdrop over the office, a card's drop shadow.
+/// host modal's backdrop over the office, an offline office's frame, a card's
+/// drop shadow.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Dim(f32);
 
@@ -711,7 +712,7 @@ impl Raster {
 /// entry every painter calls. `None` when `inputs.viewport` can't lay out.
 pub fn render(
     floor: &mut PerFloor,
-    office: OfficeStores<'_>,
+    mut office: OfficeStores<'_>,
     look: Look,
     inputs: RenderInputs<'_>,
 ) -> Option<Rendered> {
@@ -726,7 +727,8 @@ pub fn render(
     let size = viewport.size;
     office.raster.serve(&floor.raster.pack, theme);
     let stepped = tracing::trace_span!(spans::COMPOSE)
-        .in_scope(|| step_floor(floor, office.coffee, office.chitchat, world, viewport));
+        .in_scope(|| step_floor(floor, office.reborrow(), world, viewport));
+    let dim = crate::floor::frame_dim(dim, office.offline_dim);
     let PerFloor { ctx, raster } = floor;
     let pack = Arc::clone(&raster.pack);
     let Some(stepped) = stepped else {

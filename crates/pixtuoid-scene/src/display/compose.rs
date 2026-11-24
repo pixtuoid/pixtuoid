@@ -225,8 +225,8 @@ pub struct Office<'a> {
 }
 
 /// The conditions a frame shows under, when, what its wall board says, how far
-/// the host's modal dims it, and who sets its world text: what moves a frame
-/// beyond its office and the sim's world.
+/// it is dimmed, and who sets its world text: what moves a frame beyond its
+/// office and the sim's world.
 #[derive(Debug, Clone, Copy)]
 pub struct Showing<'a> {
     /// What the host decides about how it reads.
@@ -236,7 +236,7 @@ pub struct Showing<'a> {
     /// The wall board, the classic painter's
     /// ([`build_board`](crate::neon_sign::build_board)).
     pub board: &'a crate::neon_sign::BoardModel,
-    /// The brightness the host's modal leaves it.
+    /// The dim it is drawn under, as [`render`](crate::look::render) passes it.
     pub dim: crate::look::Dim,
     /// Who sets its world text.
     pub text: crate::look::WorldText,
@@ -310,7 +310,7 @@ pub(crate) fn compose_at<'a>(
         ambient,
         carpet: moment.look.carpet(theme),
         flash: crate::display::light::Flash::of(&moment.sky),
-        // [`compose`] sets the host's, from its `Showing`.
+        // [`compose`] sets it from its `Showing`.
         dim: crate::look::Dim::NONE,
         flash_phase: crate::screen::FlashPhase::of(&moment.sky, frame),
         hovers: pieces.iter().filter_map(Piece::hover).collect(),
