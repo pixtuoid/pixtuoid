@@ -833,6 +833,15 @@ impl Scenario {
         }
     }
 
+    /// How many times its turn waits on the user, where its shape waits: once
+    /// per dialog its TUI row lists, and at least once.
+    pub(crate) fn waits(&self) -> usize {
+        match self.surface {
+            Surface::Tui { row } => row.gates.len().max(1),
+            Surface::Headless => 1,
+        }
+    }
+
     /// The driver of its TUI run, typing `prompt` and then its second turn's;
     /// `None` for a headless one.
     pub fn tui_driver(
@@ -1392,7 +1401,7 @@ mod tests {
 
     #[test]
     fn a_permission_script_calls_no_tool_after_its_gated_call() {
-        // A retried tool raises a second dialog in its turn, which the driver never answers.
+        // A retried tool raises a dialog its row does not list, which the driver never answers.
         for p in PROFILES {
             for s in p.scenarios.iter().filter(|s| s.shape == Shape::Permission) {
                 let script: serde_json::Value = serde_json::from_str(

@@ -729,6 +729,8 @@ fn judge(
 
     let mut events: Vec<AgentEvent> = Vec::new();
     let mut reaches: Vec<(AgentId, Reach)> = Vec::new();
+    // The most one transport's drive raised: a wait both carry counts once.
+    let mut waits = 0;
     let mut absorb = |what: &str, d: Driven, findings: &mut Vec<(Label, String)>| {
         for f in &d.decode_errors {
             findings.push((Label::Fail, format!("{what}: {f}")));
@@ -740,6 +742,7 @@ fn judge(
             ));
         }
         reaches.extend(d.reaches.iter().copied());
+        waits = waits.max(d.waits);
         events.extend(d.into_wire());
     };
     if !payloads.is_empty() {
@@ -785,9 +788,13 @@ fn judge(
     let reached: Vec<Reach> = reaches.iter().map(|&(_, class)| class).collect();
     match scenario.shape {
         Shape::ToolRun => tool_run(&events, &reached, findings),
-        Shape::Permission => {
-            permission(&events, &reached, manifest.capture.note_survived, findings)
-        }
+        Shape::Permission => permission(
+            &events,
+            waits,
+            scenario.waits(),
+            manifest.capture.note_survived,
+            findings,
+        ),
         Shape::Subagent => subagent(
             &events,
             &reaches,
@@ -806,7 +813,12 @@ fn judge(
     if p.descriptor().caps().brackets_turns {
         bracketed(p, scenario, &events, &reached, findings);
     }
-    judge_scene(p, scene, scenario.shape.shown(), findings);
+    let owed = if scenario.shape == Shape::Permission {
+        scenario.waits()
+    } else {
+        1
+    };
+    judge_scene(p, scene, scenario.shape.shown(), owed, findings);
     new_types(
         p,
         dir,
@@ -941,17 +953,25 @@ fn tool_run(events: &[AgentEvent], reached: &[Reach], findings: &mut Vec<(Label,
     }
 }
 
+/// `waits` is how many times the slot went RequiresAction, and `owed` how many
+/// its turn raises.
 fn permission(
     events: &[AgentEvent],
-    reached: &[Reach],
+    waits: usize,
+    owed: usize,
     note_survived: bool,
     findings: &mut Vec<(Label, String)>,
 ) {
     if !note_survived {
         findings.push((Label::Fail, "the note is gone".into()));
     }
-    if !reached.contains(&Reach::RequiresAction) {
+    if waits == 0 {
         findings.push((Label::Fail, "the slot never went RequiresAction".into()));
+    } else if waits < owed {
+        findings.push((
+            Label::Fail,
+            format!("the slot went RequiresAction {waits} time(s), short of {owed}"),
+        ));
     }
     // In any order: a hook payload's arrival order is its shim process's, not
     // the CLI's, so the wait, the decision and the result can land in any order.
@@ -1284,14 +1304,33 @@ fn succession(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
 /// agent, a child under its own label included, gone once the run's last step
 /// exited: every profiled CLI's clean exit, or its server's stop, ends its
 /// sprites, whether by an end event, a drain or a process's death, so one left
-/// standing is a session pixtuoid lost track of.
-fn judge_scene(p: &Profile, scene: &str, shown: &str, findings: &mut Vec<(Label, String)>) {
+/// standing is a session pixtuoid lost track of. `owed` is how many times
+/// the scene must show an agent rise into `shown`.
+fn judge_scene(
+    p: &Profile,
+    scene: &str,
+    shown: &str,
+    owed: usize,
+    findings: &mut Vec<(Label, String)>,
+) {
     let prefix = format!("{}\u{b7}", p.descriptor().label_prefix);
     let frames = agent_rosters(scene);
-    if !frames.iter().any(|f| holds(f, &prefix, shown)) {
+    let mut rises = 0;
+    let mut was = false;
+    for f in &frames {
+        let now = holds(f, &prefix, shown);
+        rises += usize::from(now && !was);
+        was = now;
+    }
+    if rises == 0 {
         findings.push((
             Label::Fail,
             format!("the scene never showed a {prefix} agent {shown}"),
+        ));
+    } else if rises < owed {
+        findings.push((
+            Label::Fail,
+            format!("the scene showed a {prefix} agent {shown} {rises} time(s), short of {owed}"),
         ));
     }
     if frames.last().is_some_and(|last| !last.starts_with(']')) {
@@ -1792,6 +1831,49 @@ mod tests {
         );
     }
 
+    const OM_RE_ASK_SCENE: &str = "agents=[om\u{b7}proj@0:requires_action(bash)]\n\
+                                   agents=[om\u{b7}proj@0:running(bash: apply_patch)]\n\
+                                   agents=[om\u{b7}proj@0:requires_action(edit)]\n\
+                                   agents=[om\u{b7}proj@0:idle]\nagents=[] daemons=[]\n";
+
+    #[test]
+    fn a_recorded_omp_re_ask_run_passes() {
+        let d = recorded("omp", "re-ask", OM_RE_ASK_SCENE);
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    /// Each dialog a TUI row lists is a wait, which the capture and the
+    /// scene each show.
+    #[test]
+    fn a_re_ask_that_waits_once_fails() {
+        let d = recorded("omp", "re-ask", OM_RE_ASK_SCENE);
+        let mut requests = 0;
+        edit_transcripts(d.path(), |l| {
+            requests += usize::from(l.contains("tool_approval_requested"));
+            !(l.contains("tool_approval_requested") && requests == 2)
+        });
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "went RequiresAction 1 time"),
+            "{:?}",
+            v.findings()
+        );
+        let d = recorded(
+            "omp",
+            "re-ask",
+            "agents=[om\u{b7}proj@0:requires_action(bash)]\n\
+             agents=[om\u{b7}proj@0:running(bash: apply_patch)]\n\
+             agents=[om\u{b7}proj@0:idle]\nagents=[] daemons=[]\n",
+        );
+        let v = verify(d.path()).expect("verify");
+        assert!(
+            has(&v, Label::Fail, "requires_action 1 time"),
+            "{:?}",
+            v.findings()
+        );
+    }
+
     #[test]
     fn a_recorded_codex_tui_permission_run_passes() {
         let d = recorded("codex", "permission", CX_REQUIRES_ACTION_SCENE);
@@ -1870,12 +1952,7 @@ mod tests {
         };
         let judged = |read_ends_as| {
             let mut findings = Vec::new();
-            permission(
-                &events(read_ends_as),
-                &[Reach::RequiresAction],
-                true,
-                &mut findings,
-            );
+            permission(&events(read_ends_as), 1, 1, true, &mut findings);
             findings
         };
         assert!(judged(None).is_empty(), "the start and the turn each ended");
@@ -1908,7 +1985,7 @@ mod tests {
         let turn = AgentEvent::turn_end(agent_id);
         let judged = |events: Vec<AgentEvent>| {
             let mut findings = Vec::new();
-            permission(&events, &[Reach::RequiresAction], true, &mut findings);
+            permission(&events, 1, 1, true, &mut findings);
             findings
         };
         let lost_turn = vec![start.clone(), end.clone(), end.clone(), wait.clone()];
