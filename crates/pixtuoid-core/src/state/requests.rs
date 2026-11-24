@@ -122,8 +122,12 @@ impl ActionRequest {
         self.members.is_empty() && self.tool_names.is_empty()
     }
 
-    /// Whether it holds `pending` by the name of its tool. Hooks may rewrite a
-    /// call's input but never its name, so the name is the key.
+    /// Whether it holds `pending` by the name of its tool, which neither Claude
+    /// Code's hooks nor codex's rewrite: Claude Code's may replace a call's
+    /// input alone (code.claude.com/docs/en/hooks#pretooluse-decision-control,
+    /// #permissionrequest-decision-control), and codex's outputs name no tool
+    /// (`codex-rs/hooks/schema/generated/pre-tool-use.command.output.schema.json:12-43`,
+    /// `permission-request.command.output.schema.json:12-40` at rust-v0.171.0).
     fn binds(&self, pending: &PendingCall<'_>) -> bool {
         pending
             .tool_name
