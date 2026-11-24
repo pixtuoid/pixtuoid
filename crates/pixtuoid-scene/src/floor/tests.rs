@@ -642,6 +642,19 @@ fn step_through_vacancy(
         .collect()
 }
 
+/// An offline office's frame dim darkens the host's dim further, neither one
+/// standing in for the other.
+#[test]
+fn an_offline_frame_dim_multiplies_the_hosts() {
+    let mut offline_dim = VacancyDim::new();
+    offline_dim.snap_to_vacant();
+    let host = 0.5;
+    assert_eq!(
+        frame_dim(crate::look::Dim::from_brightness(host), &offline_dim),
+        crate::look::Dim::from_brightness(host * OFFLINE_BRIGHTNESS)
+    );
+}
+
 /// A floor vacant online has dimmed its room already, so going offline eases
 /// its frame from undimmed rather than jumping, on a debounce of its own that
 /// wakes Still as the room's does.
