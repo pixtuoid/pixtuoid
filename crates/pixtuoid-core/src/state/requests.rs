@@ -147,9 +147,7 @@ impl ActionRequest {
 
     /// Whether `pending` is a call this request binds by its tool name.
     fn binds_by_name(&self, pending: &Pending) -> bool {
-        self.tool_name.is_some()
-            && pending.tool_name == self.tool_name
-            && pending.is_in(self.turn.as_ref(), self.raised_on)
+        self.tool_name.is_some() && pending.tool_name == self.tool_name && pending.turn == self.turn
     }
 }
 
@@ -469,8 +467,8 @@ fn bind(req: &mut ActionRequest, pending: &[Pending], raise: Raise<'_>) {
         req.holds(&Arc::from(call), true, raise.parent);
         req.named = true;
     } else if let Some(name) = raise.tool_name {
-        for start in in_scope(pending, raise.turn, raise.from) {
-            if start.tool_name.as_deref() == Some(name) {
+        for start in pending {
+            if start.tool_name.as_deref() == Some(name) && start.turn.as_ref() == raise.turn {
                 req.holds(&start.call, false, None);
             }
         }
@@ -608,15 +606,23 @@ mod tests {
                 raise(None, Some("Edit"), HOOK),
                 vec![],
             ),
-            (
-                "none: the other transport's start",
-                vec![pending("a", Some("Bash"), JSONL)],
-                raise(None, Some("Bash"), HOOK),
-                vec![],
-            ),
         ] {
             assert_eq!(members(&raised(starts, r)), want, "{what}");
         }
+    }
+
+    /// A tool's name binds its pending calls on either transport, as a call's
+    /// id binds its call.
+    #[test]
+    fn a_raise_binds_a_pending_call_whichever_transport_started_it() {
+        let reqs = raised(
+            vec![pending("a", Some("Bash"), JSONL)],
+            raise(None, Some("Bash"), HOOK),
+        );
+        assert_eq!(members(&reqs), ["a"], "a raise after its call");
+        let mut reqs = raised(vec![], raise(None, Some("Bash"), HOOK));
+        reqs.register(id(), pending("a", Some("Bash"), JSONL));
+        assert_eq!(members(&reqs), ["a"], "a pre-use after its raise");
     }
 
     #[test]

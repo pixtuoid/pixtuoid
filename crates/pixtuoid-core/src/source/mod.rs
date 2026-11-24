@@ -16,8 +16,8 @@ pub(crate) const DEFAULT_POLL_INTERVAL: std::time::Duration = std::time::Duratio
 /// - a session's lifecycle: what may create, end or revive it
 ///   (`Reducer::authorizes`), and only a hook's `Identity` registers one;
 /// - whether an event counts as live work or as a replay;
-/// - which pending calls a request binds by tool name or by deduction: those
-///   seen on the transport that raised it;
+/// - which pending call a request binds by deduction: one seen on the
+///   transport that raised it;
 /// - which start answers a request the wire gave no key: one on the
 ///   transport that raised it, its call's first there or one naming no call;
 /// - whether a tool end naming no call answers a request: only a hook's does;
