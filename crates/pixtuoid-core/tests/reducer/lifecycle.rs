@@ -500,7 +500,7 @@ fn duplicate_root_session_start_does_not_resurrect_a_live_session() {
 }
 
 #[test]
-fn resurrect_in_place_clears_stale_tasks_in_flight_so_the_fresh_session_is_not_delegating() {
+fn resurrect_in_place_ends_the_dead_lifes_tasks_so_the_fresh_session_is_not_delegating() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_transcript_path("/p/resurr-tasks.jsonl");
