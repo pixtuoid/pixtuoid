@@ -324,12 +324,11 @@ pub fn agent(office: &SceneState, id: AgentId, now: SystemTime) -> Option<Toolti
         rows.push(dim(format!("\u{21b3} under {lead}")));
     }
     rows.push(dim(format!("\u{25a4} {}", short_cwd(&agent.cwd))));
-    if let Some(model) = agent.model.as_deref() {
-        let mut row = format!("\u{2605} {model}");
-        if let Some(effort) = shown_effort(agent, now) {
-            row.push_str(&format!(" \u{b7} {effort}"));
-        }
-        rows.push(dim(row));
+    let star: Vec<&str> = (agent.model.as_deref().into_iter())
+        .chain(shown_effort(agent, now))
+        .collect();
+    if !star.is_empty() {
+        rows.push(dim(format!("\u{2605} {}", star.join(" \u{b7} "))));
     }
     let session_secs = now
         .duration_since(agent.created_at)
@@ -478,6 +477,36 @@ mod tests {
         assert_eq!(shown_effort(&slot, long_after), Some("ultra"));
         slot.ultracode = false;
         assert_eq!(shown_effort(&slot, t0), Some("xhigh"));
+    }
+
+    /// The card's `★` row shows the effort whether or not a model is known.
+    #[test]
+    fn the_cards_star_row_shows_the_effort_with_or_without_a_model() {
+        use pixtuoid_core::state::EffortObservation;
+        let now = SystemTime::UNIX_EPOCH;
+        let id = AgentId::from_transcript_path("/tip/star.jsonl");
+        let star_row = |model: Option<&str>, ultracode: bool| {
+            let mut office = SceneState::uniform(1);
+            let mut slot = crate::character::test_support::make_slot(id, ActivityState::Idle);
+            slot.model = model.map(std::sync::Arc::from);
+            slot.effort = Some(EffortObservation::new("xhigh".into(), now));
+            slot.ultracode = ultracode;
+            office.agents.insert(id, slot);
+            let tip = agent(&office, id, now).expect("the agent's card");
+            tip.rows.into_iter().find_map(|row| match row {
+                TipRow::Spans(spans) => (spans.first())
+                    .map(|span| span.text.clone())
+                    .filter(|text| text.starts_with('\u{2605}')),
+                _ => None,
+            })
+        };
+        let row = |model: Option<&str>, ultracode| star_row(model, ultracode).unwrap_or_default();
+        assert_eq!(
+            row(Some("claude-fable-5"), false),
+            "\u{2605} claude-fable-5 \u{b7} xhigh"
+        );
+        assert_eq!(row(None, false), "\u{2605} xhigh");
+        assert_eq!(row(None, true), "\u{2605} ultra");
     }
 
     #[test]
