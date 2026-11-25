@@ -812,12 +812,13 @@ fn shape_of(line: &str) -> String {
     // Key NAMES are wire-controlled too, so they route through the crate's ONE
     // terminal-egress policy; a second, laxer sanitizer here would be a
     // chokepoint bypass.
-    let ty = display_safe(v.get("type").and_then(Value::as_str).unwrap_or(""));
+    const TYPE: &str = "type";
+    let ty = display_safe(v.get(TYPE).and_then(Value::as_str).unwrap_or(""));
     let keys = v.as_object().map_or_else(
         || "<non-object>".to_string(),
         |o| display_safe(&o.keys().cloned().collect::<Vec<_>>().join(",")),
     );
-    format!("type={ty:?} keys=[{keys}]")
+    format!("{TYPE}={ty:?} keys=[{keys}]")
 }
 
 #[cfg(test)]

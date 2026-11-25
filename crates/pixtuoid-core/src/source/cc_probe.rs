@@ -157,31 +157,38 @@ enum RegistryParse {
 /// only the fields the join needs and tolerate everything else changing.
 #[cfg(unix)]
 fn parse_registry_entry(bytes: &[u8]) -> RegistryParse {
-    let Ok(v) = serde_json::from_slice::<serde_json::Value>(bytes) else {
-        return RegistryParse::Skip;
+    let parse = || -> Result<RegistryEntry, RegistryParse> {
+        let v =
+            serde_json::from_slice::<serde_json::Value>(bytes).map_err(|_| RegistryParse::Skip)?;
+        let pid = consumed(&v, "pid", serde_json::Value::as_i64)?;
+        // The strictly-positive narrowing every JSON pid ingress shares (rationale
+        // on `checked_pid`): a corrupt entry must not probe our own group as alive.
+        let pid = crate::source::decoder::checked_pid(pid).ok_or(RegistryParse::Skip)?;
+        let session_id = consumed(&v, "sessionId", serde_json::Value::as_str)?;
+        if session_id.is_empty() {
+            return Err(RegistryParse::Skip);
+        }
+        let started_at_ms = consumed(&v, "startedAt", serde_json::Value::as_u64)?;
+        Ok(RegistryEntry {
+            pid,
+            session_id: session_id.to_string(),
+            started_at_ms,
+        })
     };
-    let Some(pid) = v.get("pid").and_then(|p| p.as_i64()) else {
-        return RegistryParse::ShapeDrift("pid");
-    };
-    // The strictly-positive narrowing every JSON pid ingress shares (rationale
-    // on `checked_pid`): a corrupt entry must not probe our own group as alive.
-    let Some(pid) = crate::source::decoder::checked_pid(pid) else {
-        return RegistryParse::Skip;
-    };
-    let Some(session_id) = v.get("sessionId").and_then(|s| s.as_str()) else {
-        return RegistryParse::ShapeDrift("sessionId");
-    };
-    if session_id.is_empty() {
-        return RegistryParse::Skip;
-    }
-    let Some(started_at_ms) = v.get("startedAt").and_then(|s| s.as_u64()) else {
-        return RegistryParse::ShapeDrift("startedAt");
-    };
-    RegistryParse::Entry(RegistryEntry {
-        pid,
-        session_id: session_id.to_string(),
-        started_at_ms,
-    })
+    parse().map_or_else(|outcome| outcome, RegistryParse::Entry)
+}
+
+/// `key`'s value in `v` as `read` takes it, else the shape drift naming `key`:
+/// one spelling serves the read and its report.
+#[cfg(unix)]
+fn consumed<'v, T>(
+    v: &'v serde_json::Value,
+    key: &'static str,
+    read: impl FnOnce(&'v serde_json::Value) -> Option<T>,
+) -> Result<T, RegistryParse> {
+    v.get(key)
+        .and_then(read)
+        .ok_or(RegistryParse::ShapeDrift(key))
 }
 
 /// Tolerance for the `startedAt` ↔ kernel-start-time identity check. CC stamps
