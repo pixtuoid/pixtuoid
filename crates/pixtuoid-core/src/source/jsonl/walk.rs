@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -719,8 +719,8 @@ pub(super) const SKIP_RESCAN_BYTES: u64 = 256 * 1024;
 
 /// Tail-scan an oversized skipped span and re-emit what the skip buried: its
 /// IN-FLIGHT Task dispatches' `ToolUseStart`s (#222), its last turn bracket, a
-/// start or a keyed end, its last ultracode setting, and its last model and
-/// level. Mid-attach to a delegating session whose backlog exceeds
+/// start or a keyed end, its last ultracode setting, and each agent's last
+/// model and level. Mid-attach to a delegating session whose backlog exceeds
 /// `MAX_PENDING_BYTES` never decodes the in-flight dispatch line, leaving the
 /// reducer no Task in flight: the parent never shows Delegating and the b1
 /// completion cascade never arms. A re-emitted start shows the turn the session
@@ -744,7 +744,7 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
     let mut pending: Vec<(String, AgentEvent)> = Vec::new();
     let mut last_bracket = None;
     let mut last_ultracode = None;
-    let mut last_info = None;
+    let mut last_info: BTreeMap<AgentId, (Option<String>, Option<String>)> = BTreeMap::new();
     let parsed = crate::source::admit::lines(&buf)
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
     for v in parsed {
@@ -771,19 +771,16 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
                 // No TTL ends ultracode, so a buried exit would leave it on.
                 AgentEvent::Ultracode { .. } => last_ultracode = Some(ev),
                 // Nothing else restores a buried model or level until the
-                // source names it again, and a line may name only one.
+                // source names it again, and a line may name only one. Kept per
+                // agent: a copilot child writes into its root's file.
                 AgentEvent::ModelInfo {
                     agent_id,
                     model,
                     effort,
                 } => {
-                    let (was_model, was_effort) =
-                        (last_info.take()).map_or((None, None), |(_, m, e)| (m, e));
-                    last_info = Some((
-                        *agent_id,
-                        model.clone().or(was_model),
-                        effort.clone().or(was_effort),
-                    ));
+                    let (was_model, was_effort) = last_info.entry(*agent_id).or_default();
+                    *was_model = model.clone().or(was_model.take());
+                    *was_effort = effort.clone().or(was_effort.take());
                 }
                 _ => {}
             }
@@ -794,7 +791,7 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
         Some(start @ AgentEvent::TurnStart { .. }) => (Some(start), None),
         end => (None, end),
     };
-    let info = last_info.and_then(|(agent_id, model, effort)| {
+    let info = (last_info.into_iter()).filter_map(|(agent_id, (model, effort))| {
         AgentEvent::model_info(agent_id, model.as_deref(), effort.as_deref())
     });
     let rest = (pending.into_iter().map(|(_, ev)| ev))

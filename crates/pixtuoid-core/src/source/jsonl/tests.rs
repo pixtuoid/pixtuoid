@@ -2583,6 +2583,54 @@ async fn oversized_attach_re_emits_the_last_model_and_level() {
     assert_eq!(infos, [want], "{events:?}");
 }
 
+/// A copilot child writes into its root's file, so the window's last model can
+/// be the child's while the root's lies further up.
+#[tokio::test]
+async fn oversized_attach_re_emits_each_agents_last_model() {
+    let usage = |agent: Option<&str>, model: &str| {
+        let mut line = serde_json::json!({"type": "session.usage_record", "id": model,
+            "data": {"usage": {"model": model, "inputTokens": 1, "outputTokens": 1}}});
+        if let Some(agent) = agent {
+            line["agentId"] = agent.into();
+        }
+        line.to_string() + "\n"
+    };
+    let tail = [usage(None, "gpt-root"), usage(Some("child"), "gpt-child")];
+    let dir = tempfile::tempdir().unwrap();
+    let session = dir.path().join("65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3");
+    std::fs::create_dir(&session).unwrap();
+    let path = session.join("events.jsonl");
+    tokio::fs::write(&path, oversized_body(&tail))
+        .await
+        .unwrap();
+    let (cursors, seen) = Default::default();
+    let events = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        crate::source::copilot::decode_copilot_line,
+        &cursors,
+        &seen,
+    )
+    .await;
+    let mut models: Vec<_> = (events.iter())
+        .filter_map(|(_, e)| match e {
+            AgentEvent::ModelInfo {
+                agent_id, model, ..
+            } => Some((*agent_id, model.clone())),
+            _ => None,
+        })
+        .collect();
+    models.sort_by(|a, b| a.1.cmp(&b.1));
+    let [(child, child_model), (root, root_model)] = &models[..] else {
+        panic!("one model per agent, got {events:?}");
+    };
+    assert_ne!(child, root);
+    assert_eq!(
+        (child_model.as_deref(), root_model.as_deref()),
+        (Some("gpt-child"), Some("gpt-root"))
+    );
+}
+
 /// The skip's start goes ahead of its turn's in-flight dispatch, so the
 /// dispatch registers in that turn, whose keyed end takes it out of the turn's
 /// requests while its subagent runs on.
