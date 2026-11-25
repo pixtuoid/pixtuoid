@@ -1200,7 +1200,7 @@ mod run {
     const RELEASES_PER_PAGE: u8 = 100;
 
     /// The `page`th page of `repo`'s releases.
-    fn releases_page(repo: &str, page: u32) -> Result<Vec<Listed>, String> {
+    fn releases_page(repo: &str, page: u32) -> Result<Vec<ListedRelease>, String> {
         let url = format!(
             "https://api.github.com/repos/{repo}/releases?per_page={RELEASES_PER_PAGE}&page={page}"
         );
@@ -1211,13 +1211,13 @@ mod run {
     /// What jcode's installer reads of a listed release
     /// (`scripts/install.sh:394-398` at v1.1.2).
     #[derive(serde::Deserialize)]
-    struct Listed {
+    struct ListedRelease {
         tag_name: String,
         draft: bool,
         prerelease: bool,
     }
 
-    impl Listed {
+    impl ListedRelease {
         /// Its release, when it is a stable `v<major>.<minor>.<patch>` one.
         fn stable(&self) -> Option<Version> {
             if self.draft || self.prerelease {
@@ -1233,14 +1233,14 @@ mod run {
     /// (`scripts/install.sh:381-420` at v1.1.2).
     fn newest_carrying<E>(
         marked: &Version,
-        pages: impl IntoIterator<Item = Result<Vec<Listed>, E>>,
+        pages: impl IntoIterator<Item = Result<Vec<ListedRelease>, E>>,
         mut carries: impl FnMut(&Version) -> bool,
     ) -> Result<Option<Version>, E> {
         if carries(marked) {
             return Ok(Some(marked.clone()));
         }
         for page in pages {
-            let mut stable: Vec<Version> = page?.iter().filter_map(Listed::stable).collect();
+            let mut stable: Vec<Version> = page?.iter().filter_map(ListedRelease::stable).collect();
             if stable.is_empty() {
                 break;
             }
@@ -3766,10 +3766,10 @@ mod run {
                 ("v1.0.1", false, false, &[MACOS, LINUX]),
                 ("v1.0.3", false, false, &[MACOS, LINUX]),
             ];
-            let page = |rows: &[Row]| -> Result<Vec<Listed>, String> {
+            let page = |rows: &[Row]| -> Result<Vec<ListedRelease>, String> {
                 Ok(rows
                     .iter()
-                    .map(|(tag, draft, prerelease, _)| Listed {
+                    .map(|(tag, draft, prerelease, _)| ListedRelease {
                         tag_name: (*tag).to_owned(),
                         draft: *draft,
                         prerelease: *prerelease,
