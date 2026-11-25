@@ -487,19 +487,6 @@ pub(crate) fn hook_identity(
     )
 }
 
-/// The model a `SessionStart` hook offers, for a CLI with no transcript to
-/// own it.
-pub(crate) fn hook_model(
-    agent_id: AgentId,
-    obj: &serde_json::Map<String, Value>,
-) -> Option<AgentEvent> {
-    non_empty(obj, "model").map(|model| AgentEvent::ModelInfo {
-        agent_id,
-        model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-        effort: None,
-    })
-}
-
 /// Where the shim stamps an installed command's `--hook-event`, for a CLI whose
 /// payload names no event.
 pub const EVENT_STAMP: &str = "_pixtuoid_event";
@@ -570,13 +557,30 @@ pub(crate) fn shared_hook_arms(
     match event {
         "SessionStart" => {
             let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-            Ok(vec![AgentEvent::SessionStart {
+            let mut evs = vec![AgentEvent::SessionStart {
                 agent_id,
                 source: source.to_string(),
                 session_id,
                 cwd,
                 parent_id: None,
-            }])
+            }];
+            // "Only SessionStart hooks can receive a `model` field, and it is not
+            // guaranteed to be present" (hooks.md) — take it when offered.
+            let model = non_empty(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
+            // A transcript owns the model it carries; the hook's stands in
+            // until it names one.
+            evs.extend(model.map(|model| {
+                if desc.is_some_and(|d| d.line_decoder().is_some()) {
+                    AgentEvent::ModelHint { agent_id, model }
+                } else {
+                    AgentEvent::ModelInfo {
+                        agent_id,
+                        model: Some(model),
+                        effort: None,
+                    }
+                }
+            }));
+            Ok(evs)
         }
         "PreToolUse" => {
             let tool_name = hook_tool_name(obj, source, event);
@@ -995,25 +999,31 @@ mod tests {
         }
     }
 
-    /// CC's and codex's transcripts carry the model, which the `SessionStart`
-    /// hook offers too, and so no hook decodes it.
+    /// CC's and codex's transcripts carry the model, so their `SessionStart`
+    /// hook's is a hint; kimi's hook is the only one.
     #[test]
-    fn a_transcript_bearing_cli_s_session_start_hook_decodes_no_model() {
-        for source in ["claude-code", "codex"] {
-            let v = serde_json::json!({
-                "_pixtuoid_source": source,
-                "hook_event_name": "SessionStart",
-                "session_id": "ses-m",
-                "transcript_path": "/p/ses-m.jsonl",
-                "cwd": "/repo",
-                "model": "claude-fable-5"
-            });
-            let evs = decode_hook_payload(v).unwrap();
-            assert!(
-                !evs.iter()
-                    .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-                "{source} got {evs:?}"
-            );
+    fn a_session_start_hook_s_model_is_a_hint_beside_a_transcript() {
+        let long = "m".repeat(MAX_DECODED_FIELD_CHARS + 1);
+        let capped = ellipsize(&long, MAX_DECODED_FIELD_CHARS);
+        for (source, hint) in [("claude-code", true), ("codex", true), ("kimi", false)] {
+            let models = |model: &str| {
+                let evs = decode_hook_payload(serde_json::json!({
+                    "_pixtuoid_source": source,
+                    "hook_event_name": "SessionStart",
+                    "session_id": "ses-m",
+                    "cwd": "/repo",
+                    "model": model
+                }))
+                .unwrap();
+                let models = evs.iter().filter_map(|e| match e {
+                    AgentEvent::ModelHint { model, .. } => Some((true, model.clone())),
+                    AgentEvent::ModelInfo { model, .. } => Some((false, model.clone()?)),
+                    _ => None,
+                });
+                models.collect::<Vec<_>>()
+            };
+            assert_eq!(models(&long), [(hint, capped.clone())], "{source}");
+            assert_eq!(models(""), [], "{source}");
         }
     }
     use serde_json::json;

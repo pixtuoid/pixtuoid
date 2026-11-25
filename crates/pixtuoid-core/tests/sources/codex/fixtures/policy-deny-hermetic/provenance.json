@@ -6,7 +6,7 @@
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 101
+    "blanked": 100
   },
   "seed": "tests/sources/codex/hermetic/policy-deny",
   "aimock": "1.47.0",

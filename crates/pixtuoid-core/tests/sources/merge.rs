@@ -511,6 +511,9 @@ fn runs_of(source: &str) -> Vec<Run> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Unkeyed {
     Model,
+    /// A hook's model, which fills only an unset one: one producer of it, apart
+    /// from the transcript's.
+    ModelHint,
     Effort,
     Ultracode,
     Label,
@@ -536,6 +539,7 @@ fn unkeyed(event: &AgentEvent) -> Vec<Unkeyed> {
         .into_iter()
         .flatten()
         .collect(),
+        AgentEvent::ModelHint { .. } => vec![Unkeyed::ModelHint],
         AgentEvent::Ultracode { .. } => vec![Unkeyed::Ultracode],
         AgentEvent::Rename { .. } | AgentEvent::LabelHint { .. } => vec![Unkeyed::Label],
         AgentEvent::TurnStart { .. } => vec![Unkeyed::TurnStart],

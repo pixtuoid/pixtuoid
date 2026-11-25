@@ -6,7 +6,7 @@
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 217
+    "blanked": 216
   },
   "aimock": "1.48.0",
   "script": "tests/sources/claude_code/hermetic/permission.json",

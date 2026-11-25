@@ -418,7 +418,8 @@ that fails without it.
    With both a transcript and hooks, decode each unkeyed fact
    (`tests/sources/merge.rs`'s `Unkeyed`) from the transcript when it carries
    it, else from the hook; `merge.rs` fails a fixture that decodes one from
-   both.
+   both. A hook's model beside the transcript's decodes as
+   `AgentEvent::ModelHint`.
 7. **Wire it into `runtime/driver.rs::build_source_set`**, the one
    construction site. The registry drives the guard test, not the spawning,
    and `just test` fails without it.

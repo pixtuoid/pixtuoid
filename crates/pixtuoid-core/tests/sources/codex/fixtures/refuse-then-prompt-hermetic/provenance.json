@@ -6,7 +6,7 @@
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 145
+    "blanked": 144
   },
   "aimock": "1.47.0",
   "script": "tests/sources/codex/hermetic/refuse-then-prompt.json",
