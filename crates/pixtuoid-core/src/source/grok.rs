@@ -337,17 +337,23 @@ fn subagent_child_key(obj: &serde_json::Map<String, Value>, event: &str) -> Resu
         })
 }
 
-const CHILD_SESSION_ID: &str = "child_session_id";
-
 /// The TRANSCRIPT lane's twin of [`subagent_child_key`]: the same id under
-/// `child_session_id`. Shared by both subagent arms so the non-empty guard
-/// cannot be applied to one and forgotten on the other — an `""` mints a
-/// phantom child parented to the real session.
-fn transcript_child_key(update: &serde_json::Map<String, Value>) -> Option<&str> {
-    update
+/// `child_session_id`, breadcrumbed when absent. Shared by both subagent arms so
+/// the non-empty guard cannot be applied to one and forgotten on the other — an
+/// `""` mints a phantom child parented to the real session.
+fn transcript_child_key<'u>(
+    update: &'u serde_json::Map<String, Value>,
+    tag: &str,
+) -> Option<&'u str> {
+    const CHILD_SESSION_ID: &str = "child_session_id";
+    let key = update
         .get(CHILD_SESSION_ID)
         .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
+        .filter(|s| !s.is_empty());
+    if key.is_none() {
+        crate::source::drift::missing_field(SOURCE_NAME, tag, CHILD_SESSION_ID);
+    }
+    key
 }
 
 /// Grok tool detail: `"name: target"` over grok's snake_case tool vocabulary.
@@ -411,8 +417,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
         // implementation-specific methods, so none of this is ACP vocabulary.
         XAI_SESSION_UPDATE_METHOD => match tag {
             XAI_SUBAGENT_SPAWNED => {
-                let Some(child_key) = transcript_child_key(update) else {
-                    crate::source::drift::missing_field(SOURCE_NAME, tag, CHILD_SESSION_ID);
+                let Some(child_key) = transcript_child_key(update, tag) else {
                     return vec![];
                 };
                 let child = AgentId::from_parts(SOURCE_NAME, child_key);
@@ -438,8 +443,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
                 evs
             }
             XAI_SUBAGENT_FINISHED => {
-                let Some(child_key) = transcript_child_key(update) else {
-                    crate::source::drift::missing_field(SOURCE_NAME, tag, CHILD_SESSION_ID);
+                let Some(child_key) = transcript_child_key(update, tag) else {
                     return vec![];
                 };
                 vec![AgentEvent::SessionEnd {
