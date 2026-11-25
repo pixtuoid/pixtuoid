@@ -19,7 +19,7 @@
 
 use std::num::NonZeroU16;
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::{DecodeError, DecodeResult as Result, required_or_err};
 use serde_json::Value;
 
 use crate::source::daemon::{DaemonPresenceUpdate, DecodedPresence};
@@ -71,9 +71,7 @@ fn turn_key(obj: &serde_json::Map<String, Value>) -> TurnKey {
 /// Narrow the wire `gatewayPort` to this gateway's stable instance id; an envelope
 /// without a usable one is REJECTED rather than bucketed with another gateway's.
 fn gateway_instance(obj: &serde_json::Map<String, Value>, event: &str) -> Result<DaemonInstanceId> {
-    let raw = obj
-        .get(GATEWAY_PORT_FIELD)
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, GATEWAY_PORT_FIELD))?;
+    let raw = required_or_err(SOURCE_NAME, Some(event), GATEWAY_PORT_FIELD, |k| obj.get(k))?;
     let port = raw
         .as_u64()
         .and_then(|n| u16::try_from(n).ok())
@@ -98,10 +96,7 @@ fn gateway_instance(obj: &serde_json::Map<String, Value>, event: &str) -> Result
 /// If the payload lacks `type`, or carries a `gatewayPort` that is not a non-zero `u16` port.
 #[doc(hidden)]
 pub fn decode_openclaw_hook_payload(obj: &HookObject) -> Result<DecodedPresence> {
-    let event = obj
-        .get("type")
-        .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "type"))?;
+    let event = required_or_err(SOURCE_NAME, None, "type", |k| obj.get(k)?.as_str())?;
     let instance = gateway_instance(obj, event)?;
     let pid = obj
         .get(crate::source::decoder::PID_STAMP)

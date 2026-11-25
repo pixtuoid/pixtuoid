@@ -21,7 +21,9 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, non_empty};
+use crate::source::decoder::{
+    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, non_empty, required,
+};
 use crate::source::registry::{
     ChildEndInference, FocusChannel, Hyphen, SourceCaps, SourceDescriptor, SourceKind, Transcript,
 };
@@ -39,7 +41,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Copilot CLI",
     label_prefix: "cp",
-    verified_version: "1.0.114",
+    verified_version: "1.0.115",
     version_probe: Some(&["copilot", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("COPILOT_HOME"),
@@ -137,20 +139,23 @@ fn str_at<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(|x| x.as_str())
 }
 
-fn copilot_child_key<'a>(v: &'a Value, data: Option<&'a Value>) -> Option<&'a str> {
+fn copilot_child_key<'a>(
+    obj: &'a serde_json::Map<String, Value>,
+    data: Option<&'a Value>,
+) -> Option<&'a str> {
     // BOTH branches filter empty: an empty `toolCallId` would otherwise mint a
     // child `AgentId` keyed on "", colliding every such child onto one slot.
-    str_at(v, "agentId")
-        .filter(|s| !s.is_empty())
-        .or_else(|| data.and_then(|d| str_at(d, "toolCallId")))
-        .filter(|s| !s.is_empty())
+    non_empty(obj, "agentId").or_else(|| {
+        data.and_then(|d| str_at(d, TOOL_CALL_ID))
+            .filter(|s| !s.is_empty())
+    })
 }
 
 /// First-sight cwd extractor for the walker's head scan. Without it a copilot
 /// transcript gated at first sight then tail-revived registers an empty-cwd root
 /// (→ the short unknown-cwd reap) and its label degrades from `cp·<dir>` to `cp#N`.
 pub(crate) fn extract_copilot_cwd(v: &Value) -> Option<PathBuf> {
-    v.get("data")?
+    v.get(DATA)?
         .get("context")?
         .get("cwd")?
         .as_str()
@@ -169,6 +174,8 @@ const SUBAGENT_FAILED: &str = "subagent.failed";
 const SESSION_TASK_COMPLETE: &str = "session.task_complete";
 const SESSION_USAGE_RECORD: &str = "session.usage_record";
 const SESSION_SHUTDOWN: &str = "session.shutdown";
+const DATA: &str = "data";
+const TOOL_CALL_ID: &str = "toolCallId";
 
 /// Decode one `events.jsonl` line into zero or more `AgentEvent`s. Unknown,
 /// ephemeral, or malformed shapes return `vec![]` and never panic — real files
@@ -183,21 +190,19 @@ pub(crate) fn decode_copilot_line(
         return vec![];
     };
     let kind = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
-    let data = obj.get("data");
+    let data = obj.get(DATA);
 
-    let acting = match str_at(&v, "agentId") {
-        Some(aid) if !aid.is_empty() => AgentId::from_parts(source, aid),
-        _ => root,
+    let acting = match non_empty(obj, "agentId") {
+        Some(aid) => AgentId::from_parts(source, aid),
+        None => root,
     };
 
     match kind {
         SESSION_START => {
-            let session_id = data
-                .and_then(|d| str_at(d, "sessionId"))
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(source, "session.start", "sessionId");
-                    ""
-                });
+            let session_id = required(source, SESSION_START, "sessionId", |k| {
+                data.and_then(|d| str_at(d, k))
+            })
+            .unwrap_or("");
             vec![root_start(root, source, session_id, data)]
         }
         // The id rides the path: a resume keeps the sessionId, and its
@@ -209,18 +214,16 @@ pub(crate) fn decode_copilot_line(
             data,
         )],
         TOOL_EXECUTION_START => {
-            let Some(d) = data else {
-                crate::source::drift::missing_field(source, "tool.execution_start", "data");
+            let Some(d) = required(source, TOOL_EXECUTION_START, DATA, |k| obj.get(k)) else {
                 return vec![];
             };
-            let Some(tool_call_id) = str_at(d, "toolCallId") else {
-                crate::source::drift::missing_field(source, "tool.execution_start", "toolCallId");
+            let Some(tool_call_id) =
+                required(source, TOOL_EXECUTION_START, TOOL_CALL_ID, |k| str_at(d, k))
+            else {
                 return vec![];
             };
-            let tool_name = str_at(d, "toolName").unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, "tool.execution_start", "toolName");
-                ""
-            });
+            let tool_name =
+                required(source, TOOL_EXECUTION_START, "toolName", |k| str_at(d, k)).unwrap_or("");
             let detail = copilot_tool_detail(tool_name, d.get("arguments"));
             vec![AgentEvent::ToolUseStart {
                 agent_id: acting,
@@ -230,33 +233,18 @@ pub(crate) fn decode_copilot_line(
             }]
         }
         TOOL_EXECUTION_COMPLETE => {
-            let Some(d) = data else {
-                crate::source::drift::missing_field(source, "tool.execution_complete", "data");
+            let Some(d) = required(source, TOOL_EXECUTION_COMPLETE, DATA, |k| obj.get(k)) else {
                 return vec![];
             };
-            let Some(tool_call_id) = str_at(d, "toolCallId") else {
-                crate::source::drift::missing_field(
-                    source,
-                    "tool.execution_complete",
-                    "toolCallId",
-                );
+            let Some(tool_call_id) = required(source, TOOL_EXECUTION_COMPLETE, TOOL_CALL_ID, |k| {
+                str_at(d, k)
+            }) else {
                 return vec![];
             };
-            let mut out = vec![AgentEvent::ToolUseEnd {
+            vec![AgentEvent::ToolUseEnd {
                 agent_id: acting,
                 tool_use_id: Some(tool_call_id.to_string()),
-            }];
-            // Copilot stamps the model PER TOOL (`data.model` can differ
-            // mid-session), attributed to the ACTING agent so a subagent's
-            // tool doesn't repaint the root.
-            if let Some(model) = str_at(d, "model").filter(|m| !m.is_empty()) {
-                out.push(AgentEvent::ModelInfo {
-                    agent_id: acting,
-                    model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-                    effort: None,
-                });
-            }
-            out
+            }]
         }
         PERMISSION_REQUESTED => {
             let request = data.and_then(|d| d.get("permissionRequest"));
@@ -272,7 +260,7 @@ pub(crate) fn decode_copilot_line(
                 RequestKeys {
                     // The gated call (#951), so its own end resolves the wait.
                     tool_use_id: request
-                        .and_then(|p| str_at(p, "toolCallId"))
+                        .and_then(|p| str_at(p, TOOL_CALL_ID))
                         .filter(|id| !id.is_empty())
                         .map(str::to_owned),
                     ..RequestKeys::default()
@@ -287,7 +275,7 @@ pub(crate) fn decode_copilot_line(
                 .and_then(|d| d.get("result"))
                 .and_then(|r| str_at(r, "kind"))
                 .is_some_and(|k| k.starts_with("approved"));
-            match data.and_then(|d| str_at(d, "toolCallId")) {
+            match data.and_then(|d| str_at(d, TOOL_CALL_ID)) {
                 Some(id) if !approved && !id.is_empty() => vec![AgentEvent::ToolUseEnd {
                     agent_id: acting,
                     tool_use_id: Some(id.to_owned()),
@@ -296,7 +284,7 @@ pub(crate) fn decode_copilot_line(
             }
         }
         SUBAGENT_STARTED => {
-            let Some(child_key) = copilot_child_key(&v, data) else {
+            let Some(child_key) = copilot_child_key(obj, data) else {
                 return vec![];
             };
             let child = AgentId::from_parts(source, child_key);
@@ -323,7 +311,7 @@ pub(crate) fn decode_copilot_line(
             evs
         }
         SUBAGENT_COMPLETED | SUBAGENT_FAILED => {
-            let Some(child_key) = copilot_child_key(&v, data) else {
+            let Some(child_key) = copilot_child_key(obj, data) else {
                 return vec![];
             };
             vec![AgentEvent::SessionEnd {
@@ -335,31 +323,39 @@ pub(crate) fn decode_copilot_line(
         // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
         // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
         SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root)],
-        // Each call's own usage record (1.0.105's `schemas/session-events.schema.json`,
+        // Each call's own usage record (1.0.115's `schemas/session-events.schema.json`,
         // `UsageAccountingRecordData`), since a shutdown's `modelMetrics` totals
-        // every lifetime of a resumed session. `inputTokens` counts cache reads.
+        // every lifetime of a resumed session. Its required `usage.model` is the
+        // "Model identifier used for this API call" (`AssistantUsageData`), so a
+        // child's calls and a resumed lifetime's name theirs. `inputTokens`
+        // counts cache reads.
         SESSION_USAGE_RECORD => {
-            let Some(usage) = data.and_then(|d| d.get("usage")) else {
-                crate::source::drift::missing_field(source, "session.usage_record", "usage");
+            let Some(usage) = required(source, SESSION_USAGE_RECORD, "usage", |k| {
+                data.and_then(|d| d.get(k))
+            }) else {
                 return vec![];
             };
+            let mut out: Vec<AgentEvent> =
+                AgentEvent::model_info(acting, str_at(usage, "model"), None)
+                    .into_iter()
+                    .collect();
             let count = |k: &str| usage.get(k).and_then(Value::as_u64).unwrap_or(0);
             let fresh = count("inputTokens")
                 .saturating_sub(count("cacheReadTokens"))
                 .saturating_add(count("outputTokens"));
-            if fresh == 0 {
-                return vec![];
+            if fresh > 0 {
+                out.push(AgentEvent::Usage {
+                    agent_id: acting,
+                    fresh_tokens: fresh,
+                    // A rewind rewrites the log without the events it removes, and the
+                    // watcher re-reads a shorter file from its top: 1.0.105's
+                    // `runtime.node` ("persisted history truncation", "read back …
+                    // after the rewrite", `src/runtime/src/shared_api/history.rs`).
+                    reading_id: non_empty(obj, "id").map(str::to_owned),
+                    copy_id: None,
+                });
             }
-            vec![AgentEvent::Usage {
-                agent_id: acting,
-                fresh_tokens: fresh,
-                // A rewind rewrites the log without the events it removes, and the
-                // watcher re-reads a shorter file from its top: 1.0.105's
-                // `runtime.node` ("persisted history truncation", "read back …
-                // after the rewrite", `src/runtime/src/shared_api/history.rs`).
-                reading_id: non_empty(obj, "id").map(str::to_owned),
-                copy_id: None,
-            }]
+            out
         }
         SESSION_SHUTDOWN => vec![AgentEvent::SessionEnd {
             agent_id: root,
@@ -429,30 +425,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn execution_complete_surfaces_the_per_tool_model() {
-        let line = r#"{"type":"tool.execution_complete","data":{"toolCallId":"t1","model":"claude-haiku-4.5","success":true},"id":"e1","timestamp":"ts","parentId":null}"#;
-        let evs = decode_copilot_line(
-            "/p/11111111-2222-3333-4444-555555555555/events.jsonl",
-            "copilot",
-            serde_json::from_str(line).unwrap(),
-        );
-        assert!(
-            evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), effort: None, .. } if m == "claude-haiku-4.5")),
-            "per-tool model must surface, got {evs:?}"
-        );
-        let line = r#"{"type":"tool.execution_complete","data":{"toolCallId":"t2","success":true},"id":"e2","timestamp":"ts","parentId":null}"#;
-        let evs = decode_copilot_line(
-            "/p/11111111-2222-3333-4444-555555555555/events.jsonl",
-            "copilot",
-            serde_json::from_str(line).unwrap(),
-        );
-        assert!(
-            !evs.iter()
-                .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-            "got {evs:?}"
-        );
-    }
     use serde_json::json;
 
     const PATH: &str = "/p/session-state/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl";
@@ -818,8 +790,9 @@ mod tests {
     }
 
     #[test]
-    fn a_usage_record_with_no_fresh_tokens_reads_nothing() {
-        // A reading of zero would be pushed into a monotone accumulator.
+    fn a_usage_record_with_no_fresh_tokens_counts_none() {
+        // A reading of zero would be pushed into a monotone accumulator, while
+        // the call's model is still the one it ran on.
         for data in [
             r#"{"usage":{"model":"m"}}"#,
             r#"{"usage":{"model":"m","inputTokens":900,"outputTokens":0,"cacheReadTokens":900,"cacheWriteTokens":0}}"#,
@@ -827,10 +800,14 @@ mod tests {
             let line = format!(
                 r#"{{"type":"session.usage_record","data":{data},"id":"e2","timestamp":"t","parentId":null}}"#
             );
+            let evs = decode(&line);
             assert!(
-                !decode(&line)
-                    .iter()
-                    .any(|e| matches!(e, AgentEvent::Usage { .. })),
+                !evs.iter().any(|e| matches!(e, AgentEvent::Usage { .. })),
+                "{data}"
+            );
+            assert!(
+                evs.iter()
+                    .any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), .. } if m == "m")),
                 "{data}"
             );
         }

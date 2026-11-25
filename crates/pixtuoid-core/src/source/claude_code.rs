@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 #[cfg(any(feature = "native", test))]
 use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, make_tool_detail, non_empty,
+    required, required_or_err,
 };
 
 use crate::AgentId;
@@ -96,7 +97,7 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// so without `SubagentStop` they hold desks until the stale sweep.
 pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
-        .get("hook_event_name")
+        .get(crate::source::decoder::HOOK_EVENT_NAME)
         .and_then(|s| s.as_str())
         .unwrap_or("");
     if event != "SubagentStart" && event != "SubagentStop" {
@@ -104,18 +105,13 @@ pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<Agent
     }
     // Registry contract: claim our two events FULLY (Err on malformed), never
     // fall through — an empty id mints a phantom that never coalesces.
-    let session_id = obj
-        .get("session_id")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "session_id"))?;
-    let wire_agent_id = obj
-        .get(crate::source::decoder::SUBAGENT_ID)
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            DecodeError::missing_in(SOURCE_NAME, event, crate::source::decoder::SUBAGENT_ID)
-        })?;
+    let session_id = crate::source::decoder::hook_session_id(obj, SOURCE_NAME, event)?;
+    let wire_agent_id = required_or_err(
+        SOURCE_NAME,
+        Some(event),
+        crate::source::decoder::SUBAGENT_ID,
+        |k| non_empty(obj, k),
+    )?;
     let prefixed = subagent_session(wire_agent_id);
     if event == "SubagentStart" {
         let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
@@ -124,15 +120,12 @@ pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<Agent
             source: SOURCE_NAME.to_string(),
             session_id: prefixed,
             cwd,
-            parent_id: Some(AgentId::from_parts(SOURCE_NAME, session_id)),
+            parent_id: Some(AgentId::from_parts(SOURCE_NAME, &session_id)),
         }]))
     } else {
         // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
         // authoritative key — exact parity with the watcher's own deriver.
-        let path_key = obj
-            .get("agent_transcript_path")
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
+        let path_key = non_empty(obj, "agent_transcript_path")
             .map(|p| cc_id_from_path(Path::new(&crate::id::normalize_path_key(p))))
             .filter(|s| !s.is_empty());
         if let Some(ref k) = path_key
@@ -192,6 +185,8 @@ fn resolve_claude_config_dir(
 
 const ASSISTANT: &str = "assistant";
 const USER: &str = "user";
+const ATTACHMENT: &str = "attachment";
+const MESSAGE: &str = "message";
 
 /// The CC transcript types whose `message` payload this module decodes. CC's
 /// TRANSCRIPT has no fetchable schema: the nightly's latest-release census and
@@ -208,7 +203,7 @@ const DECODED_TYPES: &[&str] = &[ASSISTANT, USER];
 fn is_turn_record(obj: &serde_json::Map<String, Value>) -> bool {
     obj.contains_key("timestamp")
         && obj
-            .get("message")
+            .get(MESSAGE)
             .and_then(Value::as_object)
             .is_some_and(|m| m.contains_key("role") && m.contains_key("content"))
 }
@@ -219,10 +214,7 @@ fn is_turn_record(obj: &serde_json::Map<String, Value>) -> bool {
 /// until the next Rename. Capped at decode because transcript content persists
 /// in slot state.
 fn attribution_label(obj: &serde_json::Map<String, Value>) -> Option<String> {
-    let name = obj
-        .get("attributionAgent")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())?;
+    let name = non_empty(obj, "attributionAgent")?;
     let seg = name.rsplit_once(':').map_or(name, |(_, tail)| tail);
     (!seg.is_empty()).then(|| ellipsize(seg, MAX_DECODED_FIELD_CHARS))
 }
@@ -283,20 +275,21 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     let ty = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
 
     // Both directions of the one rename that can freeze a sprite.
-    let message = obj.get("message").and_then(|m| m.as_object());
-    if DECODED_TYPES.contains(&ty) {
-        if message.is_none() {
-            crate::source::drift::missing_field(source, ty, "message");
+    let read = |k: &str| obj.get(k).and_then(|m| m.as_object());
+    let message = if DECODED_TYPES.contains(&ty) {
+        required(source, ty, MESSAGE, read)
+    } else {
+        if !ty.is_empty() && is_turn_record(obj) {
+            crate::source::drift::unknown_event(source, ty);
         }
-    } else if !ty.is_empty() && is_turn_record(obj) {
-        crate::source::drift::unknown_event(source, ty);
-    }
+        read(MESSAGE)
+    };
 
     if let Some(label) = attribution_label(obj) {
         out.push(AgentEvent::Rename { agent_id, label });
     }
 
-    if ty == "attachment"
+    if ty == ATTACHMENT
         && let Some(on) = attachment_ultracode(obj)
     {
         out.push(AgentEvent::Ultracode { agent_id, on });
@@ -305,20 +298,13 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     let Some(message) = message else {
         return out;
     };
-    // `<synthetic>` is CC's marker for tool-generated/error turns, not a model.
     if ty == ASSISTANT {
+        // `<synthetic>` is CC's marker for tool-generated/error turns, not a model.
         let model = message
             .get("model")
             .and_then(|m| m.as_str())
-            .filter(|m| !m.is_empty() && *m != "<synthetic>");
-        let effort = turn_effort(obj);
-        if model.is_some() || effort.is_some() {
-            out.push(AgentEvent::ModelInfo {
-                agent_id,
-                model: model.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
-                effort: effort.map(|e| ellipsize(e, MAX_DECODED_FIELD_CHARS)),
-            });
-        }
+            .filter(|m| *m != "<synthetic>");
+        out.extend(AgentEvent::model_info(agent_id, model, turn_effort(obj)));
         let fresh = fresh_spend(message);
         if fresh > 0 {
             let reading_id = non_empty(message, "id");
@@ -346,13 +332,8 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                     continue;
                 }
                 let id = bobj.get("id").and_then(|s| s.as_str()).map(String::from);
-                let name = bobj
-                    .get("name")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or_else(|| {
-                        crate::source::drift::missing_field(SOURCE_NAME, "tool_use", "name");
-                        "?"
-                    });
+                let name =
+                    required(SOURCE_NAME, btype, "name", |k| bobj.get(k)?.as_str()).unwrap_or("?");
                 out.push(AgentEvent::ToolUseStart {
                     agent_id,
                     copy_id: (id.as_deref())
@@ -394,13 +375,13 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
 /// long-dead transcript, bumping the mtime first-sight trusted as liveness.
 #[cfg(any(feature = "native", test))]
 const ACTIVITY_TYPES: &[&str] = &[
-    "assistant",
-    "attachment",
+    ASSISTANT,
+    ATTACHMENT,
     "file-history-delta",
     "queue-operation",
     // Carries no `AgentEvent` but IS the session speaking — it closes a live tail.
     "system",
-    "user",
+    USER,
 ];
 
 /// The fewest url-safe characters an id's suffix carries for [`looks_random`]:
@@ -978,10 +959,24 @@ mod tests {
     fn subagent_hooks_with_empty_ids_are_err_not_fallthrough() {
         for event in ["SubagentStart", "SubagentStop"] {
             let no_session = json!({"hook_event_name": event, "agent_id": "abc"});
+            let mut err = None;
+            let logs = crate::test_capture::capture_logs(|| {
+                err = decode_cc_hook_custom(test_obj(&no_session)).err();
+            });
             assert!(
-                decode_cc_hook_custom(test_obj(&no_session)).is_err(),
-                "{event} without session_id must Err (claim-fully), not fall through"
+                matches!(
+                    &err,
+                    Some(crate::source::decoder::DecodeError::Missing {
+                        context: Some(context),
+                        field: "session_id",
+                        ..
+                    }) if context == event
+                ),
+                "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
             );
+            for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
+                assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
+            }
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             assert!(
                 decode_cc_hook_custom(test_obj(&empty_child)).is_err(),

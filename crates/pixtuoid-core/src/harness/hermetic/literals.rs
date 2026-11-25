@@ -244,6 +244,41 @@ pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
     c.resolve()
 }
 
+/// What the census matches one accessor's calls by.
+struct KeyReader {
+    name: &'static str,
+    /// How many arguments it takes: a namesake of another arity is some other
+    /// function.
+    arity: usize,
+    /// Which of them is the key.
+    key_index: usize,
+}
+
+/// Each accessor from one row, which also pins its name to its `decoder`
+/// function at the signature given, so a renamed or reshaped accessor breaks
+/// this build on the row its key's index sits on, instead of leaving the census
+/// matching a stale name or arity.
+macro_rules! key_readers {
+    ($($reader:ident: fn($($arg:ty),*) -> $found:ty, key_index = $key_index:literal;)*) => {{
+        $(let _: fn($($arg),*) -> $found = crate::source::decoder::$reader;)*
+        [$(KeyReader {
+            name: stringify!($reader),
+            arity: [$(stringify!($arg)),*].len(),
+            key_index: $key_index,
+        }),*]
+    }};
+}
+
+/// The accessors a decoder reads a required key through.
+const KEY_READERS: [KeyReader; 2] = {
+    type Read = fn(&'static str) -> Option<()>;
+    type Found = crate::source::decoder::DecodeResult<()>;
+    key_readers!(
+        required: fn(&str, &str, &'static str, Read) -> Option<()>, key_index = 2;
+        required_or_err: fn(&str, Option<&str>, &'static str, Read) -> Found, key_index = 2;
+    )
+};
+
 struct Collect {
     module: String,
     item: String,
@@ -422,14 +457,25 @@ impl<'ast> Visit<'ast> for Collect {
     }
 
     /// A string a local accessor takes (`field(obj, "id")`, a closure's
-    /// `n("inputTokens")`) is a key it reads. A path call's is not: a
-    /// breadcrumb (`drift::missing_field`) or an error only repeats the key.
+    /// `n("inputTokens")`) is a key it reads, and so is a required key's
+    /// ([`KEY_READERS`]) whatever path names its reader. Another path call's is
+    /// not: a breadcrumb (`drift::missing_field`) or an error only repeats the key.
     fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
-        if matches!(&*c.func, syn::Expr::Path(p) if p.path.get_ident().is_some_and(|i| i != "Some"))
-        {
-            for arg in &c.args {
-                if let Some(s) = Self::lit(arg) {
+        if let syn::Expr::Path(p) = &*c.func {
+            let reader = p.path.segments.last().and_then(|s| {
+                KEY_READERS
+                    .iter()
+                    .find(|r| s.ident == r.name && c.args.len() == r.arity)
+            });
+            if let Some(reader) = reader {
+                if let Some(s) = c.args.iter().nth(reader.key_index).and_then(Self::lit) {
                     self.add(s, Match::Exact);
+                }
+            } else if p.path.get_ident().is_some_and(|i| i != "Some") {
+                for arg in &c.args {
+                    if let Some(s) = Self::lit(arg) {
+                        self.add(s, Match::Exact);
+                    }
                 }
             }
         }
@@ -1173,6 +1219,26 @@ mod tests {
         for absent in ["breadcrumb", "test_only", "unix_test_only"] {
             assert!(!got.contains_key(absent), "{absent}: {got:?}");
         }
+    }
+
+    #[test]
+    fn the_scan_reads_a_required_keys_key_whatever_path_calls_it() {
+        let file = syn::parse_file(
+            r#"
+        fn decode(obj: &Map) {
+            let _ = crate::source::decoder::required(SOURCE_NAME, "pathed_event", "pathed", |k| obj.get(k));
+            let _ = required(SOURCE_NAME, "bare_event", "bare", |k| obj.get(k));
+            let _ = decoder::required_or_err(SOURCE_NAME, Some("erring_event"), "erring", |k| obj.get(k));
+            let _ = required("namesake");
+        }
+"#,
+        )
+        .expect("parses");
+        let got: BTreeSet<String> = collect("x.rs", &file).into_iter().map(|l| l.text).collect();
+        assert_eq!(
+            got,
+            BTreeSet::from(["pathed", "bare", "erring", "namesake"].map(String::from))
+        );
     }
 
     /// An export a plugin installer reads is exactly its decoder's dispatch

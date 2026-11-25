@@ -14,6 +14,7 @@ use super::verify::Label;
 use super::{Leg, NOT_HERMETIC, OSES, Unprofiled, legs, shard_of};
 use crate::harness::plan::{PROMPT_ENV, SEED_ENV};
 use crate::harness::provenance::{NonEmpty, Provenance, Recorded};
+use crate::source::decoder::non_empty;
 use crate::source::registry;
 
 /// The file beside a leg's report holding its [`Verdicts`].
@@ -263,10 +264,7 @@ pub fn plan(
 ) -> Plan {
     let mut nights: BTreeMap<Leg, Night<'_>> = legs()
         .map(|leg| {
-            let runs_url = drift
-                .get(&runs_url_output(leg))
-                .and_then(Value::as_str)
-                .filter(|v| !v.is_empty());
+            let runs_url = non_empty(drift, &runs_url_output(leg));
             let night = Night {
                 reported: Reported::Missing,
                 runs_url,

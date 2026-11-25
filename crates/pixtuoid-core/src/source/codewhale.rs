@@ -29,7 +29,9 @@
 //!   CodeWhale's pid by walking past the runner's shell (on Windows too, #528)
 //!   and `hook::HookPidWatch` ends the sprite when that pid dies.
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::{
+    DecodeError, DecodeResult as Result, non_empty, required, required_or_err,
+};
 use serde_json::Value;
 
 use crate::AgentId;
@@ -115,10 +117,7 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
 ///
 /// If the payload lacks `event`, names an unhandled event, or lacks a non-empty field its event carries.
 pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get("event")
-        .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "event"))?;
+    let event = required_or_err(SOURCE_NAME, None, "event", |k| obj.get(k)?.as_str())?;
 
     // Subagent observer hooks are forwarded RAW from CodeWhale's stdin, so they
     // carry CodeWhale's OWN field names and no `cwd` at all — they must be
@@ -127,8 +126,10 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         return Ok(events);
     }
 
-    let session = required(obj, event, "session_id")?;
-    let cwd = required(obj, event, "cwd")?;
+    let session = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| {
+        non_empty(obj, k)
+    })?;
+    let cwd = required_or_err(SOURCE_NAME, Some(event), "cwd", |k| non_empty(obj, k))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session);
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, session, Some(cwd.into()));
     let tool_use_id = || {
@@ -149,10 +150,8 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             parent_id: None,
         }]),
         "tool_call_before" => {
-            let tool = obj.get("tool").and_then(|s| s.as_str()).unwrap_or_else(|| {
-                crate::source::drift::missing_field(SOURCE_NAME, "tool_call_before", "tool");
-                "?"
-            });
+            let tool =
+                required(SOURCE_NAME, event, "tool", |k| obj.get(k)?.as_str()).unwrap_or("?");
             Ok(vec![
                 identity(),
                 AgentEvent::ToolUseStart {
@@ -190,14 +189,6 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
     }
 }
 
-/// `key`'s non-empty string, which `event`'s payload carries.
-fn required<'a>(obj: &'a HookObject, event: &str, key: &'static str) -> Result<&'a str> {
-    obj.get(key)
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, key))
-}
-
 /// CodeWhale's `subagent_spawn` / `subagent_complete` observer hooks, forwarded
 /// RAW from stdin so the payload is CodeWhale's own shape: `agent_id` = the
 /// CHILD, `session_id` = its parent's session, `workspace` = the parent's cwd
@@ -208,7 +199,7 @@ fn decode_cw_subagent(event: &str, obj: &HookObject) -> Result<Option<Vec<AgentE
         "subagent_complete" => false,
         _ => return Ok(None),
     };
-    let child = required(obj, event, "agent_id")?;
+    let child = required_or_err(SOURCE_NAME, Some(event), "agent_id", |k| non_empty(obj, k))?;
     let child_id = AgentId::from_parts(SOURCE_NAME, child);
 
     if !is_spawn {
@@ -220,12 +211,14 @@ fn decode_cw_subagent(event: &str, obj: &HookObject) -> Result<Option<Vec<AgentE
         }]));
     }
 
-    let parent = required(obj, event, "session_id")?;
+    let parent = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| {
+        non_empty(obj, k)
+    })?;
     Ok(Some(vec![AgentEvent::SessionStart {
         agent_id: child_id,
         source: SOURCE_NAME.to_string(),
         session_id: child.to_string(),
-        cwd: required(obj, event, "workspace")?.into(),
+        cwd: required_or_err(SOURCE_NAME, Some(event), "workspace", |k| non_empty(obj, k))?.into(),
         parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
     }]))
 }

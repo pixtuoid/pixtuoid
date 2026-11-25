@@ -33,7 +33,9 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, non_empty};
+use crate::source::decoder::{
+    MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, non_empty, required, required_or_err,
+};
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
@@ -111,6 +113,10 @@ const XAI_SUBAGENT_SPAWNED: &str = "subagent_spawned";
 const XAI_SUBAGENT_FINISHED: &str = "subagent_finished";
 const XAI_TURN_COMPLETED: &str = "turn_completed";
 const XAI_HOOK_EXECUTION: &str = "hook_execution";
+const SESSION_END: &str = "session_end";
+
+/// The hook field naming the event, in grok's own camelCase envelope.
+pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
 
 /// Decode one grok hook payload (already identified by
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
@@ -125,14 +131,11 @@ const XAI_HOOK_EXECUTION: &str = "hook_execution";
 ///
 /// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
 pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get("hookEventName")
-        .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "hookEventName"))?;
+    let event = required_or_err(SOURCE_NAME, None, HOOK_EVENT_NAME, |k| obj.get(k)?.as_str())?;
     let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
-    let key = non_empty(obj, "sessionId")
-        .or(cwd)
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "sessionId|cwd|workspaceRoot"))?;
+    let key = required_or_err(SOURCE_NAME, Some(event), "sessionId", |k| {
+        non_empty(obj, k).or(cwd)
+    })?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd_path = || cwd.map(PathBuf::from);
 
@@ -158,7 +161,6 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             }])
         }
         "user_prompt_submit" => {
-            const PROMPT_ID: &str = "promptId";
             let mut evs = vec![AgentEvent::SessionStart {
                 agent_id,
                 source: SOURCE_NAME.to_string(),
@@ -170,23 +172,17 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             // transcript's `turn_completed` ends the turn by
             // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn.rs:909-917`
             // at `xai-org/grok-build` `2bdd1d6a63`).
-            match non_empty(obj, PROMPT_ID) {
-                Some(prompt) => evs.push(AgentEvent::TurnStart {
+            if let Some(prompt) = required(SOURCE_NAME, event, "promptId", |k| non_empty(obj, k)) {
+                evs.push(AgentEvent::TurnStart {
                     agent_id,
                     turn: TurnKey::Id(prompt.into()),
-                }),
-                None => crate::source::drift::missing_field(SOURCE_NAME, event, PROMPT_ID),
+                });
             }
             Ok(evs)
         }
         "pre_tool_use" => {
-            let tool = obj
-                .get("toolName")
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, "pre_tool_use", "toolName");
-                    "?"
-                });
+            let tool =
+                required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str()).unwrap_or("?");
             Ok(vec![
                 identity(),
                 AgentEvent::ToolUseStart {
@@ -210,17 +206,10 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             },
         ]),
         "notification" => {
-            let kind = obj
-                .get("notificationType")
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(
-                        SOURCE_NAME,
-                        "notification",
-                        "notificationType",
-                    );
-                    "?"
-                });
+            let kind = required(SOURCE_NAME, event, "notificationType", |k| {
+                obj.get(k)?.as_str()
+            })
+            .unwrap_or("?");
             match kind {
                 // Fires BEFORE the prompt shows. Resolution: approval fires NO
                 // hook (the tool proceeds → its post_tool_use End clears the
@@ -246,19 +235,13 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // All matched explicitly so none spams the breadcrumb.
                 "idle_prompt" | "agent_error" | "task_complete" => Ok(vec![]),
                 other => {
-                    crate::source::drift::unknown_event(
-                        SOURCE_NAME,
-                        &format!("notification:{other}"),
-                    );
+                    crate::source::drift::unknown_event(SOURCE_NAME, &format!("{event}:{other}"));
                     Ok(vec![])
                 }
             }
         }
         "subagent_start" => {
-            let Some(child_session_id) = child_key(obj) else {
-                crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
-                return Err(DecodeError::missing_in(SOURCE_NAME, event, "subagentId"));
-            };
+            let child_session_id = subagent_child_key(obj, event)?;
             Ok(vec![AgentEvent::SessionStart {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child_session_id),
                 source: SOURCE_NAME.to_string(),
@@ -272,10 +255,10 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             }])
         }
         "subagent_stop" => Ok(vec![AgentEvent::SessionEnd {
-            agent_id: subagent_child_id(obj, event)?,
+            agent_id: AgentId::from_parts(SOURCE_NAME, &subagent_child_key(obj, event)?),
             as_child: true,
         }]),
-        "session_end" => Ok(vec![AgentEvent::SessionEnd {
+        SESSION_END => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
         }]),
@@ -289,32 +272,24 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
 /// The child's `subagentId` — upstream sets `child_session_id = subagent_id`,
 /// so this key coalesces with the child's own tool hooks AND its flat
 /// transcript dir name.
-fn child_key(obj: &serde_json::Map<String, Value>) -> Option<String> {
-    obj.get("subagentId")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from)
+fn subagent_child_key(obj: &serde_json::Map<String, Value>, event: &str) -> Result<String> {
+    required_or_err(SOURCE_NAME, Some(event), "subagentId", |k| {
+        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
+    })
+    .map(String::from)
 }
 
-/// The TRANSCRIPT lane's twin of [`child_key`]: the same id under
-/// `child_session_id`. Shared by both subagent arms so the non-empty guard
-/// cannot be applied to one and forgotten on the other — an `""` mints a
-/// phantom child parented to the real session.
-fn transcript_child_key(update: &serde_json::Map<String, Value>) -> Option<&str> {
-    update
-        .get("child_session_id")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-}
-
-fn subagent_child_id(obj: &serde_json::Map<String, Value>, event: &str) -> Result<AgentId> {
-    match child_key(obj) {
-        Some(id) => Ok(AgentId::from_parts(SOURCE_NAME, &id)),
-        None => {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
-            Err(DecodeError::missing_in(SOURCE_NAME, event, "subagentId"))
-        }
-    }
+/// The TRANSCRIPT lane's twin of [`subagent_child_key`]: the same id under
+/// `child_session_id`, breadcrumbed when absent. Shared by both subagent arms so
+/// the non-empty guard cannot be applied to one and forgotten on the other — an
+/// `""` mints a phantom child parented to the real session.
+fn transcript_child_key<'u>(
+    update: &'u serde_json::Map<String, Value>,
+    tag: &str,
+) -> Option<&'u str> {
+    required(SOURCE_NAME, tag, "child_session_id", |k| {
+        non_empty(update, k)
+    })
 }
 
 /// Grok tool detail: `"name: target"` over grok's snake_case tool vocabulary.
@@ -368,8 +343,6 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
     let Some(tag) = update.get("sessionUpdate").and_then(|t| t.as_str()) else {
         return vec![];
     };
-    let str_field = |key: &str| update.get(key).and_then(|s| s.as_str());
-
     let mut evs = match method {
         crate::source::acp::SESSION_UPDATE_METHOD => {
             crate::source::acp::decode_session_update(agent_id, update, grok_transcript_tool_detail)
@@ -378,8 +351,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
         // implementation-specific methods, so none of this is ACP vocabulary.
         XAI_SESSION_UPDATE_METHOD => match tag {
             XAI_SUBAGENT_SPAWNED => {
-                let Some(child_key) = transcript_child_key(update) else {
-                    crate::source::drift::missing_field(SOURCE_NAME, tag, "child_session_id");
+                let Some(child_key) = transcript_child_key(update, tag) else {
                     return vec![];
                 };
                 let child = AgentId::from_parts(SOURCE_NAME, child_key);
@@ -392,10 +364,8 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
                     cwd: PathBuf::new(),
                     parent_id: Some(agent_id),
                 }];
-                if let Some(label) = str_field("description")
-                    .filter(|s| !s.is_empty())
-                    .or_else(|| str_field("subagent_type"))
-                    .filter(|s| !s.is_empty())
+                if let Some(label) =
+                    non_empty(update, "description").or_else(|| non_empty(update, "subagent_type"))
                 {
                     evs.push(AgentEvent::Rename {
                         agent_id: child,
@@ -405,8 +375,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
                 evs
             }
             XAI_SUBAGENT_FINISHED => {
-                let Some(child_key) = transcript_child_key(update) else {
-                    crate::source::drift::missing_field(SOURCE_NAME, tag, "child_session_id");
+                let Some(child_key) = transcript_child_key(update, tag) else {
                     return vec![];
                 };
                 vec![AgentEvent::SessionEnd {
@@ -419,21 +388,12 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
             // at `2bdd1d6a63`), under the prompt id its hook started it by: a
             // required pairing key, so a blank one is drift, breadcrumbed and
             // dropped.
-            XAI_TURN_COMPLETED => {
-                const PROMPT_ID: &str = "prompt_id";
-                match non_empty(update, PROMPT_ID) {
-                    Some(prompt) => vec![AgentEvent::keyed_turn_end(
-                        agent_id,
-                        TurnKey::Id(prompt.into()),
-                    )],
-                    None => {
-                        crate::source::drift::missing_field(SOURCE_NAME, tag, PROMPT_ID);
-                        vec![]
-                    }
-                }
-            }
+            XAI_TURN_COMPLETED => required(SOURCE_NAME, tag, "prompt_id", |k| non_empty(update, k))
+                .map(|prompt| AgentEvent::keyed_turn_end(agent_id, TurnKey::Id(prompt.into())))
+                .into_iter()
+                .collect(),
             XAI_HOOK_EXECUTION => {
-                if str_field("event_name") == Some("session_end") {
+                if non_empty(update, "event_name") == Some(SESSION_END) {
                     vec![AgentEvent::SessionEnd {
                         agent_id,
                         as_child: false,
@@ -450,18 +410,14 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
     };
     // The model rides `_meta` on an ORDINARY update; keying on the
     // `model_changed` tag a real session never sends left the model unseen.
-    if let Some(model) = update
-        .get("_meta")
-        .and_then(|m| m.get("modelId"))
-        .and_then(|m| m.as_str())
-        .filter(|s| !s.is_empty())
-    {
-        evs.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        });
-    }
+    evs.extend(AgentEvent::model_info(
+        agent_id,
+        update
+            .get("_meta")
+            .and_then(|m| m.get("modelId"))
+            .and_then(|m| m.as_str()),
+        None,
+    ));
     evs
 }
 
@@ -940,15 +896,20 @@ mod tests {
 
     #[test]
     fn nothing_to_key_on_is_malformed() {
-        assert!(
-            decode_grok_hook_payload(test_obj(&json!({"hookEventName": "session_end"}))).is_err()
-        );
-        assert!(
-            decode_grok_hook_payload(test_obj(
-                &json!({"hookEventName": "session_end", "cwd": "", "workspaceRoot": ""})
-            ))
-            .is_err()
-        );
+        for payload in [
+            json!({"hookEventName": SESSION_END}),
+            json!({"hookEventName": SESSION_END, "cwd": "", "workspaceRoot": ""}),
+        ] {
+            let err = decode_grok_hook_payload(test_obj(&payload)).err();
+            assert!(
+                matches!(
+                    &err,
+                    Some(DecodeError::Missing { context: Some(c), field: "sessionId", .. })
+                        if c == SESSION_END
+                ),
+                "{payload}: {err:?}"
+            );
+        }
         assert!(decode_grok_hook_payload(test_obj(&json!({"sessionId": "s"}))).is_err());
     }
 

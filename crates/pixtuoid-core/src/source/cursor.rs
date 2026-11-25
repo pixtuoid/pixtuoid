@@ -40,7 +40,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, SUBAGENTS_DIR, ellipsize, non_empty};
+use crate::source::decoder::{SUBAGENTS_DIR, non_empty, required, required_or_err};
 use crate::source::registry::{
     ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind,
@@ -93,31 +93,24 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 ///
 /// If the payload lacks `hook_event_name` or `session_id`, or names an unregistered event.
 pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get("hook_event_name")
-        .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "hook_event_name"))?;
+    let event = required_or_err(SOURCE_NAME, None, "hook_event_name", |k| {
+        obj.get(k)?.as_str()
+    })?;
     // The top-level `cwd` is EMPTY/absent in CLI hook payloads —
     // `workspace_roots[0]` is the real one. Label/cwd only, NOT the AgentId key.
-    let workspace = obj
-        .get("cwd")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            obj.get("workspace_roots")
-                .and_then(|r| r.as_array())
-                .and_then(|a| a.first())
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty())
-        });
+    let workspace = non_empty(obj, "cwd").or_else(|| {
+        obj.get("workspace_roots")
+            .and_then(|r| r.as_array())
+            .and_then(|a| a.first())
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+    });
     // Key on `session_id` — present and CONSISTENT across every CLI hook event,
     // so it distinguishes concurrent sessions in one project AND coalesces all of
     // a session's events.
-    let key = obj
-        .get("session_id")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "session_id"))?;
+    let key = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| {
+        non_empty(obj, k)
+    })?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = workspace.unwrap_or("");
 
@@ -139,13 +132,8 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             parent_id: None,
         }]),
         "preToolUse" => {
-            let tool = obj
-                .get("tool_name")
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, "preToolUse", "tool_name");
-                    "?"
-                });
+            let tool =
+                required(SOURCE_NAME, event, "tool_name", |k| obj.get(k)?.as_str()).unwrap_or("?");
             Ok(vec![
                 identity(),
                 AgentEvent::ToolUseStart {
@@ -193,17 +181,11 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
     let mut evs = decoded?;
     // Re-read per event: the model changes mid-session, so reading it once
     // would show the wrong one for the rest of the turn.
-    if let Some(model) = obj
-        .get("model")
-        .and_then(|m| m.as_str())
-        .filter(|s| !s.is_empty())
-    {
-        evs.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        });
-    }
+    evs.extend(AgentEvent::model_info(
+        agent_id,
+        obj.get("model").and_then(|m| m.as_str()),
+        None,
+    ));
     Ok(evs)
 }
 
@@ -471,14 +453,24 @@ mod tests {
 
     #[test]
     fn no_session_id_is_malformed_but_session_id_alone_is_ok() {
-        assert!(decode_cursor_hook_payload(test_obj(&json!({"hook_event_name": "stop"}))).is_err());
-        assert!(
-            decode_cursor_hook_payload(test_obj(
-                &json!({"hook_event_name": "sessionStart", "workspace_roots": ["/repo"]})
-            ))
-            .is_err(),
-            "a workspace is a label, never a session's key"
-        );
+        for (event, payload) in [
+            ("stop", json!({"hook_event_name": "stop"})),
+            // A workspace is a label, never a session's key.
+            (
+                "sessionStart",
+                json!({"hook_event_name": "sessionStart", "workspace_roots": ["/repo"]}),
+            ),
+        ] {
+            let err = decode_cursor_hook_payload(test_obj(&payload)).err();
+            assert!(
+                matches!(
+                    &err,
+                    Some(DecodeError::Missing { context: Some(c), field: "session_id", .. })
+                        if c == event
+                ),
+                "{payload}: {err:?}"
+            );
+        }
         assert!(
             decode_cursor_hook_payload(test_obj(
                 &json!({"hook_event_name": "stop", "session_id": "s"})

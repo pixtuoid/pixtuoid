@@ -6,7 +6,8 @@ use std::path::PathBuf;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    DecodeError, DecodeResult, display_safe, label_prefix_for, non_empty,
+    DecodeError, DecodeResult, display_safe, hook_session_id, label_prefix_for, non_empty,
+    required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -47,30 +48,52 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 };
 
 pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<AgentEvent>> {
-    let required = |field| {
-        non_empty(obj, field).ok_or_else(|| {
-            drift::missing_field(SOURCE_NAME, "hook", field);
-            DecodeError::missing(SOURCE_NAME, field)
-        })
-    };
-    let event = required("event")?;
-    let key = required("session_id")?;
+    let event = required_or_err(SOURCE_NAME, None, "event", |k| {
+        required(SOURCE_NAME, "hook", k, |k| non_empty(obj, k))
+    })?;
+    let key = &hook_session_id(obj, SOURCE_NAME, event)?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = non_empty(obj, "cwd").map(PathBuf::from);
-    let mut events = match event {
+    // The Identity is the one claim that registers a session the office joined
+    // late: the activity alone registers nothing. It honors its tombstones.
+    let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd.clone());
+    let (claim, activity) = match event {
         // Its registration, and the resurrect path: a swept session walks back in.
-        "turn_start" => vec![AgentEvent::SessionStart {
-            agent_id,
-            source: SOURCE_NAME.into(),
-            session_id: key.into(),
-            cwd: cwd.unwrap_or_default(),
-            parent_id: None,
-        }],
-        // The Identity is the one claim that registers a session the office joined
-        // late: the activity alone registers nothing. It honors its tombstones.
-        "pre_tool" | "post_tool" | "turn_end" => {
-            vec![AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd)]
-        }
+        "turn_start" => (
+            AgentEvent::SessionStart {
+                agent_id,
+                source: SOURCE_NAME.into(),
+                session_id: key.into(),
+                cwd: cwd.unwrap_or_default(),
+                parent_id: None,
+            },
+            None,
+        ),
+        "pre_tool" => (
+            identity(),
+            Some(AgentEvent::ToolUseStart {
+                agent_id,
+                // pre_tool has no call ID; post_tool's ID cannot pair with it.
+                tool_use_id: None,
+                detail: Some(ToolDetail::Generic {
+                    display: display_safe(required_or_err(
+                        SOURCE_NAME,
+                        Some(event),
+                        "tool_name",
+                        |k| required(SOURCE_NAME, event, k, |k| non_empty(obj, k)),
+                    )?),
+                }),
+                copy_id: None,
+            }),
+        ),
+        "post_tool" => (
+            identity(),
+            Some(AgentEvent::ToolUseEnd {
+                agent_id,
+                tool_use_id: None,
+            }),
+        ),
+        "turn_end" => (identity(), Some(AgentEvent::turn_end(agent_id))),
         "session_end" => {
             return Ok(vec![AgentEvent::SessionEnd {
                 agent_id,
@@ -82,34 +105,16 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
             return Err(DecodeError::unsupported(SOURCE_NAME, other));
         }
     };
-    events.push(AgentEvent::Rename {
-        agent_id,
-        label: session_label(key),
-    });
-    if let Some(model) = non_empty(obj, "model") {
-        events.push(AgentEvent::ModelInfo {
+    let mut events = vec![
+        claim,
+        AgentEvent::Rename {
             agent_id,
-            model: Some(display_safe(model)),
-            effort: None,
-        });
-    }
-    match event {
-        "pre_tool" => events.push(AgentEvent::ToolUseStart {
-            agent_id,
-            // pre_tool has no call ID; post_tool's ID cannot pair with it.
-            tool_use_id: None,
-            detail: Some(ToolDetail::Generic {
-                display: display_safe(required("tool_name")?),
-            }),
-            copy_id: None,
-        }),
-        "post_tool" => events.push(AgentEvent::ToolUseEnd {
-            agent_id,
-            tool_use_id: None,
-        }),
-        "turn_end" => events.push(AgentEvent::turn_end(agent_id)),
-        _ => {}
-    }
+            label: session_label(key),
+        },
+    ];
+    let model = non_empty(obj, "model").map(display_safe);
+    events.extend(AgentEvent::model_info(agent_id, model.as_deref(), None));
+    events.extend(activity);
     Ok(events)
 }
 
@@ -233,14 +238,37 @@ mod tests {
 
     #[test]
     fn unknown_and_missing_contract_fields_fail_closed() {
-        for value in [
-            json!({}),
-            json!({"event":"pre_tool"}),
-            json!({"event":"pre_tool", "session_id":""}),
-            json!({"event":"pre_tool", "session_id":"session_fox_123_a"}),
-            payload("unregistered", "session_fox_123_a"),
-        ] {
+        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
+        for value in [json!({}), payload("unregistered", "session_fox_123_a")] {
             assert!(decode(&value).is_err(), "{value}");
+        }
+        let event = "pre_tool";
+        for (value, missing) in [
+            (json!({"event":event}), "session_id"),
+            (json!({"event":event, "session_id":""}), "session_id"),
+            (
+                json!({"event":event, "session_id":"session_fox_123_a"}),
+                "tool_name",
+            ),
+        ] {
+            let mut err = None;
+            let logs = crate::test_capture::capture_logs(|| err = decode(&value).err());
+            assert!(
+                matches!(
+                    &err,
+                    Some(DecodeError::Missing { context: Some(c), field, .. })
+                        if c == event && *field == missing
+                ),
+                "{value}: {err:?}"
+            );
+            let line = format!(
+                "{SOURCE_FIELD}={SOURCE_NAME} {KIND_FIELD}=\"{}\" event={event} field={missing}",
+                <&str>::from(DriftKind::MissingField),
+            );
+            assert!(
+                logs.contains(TARGET) && logs.contains(&line),
+                "{line:?} in\n{logs}"
+            );
         }
     }
 

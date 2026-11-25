@@ -19,11 +19,10 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use serde_json::Value;
-
 use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail,
+    non_empty, required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -311,12 +310,10 @@ pub const DETAIL_KEYS: &[&str] = KEYS;
 /// If the payload lacks `hook_event_name` or `session_id`, or names an event
 /// the plugin does not forward.
 pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get("hook_event_name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "hook_event_name"))?;
-    let session_id = field(obj, "session_id")
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "session_id"))?;
+    let event = required_or_err(SOURCE_NAME, None, "hook_event_name", |k| {
+        obj.get(k)?.as_str()
+    })?;
+    let session_id = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| field(obj, k))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let cwd = field(obj, "cwd");
     let identity =
@@ -335,10 +332,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             parent_id: None,
         }],
         PRE_TOOL_CALL => {
-            let tool = field(obj, "tool_name").unwrap_or_else(|| {
-                crate::source::drift::missing_field(SOURCE_NAME, event, "tool_name");
-                "?"
-            });
+            let tool = required(SOURCE_NAME, event, "tool_name", |k| field(obj, k)).unwrap_or("?");
             vec![
                 identity(),
                 AgentEvent::ToolUseStart {
@@ -399,13 +393,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
     };
     // Only the session events carry it (`website/docs/user-guide/features/hooks.md:470-471`),
     // so an event without one must not clear it.
-    if let Some(model) = field(obj, "model") {
-        evs.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        });
-    }
+    evs.extend(AgentEvent::model_info(agent_id, field(obj, "model"), None));
     Ok(evs)
 }
 
@@ -418,16 +406,14 @@ fn field<'o>(obj: &'o HookObject, name: &'static str) -> Option<&'o str> {
         DECODED_FIELDS.contains(&name),
         "{name} is not in DECODED_FIELDS"
     );
-    obj.get(name)
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
+    non_empty(obj, name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::source::decoder::test_obj;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
         decode_hermes_hook_payload(test_obj(&v)).expect("decodes")

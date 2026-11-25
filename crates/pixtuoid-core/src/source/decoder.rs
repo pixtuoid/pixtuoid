@@ -41,7 +41,7 @@ pub enum DecodeError {
         /// The event or part of the payload the field belongs to, when it
         /// isn't the payload itself.
         context: Option<String>,
-        /// The field, or `|`-joined fields any one of which would do.
+        /// The field.
         field: &'static str,
     },
     /// An event name the decoder has no arm for.
@@ -73,18 +73,10 @@ impl DecodeError {
         }
     }
 
-    pub(crate) fn missing(cli: &str, field: &'static str) -> Self {
+    fn missing(cli: &str, context: Option<&str>, field: &'static str) -> Self {
         Self::Missing {
             cli: display_safe(cli),
-            context: None,
-            field,
-        }
-    }
-
-    pub(crate) fn missing_in(cli: &str, context: &str, field: &'static str) -> Self {
-        Self::Missing {
-            cli: display_safe(cli),
-            context: Some(display_safe(context)),
+            context: context.map(display_safe),
             field,
         }
     }
@@ -364,7 +356,9 @@ fn decodes_to_nothing(
     let cc = source == crate::source::claude_code::SOURCE_NAME;
     // trace, not warn — and scoped to those two targets, so a FUTURE camelCase
     // source falls through and surfaces as an OBSERVED decode error instead.
-    if (cc || source == crate::source::cursor::SOURCE_NAME) && obj.contains_key("hookEventName") {
+    if (cc || source == crate::source::cursor::SOURCE_NAME)
+        && obj.contains_key(crate::source::grok::HOOK_EVENT_NAME)
+    {
         tracing::trace!(source, "dropping grok cross-fired hook envelope");
         return true;
     }
@@ -401,6 +395,39 @@ pub(crate) fn non_empty<'a>(obj: &'a serde_json::Map<String, Value>, key: &str) 
         .filter(|s| !s.is_empty())
 }
 
+/// A required key `read` finds, breadcrumbed under `event` when it finds none.
+/// One spelling of the key serves the read and the report, so a renamed key
+/// can't leave the report naming the old one. Only for an event we've committed
+/// to decoding: on a transcript line's type read a missing value just means "a
+/// line we ignore", and breadcrumbing those would flood.
+pub(crate) fn required<T>(
+    source: &str,
+    event: &str,
+    key: &'static str,
+    read: impl FnOnce(&'static str) -> Option<T>,
+) -> Option<T> {
+    let found = read(key);
+    if found.is_none() {
+        super::drift::missing_field(source, event, key);
+    }
+    found
+}
+
+/// [`required`]'s twin for a key whose absence fails the decode, from the same
+/// one spelling: the error names `context`, the event the key belongs to,
+/// unless it is the payload's own.
+pub(crate) fn required_or_err<T>(
+    source: &str,
+    context: Option<&str>,
+    key: &'static str,
+    read: impl FnOnce(&'static str) -> Option<T>,
+) -> DecodeResult<T> {
+    read(key).ok_or_else(|| DecodeError::missing(source, context, key))
+}
+
+/// The hook field naming the root session.
+const SESSION_ID: &str = "session_id";
+
 /// Whose session a hook speaks for: a subagent names itself in [`SUBAGENT_ID`]
 /// beside its root's `session_id`, a root in `session_id` alone.
 #[derive(Clone, Copy, Debug)]
@@ -415,7 +442,7 @@ impl<'a> HookSubject<'a> {
     pub(crate) fn of(obj: &'a serde_json::Map<String, Value>) -> Self {
         Self {
             child: non_empty(obj, SUBAGENT_ID),
-            root: non_empty(obj, "session_id"),
+            root: non_empty(obj, SESSION_ID),
         }
     }
 }
@@ -427,11 +454,8 @@ pub(crate) fn hook_tool_name(
     source: &str,
     event: &str,
 ) -> Option<String> {
-    let name = non_empty(obj, "tool_name").map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS));
-    if name.is_none() {
-        super::drift::missing_field(source, event, "tool_name");
-    }
-    name
+    required(source, event, "tool_name", |k| non_empty(obj, k))
+        .map(|n| ellipsize(n, MAX_DECODED_FIELD_CHARS))
 }
 
 /// The per-call id's wire name on `desc`'s hooks: its row's
@@ -456,13 +480,10 @@ pub(crate) fn hook_session_id(
     source: &str,
     event: &str,
 ) -> DecodeResult<String> {
-    HookSubject::of(obj)
-        .root
-        .ok_or_else(|| {
-            super::drift::missing_field(source, event, "session_id");
-            DecodeError::missing_in(source, event, "session_id")
-        })
-        .map(str::to_string)
+    required_or_err(source, Some(event), SESSION_ID, |k| {
+        required(source, event, k, |k| non_empty(obj, k))
+    })
+    .map(str::to_string)
 }
 
 /// The identity context a hook arm attaches ahead of an event that may be its
@@ -480,10 +501,7 @@ pub(crate) fn hook_identity(
         agent_id,
         source,
         session_id,
-        obj.get("cwd")
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
-            .map(std::path::PathBuf::from),
+        non_empty(obj, "cwd").map(std::path::PathBuf::from),
     )
 }
 
@@ -520,7 +538,7 @@ pub(crate) fn decode_hook_object(
 ) -> DecodeResult<Vec<AgentEvent>> {
     let Some(source) = hook_source(obj) else {
         // Not `warn!`: a hook that carries no stamp fires once per tool call.
-        tracing::debug!(event = ?obj.get("hook_event_name"), "unstamped hook payload dropped");
+        tracing::debug!(event = ?obj.get(HOOK_EVENT_NAME), "unstamped hook payload dropped");
         return Ok(vec![]);
     };
     let desc = crate::source::registry::descriptor_for(source);
@@ -543,13 +561,9 @@ pub(crate) fn shared_hook_arms(
     source: &str,
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
 ) -> DecodeResult<Vec<AgentEvent>> {
-    let event = obj
-        .get("hook_event_name")
-        .and_then(|s| s.as_str())
-        .ok_or_else(|| {
-            super::drift::missing_field(source, "hook", "hook_event_name");
-            DecodeError::missing(source, "hook_event_name")
-        })?;
+    let event = required_or_err(source, None, HOOK_EVENT_NAME, |k| {
+        required(source, "hook", k, |k| obj.get(k)?.as_str())
+    })?;
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);
     let tool_id_key = hook_tool_id_key(desc);
@@ -566,19 +580,13 @@ pub(crate) fn shared_hook_arms(
             let mut evs = vec![start()];
             // CC sends `model` on SessionStart alone, "and Claude Code doesn't always
             // include it" (hooks.md, Common input fields); codex's later hints add nothing.
-            let model = non_empty(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
-            evs.extend(model.map(|model| {
-                // Beside a transcript, the hook's stands in until it names one.
-                if desc.is_some_and(|d| d.line_decoder().is_some()) {
-                    AgentEvent::ModelHint { agent_id, model }
-                } else {
-                    AgentEvent::ModelInfo {
-                        agent_id,
-                        model: Some(model),
-                        effort: None,
-                    }
-                }
-            }));
+            let model = non_empty(obj, "model");
+            // Beside a transcript, the hook's stands in until it names one.
+            evs.extend(if desc.is_some_and(|d| d.line_decoder().is_some()) {
+                AgentEvent::model_hint(agent_id, model)
+            } else {
+                AgentEvent::model_info(agent_id, model, None)
+            });
             Ok(evs)
         }
         "PreToolUse" => {
@@ -662,6 +670,9 @@ pub(crate) fn shared_hook_arms(
     }
 }
 
+/// The hook field naming the event.
+pub(crate) const HOOK_EVENT_NAME: &str = "hook_event_name";
+
 /// The hook field naming the subagent that fired an event.
 pub(crate) const SUBAGENT_ID: &str = "agent_id";
 
@@ -681,7 +692,7 @@ pub(crate) fn subagent_fired(
     let desc = crate::source::registry::descriptor_for(source);
     let root = subject.root.map(|root| AgentId::from_parts(source, root));
     let mut own = obj.clone();
-    own.insert("session_id".into(), Value::from(session(agent)));
+    own.insert(SESSION_ID.into(), Value::from(session(agent)));
     let mut evs = shared_hook_arms(&own, source, desc)?;
     for e in &mut evs {
         if let AgentEvent::SessionStart { parent_id, .. } = e {
@@ -819,8 +830,8 @@ mod tests {
         let hostile = "x\u{1b}]0;pwned\u{7}\u{202e}y";
         for e in [
             DecodeError::not_an_object(hostile),
-            DecodeError::missing(hostile, "cwd"),
-            DecodeError::missing_in(hostile, hostile, "cwd"),
+            DecodeError::missing(hostile, None, "cwd"),
+            DecodeError::missing(hostile, Some(hostile), "cwd"),
             DecodeError::unsupported(hostile, hostile),
             DecodeError::invalid(hostile, "port", hostile),
         ] {
@@ -831,7 +842,7 @@ mod tests {
             );
         }
         assert_eq!(
-            DecodeError::missing("cursor", "cwd").to_string(),
+            DecodeError::missing("cursor", None, "cwd").to_string(),
             "cursor payload has no cwd"
         );
     }

@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, EVENT_STAMP, extract_top_level_cwd, first_non_blank_str, generic_tool_display,
+    non_empty, required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -133,17 +134,8 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                 let Some(tc_obj) = tc.as_object() else {
                     continue;
                 };
-                let name = tc_obj
-                    .get("name")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or_else(|| {
-                        crate::source::drift::missing_field(
-                            SOURCE_NAME,
-                            "PLANNER_RESPONSE",
-                            "name",
-                        );
-                        "?"
-                    });
+                let name = required(SOURCE_NAME, step_type, "name", |k| tc_obj.get(k)?.as_str())
+                    .unwrap_or("?");
                 let args = tc_obj.get("args");
                 out.push(decode_ag_tool_call(
                     agent_id,
@@ -209,43 +201,25 @@ fn decode_ag_tool_call(
 /// If the payload lacks the event stamp or `conversationId`,
 /// or fires an event the installer never registers.
 pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get(EVENT_STAMP)
-        .and_then(Value::as_str)
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, EVENT_STAMP))?;
+    let event = required_or_err(SOURCE_NAME, None, EVENT_STAMP, |k| obj.get(k)?.as_str())?;
     // The App and IDE fire the same global hooks file under app data dirs of
     // their own (hooks.md, `transcriptPath`).
-    if obj
-        .get("transcriptPath")
-        .and_then(Value::as_str)
-        .is_some_and(|p| {
-            !p.is_empty()
-                && !Path::new(p)
-                    .components()
-                    .any(|c| c.as_os_str() == CLI_APP_DATA_DIR)
-        })
-    {
+    if non_empty(obj, "transcriptPath").is_some_and(|p| {
+        !Path::new(p)
+            .components()
+            .any(|c| c.as_os_str() == CLI_APP_DATA_DIR)
+    }) {
         tracing::trace!(event, "dropping a hook another Antigravity app fired");
         return Ok(vec![]);
     }
-    let key = obj
-        .get("conversationId")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "conversationId");
-            DecodeError::missing_in(SOURCE_NAME, event, "conversationId")
-        })?;
+    let key = required_or_err(SOURCE_NAME, Some(event), "conversationId", |k| {
+        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
+    })?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
-    let cwd = obj
-        .get("workspacePaths")
-        .and_then(Value::as_array)
-        .and_then(|a| a.first())
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "workspacePaths");
-            ""
-        });
+    let cwd = required(SOURCE_NAME, event, "workspacePaths", |k| {
+        obj.get(k)?.as_array()?.first()?.as_str()
+    })
+    .unwrap_or("");
     let identity = || {
         AgentEvent::identity(
             agent_id,
@@ -254,13 +228,8 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             (!cwd.is_empty()).then(|| cwd.into()),
         )
     };
-    let call = || {
-        let step = obj.get("stepIdx").and_then(Value::as_i64);
-        if step.is_none() {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "stepIdx");
-        }
-        (step.map(step_tool_id), obj.get("toolCall"))
-    };
+    let call_id =
+        || required(SOURCE_NAME, event, "stepIdx", |k| obj.get(k)?.as_i64()).map(step_tool_id);
     match event {
         // The focus pid rides an `Identity`, so a session that never calls a
         // tool still names it.
@@ -275,14 +244,11 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             identity(),
         ]),
         "PreToolUse" => {
-            let (tool_use_id, tool) = call();
+            let tool_use_id = call_id();
+            let tool = required(SOURCE_NAME, event, "toolCall", |k| obj.get(k));
             let name = tool
-                .and_then(|t| t.get("name"))
-                .and_then(Value::as_str)
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, event, "toolCall.name");
-                    "?"
-                });
+                .and_then(|t| required(SOURCE_NAME, event, "name", |k| t.get(k)?.as_str()))
+                .unwrap_or("?");
             let args = tool.and_then(|t| t.get("args"));
             Ok(vec![
                 identity(),
@@ -293,7 +259,7 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             identity(),
             AgentEvent::ToolUseEnd {
                 agent_id,
-                tool_use_id: call().0,
+                tool_use_id: call_id(),
             },
         ]),
         // Turn end: the session lives on to the next prompt.

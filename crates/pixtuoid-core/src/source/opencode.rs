@@ -29,7 +29,8 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{
-    DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display,
+    DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, required,
+    required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -140,10 +141,7 @@ pub const DECODED_DATA_FIELDS: &[&str] = &[
 /// If the payload lacks `type`, or a mapped event lacks a
 /// non-empty `data.sessionID`.
 pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get("type")
-        .and_then(Value::as_str)
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "type"))?;
+    let event = required_or_err(SOURCE_NAME, None, "type", |k| obj.get(k)?.as_str())?;
     let empty = Map::new();
     let data = obj.get("data").and_then(Value::as_object).unwrap_or(&empty);
     let at = obj
@@ -152,19 +150,19 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty());
 
-    let turn = obj.get(TURN).and_then(Value::as_u64).map(TurnKey::Seq);
+    let read_turn = |k: &str| obj.get(k).and_then(Value::as_u64).map(TurnKey::Seq);
+    let turn = read_turn(TURN);
     match event {
         // A new prompt re-emits SessionStart, the event that walks a swept
         // session back in, mid-walkout too. Its own `data` is only `sessionID`,
         // so the plugin adds the session's record (`ctx.session.get`).
         EXECUTION_STARTED => {
             let mut out = session_start(data, at, event)?;
-            match turn {
-                Some(turn) => out.push(AgentEvent::TurnStart {
+            if let Some(turn) = required(SOURCE_NAME, event, TURN, read_turn) {
+                out.push(AgentEvent::TurnStart {
                     agent_id: session(data, event)?.0,
                     turn,
-                }),
-                None => crate::source::drift::missing_field(SOURCE_NAME, event, TURN),
+                });
             }
             Ok(out)
         }
@@ -195,8 +193,7 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
 
 /// The session an event concerns: its agent id and its `sessionID`.
 fn session<'d>(data: &'d Map<String, Value>, event: &str) -> Result<(AgentId, &'d str)> {
-    let session_id = field(data, "sessionID")
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "sessionID"))?;
+    let session_id = required_or_err(SOURCE_NAME, Some(event), "sessionID", |k| field(data, k))?;
     Ok((AgentId::from_parts(SOURCE_NAME, session_id), session_id))
 }
 
@@ -244,13 +241,11 @@ fn session_start(
         cwd: cwd.unwrap_or_default().into(),
         parent_id: field(data, "parentID").map(|p| AgentId::from_parts(SOURCE_NAME, p)),
     });
-    if let Some(model) = field(data, "model.id") {
-        out.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        });
-    }
+    out.extend(AgentEvent::model_info(
+        agent_id,
+        field(data, "model.id"),
+        None,
+    ));
     Ok(out)
 }
 
@@ -270,10 +265,7 @@ fn ended(
 /// rides a later event, so the detail is the tool's name alone, or a Task.
 fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<AgentEvent>> {
     let (agent_id, session_id) = session(data, TOOL_STARTED)?;
-    let name = field(data, "name").unwrap_or_else(|| {
-        crate::source::drift::missing_field(SOURCE_NAME, TOOL_STARTED, "name");
-        "?"
-    });
+    let name = required(SOURCE_NAME, TOOL_STARTED, "name", |k| field(data, k)).unwrap_or("?");
     Ok(vec![
         identity(agent_id, session_id, at),
         AgentEvent::ToolUseStart {

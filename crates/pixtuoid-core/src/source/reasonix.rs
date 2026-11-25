@@ -27,7 +27,9 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize};
+use crate::source::decoder::{
+    MAX_DECODED_FIELD_CHARS, ellipsize, non_empty, required, required_or_err,
+};
 use crate::source::registry::{
     ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind,
@@ -131,24 +133,12 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
 ///
 /// If the payload lacks `event`, a non-empty `cwd` or `sessionId`, or names an unregistered event.
 pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get("event")
-        .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "event"))?;
+    let event = required_or_err(SOURCE_NAME, None, "event", |k| obj.get(k)?.as_str())?;
     // An empty cwd would mint a phantom agent that nothing else coalesces with.
-    let cwd = obj
-        .get("cwd")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "cwd"))?;
-    let key = obj
-        .get("sessionId")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "sessionId");
-            DecodeError::missing_in(SOURCE_NAME, event, "sessionId")
-        })?;
+    let cwd = required_or_err(SOURCE_NAME, Some(event), "cwd", |k| non_empty(obj, k))?;
+    let key = required_or_err(SOURCE_NAME, Some(event), "sessionId", |k| {
+        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
+    })?;
     let (key, parent) = session_of(key);
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let parent_id = parent.map(|p| AgentId::from_parts(SOURCE_NAME, p));
@@ -172,13 +162,8 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         // has no other re-creation signal.
         "SessionStart" | "UserPromptSubmit" => Ok(vec![start()]),
         "PreToolUse" => {
-            let tool = obj
-                .get("toolName")
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, "PreToolUse", "toolName");
-                    "?"
-                });
+            let tool =
+                required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str()).unwrap_or("?");
             Ok(vec![
                 register(),
                 AgentEvent::ToolUseStart {
@@ -195,10 +180,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             // (`internal/ext/hook/runner.go:175-205` @ v2.60.0), and a
             // dispatch's return is its child's end: re-stating the Task makes
             // this End close one, whatever the parent started since.
-            let tool = obj.get("toolName").and_then(|s| s.as_str());
-            if tool.is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, "PostToolUse", "toolName");
-            }
+            let tool = required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str());
             if tool.is_some_and(|t| SUBAGENT_TOOLS.contains(&t) || SKILL_RUNNERS.contains(&t)) {
                 events.push(AgentEvent::ToolUseStart {
                     agent_id,
@@ -234,17 +216,8 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         // subject, and ALONGSIDE `Notification` for the same approval — both →
         // RequiresAction is idempotent (the gated tool's PostToolUse/Stop resolves it).
         "PermissionRequest" => {
-            let tool = obj
-                .get("toolName")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty());
-            if tool.is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, "PermissionRequest", "toolName");
-            }
-            let subject = obj
-                .get("subject")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty());
+            let tool = required(SOURCE_NAME, event, "toolName", |k| non_empty(obj, k));
+            let subject = non_empty(obj, "subject");
             // Pre-cap each component before concatenating so an oversized
             // `subject` can't force a large intermediate allocation; the outer
             // `ellipsize` stays the authoritative cap.
@@ -526,13 +499,20 @@ mod tests {
 
     #[test]
     fn empty_or_missing_cwd_is_malformed() {
-        assert!(
-            decode_rx_hook_payload(test_obj(
-                &json!({"event": "Stop", "sessionId": "s", "cwd": ""})
-            ))
-            .is_err()
-        );
-        assert!(decode_rx_hook_payload(test_obj(&json!({"event": "Stop"}))).is_err());
+        let event = "Stop";
+        for payload in [
+            json!({"event": event, "sessionId": "s", "cwd": ""}),
+            json!({"event": event}),
+        ] {
+            let err = decode_rx_hook_payload(test_obj(&payload)).err();
+            assert!(
+                matches!(
+                    &err,
+                    Some(DecodeError::Missing { context: Some(c), field: "cwd", .. }) if c == event
+                ),
+                "{payload}: {err:?}"
+            );
+        }
     }
 
     #[test]
