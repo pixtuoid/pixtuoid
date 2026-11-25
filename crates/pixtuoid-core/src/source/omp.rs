@@ -847,14 +847,13 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
             };
             match msg.get("role").and_then(|r| r.as_str()) {
                 Some(ROLE_ASSISTANT) => {
-                    let mut out = Vec::new();
-                    if let Some(model) = msg
-                        .get("model")
-                        .and_then(|m| m.as_str())
-                        .filter(|m| !m.is_empty())
-                    {
-                        out.push(AgentEvent::model_info(acting, model));
-                    }
+                    let mut out: Vec<AgentEvent> = AgentEvent::model_info(
+                        acting,
+                        msg.get("model").and_then(|m| m.as_str()),
+                        None,
+                    )
+                    .into_iter()
+                    .collect();
                     out.extend(omp_usage(acting, obj, msg.get("usage")));
                     let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {
                         return out;
@@ -920,14 +919,13 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
             }
             _ => vec![],
         },
-        THINKING_LEVEL_CHANGE => match obj.get("thinkingLevel").and_then(|l| l.as_str()) {
-            Some(level) if !level.is_empty() => vec![AgentEvent::ModelInfo {
-                agent_id: acting,
-                model: None,
-                effort: Some(ellipsize(level, MAX_DECODED_FIELD_CHARS)),
-            }],
-            _ => vec![],
-        },
+        THINKING_LEVEL_CHANGE => AgentEvent::model_info(
+            acting,
+            None,
+            obj.get("thinkingLevel").and_then(|l| l.as_str()),
+        )
+        .into_iter()
+        .collect(),
         // The only human-readable name a ROOT transcript has. An unguarded Rename
         // would blank it and wipe every subagent's dispatch-name label — the empty
         // slot's WHY is on `omp_head_title`.

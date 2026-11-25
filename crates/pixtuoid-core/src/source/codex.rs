@@ -14,8 +14,8 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{
-    HookSubject, MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, generic_tool_display,
-    hook_identity, hook_session_id, hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty,
+    HookSubject, accept_all_paths, generic_tool_display, hook_identity, hook_session_id,
+    hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -389,21 +389,13 @@ pub(crate) fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -
         (TURN_CONTEXT, _) => {
             let model = payload
                 .and_then(|p| p.get("model"))
-                .and_then(|m| m.as_str())
-                .filter(|m| !m.is_empty());
+                .and_then(|m| m.as_str());
             let effort = payload
                 .and_then(|p| p.get("effort"))
-                .and_then(|e| e.as_str())
-                .filter(|e| !e.is_empty());
-            if model.is_some() || effort.is_some() {
-                vec![AgentEvent::ModelInfo {
-                    agent_id,
-                    model: model.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
-                    effort: effort.map(|e| ellipsize(e, MAX_DECODED_FIELD_CHARS)),
-                }]
-            } else {
-                vec![]
-            }
+                .and_then(|e| e.as_str());
+            AgentEvent::model_info(agent_id, model, effort)
+                .into_iter()
+                .collect()
         }
         _ => vec![],
     }

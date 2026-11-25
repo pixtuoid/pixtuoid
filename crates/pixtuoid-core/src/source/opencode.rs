@@ -244,9 +244,11 @@ fn session_start(
         cwd: cwd.unwrap_or_default().into(),
         parent_id: field(data, "parentID").map(|p| AgentId::from_parts(SOURCE_NAME, p)),
     });
-    if let Some(model) = field(data, "model.id") {
-        out.push(AgentEvent::model_info(agent_id, model));
-    }
+    out.extend(AgentEvent::model_info(
+        agent_id,
+        field(data, "model.id"),
+        None,
+    ));
     Ok(out)
 }
 

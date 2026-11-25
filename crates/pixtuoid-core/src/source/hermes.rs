@@ -399,9 +399,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
     };
     // Only the session events carry it (`website/docs/user-guide/features/hooks.md:470-471`),
     // so an event without one must not clear it.
-    if let Some(model) = field(obj, "model") {
-        evs.push(AgentEvent::model_info(agent_id, model));
-    }
+    evs.extend(AgentEvent::model_info(agent_id, field(obj, "model"), None));
     Ok(evs)
 }
 

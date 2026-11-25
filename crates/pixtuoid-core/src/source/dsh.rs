@@ -256,15 +256,13 @@ pub fn decode_dsh_payload(
             };
             Ok(vec![identity(), event])
         }
-        MODEL => Ok(vec![
-            identity(),
-            AgentEvent::ModelInfo {
+        MODEL => Ok(std::iter::once(identity())
+            .chain(AgentEvent::model_info(
                 agent_id,
-                model: non_empty(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
-                effort: non_empty(obj, "reasoningEffort")
-                    .map(|e| ellipsize(e, MAX_DECODED_FIELD_CHARS)),
-            },
-        ]),
+                non_empty(obj, "model"),
+                non_empty(obj, "reasoningEffort"),
+            ))
+            .collect()),
         USAGE => {
             let n = |k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
             // Fresh spend only: input + output + cache WRITES; cache reads are

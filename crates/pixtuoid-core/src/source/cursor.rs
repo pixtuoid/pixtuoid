@@ -193,13 +193,11 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
     let mut evs = decoded?;
     // Re-read per event: the model changes mid-session, so reading it once
     // would show the wrong one for the rest of the turn.
-    if let Some(model) = obj
-        .get("model")
-        .and_then(|m| m.as_str())
-        .filter(|s| !s.is_empty())
-    {
-        evs.push(AgentEvent::model_info(agent_id, model));
-    }
+    evs.extend(AgentEvent::model_info(
+        agent_id,
+        obj.get("model").and_then(|m| m.as_str()),
+        None,
+    ));
     Ok(evs)
 }
 

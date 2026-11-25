@@ -331,11 +331,10 @@ pub(crate) fn decode_copilot_line(
                 crate::source::drift::missing_field(source, SESSION_USAGE_RECORD, "usage");
                 return vec![];
             };
-            let mut out: Vec<AgentEvent> = str_at(usage, "model")
-                .filter(|m| !m.is_empty())
-                .map(|m| AgentEvent::model_info(acting, m))
-                .into_iter()
-                .collect();
+            let mut out: Vec<AgentEvent> =
+                AgentEvent::model_info(acting, str_at(usage, "model"), None)
+                    .into_iter()
+                    .collect();
             let count = |k: &str| usage.get(k).and_then(Value::as_u64).unwrap_or(0);
             let fresh = count("inputTokens")
                 .saturating_sub(count("cacheReadTokens"))
@@ -803,18 +802,6 @@ mod tests {
                 "{data}"
             );
         }
-    }
-
-    #[test]
-    fn a_usage_record_naming_no_model_names_none() {
-        // An empty model would replace the one the slot shows.
-        let line = r#"{"type":"session.usage_record","data":{"usage":{"model":""}},"id":"e3","timestamp":"t","parentId":null}"#;
-        let evs = decode(line);
-        assert!(
-            !evs.iter()
-                .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-            "{evs:?}"
-        );
     }
 
     #[test]

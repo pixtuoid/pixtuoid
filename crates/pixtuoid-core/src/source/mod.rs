@@ -464,15 +464,25 @@ impl AgentEvent {
         }
     }
 
-    /// A model observation naming no effort: THE constructor every decoder
-    /// whose wire names only a model mints one through, so the decode cap and
-    /// a field it gains land here, never at a decoder.
-    pub(crate) fn model_info(agent_id: AgentId, model: &str) -> Self {
-        AgentEvent::ModelInfo {
+    /// A model observation of whichever of `model` and `effort` is not empty,
+    /// each capped at decode; `None` when neither is. THE constructor every
+    /// decoder mints one through, so these rules and a field it gains land
+    /// here, never at a decoder.
+    pub(crate) fn model_info(
+        agent_id: AgentId,
+        model: Option<&str>,
+        effort: Option<&str>,
+    ) -> Option<Self> {
+        let decoded = |v: Option<&str>| {
+            v.filter(|s| !s.is_empty())
+                .map(|s| decoder::ellipsize(s, decoder::MAX_DECODED_FIELD_CHARS))
+        };
+        let (model, effort) = (decoded(model), decoded(effort));
+        (model.is_some() || effort.is_some()).then_some(AgentEvent::ModelInfo {
             agent_id,
-            model: Some(decoder::ellipsize(model, decoder::MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        }
+            model,
+            effort,
+        })
     }
 
     /// A request for the user's action. THE constructor every site mints one
@@ -736,3 +746,28 @@ pub mod reasonix;
 // https://github.com/obi1kenobi/trustfall-rustdoc-adapter/blob/b24088502d1cc1fcdbdb5037407e3a90c4e33b18/src/rustdoc_schema.graphql#L1360-L1365
 #[doc(hidden)]
 pub mod registry;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_model_observation_drops_each_empty_value() {
+        // An empty value would replace the one the slot shows.
+        let a = AgentId::from_parts("copilot", "s");
+        let observed = |model: Option<&str>, effort: Option<&str>| AgentEvent::ModelInfo {
+            agent_id: a,
+            model: model.map(str::to_owned),
+            effort: effort.map(str::to_owned),
+        };
+        assert_eq!(
+            AgentEvent::model_info(a, Some(""), Some("high")),
+            Some(observed(None, Some("high")))
+        );
+        assert_eq!(
+            AgentEvent::model_info(a, Some("gpt-4.1"), Some("")),
+            Some(observed(Some("gpt-4.1"), None))
+        );
+        assert_eq!(AgentEvent::model_info(a, Some(""), Some("")), None);
+    }
+}

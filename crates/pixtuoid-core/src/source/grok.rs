@@ -169,13 +169,11 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             }];
             // The fire site passes None today; take `modelId` if a future
             // build offers it.
-            if let Some(model) = obj
-                .get("modelId")
-                .and_then(|m| m.as_str())
-                .filter(|m| !m.is_empty())
-            {
-                evs.push(AgentEvent::model_info(agent_id, model));
-            }
+            evs.extend(AgentEvent::model_info(
+                agent_id,
+                obj.get("modelId").and_then(|m| m.as_str()),
+                None,
+            ));
             Ok(evs)
         }
         "user_prompt_submit" => {
@@ -489,14 +487,14 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
     };
     // The model rides `_meta` on an ORDINARY update; keying on the
     // `model_changed` tag a real session never sends left the model unseen.
-    if let Some(model) = update
-        .get("_meta")
-        .and_then(|m| m.get("modelId"))
-        .and_then(|m| m.as_str())
-        .filter(|s| !s.is_empty())
-    {
-        evs.push(AgentEvent::model_info(agent_id, model));
-    }
+    evs.extend(AgentEvent::model_info(
+        agent_id,
+        update
+            .get("_meta")
+            .and_then(|m| m.get("modelId"))
+            .and_then(|m| m.as_str()),
+        None,
+    ));
     evs
 }
 

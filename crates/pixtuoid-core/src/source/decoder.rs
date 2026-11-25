@@ -492,15 +492,11 @@ pub(crate) fn hook_identity(
 /// that ULTRACODE "is not a distinct level and reports as xhigh". Codex hook
 /// payloads carry no such field, and absent emits nothing.
 fn hook_effort(agent_id: AgentId, obj: &serde_json::Map<String, Value>) -> Option<AgentEvent> {
-    obj.get("effort")
+    let level = obj
+        .get("effort")
         .and_then(|e| e.get("level"))
-        .and_then(|l| l.as_str())
-        .filter(|l| !l.is_empty())
-        .map(|level| AgentEvent::ModelInfo {
-            agent_id,
-            model: None,
-            effort: Some(ellipsize(level, MAX_DECODED_FIELD_CHARS)),
-        })
+        .and_then(|l| l.as_str());
+    AgentEvent::model_info(agent_id, None, level)
 }
 
 /// Where the shim stamps an installed command's `--hook-event`, for a CLI whose
@@ -582,13 +578,11 @@ pub(crate) fn shared_hook_arms(
             }];
             // "Only SessionStart hooks can receive a `model` field, and it is not
             // guaranteed to be present" (hooks.md) — take it when offered.
-            if let Some(model) = obj
-                .get("model")
-                .and_then(|m| m.as_str())
-                .filter(|m| !m.is_empty())
-            {
-                evs.push(AgentEvent::model_info(agent_id, model));
-            }
+            evs.extend(AgentEvent::model_info(
+                agent_id,
+                obj.get("model").and_then(|m| m.as_str()),
+                None,
+            ));
             Ok(evs)
         }
         "PreToolUse" => {

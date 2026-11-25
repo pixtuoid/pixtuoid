@@ -86,13 +86,8 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
         agent_id,
         label: session_label(key),
     });
-    if let Some(model) = non_empty(obj, "model") {
-        events.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(display_safe(model)),
-            effort: None,
-        });
-    }
+    let model = non_empty(obj, "model").map(display_safe);
+    events.extend(AgentEvent::model_info(agent_id, model.as_deref(), None));
     match event {
         "pre_tool" => events.push(AgentEvent::ToolUseStart {
             agent_id,

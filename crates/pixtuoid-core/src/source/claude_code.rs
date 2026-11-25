@@ -303,11 +303,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     if ty == "attachment"
         && let Some(effort) = attachment_effort(obj)
     {
-        out.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: None,
-            effort: Some(effort.to_string()),
-        });
+        out.extend(AgentEvent::model_info(agent_id, None, Some(effort)));
     }
 
     let Some(message) = message else {
@@ -315,13 +311,11 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     };
     // `<synthetic>` is CC's marker for tool-generated/error turns, not a model.
     if ty == ASSISTANT {
-        if let Some(model) = message
+        let model = message
             .get("model")
             .and_then(|m| m.as_str())
-            .filter(|m| !m.is_empty() && *m != "<synthetic>")
-        {
-            out.push(AgentEvent::model_info(agent_id, model));
-        }
+            .filter(|m| *m != "<synthetic>");
+        out.extend(AgentEvent::model_info(agent_id, model, None));
         let fresh = fresh_spend(message);
         if fresh > 0 {
             let reading_id = non_empty(message, "id");
