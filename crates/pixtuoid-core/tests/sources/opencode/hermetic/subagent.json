@@ -20,7 +20,7 @@
       "latency": 300
     },
     {
-      "match": { "userMessage": "<subagent sessionID=", "hasToolResult": false },
+      "match": { "userMessage": "<background-result kind=\"subagent\"", "hasToolResult": false },
       "response": { "content": "{note}" },
       "latency": 300
     },
