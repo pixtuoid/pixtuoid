@@ -1086,7 +1086,7 @@ fn a_top_model_at_max_effort_draws_as_any_other_agent() {
             "max".into(),
             now,
         ));
-        slot.ultracode_since = Some(now);
+        slot.ultracode = true;
         scene
     };
     let (top, other) = (as_model("claude-fable-5"), as_model("claude-opus-4-8"));

@@ -383,12 +383,12 @@ pub struct AgentSlot {
     /// within its TTL — no sighting means it drops off.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub effort: Option<EffortObservation>,
-    /// Since when ultracode has been on ([`AgentEvent::Ultracode`]), `None`
-    /// while it is off: a setting held until it turns off, so no TTL ends it.
+    /// Whether ultracode is on ([`AgentEvent::Ultracode`]): a setting held
+    /// until it turns off, so no TTL ends it.
     ///
     /// [`AgentEvent::Ultracode`]: crate::source::AgentEvent::Ultracode
-    #[serde(skip_serializing_if = "Option::is_none", default)]
-    pub ultracode_since: Option<SystemTime>,
+    #[serde(skip_serializing_if = "std::ops::Not::not", default)]
+    pub ultracode: bool,
     /// Session-cumulative FRESH tokens (new input + cache writes + output —
     /// cache READS excluded), accumulated from `AgentEvent::Usage` deltas. Flat
     /// (not inside `last_usage`) on purpose: a monotone accumulator like
@@ -905,7 +905,7 @@ mod tests {
             pid: None,
             model: None,
             effort: None,
-            ultracode_since: None,
+            ultracode: false,
             tokens_used: 0,
             last_usage: None,
         }

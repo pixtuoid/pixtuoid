@@ -57,7 +57,7 @@ pub(super) fn running_on(path: &str, floor: usize, desk: usize) -> pixtuoid_core
         pid: None,
         model: None,
         effort: None,
-        ultracode_since: None,
+        ultracode: false,
         tokens_used: 0,
         last_usage: None,
     }

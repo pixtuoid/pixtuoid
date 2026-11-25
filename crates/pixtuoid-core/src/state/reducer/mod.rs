@@ -509,8 +509,7 @@ impl Reducer {
             ),
             AgentEvent::Ultracode { agent_id, on } => {
                 if let Some(slot) = scene.agents.get_mut(&agent_id) {
-                    // A repeat while on keeps when it turned on.
-                    slot.ultracode_since = on.then(|| slot.ultracode_since.unwrap_or(now));
+                    slot.ultracode = on;
                 }
             }
             AgentEvent::Usage {
@@ -1335,7 +1334,7 @@ impl Reducer {
                 pid: None,
                 model: None,
                 effort: None,
-                ultracode_since: None,
+                ultracode: false,
                 tokens_used: 0,
                 last_usage: None,
             },

@@ -1227,16 +1227,16 @@ fn a_cc_effort_level_and_ultracode_end_alike_in_either_order() {
         let slot = &scene.agents[&id];
         (
             slot.effort.as_ref().map(|e| e.value.to_string()),
-            slot.ultracode_since,
+            slot.ultracode,
         )
     };
-    let both = (Some("xhigh".to_owned()), Some(t0));
+    let both = (Some("xhigh".to_owned()), true);
     assert_eq!(end([&level, &ultracode]), both);
     assert_eq!(end([&ultracode, &level]), both);
 }
 
 #[test]
-fn ultracode_holds_from_its_first_enter_until_it_turns_off() {
+fn ultracode_holds_until_it_turns_off() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let id = AgentId::from_parts("claude-code", "ses_u");
@@ -1244,11 +1244,9 @@ fn ultracode_holds_from_its_first_enter_until_it_turns_off() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let ultracode = |on| AgentEvent::Ultracode { agent_id: id, on };
     r.apply(&mut scene, ultracode(true), t0, Transport::Jsonl);
-    let later = t0 + Duration::from_secs(60);
-    r.apply(&mut scene, ultracode(true), later, Transport::Jsonl);
-    assert_eq!(scene.agents[&id].ultracode_since, Some(t0));
-    r.apply(&mut scene, ultracode(false), later, Transport::Jsonl);
-    assert_eq!(scene.agents[&id].ultracode_since, None);
+    assert!(scene.agents[&id].ultracode);
+    r.apply(&mut scene, ultracode(false), t0, Transport::Jsonl);
+    assert!(!scene.agents[&id].ultracode);
 }
 
 #[test]

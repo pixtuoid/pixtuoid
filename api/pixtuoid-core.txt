@@ -1443,7 +1443,7 @@ pub pixtuoid_core::state::AgentSlot::state: pixtuoid_core::state::ActivityState
 pub pixtuoid_core::state::AgentSlot::state_started_at: std::time::SystemTime
 pub pixtuoid_core::state::AgentSlot::tokens_used: u64
 pub pixtuoid_core::state::AgentSlot::tool_call_count: u32
-pub pixtuoid_core::state::AgentSlot::ultracode_since: core::option::Option<std::time::SystemTime>
+pub pixtuoid_core::state::AgentSlot::ultracode: bool
 pub pixtuoid_core::state::AgentSlot::unknown_cwd: bool
 impl pixtuoid_core::state::AgentSlot
 pub fn pixtuoid_core::state::AgentSlot::claims_a_desk(&self) -> bool
@@ -2012,7 +2012,7 @@ pub pixtuoid_core::AgentSlot::state: pixtuoid_core::state::ActivityState
 pub pixtuoid_core::AgentSlot::state_started_at: std::time::SystemTime
 pub pixtuoid_core::AgentSlot::tokens_used: u64
 pub pixtuoid_core::AgentSlot::tool_call_count: u32
-pub pixtuoid_core::AgentSlot::ultracode_since: core::option::Option<std::time::SystemTime>
+pub pixtuoid_core::AgentSlot::ultracode: bool
 pub pixtuoid_core::AgentSlot::unknown_cwd: bool
 impl pixtuoid_core::state::AgentSlot
 pub fn pixtuoid_core::state::AgentSlot::claims_a_desk(&self) -> bool

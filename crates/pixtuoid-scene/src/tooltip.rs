@@ -373,7 +373,7 @@ const ULTRACODE_LABEL: &str = "ultra";
 /// still fresh. The ONE rule the dossier's `· effort` suffix reads, so the
 /// tooltip never shows an effort gone stale.
 fn shown_effort(slot: &pixtuoid_core::AgentSlot, now: SystemTime) -> Option<&str> {
-    if slot.ultracode_since.is_some() {
+    if slot.ultracode {
         return Some(ULTRACODE_LABEL);
     }
     slot.effort.as_ref().and_then(|obs| {
@@ -473,10 +473,10 @@ mod tests {
         let id = AgentId::from_transcript_path("/tip/ultracode.jsonl");
         let mut slot = crate::character::test_support::make_slot(id, ActivityState::Idle);
         slot.effort = Some(EffortObservation::new("xhigh".into(), t0));
-        slot.ultracode_since = Some(t0);
+        slot.ultracode = true;
         let long_after = t0 + std::time::Duration::from_secs(EFFORT_TTL_SECS + 1);
         assert_eq!(shown_effort(&slot, long_after), Some("ultra"));
-        slot.ultracode_since = None;
+        slot.ultracode = false;
         assert_eq!(shown_effort(&slot, t0), Some("xhigh"));
     }
 

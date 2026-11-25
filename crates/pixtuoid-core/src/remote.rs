@@ -203,8 +203,8 @@ struct Agent {
     model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     effort: Option<Effort>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    ultracode_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    ultracode: bool,
 }
 
 /// Tagged so `other` can take a newer server's state
@@ -326,7 +326,7 @@ fn project_agent(slot: &AgentSlot) -> Agent {
         pid: _,
         model,
         effort,
-        ultracode_since,
+        ultracode,
         tokens_used,
         last_usage,
     } = slot;
@@ -357,7 +357,7 @@ fn project_agent(slot: &AgentSlot) -> Agent {
             value: e.value.to_string(),
             at_ms: epoch_ms(e.seen_at),
         }),
-        ultracode_ms: ultracode_since.map(epoch_ms),
+        ultracode: *ultracode,
     }
 }
 
@@ -1047,7 +1047,7 @@ fn inflate_agent(
         effort: agent
             .effort
             .map(|e| EffortObservation::new(Arc::from(display_safe(&e.value)), local(e.at_ms))),
-        ultracode_since: agent.ultracode_ms.map(local),
+        ultracode: agent.ultracode,
         tokens_used: agent.tokens,
         last_usage: agent
             .last_usage
@@ -1135,7 +1135,7 @@ mod tests {
             pid: None,
             model: None,
             effort: None,
-            ultracode_since: None,
+            ultracode: false,
             tokens_used: 0,
             last_usage: None,
         }
@@ -1358,7 +1358,7 @@ mod tests {
         let mut scene = crowd(&["a"]);
         let slot = (scene.agents.values_mut().next()).expect("a");
         slot.effort = Some(EffortObservation::new(Arc::from("xhigh"), at(AT - 500)));
-        slot.ultracode_since = Some(at(AT - 900));
+        slot.ultracode = true;
         scene
     }
 
@@ -1372,15 +1372,15 @@ mod tests {
         let agent = &line["agents"][0];
         let level = serde_json::json!({"value": "xhigh", "at_ms": AT - 500});
         assert_eq!(
-            (&agent["effort"], &agent["ultracode_ms"]),
-            (&level, &Value::from(AT - 900))
+            (&agent["effort"], &agent["ultracode"]),
+            (&level, &Value::Bool(true))
         );
 
         let mut office = RemoteOffice::new(caps(4));
         received(&mut office, &scene, AT);
         let got = &office.scene().agents[&id];
         assert_eq!(got.effort.as_ref().map(|e| &*e.value), Some("xhigh"));
-        assert_eq!(got.ultracode_since, Some(at(AT - 900)));
+        assert!(got.ultracode);
     }
 
     #[test]

@@ -81,7 +81,7 @@ pub(crate) async fn capture_live_scene(
             slot.state,
             slot.model,
             slot.effort.as_ref().map(|e| e.value.clone()),
-            slot.ultracode_since.is_some()
+            slot.ultracode
         );
     }
     watcher_handle.abort();
@@ -354,7 +354,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
                 pid: None,
                 model: None,
                 effort: None,
-                ultracode_since: None,
+                ultracode: false,
                 tokens_used: TIER_EXEMPLARS[i % 4],
                 last_usage: None,
             },
@@ -557,7 +557,7 @@ pub(crate) fn meeting_scene(
                 pid: None,
                 model: None,
                 effort: None,
-                ultracode_since: None,
+                ultracode: false,
                 tokens_used: 0,
                 last_usage: None,
             },
@@ -679,7 +679,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
                 pid: None,
                 model: None,
                 effort: None,
-                ultracode_since: None,
+                ultracode: false,
                 tokens_used: 0,
                 last_usage: None,
             },
@@ -859,7 +859,7 @@ pub(crate) fn anim_scene(
             pid: None,
             model: None,
             effort: None,
-            ultracode_since: None,
+            ultracode: false,
             tokens_used: 0,
             last_usage: None,
         },

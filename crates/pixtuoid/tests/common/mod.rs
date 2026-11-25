@@ -76,7 +76,7 @@ pub(crate) fn fixture_scene(now: std::time::SystemTime) -> pixtuoid_core::SceneS
                 pid: None,
                 model: None,
                 effort: None,
-                ultracode_since: None,
+                ultracode: false,
                 tokens_used: 0,
                 last_usage: None,
             },
