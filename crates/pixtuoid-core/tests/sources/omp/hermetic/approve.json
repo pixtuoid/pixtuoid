@@ -5,6 +5,18 @@
       "response": {"content": "<title>Hermetic</title>"}
     },
     {
+      "match": {"userMessage": "<title-request>"},
+      "response": {"content": "<title/>"}
+    },
+    {
+      "match": {"systemMessage": "You head coding-agent session titles with a small card"},
+      "response": {"content": "<title>none</title>"}
+    },
+    {
+      "match": {"userMessage": "<composer-prediction>"},
+      "response": {"content": "NO_PREDICTION"}
+    },
+    {
       "match": {"userMessage": "{first_turn}", "hasToolResult": false},
       "response": {"toolCalls": [{"name": "bash", "arguments": {"i": "Reading the note", "command": "cat NOTE.txt"}}]},
       "latency": 300

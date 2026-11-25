@@ -5,6 +5,18 @@
       "response": {"content": "<title>Hermetic</title>"}
     },
     {
+      "match": {"userMessage": "<title-request>"},
+      "response": {"content": "<title/>"}
+    },
+    {
+      "match": {"systemMessage": "You head coding-agent session titles with a small card"},
+      "response": {"content": "<title>none</title>"}
+    },
+    {
+      "match": {"userMessage": "<composer-prediction>"},
+      "response": {"content": "NO_PREDICTION"}
+    },
+    {
       "match": {"userMessage": "{first_turn}", "hasToolResult": false},
       "response": {"toolCalls": [{"name": "bash", "arguments": {"i": "Copying the note by patch", "command": "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: COPY.txt\n+{note}\n*** End Patch\nEOF"}}]},
       "latency": 300
