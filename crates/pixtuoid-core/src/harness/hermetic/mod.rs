@@ -153,7 +153,7 @@ pub enum Fallback {
     /// `scripts/install.ps1:162-201` at v1.1.2: each page in listing order, a
     /// release whose sums file names the asset's artifact, while a page is
     /// full.
-    Listed,
+    First,
 }
 
 impl Package {

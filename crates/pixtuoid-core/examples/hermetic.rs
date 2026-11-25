@@ -943,15 +943,15 @@ mod run {
     }
 
     /// What curl writes after a transfer, "independently of if the file
-    /// transfer was successful or not": the last response's status, on a line
+    /// transfer was successful or not": the last response's code, on a line
     /// of its own (curl.se/docs/manpage.html, `--write-out`).
-    const CURL_STATUS: &str = r"\n%{response_code}";
+    const RESPONSE_CODE: &str = r"\n%{response_code}";
 
     /// The lowest HTTP status `--fail` takes as an error
     /// (curl.se/docs/manpage.html, `--fail`).
     const HTTP_ERROR: u16 = 400;
 
-    /// What [`CURL_STATUS`] reads when no response arrived: the code "is zero
+    /// What [`RESPONSE_CODE`] reads when no response arrived: the code "is zero
     /// if no server response code has been received"
     /// (https://curl.se/libcurl/c/CURLINFO_RESPONSE_CODE.html).
     const NO_RESPONSE: u16 = 0;
@@ -977,13 +977,13 @@ mod run {
     fn curl(url: &str, args: &[&OsStr]) -> std::io::Result<Vec<u8>> {
         let out = tool(CURL)
             .args(args)
-            .args(["--retry", CURL_RETRIES, "--write-out", CURL_STATUS, url])
+            .args(["--retry", CURL_RETRIES, "--write-out", RESPONSE_CODE, url])
             .output()
             .map_err(|e| std::io::Error::other(format!("curl {url}: {e}")))?;
         curl_answer(url, out.status, out.stdout, &out.stderr)
     }
 
-    /// A curl run's `stdout` without the [`CURL_STATUS`] it ends with, or why
+    /// A curl run's `stdout` without the [`RESPONSE_CODE`] it ends with, or why
     /// there is none: an HTTP error or no response is one though curl exited
     /// 0, as curl 8.14 does under `--retry` (curl/curl#17554).
     fn curl_answer(
@@ -1260,7 +1260,7 @@ mod run {
                 digest::lists(&listed, asset) && fetch(asset, Curl::Headers).is_ok()
             }
             // `scripts/install.ps1:149-160` at v1.1.2.
-            Fallback::Listed => names_artifact(&listed, asset),
+            Fallback::First => names_artifact(&listed, asset),
         }
     }
 
@@ -1341,7 +1341,7 @@ mod run {
                     true
                 }
                 // `scripts/install.ps1:198`.
-                Fallback::Listed => page.len() == RELEASES_PER_PAGE,
+                Fallback::First => page.len() == RELEASES_PER_PAGE,
             };
             if let Some(v) = stable.into_iter().find(|v| v != marked && carries(v)) {
                 return Ok(v);
@@ -4013,7 +4013,7 @@ mod run {
         }
 
         #[test]
-        fn the_listed_fallback_takes_the_first_stable_release_listed_carrying_the_artifact() {
+        fn the_first_fallback_takes_the_first_stable_release_listed_carrying_the_artifact() {
             let asked = std::cell::RefCell::new(Vec::new());
             let carries = |v: &Version| {
                 asked.borrow_mut().push(v.clone());
@@ -4021,7 +4021,7 @@ mod run {
             };
             let (marked, first) = (Version::new(1, 1, 2), Version::new(1, 0, 1));
             let resolve = |pages: Vec<Result<Vec<ListedRelease>, String>>| {
-                carrying_release(Fallback::Listed, &marked, pages, carries)
+                carrying_release(Fallback::First, &marked, pages, carries)
             };
             assert_eq!(resolve(vec![page(ROWS)]), Ok(first.clone()));
             assert_eq!(
@@ -4090,10 +4090,10 @@ mod run {
         }
 
         #[test]
-        fn the_listed_fallback_takes_a_release_whose_sums_file_names_the_artifact() {
+        fn the_first_fallback_takes_a_release_whose_sums_file_names_the_artifact() {
             const WINDOWS: &str = "jcode-windows-x86_64.exe";
             let takes = |sums: Option<&str>| {
-                carries(Fallback::Listed, WINDOWS, SUMS, files(sums, WINDOWS, false))
+                carries(Fallback::First, WINDOWS, SUMS, files(sums, WINDOWS, false))
             };
             assert!(!takes(None), "sums unreadable");
             for extension in ["zip", "tar.gz", "exe"] {

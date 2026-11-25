@@ -22,7 +22,7 @@ pub(crate) const PROFILE: Profile = Profile {
         // As each platform's installer takes it.
         latest: Latest::Carrying(PerOs {
             unix: Fallback::Newest,
-            windows: Fallback::Listed,
+            windows: Fallback::First,
         }),
     },
     plugin_types: &[],
