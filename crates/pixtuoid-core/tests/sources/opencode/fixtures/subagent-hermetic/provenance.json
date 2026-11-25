@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "opencode",
-  "version": "opencode v2.3.2",
-  "captured": "2026-11-19",
+  "version": "opencode v2.4.1",
+  "captured": "2026-11-25",
   "command": "just hermetic --record opencode",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 3
   },
-  "aimock": "1.47.0",
+  "aimock": "1.48.0",
   "script": "tests/sources/opencode/hermetic/subagent.json",
   "dropped": {
     "os": "macos",
