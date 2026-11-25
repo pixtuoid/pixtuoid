@@ -244,17 +244,33 @@ pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
     c.resolve()
 }
 
-/// The accessors a decoder reads a required key through, by name, and the
-/// argument that key is. Naming each function here breaks this build when one
-/// is renamed, so the census can't silently stop crediting its keys.
-const KEY_READERS: [(&str, usize); 2] = {
+/// Each accessor's name from one spelling, which also pins that name to its
+/// `decoder` function at the signature given, so a renamed or reshaped
+/// accessor breaks this build instead of leaving the census matching a stale
+/// name.
+macro_rules! key_readers {
+    ($($reader:ident: $signature:ty),* $(,)?) => {{
+        $(let _: $signature = crate::source::decoder::$reader;)*
+        [$(stringify!($reader)),*]
+    }};
+}
+
+/// The accessors a decoder reads a required key through.
+const KEY_READERS: [&str; 2] = {
     type Read = fn(&'static str) -> Option<()>;
     type Found = crate::source::decoder::DecodeResult<()>;
-    let _: fn(&str, &str, &'static str, Read) -> Option<()> = crate::source::decoder::required;
-    let _: fn(&str, Option<&str>, &'static str, Read) -> Found =
-        crate::source::decoder::required_or_err;
-    [("required", 2), ("required_or_err", 2)]
+    key_readers!(
+        required: fn(&str, &str, &'static str, Read) -> Option<()>,
+        required_or_err: fn(&str, Option<&str>, &'static str, Read) -> Found,
+    )
 };
+
+/// How many arguments the signatures in [`KEY_READERS`] take: a namesake of
+/// another arity is some other function.
+const KEY_READER_ARITY: usize = 4;
+
+/// Which argument of those signatures is the key.
+const KEY_READER_KEY: usize = 2;
 
 struct Collect {
     module: String,
@@ -440,23 +456,18 @@ impl<'ast> Visit<'ast> for Collect {
     fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
         if let syn::Expr::Path(p) = &*c.func {
             let name = p.path.segments.last().map(|s| s.ident.to_string());
-            match KEY_READERS
-                .iter()
-                .find(|(n, _)| name.as_deref() == Some(*n))
+            if name.is_some_and(|n| KEY_READERS.contains(&n.as_str()))
+                && c.args.len() == KEY_READER_ARITY
             {
-                Some((_, at)) => {
-                    if let Some(s) = c.args.iter().nth(*at).and_then(Self::lit) {
+                if let Some(s) = c.args.iter().nth(KEY_READER_KEY).and_then(Self::lit) {
+                    self.add(s, Match::Exact);
+                }
+            } else if p.path.get_ident().is_some_and(|i| i != "Some") {
+                for arg in &c.args {
+                    if let Some(s) = Self::lit(arg) {
                         self.add(s, Match::Exact);
                     }
                 }
-                None if p.path.get_ident().is_some_and(|i| i != "Some") => {
-                    for arg in &c.args {
-                        if let Some(s) = Self::lit(arg) {
-                            self.add(s, Match::Exact);
-                        }
-                    }
-                }
-                None => {}
             }
         }
         syn::visit::visit_expr_call(self, c);
@@ -1209,6 +1220,7 @@ mod tests {
             let _ = crate::source::decoder::required(SOURCE_NAME, "pathed_event", "pathed", |k| obj.get(k));
             let _ = required(SOURCE_NAME, "bare_event", "bare", |k| obj.get(k));
             let _ = decoder::required_or_err(SOURCE_NAME, Some("erring_event"), "erring", |k| obj.get(k));
+            let _ = required("namesake");
         }
 "#,
         )
@@ -1216,7 +1228,7 @@ mod tests {
         let got: BTreeSet<String> = collect("x.rs", &file).into_iter().map(|l| l.text).collect();
         assert_eq!(
             got,
-            BTreeSet::from(["pathed", "bare", "erring"].map(String::from))
+            BTreeSet::from(["pathed", "bare", "erring", "namesake"].map(String::from))
         );
     }
 
