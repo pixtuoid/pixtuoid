@@ -1244,8 +1244,22 @@ fn ultracode_holds_until_it_turns_off() {
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
     let ultracode = |on| AgentEvent::Ultracode { agent_id: id, on };
     r.apply(&mut scene, ultracode(true), t0, Transport::Jsonl);
+    // An hour is past the scene's effort TTL (`tooltip`'s private `EFFORT_TTL_SECS`).
+    let later = t0 + Duration::from_secs(60 * 60);
+    let level = AgentEvent::ModelInfo {
+        agent_id: id,
+        model: None,
+        effort: Some("medium".into()),
+    };
+    let turn_end = AgentEvent::TurnEnd {
+        agent_id: id,
+        turn: None,
+    };
+    for event in [level, turn_end] {
+        r.apply(&mut scene, event, later, Transport::Jsonl);
+    }
     assert!(scene.agents[&id].ultracode);
-    r.apply(&mut scene, ultracode(false), t0, Transport::Jsonl);
+    r.apply(&mut scene, ultracode(false), later, Transport::Jsonl);
     assert!(!scene.agents[&id].ultracode);
 }
 
