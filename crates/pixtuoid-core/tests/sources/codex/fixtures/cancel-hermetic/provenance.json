@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.171.0",
-  "captured": "2026-11-20",
+  "version": "codex-cli 0.172.0",
+  "captured": "2026-11-25",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 59
   },
-  "aimock": "1.47.0",
+  "aimock": "1.48.0",
   "script": "tests/sources/codex/hermetic/cancel.json",
   "dropped": {
     "os": "macos",
