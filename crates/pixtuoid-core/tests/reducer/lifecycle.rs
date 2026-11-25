@@ -1173,7 +1173,7 @@ fn model_info_caches_model_and_effort_on_an_existing_slot() {
 }
 
 #[test]
-fn model_info_and_ultracode_for_an_unknown_agent_never_register() {
+fn model_events_and_ultracode_for_an_unknown_agent_never_register() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let ghost = AgentId::from_parts("claude-code", "ses_ghost");
@@ -1182,12 +1182,16 @@ fn model_info_and_ultracode_for_an_unknown_agent_never_register() {
         model: Some("claude-fable-5".into()),
         effort: Some("xhigh".into()),
     };
+    let model_hint = AgentEvent::ModelHint {
+        agent_id: ghost,
+        model: "claude-opus-5-5".into(),
+    };
     let ultracode = AgentEvent::Ultracode {
         agent_id: ghost,
         on: true,
     };
     for transport in [Transport::Jsonl, Transport::Hook] {
-        for event in [&model_info, &ultracode] {
+        for event in [&model_info, &model_hint, &ultracode] {
             r.apply(
                 &mut scene,
                 event.clone(),
@@ -1279,9 +1283,6 @@ fn a_model_hint_fills_only_an_unset_model() {
         }
         assert_eq!(scene.agents[&id].model.as_deref(), Some(model), "{row}");
     }
-    let mut scene = SceneState::uniform(4);
-    Reducer::new().apply(&mut scene, hint.0, t0, hint.1);
-    assert!(scene.agents.is_empty(), "an absent slot stays absent");
 }
 
 #[test]
