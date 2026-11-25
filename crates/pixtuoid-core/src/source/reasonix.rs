@@ -499,13 +499,20 @@ mod tests {
 
     #[test]
     fn empty_or_missing_cwd_is_malformed() {
-        assert!(
-            decode_rx_hook_payload(test_obj(
-                &json!({"event": "Stop", "sessionId": "s", "cwd": ""})
-            ))
-            .is_err()
-        );
-        assert!(decode_rx_hook_payload(test_obj(&json!({"event": "Stop"}))).is_err());
+        let event = "Stop";
+        for payload in [
+            json!({"event": event, "sessionId": "s", "cwd": ""}),
+            json!({"event": event}),
+        ] {
+            let err = decode_rx_hook_payload(test_obj(&payload)).err();
+            assert!(
+                matches!(
+                    &err,
+                    Some(DecodeError::Missing { context: Some(c), field: "cwd", .. }) if c == event
+                ),
+                "{payload}: {err:?}"
+            );
+        }
     }
 
     #[test]

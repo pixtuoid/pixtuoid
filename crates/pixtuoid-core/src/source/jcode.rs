@@ -238,14 +238,37 @@ mod tests {
 
     #[test]
     fn unknown_and_missing_contract_fields_fail_closed() {
-        for value in [
-            json!({}),
-            json!({"event":"pre_tool"}),
-            json!({"event":"pre_tool", "session_id":""}),
-            json!({"event":"pre_tool", "session_id":"session_fox_123_a"}),
-            payload("unregistered", "session_fox_123_a"),
-        ] {
+        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
+        for value in [json!({}), payload("unregistered", "session_fox_123_a")] {
             assert!(decode(&value).is_err(), "{value}");
+        }
+        let event = "pre_tool";
+        for (value, missing) in [
+            (json!({"event":event}), "session_id"),
+            (json!({"event":event, "session_id":""}), "session_id"),
+            (
+                json!({"event":event, "session_id":"session_fox_123_a"}),
+                "tool_name",
+            ),
+        ] {
+            let mut err = None;
+            let logs = crate::test_capture::capture_logs(|| err = decode(&value).err());
+            assert!(
+                matches!(
+                    &err,
+                    Some(DecodeError::Missing { context: Some(c), field, .. })
+                        if c == event && *field == missing
+                ),
+                "{value}: {err:?}"
+            );
+            let line = format!(
+                "{SOURCE_FIELD}={SOURCE_NAME} {KIND_FIELD}=\"{}\" event={event} field={missing}",
+                <&str>::from(DriftKind::MissingField),
+            );
+            assert!(
+                logs.contains(TARGET) && logs.contains(&line),
+                "{line:?} in\n{logs}"
+            );
         }
     }
 

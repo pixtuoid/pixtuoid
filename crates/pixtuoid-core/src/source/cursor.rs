@@ -453,14 +453,24 @@ mod tests {
 
     #[test]
     fn no_session_id_is_malformed_but_session_id_alone_is_ok() {
-        assert!(decode_cursor_hook_payload(test_obj(&json!({"hook_event_name": "stop"}))).is_err());
-        assert!(
-            decode_cursor_hook_payload(test_obj(
-                &json!({"hook_event_name": "sessionStart", "workspace_roots": ["/repo"]})
-            ))
-            .is_err(),
-            "a workspace is a label, never a session's key"
-        );
+        for (event, payload) in [
+            ("stop", json!({"hook_event_name": "stop"})),
+            // A workspace is a label, never a session's key.
+            (
+                "sessionStart",
+                json!({"hook_event_name": "sessionStart", "workspace_roots": ["/repo"]}),
+            ),
+        ] {
+            let err = decode_cursor_hook_payload(test_obj(&payload)).err();
+            assert!(
+                matches!(
+                    &err,
+                    Some(DecodeError::Missing { context: Some(c), field: "session_id", .. })
+                        if c == event
+                ),
+                "{payload}: {err:?}"
+            );
+        }
         assert!(
             decode_cursor_hook_payload(test_obj(
                 &json!({"hook_event_name": "stop", "session_id": "s"})

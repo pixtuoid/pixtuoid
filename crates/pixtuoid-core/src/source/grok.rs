@@ -922,15 +922,20 @@ mod tests {
 
     #[test]
     fn nothing_to_key_on_is_malformed() {
-        assert!(
-            decode_grok_hook_payload(test_obj(&json!({"hookEventName": "session_end"}))).is_err()
-        );
-        assert!(
-            decode_grok_hook_payload(test_obj(
-                &json!({"hookEventName": "session_end", "cwd": "", "workspaceRoot": ""})
-            ))
-            .is_err()
-        );
+        for payload in [
+            json!({"hookEventName": SESSION_END}),
+            json!({"hookEventName": SESSION_END, "cwd": "", "workspaceRoot": ""}),
+        ] {
+            let err = decode_grok_hook_payload(test_obj(&payload)).err();
+            assert!(
+                matches!(
+                    &err,
+                    Some(DecodeError::Missing { context: Some(c), field: "sessionId", .. })
+                        if c == SESSION_END
+                ),
+                "{payload}: {err:?}"
+            );
+        }
         assert!(decode_grok_hook_payload(test_obj(&json!({"sessionId": "s"}))).is_err());
     }
 
