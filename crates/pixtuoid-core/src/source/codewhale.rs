@@ -13,9 +13,9 @@
 //! ```
 //!
 //! - **Key on `session_id`.** Every event of one TUI session carries the same
-//!   `CODEWHALE_SESSION_ID` (`docs/HOOKS.md:278-285`), so two sessions in one
-//!   workspace are two sprites. A tool call's before and after share
-//!   `CODEWHALE_TOOL_CALL_ID` (`crates/tui/src/hooks/executor.rs:371-374`).
+//!   `CODEWHALE_SESSION_ID` (`crates/tui/src/hooks/executor.rs:416-419`), so two
+//!   sessions in one workspace are two sprites. A tool call's before and after
+//!   share `CODEWHALE_TOOL_CALL_ID` (`:371-374`).
 //!
 //! - **[`AgentEvent::UserActionRequest`].** `waiting_for_user` fires as an approval prompt opens, a
 //!   question is asked or a goal continuation parks (`docs/HOOKS.md:248`); its
@@ -48,7 +48,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "CodeWhale",
     label_prefix: "cw",
-    verified_version: "0.10.2",
+    verified_version: "0.10.4",
     version_probe: Some(&["codewhale", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: None,

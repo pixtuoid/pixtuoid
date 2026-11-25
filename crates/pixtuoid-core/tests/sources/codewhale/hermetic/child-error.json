@@ -15,7 +15,7 @@
       "latency": 300
     },
     {
-      "match": {"toolResultContains": "status=running"},
+      "match": {"toolResultContains": "\"status\":\"running\""},
       "response": {"toolCalls": [{"name": "agent", "arguments": {"action": "wait", "until": "all"}}]},
       "latency": 1500
     },
