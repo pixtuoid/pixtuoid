@@ -150,10 +150,8 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             parent_id: None,
         }]),
         "tool_call_before" => {
-            let tool = required(SOURCE_NAME, "tool_call_before", "tool", |k| {
-                obj.get(k)?.as_str()
-            })
-            .unwrap_or("?");
+            let tool =
+                required(SOURCE_NAME, event, "tool", |k| obj.get(k)?.as_str()).unwrap_or("?");
             Ok(vec![
                 identity(),
                 AgentEvent::ToolUseStart {

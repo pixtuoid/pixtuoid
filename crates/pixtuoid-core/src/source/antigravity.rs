@@ -134,10 +134,8 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                 let Some(tc_obj) = tc.as_object() else {
                     continue;
                 };
-                let name = required(SOURCE_NAME, "PLANNER_RESPONSE", "name", |k| {
-                    tc_obj.get(k)?.as_str()
-                })
-                .unwrap_or("?");
+                let name = required(SOURCE_NAME, step_type, "name", |k| tc_obj.get(k)?.as_str())
+                    .unwrap_or("?");
                 let args = tc_obj.get("args");
                 out.push(decode_ag_tool_call(
                     agent_id,

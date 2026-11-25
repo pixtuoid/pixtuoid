@@ -162,10 +162,8 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         // has no other re-creation signal.
         "SessionStart" | "UserPromptSubmit" => Ok(vec![start()]),
         "PreToolUse" => {
-            let tool = required(SOURCE_NAME, "PreToolUse", "toolName", |k| {
-                obj.get(k)?.as_str()
-            })
-            .unwrap_or("?");
+            let tool =
+                required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str()).unwrap_or("?");
             Ok(vec![
                 register(),
                 AgentEvent::ToolUseStart {
@@ -182,9 +180,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             // (`internal/ext/hook/runner.go:175-205` @ v2.60.0), and a
             // dispatch's return is its child's end: re-stating the Task makes
             // this End close one, whatever the parent started since.
-            let tool = required(SOURCE_NAME, "PostToolUse", "toolName", |k| {
-                obj.get(k)?.as_str()
-            });
+            let tool = required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str());
             if tool.is_some_and(|t| SUBAGENT_TOOLS.contains(&t) || SKILL_RUNNERS.contains(&t)) {
                 events.push(AgentEvent::ToolUseStart {
                     agent_id,
@@ -220,9 +216,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         // subject, and ALONGSIDE `Notification` for the same approval — both →
         // RequiresAction is idempotent (the gated tool's PostToolUse/Stop resolves it).
         "PermissionRequest" => {
-            let tool = required(SOURCE_NAME, "PermissionRequest", "toolName", |k| {
-                non_empty(obj, k)
-            });
+            let tool = required(SOURCE_NAME, event, "toolName", |k| non_empty(obj, k));
             let subject = obj
                 .get("subject")
                 .and_then(|s| s.as_str())
