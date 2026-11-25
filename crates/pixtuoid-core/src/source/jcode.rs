@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    DecodeError, DecodeResult, display_safe, label_prefix_for, non_empty,
+    DecodeError, DecodeResult, display_safe, label_prefix_for, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -47,14 +47,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 };
 
 pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<AgentEvent>> {
-    let required = |field| {
-        non_empty(obj, field).ok_or_else(|| {
-            drift::missing_field(SOURCE_NAME, "hook", field);
-            DecodeError::missing(SOURCE_NAME, field)
+    let field = |key| {
+        required_or_err(SOURCE_NAME, None, key, |k| {
+            required(SOURCE_NAME, "hook", k, |k| non_empty(obj, k))
         })
     };
-    let event = required("event")?;
-    let key = required("session_id")?;
+    let event = field("event")?;
+    let key = field("session_id")?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = non_empty(obj, "cwd").map(PathBuf::from);
     // The Identity is the one claim that registers a session the office joined
@@ -79,7 +78,7 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
                 // pre_tool has no call ID; post_tool's ID cannot pair with it.
                 tool_use_id: None,
                 detail: Some(ToolDetail::Generic {
-                    display: display_safe(required("tool_name")?),
+                    display: display_safe(field("tool_name")?),
                 }),
                 copy_id: None,
             }),

@@ -24,6 +24,7 @@ use serde_json::Value;
 use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail,
+    required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -311,14 +312,10 @@ pub const DETAIL_KEYS: &[&str] = KEYS;
 /// If the payload lacks `hook_event_name` or `session_id`, or names an event
 /// the plugin does not forward.
 pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    const HOOK_EVENT_NAME: &str = "hook_event_name";
-    const SESSION_ID: &str = "session_id";
-    let event = obj
-        .get(HOOK_EVENT_NAME)
-        .and_then(Value::as_str)
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, HOOK_EVENT_NAME))?;
-    let session_id = field(obj, SESSION_ID)
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, SESSION_ID))?;
+    let event = required_or_err(SOURCE_NAME, None, "hook_event_name", |k| {
+        obj.get(k)?.as_str()
+    })?;
+    let session_id = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| field(obj, k))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let cwd = field(obj, "cwd");
     let identity =
@@ -337,11 +334,7 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             parent_id: None,
         }],
         PRE_TOOL_CALL => {
-            const TOOL_NAME: &str = "tool_name";
-            let tool = field(obj, TOOL_NAME).unwrap_or_else(|| {
-                crate::source::drift::missing_field(SOURCE_NAME, event, TOOL_NAME);
-                "?"
-            });
+            let tool = required(SOURCE_NAME, event, "tool_name", |k| field(obj, k)).unwrap_or("?");
             vec![
                 identity(),
                 AgentEvent::ToolUseStart {

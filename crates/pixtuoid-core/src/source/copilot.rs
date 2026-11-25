@@ -21,7 +21,9 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, non_empty};
+use crate::source::decoder::{
+    MAX_DECODED_FIELD_CHARS, accept_all_paths, ellipsize, non_empty, required,
+};
 use crate::source::registry::{
     ChildEndInference, FocusChannel, Hyphen, SourceCaps, SourceDescriptor, SourceKind, Transcript,
 };
@@ -194,11 +196,10 @@ pub(crate) fn decode_copilot_line(
 
     match kind {
         SESSION_START => {
-            const SESSION_ID: &str = "sessionId";
-            let session_id = data.and_then(|d| str_at(d, SESSION_ID)).unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, SESSION_START, SESSION_ID);
-                ""
-            });
+            let session_id = required(source, SESSION_START, "sessionId", |k| {
+                data.and_then(|d| str_at(d, k))
+            })
+            .unwrap_or("");
             vec![root_start(root, source, session_id, data)]
         }
         // The id rides the path: a resume keeps the sessionId, and its
@@ -210,19 +211,16 @@ pub(crate) fn decode_copilot_line(
             data,
         )],
         TOOL_EXECUTION_START => {
-            const TOOL_NAME: &str = "toolName";
-            let Some(d) = data else {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, DATA);
+            let Some(d) = required(source, TOOL_EXECUTION_START, DATA, |k| obj.get(k)) else {
                 return vec![];
             };
-            let Some(tool_call_id) = str_at(d, TOOL_CALL_ID) else {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, TOOL_CALL_ID);
+            let Some(tool_call_id) =
+                required(source, TOOL_EXECUTION_START, TOOL_CALL_ID, |k| str_at(d, k))
+            else {
                 return vec![];
             };
-            let tool_name = str_at(d, TOOL_NAME).unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, TOOL_NAME);
-                ""
-            });
+            let tool_name =
+                required(source, TOOL_EXECUTION_START, "toolName", |k| str_at(d, k)).unwrap_or("");
             let detail = copilot_tool_detail(tool_name, d.get("arguments"));
             vec![AgentEvent::ToolUseStart {
                 agent_id: acting,
@@ -232,12 +230,12 @@ pub(crate) fn decode_copilot_line(
             }]
         }
         TOOL_EXECUTION_COMPLETE => {
-            let Some(d) = data else {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_COMPLETE, DATA);
+            let Some(d) = required(source, TOOL_EXECUTION_COMPLETE, DATA, |k| obj.get(k)) else {
                 return vec![];
             };
-            let Some(tool_call_id) = str_at(d, TOOL_CALL_ID) else {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_COMPLETE, TOOL_CALL_ID);
+            let Some(tool_call_id) = required(source, TOOL_EXECUTION_COMPLETE, TOOL_CALL_ID, |k| {
+                str_at(d, k)
+            }) else {
                 return vec![];
             };
             vec![AgentEvent::ToolUseEnd {
@@ -329,9 +327,9 @@ pub(crate) fn decode_copilot_line(
         // child's calls and a resumed lifetime's name theirs. `inputTokens`
         // counts cache reads.
         SESSION_USAGE_RECORD => {
-            const USAGE: &str = "usage";
-            let Some(usage) = data.and_then(|d| d.get(USAGE)) else {
-                crate::source::drift::missing_field(source, SESSION_USAGE_RECORD, USAGE);
+            let Some(usage) = required(source, SESSION_USAGE_RECORD, "usage", |k| {
+                data.and_then(|d| d.get(k))
+            }) else {
                 return vec![];
             };
             let mut out: Vec<AgentEvent> =

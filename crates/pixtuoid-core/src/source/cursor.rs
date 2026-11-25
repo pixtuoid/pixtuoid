@@ -40,7 +40,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{SUBAGENTS_DIR, non_empty};
+use crate::source::decoder::{SUBAGENTS_DIR, non_empty, required, required_or_err};
 use crate::source::registry::{
     ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind,
@@ -93,12 +93,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 ///
 /// If the payload lacks `hook_event_name` or `session_id`, or names an unregistered event.
 pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    const HOOK_EVENT_NAME: &str = "hook_event_name";
-    const SESSION_ID: &str = "session_id";
-    let event = obj
-        .get(HOOK_EVENT_NAME)
-        .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, HOOK_EVENT_NAME))?;
+    let event = required_or_err(SOURCE_NAME, None, "hook_event_name", |k| {
+        obj.get(k)?.as_str()
+    })?;
     // The top-level `cwd` is EMPTY/absent in CLI hook payloads —
     // `workspace_roots[0]` is the real one. Label/cwd only, NOT the AgentId key.
     let workspace = obj
@@ -115,11 +112,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
     // Key on `session_id` — present and CONSISTENT across every CLI hook event,
     // so it distinguishes concurrent sessions in one project AND coalesces all of
     // a session's events.
-    let key = obj
-        .get(SESSION_ID)
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, SESSION_ID))?;
+    let key = required_or_err(SOURCE_NAME, None, "session_id", |k| non_empty(obj, k))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = workspace.unwrap_or("");
 
@@ -141,14 +134,8 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             parent_id: None,
         }]),
         "preToolUse" => {
-            const TOOL_NAME: &str = "tool_name";
-            let tool = obj
-                .get(TOOL_NAME)
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, event, TOOL_NAME);
-                    "?"
-                });
+            let tool =
+                required(SOURCE_NAME, event, "tool_name", |k| obj.get(k)?.as_str()).unwrap_or("?");
             Ok(vec![
                 identity(),
                 AgentEvent::ToolUseStart {

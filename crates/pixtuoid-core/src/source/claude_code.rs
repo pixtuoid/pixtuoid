@@ -1,12 +1,13 @@
 use std::path::{Path, PathBuf};
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 #[cfg(any(feature = "native", test))]
 use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, make_tool_detail, non_empty,
+    required, required_or_err,
 };
 
 use crate::AgentId;
@@ -105,13 +106,12 @@ pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<Agent
     // Registry contract: claim our two events FULLY (Err on malformed), never
     // fall through — an empty id mints a phantom that never coalesces.
     let session_id = crate::source::decoder::hook_session_id(obj, SOURCE_NAME, event)?;
-    let wire_agent_id = obj
-        .get(crate::source::decoder::SUBAGENT_ID)
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            DecodeError::missing_in(SOURCE_NAME, event, crate::source::decoder::SUBAGENT_ID)
-        })?;
+    let wire_agent_id = required_or_err(
+        SOURCE_NAME,
+        Some(event),
+        crate::source::decoder::SUBAGENT_ID,
+        |k| non_empty(obj, k),
+    )?;
     let prefixed = subagent_session(wire_agent_id);
     if event == "SubagentStart" {
         let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
@@ -281,14 +281,15 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     let ty = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
 
     // Both directions of the one rename that can freeze a sprite.
-    let message = obj.get(MESSAGE).and_then(|m| m.as_object());
-    if DECODED_TYPES.contains(&ty) {
-        if message.is_none() {
-            crate::source::drift::missing_field(source, ty, MESSAGE);
+    let read = |k: &str| obj.get(k).and_then(|m| m.as_object());
+    let message = if DECODED_TYPES.contains(&ty) {
+        required(source, ty, MESSAGE, read)
+    } else {
+        if !ty.is_empty() && is_turn_record(obj) {
+            crate::source::drift::unknown_event(source, ty);
         }
-    } else if !ty.is_empty() && is_turn_record(obj) {
-        crate::source::drift::unknown_event(source, ty);
-    }
+        read(MESSAGE)
+    };
 
     if let Some(label) = attribution_label(obj) {
         out.push(AgentEvent::Rename { agent_id, label });
@@ -328,7 +329,6 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     let content = message.get("content");
     match (ty, content) {
         (ASSISTANT, Some(Value::Array(blocks))) => {
-            const NAME: &str = "name";
             for block in blocks {
                 let Some(bobj) = block.as_object() else {
                     continue;
@@ -338,10 +338,8 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                     continue;
                 }
                 let id = bobj.get("id").and_then(|s| s.as_str()).map(String::from);
-                let name = bobj.get(NAME).and_then(|s| s.as_str()).unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, btype, NAME);
-                    "?"
-                });
+                let name =
+                    required(SOURCE_NAME, btype, "name", |k| bobj.get(k)?.as_str()).unwrap_or("?");
                 out.push(AgentEvent::ToolUseStart {
                     agent_id,
                     copy_id: (id.as_deref())

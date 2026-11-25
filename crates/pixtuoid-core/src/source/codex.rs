@@ -9,13 +9,13 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::DecodeResult as Result;
 use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{
     HookSubject, accept_all_paths, generic_tool_display, hook_identity, hook_session_id,
-    hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty,
+    hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -122,9 +122,12 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
     // the real rollout.
     let guards = || -> Result<(String, String)> {
         let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
-        let child = HookSubject::of(obj).child.ok_or_else(|| {
-            DecodeError::missing_in(SOURCE_NAME, event, crate::source::decoder::SUBAGENT_ID)
-        })?;
+        let child = required_or_err(
+            SOURCE_NAME,
+            Some(event),
+            crate::source::decoder::SUBAGENT_ID,
+            |k| non_empty(obj, k),
+        )?;
         Ok((session_id, child.to_owned()))
     };
     match event {
@@ -177,13 +180,8 @@ fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
     let turn = turn_of(obj, event);
     let identity = || hook_identity(agent_id, SOURCE_NAME, &session_id, obj);
     let tool_id_key = hook_tool_id_key(crate::source::registry::descriptor_for(SOURCE_NAME));
-    let call = || {
-        let call = non_empty(obj, tool_id_key).map(str::to_owned);
-        if call.is_none() {
-            crate::source::drift::missing_field(SOURCE_NAME, event, tool_id_key);
-        }
-        call
-    };
+    let call =
+        || required(SOURCE_NAME, event, tool_id_key, |k| non_empty(obj, k)).map(str::to_owned);
     let tool_name = || hook_tool_name(obj, SOURCE_NAME, event);
     Ok(match event {
         "PreToolUse" => {
@@ -241,11 +239,7 @@ fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
 /// (`codex-rs/hooks/src/schema.rs` at rust-v0.164.0), so a missing one is
 /// drift.
 fn turn_of(obj: &Map<String, Value>, event: &str) -> Option<TurnKey> {
-    let turn = non_empty(obj, TURN_ID).map(|t| TurnKey::Id(t.into()));
-    if turn.is_none() {
-        crate::source::drift::missing_field(SOURCE_NAME, event, TURN_ID);
-    }
-    turn
+    required(SOURCE_NAME, event, TURN_ID, |k| non_empty(obj, k)).map(|t| TurnKey::Id(t.into()))
 }
 
 /// `payload.cwd`, on the head `session_meta` and each `turn_context`.
@@ -315,10 +309,12 @@ pub(crate) fn decode_codex_line(transcript_path: &str, source: &str, v: Value) -
         // A call's output ends it, answering a request that holds it: a
         // refused call gets no `PostToolUse`, so this is its only end.
         (RESPONSE_ITEM, i) if RI_CALL_END.contains(&i) => {
-            let call = payload.and_then(|p| non_empty(p, CALL_ID));
-            if call.is_none() && i == RI_CUSTOM_OUTPUT {
-                crate::source::drift::missing_field(SOURCE_NAME, i, CALL_ID);
-            }
+            let read = |k| payload.and_then(|p| non_empty(p, k));
+            let call = if i == RI_CUSTOM_OUTPUT {
+                required(SOURCE_NAME, i, CALL_ID, read)
+            } else {
+                read(CALL_ID)
+            };
             call.map(|c| AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: Some(c.to_owned()),
@@ -403,16 +399,11 @@ fn codex_tool_start(
     payload: Option<&Map<String, Value>>,
 ) -> AgentEvent {
     let field = |k: &str| payload.and_then(|p| p.get(k)).and_then(Value::as_str);
-    let name = field("name").unwrap_or_else(|| {
-        crate::source::drift::missing_field(SOURCE_NAME, "tool call", "name");
-        "tool"
-    });
-    let tool_use_id = payload
-        .and_then(|p| non_empty(p, CALL_ID))
-        .map(str::to_owned);
-    if tool_use_id.is_none() {
-        crate::source::drift::missing_field(SOURCE_NAME, inner, CALL_ID);
-    }
+    let name = required(SOURCE_NAME, "tool call", "name", field).unwrap_or("tool");
+    let tool_use_id = required(SOURCE_NAME, inner, CALL_ID, |k| {
+        payload.and_then(|p| non_empty(p, k))
+    })
+    .map(str::to_owned);
     AgentEvent::ToolUseStart {
         agent_id,
         tool_use_id,

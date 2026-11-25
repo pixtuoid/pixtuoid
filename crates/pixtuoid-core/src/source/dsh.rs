@@ -15,7 +15,7 @@
 //! only drives liveness.
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty};
+use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty, required};
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind,
@@ -126,16 +126,12 @@ const SUBAGENT_TOOLS: &[&str] = &["subagent", "subagent_fork"];
 pub fn decode_dsh_payload(
     obj: &HookObject,
 ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-    const TYPE: &str = "type";
-    const SESSION_ID: &str = "sessionId";
     const CALL_ID: &str = "callId";
     const TOOL_NAME: &str = "toolName";
-    let Some(ty) = obj.get(TYPE).and_then(|t| t.as_str()) else {
-        crate::source::drift::missing_field(SOURCE_NAME, "plugin", TYPE);
+    let Some(ty) = required(SOURCE_NAME, "plugin", "type", |k| obj.get(k)?.as_str()) else {
         return Ok(vec![]);
     };
-    let Some(session_id) = non_empty(obj, SESSION_ID) else {
-        crate::source::drift::missing_field(SOURCE_NAME, ty, SESSION_ID);
+    let Some(session_id) = required(SOURCE_NAME, ty, "sessionId", |k| non_empty(obj, k)) else {
         return Ok(vec![]);
     };
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
@@ -179,34 +175,27 @@ pub fn decode_dsh_payload(
         }]),
         TURN_END => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
         TOOL_CALL => {
-            if non_empty(obj, CALL_ID).is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, CALL_ID);
-            }
-            if non_empty(obj, TOOL_NAME).is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, TOOL_NAME);
-            }
+            let tool_use_id = required(SOURCE_NAME, TOOL_CALL, CALL_ID, |k| non_empty(obj, k))
+                .map(str::to_string);
+            required(SOURCE_NAME, TOOL_CALL, TOOL_NAME, |k| non_empty(obj, k));
             Ok(vec![
                 identity(),
                 AgentEvent::ToolUseStart {
                     agent_id,
-                    tool_use_id: call_id(),
+                    tool_use_id,
                     detail: Some(tool_detail()),
                     copy_id: None,
                 },
             ])
         }
-        TOOL_RESULT => {
-            if non_empty(obj, CALL_ID).is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, TOOL_RESULT, CALL_ID);
-            }
-            Ok(vec![
-                identity(),
-                AgentEvent::ToolUseEnd {
-                    agent_id,
-                    tool_use_id: call_id(),
-                },
-            ])
-        }
+        TOOL_RESULT => Ok(vec![
+            identity(),
+            AgentEvent::ToolUseEnd {
+                agent_id,
+                tool_use_id: required(SOURCE_NAME, TOOL_RESULT, CALL_ID, |k| non_empty(obj, k))
+                    .map(str::to_string),
+            },
+        ]),
         APPROVAL_ASKED => {
             let reason = match (non_empty(obj, TOOL_NAME), non_empty(obj, "reason")) {
                 (Some(t), Some(r)) => format!("{t}: {r}"),
@@ -230,11 +219,9 @@ pub fn decode_dsh_payload(
             // A renamed/dropped `outcome` would fail CLOSED (every grant
             // decodes as the deny arm's End) — breadcrumb it, because no
             // event-name drift row can see a field rename.
-            const OUTCOME: &str = "outcome";
-            let outcome = non_empty(obj, OUTCOME);
-            if outcome.is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, APPROVAL_DECIDED, OUTCOME);
-            }
+            let outcome = required(SOURCE_NAME, APPROVAL_DECIDED, "outcome", |k| {
+                non_empty(obj, k)
+            });
             let event = match (outcome == Some(OUTCOME_ALLOWED), call_id()) {
                 // The resume: the gated call now runs; its `tool_call` was
                 // already streamed before the gate, so only this lifts the

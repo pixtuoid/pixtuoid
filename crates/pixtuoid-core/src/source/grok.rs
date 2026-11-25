@@ -33,7 +33,9 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, non_empty};
+use crate::source::decoder::{
+    MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, non_empty, required, required_or_err,
+};
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
@@ -129,10 +131,7 @@ pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
 ///
 /// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
 pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get(HOOK_EVENT_NAME)
-        .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, HOOK_EVENT_NAME))?;
+    let event = required_or_err(SOURCE_NAME, None, HOOK_EVENT_NAME, |k| obj.get(k)?.as_str())?;
     let cwd = obj
         .get("cwd")
         .and_then(|s| s.as_str())
@@ -181,7 +180,6 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             Ok(evs)
         }
         "user_prompt_submit" => {
-            const PROMPT_ID: &str = "promptId";
             let mut evs = vec![AgentEvent::SessionStart {
                 agent_id,
                 source: SOURCE_NAME.to_string(),
@@ -193,24 +191,17 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             // transcript's `turn_completed` ends the turn by
             // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn.rs:909-917`
             // at `xai-org/grok-build` `2bdd1d6a63`).
-            match non_empty(obj, PROMPT_ID) {
-                Some(prompt) => evs.push(AgentEvent::TurnStart {
+            if let Some(prompt) = required(SOURCE_NAME, event, "promptId", |k| non_empty(obj, k)) {
+                evs.push(AgentEvent::TurnStart {
                     agent_id,
                     turn: TurnKey::Id(prompt.into()),
-                }),
-                None => crate::source::drift::missing_field(SOURCE_NAME, event, PROMPT_ID),
+                });
             }
             Ok(evs)
         }
         "pre_tool_use" => {
-            const TOOL_NAME: &str = "toolName";
-            let tool = obj
-                .get(TOOL_NAME)
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, event, TOOL_NAME);
-                    "?"
-                });
+            let tool =
+                required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str()).unwrap_or("?");
             Ok(vec![
                 identity(),
                 AgentEvent::ToolUseStart {
@@ -234,14 +225,10 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             },
         ]),
         "notification" => {
-            const NOTIFICATION_TYPE: &str = "notificationType";
-            let kind = obj
-                .get(NOTIFICATION_TYPE)
-                .and_then(|s| s.as_str())
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, event, NOTIFICATION_TYPE);
-                    "?"
-                });
+            let kind = required(SOURCE_NAME, event, "notificationType", |k| {
+                obj.get(k)?.as_str()
+            })
+            .unwrap_or("?");
             match kind {
                 // Fires BEFORE the prompt shows. Resolution: approval fires NO
                 // hook (the tool proceeds → its post_tool_use End clears the
@@ -326,15 +313,10 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
 /// so this key coalesces with the child's own tool hooks AND its flat
 /// transcript dir name.
 fn subagent_child_key(obj: &serde_json::Map<String, Value>, event: &str) -> Result<String> {
-    const SUBAGENT_ID: &str = "subagentId";
-    obj.get(SUBAGENT_ID)
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .ok_or_else(|| {
-            crate::source::drift::missing_field(SOURCE_NAME, event, SUBAGENT_ID);
-            DecodeError::missing_in(SOURCE_NAME, event, SUBAGENT_ID)
-        })
+    required_or_err(SOURCE_NAME, Some(event), "subagentId", |k| {
+        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
+    })
+    .map(String::from)
 }
 
 /// The TRANSCRIPT lane's twin of [`subagent_child_key`]: the same id under
@@ -345,15 +327,9 @@ fn transcript_child_key<'u>(
     update: &'u serde_json::Map<String, Value>,
     tag: &str,
 ) -> Option<&'u str> {
-    const CHILD_SESSION_ID: &str = "child_session_id";
-    let key = update
-        .get(CHILD_SESSION_ID)
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty());
-    if key.is_none() {
-        crate::source::drift::missing_field(SOURCE_NAME, tag, CHILD_SESSION_ID);
-    }
-    key
+    required(SOURCE_NAME, tag, "child_session_id", |k| {
+        non_empty(update, k)
+    })
 }
 
 /// Grok tool detail: `"name: target"` over grok's snake_case tool vocabulary.
@@ -456,19 +432,10 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
             // at `2bdd1d6a63`), under the prompt id its hook started it by: a
             // required pairing key, so a blank one is drift, breadcrumbed and
             // dropped.
-            XAI_TURN_COMPLETED => {
-                const PROMPT_ID: &str = "prompt_id";
-                match non_empty(update, PROMPT_ID) {
-                    Some(prompt) => vec![AgentEvent::keyed_turn_end(
-                        agent_id,
-                        TurnKey::Id(prompt.into()),
-                    )],
-                    None => {
-                        crate::source::drift::missing_field(SOURCE_NAME, tag, PROMPT_ID);
-                        vec![]
-                    }
-                }
-            }
+            XAI_TURN_COMPLETED => required(SOURCE_NAME, tag, "prompt_id", |k| non_empty(update, k))
+                .map(|prompt| AgentEvent::keyed_turn_end(agent_id, TurnKey::Id(prompt.into())))
+                .into_iter()
+                .collect(),
             XAI_HOOK_EXECUTION => {
                 if str_field("event_name") == Some(SESSION_END) {
                     vec![AgentEvent::SessionEnd {

@@ -5,6 +5,7 @@ use std::path::Path;
 use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, EVENT_STAMP, extract_top_level_cwd, first_non_blank_str, generic_tool_display,
+    required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -133,17 +134,10 @@ pub fn decode_ag_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                 let Some(tc_obj) = tc.as_object() else {
                     continue;
                 };
-                let name = tc_obj
-                    .get("name")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or_else(|| {
-                        crate::source::drift::missing_field(
-                            SOURCE_NAME,
-                            "PLANNER_RESPONSE",
-                            "name",
-                        );
-                        "?"
-                    });
+                let name = required(SOURCE_NAME, "PLANNER_RESPONSE", "name", |k| {
+                    tc_obj.get(k)?.as_str()
+                })
+                .unwrap_or("?");
                 let args = tc_obj.get("args");
                 out.push(decode_ag_tool_call(
                     agent_id,
@@ -209,10 +203,7 @@ fn decode_ag_tool_call(
 /// If the payload lacks the event stamp or `conversationId`,
 /// or fires an event the installer never registers.
 pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = obj
-        .get(EVENT_STAMP)
-        .and_then(Value::as_str)
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, EVENT_STAMP))?;
+    let event = required_or_err(SOURCE_NAME, None, EVENT_STAMP, |k| obj.get(k)?.as_str())?;
     // The App and IDE fire the same global hooks file under app data dirs of
     // their own (hooks.md, `transcriptPath`).
     if obj
@@ -228,24 +219,16 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         tracing::trace!(event, "dropping a hook another Antigravity app fired");
         return Ok(vec![]);
     }
-    let key = obj
-        .get("conversationId")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "conversationId");
-            DecodeError::missing_in(SOURCE_NAME, event, "conversationId")
-        })?;
+    let key = required_or_err(SOURCE_NAME, Some(event), "conversationId", |k| {
+        required(SOURCE_NAME, event, k, |k| {
+            obj.get(k)?.as_str().filter(|s| !s.is_empty())
+        })
+    })?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
-    let cwd = obj
-        .get("workspacePaths")
-        .and_then(Value::as_array)
-        .and_then(|a| a.first())
-        .and_then(Value::as_str)
-        .unwrap_or_else(|| {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "workspacePaths");
-            ""
-        });
+    let cwd = required(SOURCE_NAME, event, "workspacePaths", |k| {
+        obj.get(k)?.as_array()?.first()?.as_str()
+    })
+    .unwrap_or("");
     let identity = || {
         AgentEvent::identity(
             agent_id,
@@ -255,10 +238,7 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         )
     };
     let call = || {
-        let step = obj.get("stepIdx").and_then(Value::as_i64);
-        if step.is_none() {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "stepIdx");
-        }
+        let step = required(SOURCE_NAME, event, "stepIdx", |k| obj.get(k)?.as_i64());
         (step.map(step_tool_id), obj.get("toolCall"))
     };
     match event {

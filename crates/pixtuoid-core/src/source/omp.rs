@@ -24,7 +24,7 @@ use serde_json::Value;
 use crate::AgentId;
 use crate::source::decoder::{
     HeadVerdict, MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
-    generic_tool_display, non_empty,
+    generic_tool_display, non_empty, required,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -828,11 +828,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
 
     match kind {
         SESSION => {
-            const CWD: &str = "cwd";
-            let cwd = obj.get(CWD).and_then(|c| c.as_str()).unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, SESSION, CWD);
-                ""
-            });
+            let cwd = required(source, SESSION, "cwd", |k| obj.get(k)?.as_str()).unwrap_or("");
             let parent_id = omp_parent_key_from_path(path).map(|k| AgentId::from_parts(source, &k));
             vec![AgentEvent::SessionStart {
                 agent_id: acting,
@@ -862,16 +858,14 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                     for (index, b) in blocks.iter().enumerate().filter(|(_, b)| {
                         b.get("type").and_then(|t| t.as_str()) == Some(BLOCK_TOOL_CALL)
                     }) {
-                        const ID: &str = "id";
-                        const NAME: &str = "name";
-                        let Some(id) = b.get(ID).and_then(|i| i.as_str()) else {
-                            crate::source::drift::missing_field(source, BLOCK_TOOL_CALL, ID);
+                        let Some(id) =
+                            required(source, BLOCK_TOOL_CALL, "id", |k| b.get(k)?.as_str())
+                        else {
                             continue;
                         };
-                        let name = b.get(NAME).and_then(|n| n.as_str()).unwrap_or_else(|| {
-                            crate::source::drift::missing_field(source, BLOCK_TOOL_CALL, NAME);
-                            ""
-                        });
+                        let name =
+                            required(source, BLOCK_TOOL_CALL, "name", |k| b.get(k)?.as_str())
+                                .unwrap_or("");
                         out.push(AgentEvent::ToolUseStart {
                             agent_id: acting,
                             tool_use_id: Some(id.to_string()),
@@ -894,9 +888,11 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                     out
                 }
                 Some(ROLE_TOOL_RESULT) => {
-                    const TOOL_CALL_ID: &str = "toolCallId";
-                    let Some(tool_call_id) = msg.get(TOOL_CALL_ID).and_then(|i| i.as_str()) else {
-                        crate::source::drift::missing_field(source, ROLE_TOOL_RESULT, TOOL_CALL_ID);
+                    let Some(tool_call_id) =
+                        required(source, ROLE_TOOL_RESULT, "toolCallId", |k| {
+                            msg.get(k)?.as_str()
+                        })
+                    else {
                         return vec![];
                     };
                     vec![AgentEvent::ToolUseEnd {
@@ -982,22 +978,11 @@ fn omp_approval(
     record: &str,
     entry: &serde_json::Map<String, Value>,
 ) -> Option<AgentEvent> {
-    let Some((data, call)) = entry
-        .get("data")
-        .and_then(Value::as_object)
-        .and_then(|d| Some((d, d.get("toolCallId")?.as_str()?)))
-    else {
-        crate::source::drift::missing_field(source, record, "toolCallId");
-        return None;
-    };
-    let tool = || {
-        data.get("toolName")
-            .and_then(|t| t.as_str())
-            .unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, record, "toolName");
-                ""
-            })
-    };
+    let (data, call) = required(source, record, "toolCallId", |k| {
+        let data = entry.get("data")?.as_object()?;
+        Some((data, data.get(k)?.as_str()?))
+    })?;
+    let tool = || required(source, record, "toolName", |k| data.get(k)?.as_str()).unwrap_or("");
     if record == TOOL_APPROVAL_REQUESTED {
         return Some(AgentEvent::user_action_request(
             acting,
@@ -1015,30 +1000,29 @@ fn omp_approval(
         agent_id: acting,
         tool_use_id: Some(call.to_owned()),
     };
-    Some(match data.get("approved").and_then(Value::as_bool) {
-        // The resume. copilot's approve-emits-nothing shape doesn't fit omp:
-        // the call's block precedes the request, so only this can lift the
-        // wait.
-        Some(true) => {
-            // An ask's form opens only once approved, so the wait its block
-            // raised lasts until its toolResult; this resume would lift it.
-            if tool() == TOOL_ASK {
-                return None;
+    Some(
+        match required(source, record, "approved", |k| data.get(k)?.as_bool()) {
+            // The resume. copilot's approve-emits-nothing shape doesn't fit omp:
+            // the call's block precedes the request, so only this can lift the
+            // wait.
+            Some(true) => {
+                // An ask's form opens only once approved, so the wait its block
+                // raised lasts until its toolResult; this resume would lift it.
+                if tool() == TOOL_ASK {
+                    return None;
+                }
+                AgentEvent::UserActionResolved {
+                    agent_id: acting,
+                    by: Resolution::Approved(call.to_owned()),
+                }
             }
-            AgentEvent::UserActionResolved {
-                agent_id: acting,
-                by: Resolution::Approved(call.to_owned()),
-            }
-        }
-        // A denial lifts the wait now; the isError toolResult that follows
-        // ends nothing more.
-        Some(false) => end(),
-        // Still an outcome, so the wait lifts.
-        None => {
-            crate::source::drift::missing_field(source, record, "approved");
-            end()
-        }
-    })
+            // A denial lifts the wait now; the isError toolResult that follows
+            // ends nothing more.
+            Some(false) => end(),
+            // Still an outcome, so the wait lifts.
+            None => end(),
+        },
+    )
 }
 
 /// The [`AgentEvent::UserActionRequest`] reason for an approval request: its
@@ -1104,16 +1088,13 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
 ///
 /// Never: a malformed or unknown payload decodes to `vec![]`; the `Result` is the hook-decoder signature.
 pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let Some(ty) = obj.get("type").and_then(|t| t.as_str()) else {
-        crate::source::drift::missing_field(SOURCE_NAME, "hook", "type");
+    let Some(ty) = required(SOURCE_NAME, "hook", "type", |k| obj.get(k)?.as_str()) else {
         return Ok(vec![]);
     };
-    let (key, parent_key) = match omp_hook_session_key(obj) {
-        Some(k) => k,
-        None => {
-            crate::source::drift::missing_field(SOURCE_NAME, ty, "sessionFile");
-            return Ok(vec![]);
-        }
+    let Some((key, parent_key)) = required(SOURCE_NAME, ty, "sessionFile", |k| {
+        omp_hook_session_key(obj, k)
+    }) else {
+        return Ok(vec![]);
     };
     let agent_id = AgentId::from_parts(SOURCE_NAME, &key);
     let cwd = || {
@@ -1173,12 +1154,11 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
 
 /// The session key (and parent key) for one hook payload: the folded
 /// `sessionFile` stem chain, else the bare `sessionId` UUID.
-fn omp_hook_session_key(obj: &serde_json::Map<String, Value>) -> Option<(String, Option<String>)> {
-    if let Some(file) = obj
-        .get("sessionFile")
-        .and_then(|f| f.as_str())
-        .filter(|f| !f.is_empty())
-    {
+fn omp_hook_session_key(
+    obj: &serde_json::Map<String, Value>,
+    session_file: &str,
+) -> Option<(String, Option<String>)> {
+    if let Some(file) = non_empty(obj, session_file) {
         let folded = crate::id::normalize_path_key(file);
         return Some((
             omp_id_from_path(Path::new(&folded)),
