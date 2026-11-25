@@ -19,11 +19,9 @@ pub(crate) const PROFILE: Profile = Profile {
             ("windows", "x86_64", "jcode-windows-x86_64.exe"),
         ],
         sums: "SHA256SUMS",
-        // As each platform's installer takes it at v1.1.2.
+        // As each platform's installer takes it.
         latest: Latest::Carrying(PerOs {
-            // `scripts/install.sh:377-421`.
             unix: Fallback::Newest,
-            // `scripts/install.ps1:162-201`.
             windows: Fallback::Listed,
         }),
     },

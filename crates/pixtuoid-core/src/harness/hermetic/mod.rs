@@ -141,16 +141,18 @@ pub enum Latest {
     Carrying(PerOs<Fallback>),
 }
 
-/// The release an installer falls back to when GitHub's marked latest lacks
-/// its platform's asset: the first other stable `v<semver>` release that
-/// carries it, a page of the listing at a time.
+/// The release jcode's installers fall back to when GitHub's marked latest
+/// lacks their platform's asset: the first other stable `v<semver>` release
+/// that carries it, within five pages of the listing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fallback {
-    /// Each page newest first, a release carrying the asset and its line in
-    /// the sums file, until a page holds no stable release.
+    /// `scripts/install.sh:377-421` at v1.1.2: each page newest first, a
+    /// release carrying the asset and its line in the sums file, until a page
+    /// holds no stable release.
     Newest,
-    /// Each page in listing order, a release whose sums file names the
-    /// asset's artifact, while a page is full.
+    /// `scripts/install.ps1:162-201` at v1.1.2: each page in listing order, a
+    /// release whose sums file names the asset's artifact, while a page is
+    /// full.
     Listed,
 }
 
@@ -204,7 +206,7 @@ pub enum Feed {
         assets: &'static [(&'static str, &'static str, &'static str)],
         /// Its `sums`.
         sums: &'static str,
-        /// Each platform's [`Fallback`].
+        /// Its `latest`'s, [`Latest::Carrying`]'s.
         fallback: PerOs<Fallback>,
     },
     /// The build an updater's manifest names now, as [`Package::UpdaterManifest`]

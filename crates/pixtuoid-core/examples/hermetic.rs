@@ -3711,7 +3711,6 @@ mod run {
             assert!(!parse(&args(&["dsh"])).expect("parse").record);
         }
 
-        /// A process's exit 0, and its exit 1.
         fn ok_and_failed() -> (ExitStatus, ExitStatus) {
             #[cfg(unix)]
             use std::os::unix::process::ExitStatusExt;
@@ -3897,8 +3896,9 @@ mod run {
         /// A listed release: its tag, whether a draft, whether a prerelease,
         /// and its assets.
         type Row = (&'static str, bool, bool, &'static [&'static str]);
-        /// jcode's listing around v1.1.2, which GitHub marks latest and which
-        /// carries a Linux asset alone, in the listing's order.
+        /// Shaped like jcode's listing around v1.1.2, whose marked v1.1.2
+        /// carries a Linux asset alone: one row per filter, and v1.0.1 listed
+        /// above v1.0.3 so the two fallbacks part.
         const ROWS: &[Row] = &[
             ("v1.2.0", true, false, &[MACOS, LINUX]),
             ("v1.1.4-rc.1", false, false, &[MACOS, LINUX]),
@@ -3928,12 +3928,10 @@ mod run {
                 .collect())
         }
 
-        /// A page of `row` as many times as a page holds.
         fn full(row: Row) -> Result<Vec<ListedRelease>, String> {
             page(&vec![row; RELEASES_PER_PAGE])
         }
 
-        /// `pages` of `filler`, then [`ROWS`].
         fn after(
             pages: usize,
             filler: impl Fn() -> Result<Vec<ListedRelease>, String>,
@@ -3944,7 +3942,6 @@ mod run {
                 .collect()
         }
 
-        /// Whether [`ROWS`] lists `v` with [`MACOS`].
         fn carries_macos(v: &Version) -> bool {
             ROWS.iter().any(|(tag, _, _, assets)| {
                 tag.strip_prefix('v') == Some(v.to_string().as_str()) && assets.contains(&MACOS)
@@ -4076,7 +4073,6 @@ mod run {
             }
         }
 
-        /// `name`'s line in a sums file.
         fn sums_line(name: &str) -> String {
             format!("{}  {name}\n", "0".repeat(64))
         }
