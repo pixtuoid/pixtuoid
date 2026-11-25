@@ -829,7 +829,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
     match kind {
         SESSION => {
             let cwd = obj.get("cwd").and_then(|c| c.as_str()).unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, "session", "cwd");
+                crate::source::drift::missing_field(source, SESSION, "cwd");
                 ""
             });
             let parent_id = omp_parent_key_from_path(path).map(|k| AgentId::from_parts(source, &k));
@@ -892,7 +892,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                 }
                 Some(ROLE_TOOL_RESULT) => {
                     let Some(tool_call_id) = msg.get("toolCallId").and_then(|i| i.as_str()) else {
-                        crate::source::drift::missing_field(source, "toolResult", "toolCallId");
+                        crate::source::drift::missing_field(source, ROLE_TOOL_RESULT, "toolCallId");
                         return vec![];
                     };
                     vec![AgentEvent::ToolUseEnd {

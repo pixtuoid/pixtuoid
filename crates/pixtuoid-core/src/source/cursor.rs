@@ -143,7 +143,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 .get("tool_name")
                 .and_then(|s| s.as_str())
                 .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, "preToolUse", "tool_name");
+                    crate::source::drift::missing_field(SOURCE_NAME, event, "tool_name");
                     "?"
                 });
             Ok(vec![

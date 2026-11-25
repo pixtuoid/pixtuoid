@@ -203,7 +203,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 .get("toolName")
                 .and_then(|s| s.as_str())
                 .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, "pre_tool_use", "toolName");
+                    crate::source::drift::missing_field(SOURCE_NAME, event, "toolName");
                     "?"
                 });
             Ok(vec![
@@ -233,11 +233,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 .get("notificationType")
                 .and_then(|s| s.as_str())
                 .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(
-                        SOURCE_NAME,
-                        "notification",
-                        "notificationType",
-                    );
+                    crate::source::drift::missing_field(SOURCE_NAME, event, "notificationType");
                     "?"
                 });
             match kind {

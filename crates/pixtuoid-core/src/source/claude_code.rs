@@ -347,7 +347,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                     .get("name")
                     .and_then(|s| s.as_str())
                     .unwrap_or_else(|| {
-                        crate::source::drift::missing_field(SOURCE_NAME, "tool_use", "name");
+                        crate::source::drift::missing_field(SOURCE_NAME, btype, "name");
                         "?"
                     });
                 out.push(AgentEvent::ToolUseStart {
