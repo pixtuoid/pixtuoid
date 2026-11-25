@@ -3699,6 +3699,20 @@ mod run {
             let why = answer(ok, b"\n404").expect_err("an HTTP error");
             assert!(why.to_string().contains("404"), "{why}");
             assert!(answer(failed, b"\n404").is_err(), "curl's own failure");
+            assert!(
+                answer(failed, b"body\n200").is_err(),
+                "curl's own failure, a success written out"
+            );
+            let last_success = format!("\n{}", HTTP_ERROR - 1);
+            assert!(
+                answer(ok, last_success.as_bytes()).is_ok(),
+                "{last_success:?}"
+            );
+            let first_error = format!("\n{HTTP_ERROR}");
+            assert!(
+                answer(ok, first_error.as_bytes()).is_err(),
+                "{first_error:?}"
+            );
             assert!(answer(ok, b"no status").is_err(), "nothing written out");
             let why = answer(ok, b"\n000").expect_err("no response");
             assert!(why.to_string().contains("no status"), "{why}");
@@ -3895,11 +3909,18 @@ mod run {
                 Ok(None),
                 "a page with no stable release ends the listing"
             );
-            let past_the_last = std::iter::repeat_with(|| page(&ROWS[..NONE_CARRYING]))
-                .take(RELEASE_PAGES)
-                .chain([page(ROWS)]);
+            let after = |pages: usize| {
+                std::iter::repeat_with(|| page(&ROWS[..NONE_CARRYING]))
+                    .take(pages)
+                    .chain([page(ROWS)])
+            };
             assert_eq!(
-                newest_carrying(&marked, past_the_last, carries),
+                newest_carrying(&marked, after(RELEASE_PAGES - 1), carries),
+                newest,
+                "the last page read"
+            );
+            assert_eq!(
+                newest_carrying(&marked, after(RELEASE_PAGES), carries),
                 Ok(None),
                 "a page past the last one read"
             );
