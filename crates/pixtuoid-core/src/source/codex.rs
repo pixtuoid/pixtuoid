@@ -630,10 +630,24 @@ mod tests {
     fn subagent_hooks_with_empty_ids_are_err_not_fallthrough() {
         for event in ["SubagentStart", "SubagentStop"] {
             let no_session = json!({"hook_event_name": event, "agent_id": "child"});
+            let mut err = None;
+            let logs = crate::test_capture::capture_logs(|| {
+                err = decode_codex_hook_custom(test_obj(&no_session)).err();
+            });
             assert!(
-                decode_codex_hook_custom(test_obj(&no_session)).is_err(),
-                "{event} without session_id must Err (claim-fully), not fall through"
+                matches!(
+                    &err,
+                    Some(crate::source::decoder::DecodeError::Missing {
+                        context: Some(context),
+                        field: "session_id",
+                        ..
+                    }) if context == event
+                ),
+                "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
             );
+            for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
+                assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
+            }
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             assert!(
                 decode_codex_hook_custom(test_obj(&empty_child)).is_err(),
