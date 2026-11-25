@@ -399,7 +399,7 @@ fn codex_tool_start(
     payload: Option<&Map<String, Value>>,
 ) -> AgentEvent {
     let field = |k: &str| payload.and_then(|p| p.get(k)).and_then(Value::as_str);
-    let name = required(SOURCE_NAME, "tool call", "name", field).unwrap_or("tool");
+    let name = required(SOURCE_NAME, inner, "name", field).unwrap_or("tool");
     let tool_use_id = required(SOURCE_NAME, inner, CALL_ID, |k| {
         payload.and_then(|p| non_empty(p, k))
     })

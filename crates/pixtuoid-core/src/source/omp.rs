@@ -1156,9 +1156,9 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
 /// `sessionFile` stem chain, else the bare `sessionId` UUID.
 fn omp_hook_session_key(
     obj: &serde_json::Map<String, Value>,
-    session_file: &str,
+    file_key: &str,
 ) -> Option<(String, Option<String>)> {
-    if let Some(file) = non_empty(obj, session_file) {
+    if let Some(file) = non_empty(obj, file_key) {
         let folded = crate::id::normalize_path_key(file);
         return Some((
             omp_id_from_path(Path::new(&folded)),

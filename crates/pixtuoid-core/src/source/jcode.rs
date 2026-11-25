@@ -47,13 +47,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 };
 
 pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<AgentEvent>> {
-    let field = |key| {
+    let required_field = |key| {
         required_or_err(SOURCE_NAME, None, key, |k| {
             required(SOURCE_NAME, "hook", k, |k| non_empty(obj, k))
         })
     };
-    let event = field("event")?;
-    let key = field("session_id")?;
+    let event = required_field("event")?;
+    let key = required_field("session_id")?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = non_empty(obj, "cwd").map(PathBuf::from);
     // The Identity is the one claim that registers a session the office joined
@@ -78,7 +78,7 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
                 // pre_tool has no call ID; post_tool's ID cannot pair with it.
                 tool_use_id: None,
                 detail: Some(ToolDetail::Generic {
-                    display: display_safe(field("tool_name")?),
+                    display: display_safe(required_field("tool_name")?),
                 }),
                 copy_id: None,
             }),
