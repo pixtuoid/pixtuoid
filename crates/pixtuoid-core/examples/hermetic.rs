@@ -371,6 +371,16 @@ mod run {
             ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
             _ => None,
         };
+        if let (
+            Some(_),
+            Ok(v),
+            Package::GithubRelease {
+                repo, assets, sums, ..
+            },
+        ) = (&repinned, &installed, p.package)
+        {
+            installs_everywhere(repo, v, assets, sums)?;
+        }
         let (mut judged, mut banners) = (Vec::new(), Vec::new());
         let mut scenarios = selected;
         if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.name == s.name)) {
@@ -1175,6 +1185,35 @@ mod run {
             lock.platforms.insert((*platform).to_string(), build);
         }
         Ok(lock)
+    }
+
+    /// Refuses a pin at `repo`'s `v<version>` unless its `sums` file lists
+    /// every platform's asset, so the pin installs on every leg: a
+    /// [`hermetic::Latest::Carrying`] release need carry only the recording
+    /// host's.
+    fn installs_everywhere(
+        repo: &str,
+        version: &Version,
+        assets: &[(&str, &str, &'static str)],
+        sums: &str,
+    ) -> std::io::Result<()> {
+        let listed = curl_get(&release_file(repo, version, sums), Curl::Body)?;
+        match unlisted(&String::from_utf8_lossy(&listed), assets)[..] {
+            [] => Ok(()),
+            ref missing => Err(std::io::Error::other(format!(
+                "v{version}'s {sums} lists no {}, so a pin there installs on no such platform",
+                missing.join(", ")
+            ))),
+        }
+    }
+
+    /// Each of `assets` that `sums` doesn't list.
+    fn unlisted(sums: &str, assets: &[(&str, &str, &'static str)]) -> Vec<&'static str> {
+        assets
+            .iter()
+            .map(|(_, _, asset)| *asset)
+            .filter(|asset| !digest::lists(sums, asset))
+            .collect()
     }
 
     /// `platform`'s build of `version`: the lock's when it pins that version,
@@ -3743,6 +3782,32 @@ mod run {
             assert!(answer(ok, "").is_err(), "nothing written out");
             let why = answer(ok, "000").expect_err("no response");
             assert!(why.to_string().contains("no response code"), "{why}");
+        }
+
+        #[test]
+        fn a_pin_installs_only_where_its_sums_file_lists_the_platforms_asset() {
+            let Some(Profile {
+                package: Package::GithubRelease { assets, .. },
+                ..
+            }) = hermetic::profile("jcode")
+            else {
+                panic!("jcode installs a GitHub release's asset");
+            };
+            let line = |name: &str| format!("{}  {name}\n", "0".repeat(64));
+            let linux_alone = line("jcode-linux-x86_64.tar.gz");
+            assert_eq!(
+                unlisted(&linux_alone, assets),
+                [
+                    "jcode-macos-aarch64.tar.gz",
+                    "jcode-macos-x86_64.tar.gz",
+                    "jcode-linux-aarch64.tar.gz",
+                    "jcode-windows-aarch64.exe",
+                    "jcode-windows-x86_64.exe",
+                ],
+                "v1.1.2's"
+            );
+            let every: String = assets.iter().map(|(_, _, asset)| line(asset)).collect();
+            assert_eq!(unlisted(&every, assets), Vec::<&str>::new(), "v1.0.3's");
         }
 
         #[test]
