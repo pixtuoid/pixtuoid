@@ -19,7 +19,8 @@ const TUI: tui::Tui = tui::Tui {
     gates: &[tui::Gate {
         // The approval band's deny pill (`crates/tui/src/tui/widgets/mod.rs:2068-2074`).
         shows: "✕ Deny",
-        // Deny (`crates/tui/src/tui/approval/view.rs:544-550`).
+        // `n` denies (`crates/tui/src/tui/approval/view.rs:544-550`); the band's `[d]`
+        // beside it toggles details (`:491-494`).
         keys: &[tui::Key::Text("n")],
         dwell: std::time::Duration::ZERO,
     }],
