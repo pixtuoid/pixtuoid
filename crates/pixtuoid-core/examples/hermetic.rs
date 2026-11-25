@@ -1208,7 +1208,6 @@ mod run {
         }
     }
 
-    /// Each of `assets` that `sums` doesn't list.
     fn unlisted(sums: &str, assets: &[(&str, &str, &'static str)]) -> Vec<&'static str> {
         assets
             .iter()
@@ -3793,8 +3792,7 @@ mod run {
             else {
                 panic!("jcode installs a GitHub release's asset");
             };
-            let line = |name: &str| format!("{}  {name}\n", "0".repeat(64));
-            let linux_alone = line("jcode-linux-x86_64.tar.gz");
+            let linux_alone = sums_line("jcode-linux-x86_64.tar.gz");
             assert_eq!(
                 unlisted(&linux_alone, assets),
                 [
@@ -3806,7 +3804,10 @@ mod run {
                 ],
                 "v1.1.2's"
             );
-            let every: String = assets.iter().map(|(_, _, asset)| line(asset)).collect();
+            let every: String = assets
+                .iter()
+                .map(|(_, _, asset)| sums_line(asset))
+                .collect();
             assert_eq!(unlisted(&every, assets), Vec::<&str>::new(), "v1.0.3's");
         }
 

@@ -14,7 +14,6 @@ pub fn digest_hex<D: sha2::Digest>(bytes: &[u8]) -> String {
     })
 }
 
-/// The digests a release's `sums` file lists for `name`.
 fn digests<'a>(sums: &'a str, name: &'a str) -> impl Iterator<Item = &'a str> {
     sums.lines().filter_map(move |l| {
         let mut cols = l.split_whitespace();
