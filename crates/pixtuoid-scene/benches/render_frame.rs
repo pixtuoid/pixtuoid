@@ -130,6 +130,7 @@ fn office_scene(n: usize, max_desks: usize, base: SystemTime, busy: bool) -> Sce
                 pid: None,
                 model: None,
                 effort: None,
+                ultracode_since: None,
                 tokens_used: 0,
                 last_usage: None,
             },

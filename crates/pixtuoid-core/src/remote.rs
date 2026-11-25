@@ -24,7 +24,7 @@ use crate::source::decoder::{cwd_basename_label, display_safe, label_prefix_for}
 use crate::state::{
     ActivityState, AgentSlot, DaemonInstanceId, DaemonLiveness, DaemonPresence, DaemonRoster,
     DaemonState, EffortObservation, FloorDesk, MAX_FLOORS, SceneState, SlotLabel, Today, ToolKind,
-    ToolUse, TurnKey, UsageObservation,
+    ToolUse, TurnKey, ULTRACODE_LABEL, UsageObservation,
 };
 
 mod change;
@@ -324,6 +324,7 @@ fn project_agent(slot: &AgentSlot) -> Agent {
         pid: _,
         model,
         effort,
+        ultracode_since,
         tokens_used,
         last_usage,
     } = slot;
@@ -350,10 +351,16 @@ fn project_agent(slot: &AgentSlot) -> Agent {
             at_ms: epoch_ms(u.seen_at),
         }),
         model: model.as_deref().map(model_name).map(str::to_owned),
-        effort: effort.as_ref().map(|e| Effort {
-            value: e.value.to_string(),
-            at_ms: epoch_ms(e.seen_at),
-        }),
+        effort: match ultracode_since {
+            Some(since) => Some(Effort {
+                value: ULTRACODE_LABEL.to_owned(),
+                at_ms: epoch_ms(*since),
+            }),
+            None => effort.as_ref().map(|e| Effort {
+                value: e.value.to_string(),
+                at_ms: epoch_ms(e.seen_at),
+            }),
+        },
     }
 }
 
@@ -1010,6 +1017,11 @@ fn inflate_agent(
         SlotLabel::cwd_derived,
     );
     let state_started_at = local(agent.state_since_ms);
+    // `project_agent` sends ultracode's label in the level's place.
+    let (effort, ultracode_since) = match agent.effort {
+        Some(e) if e.value == ULTRACODE_LABEL => (None, Some(local(e.at_ms))),
+        effort => (effort, None),
+    };
     AgentSlot {
         agent_id: agent.id,
         source: Arc::from(source.as_str()),
@@ -1040,9 +1052,9 @@ fn inflate_agent(
         parent_id: agent.parent,
         pid: None,
         model: agent.model.as_deref().map(display_safe).map(Arc::from),
-        effort: agent
-            .effort
+        effort: effort
             .map(|e| EffortObservation::new(Arc::from(display_safe(&e.value)), local(e.at_ms))),
+        ultracode_since,
         tokens_used: agent.tokens,
         last_usage: agent
             .last_usage
@@ -1130,6 +1142,7 @@ mod tests {
             pid: None,
             model: None,
             effort: None,
+            ultracode_since: None,
             tokens_used: 0,
             last_usage: None,
         }
@@ -1345,6 +1358,33 @@ mod tests {
             clean(source);
             clean(instance.as_str());
         }
+    }
+
+    /// The wire's one effort word, as agreed with the App: ultracode's label
+    /// while it is on, else the level; a receiver reads the label back as
+    /// ultracode on.
+    #[test]
+    fn ultracode_crosses_the_wire_as_its_label_in_the_levels_place() {
+        let id = AgentId::from_parts("claude-code", "a");
+        let mut scene = crowd(&["a"]);
+        let slot = scene.agents.get_mut(&id).expect("a");
+        slot.effort = Some(EffortObservation::new(Arc::from("xhigh"), at(AT - 500)));
+        let effort = |scene: &SceneState| {
+            let line: Value = serde_json::from_str(&sent(scene)).expect("a line");
+            line["agents"][0]["effort"].clone()
+        };
+        let wire = |value: &str, at_ms: u64| serde_json::json!({"value": value, "at_ms": at_ms});
+        assert_eq!(effort(&scene), wire("xhigh", AT - 500));
+        scene.agents.get_mut(&id).expect("a").ultracode_since = Some(at(AT - 900));
+        assert_eq!(effort(&scene), wire("ultra", AT - 900));
+
+        let mut office = RemoteOffice::new(caps(4));
+        received(&mut office, &scene, AT);
+        let got = &office.scene().agents[&id];
+        assert_eq!(
+            (&got.effort, got.ultracode_since),
+            (&None, Some(at(AT - 900)))
+        );
     }
 
     #[test]

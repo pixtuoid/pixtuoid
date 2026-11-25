@@ -43,6 +43,7 @@ fn mk_slot(id: AgentId, source: &str, last_event_at: SystemTime) -> AgentSlot {
         pid: None,
         model: None,
         effort: None,
+        ultracode_since: None,
         tokens_used: 0,
         last_usage: None,
     }

@@ -95,6 +95,7 @@ impl<'a> Fact<'a> {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
+            | AgentEvent::Ultracode { .. }
             | AgentEvent::Usage { .. }
             | AgentEvent::Backlog { .. } => return None,
         };

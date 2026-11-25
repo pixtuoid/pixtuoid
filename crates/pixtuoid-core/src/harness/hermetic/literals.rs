@@ -870,11 +870,6 @@ mod tests {
             "<synthetic>",
             "CC's placeholder model: a rename shows a cosmetic label until a real model arrives",
         ),
-        item(
-            "claude_code.rs",
-            "ULTRA_EXIT_LABEL",
-            "a label we write, not one CC sends",
-        ),
         item("codewhale.rs", "KEYS", LABEL_DETAIL),
         item(
             "codewhale.rs",

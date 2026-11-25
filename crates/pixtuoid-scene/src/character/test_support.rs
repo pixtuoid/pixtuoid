@@ -32,6 +32,7 @@ pub(crate) fn make_slot(
         pid: None,
         model: None,
         effort: None,
+        ultracode_since: None,
         tokens_used: 0,
         last_usage: None,
     }

@@ -1083,9 +1083,10 @@ fn a_top_model_at_max_effort_draws_as_any_other_agent() {
         let slot = scene.agents.values_mut().next().expect("one agent");
         slot.model = Some(model.into());
         slot.effort = Some(pixtuoid_core::state::EffortObservation::new(
-            "ultra".into(),
+            "max".into(),
             now,
         ));
+        slot.ultracode_since = Some(now);
         scene
     };
     let (top, other) = (as_model("claude-fable-5"), as_model("claude-opus-4-8"));

@@ -36,8 +36,8 @@ pub(crate) async fn capture_live_scene(
     }
     let watcher_handle = tokio::spawn(async move { watcher.run(tx).await });
     // ALSO listen on the real hook socket: a live CC session's hooks carry
-    // activity + the effort level the transcript alone can't provide in
-    // real time. A running pixtuoid that owns it relays them, like the app.
+    // activity the transcript alone can't provide in real time. A running
+    // pixtuoid that owns it relays them, like the app.
     let hook_handle = {
         use pixtuoid_core::source::DynSource;
         use pixtuoid_core::source::hook::HookRouter;
@@ -74,13 +74,14 @@ pub(crate) async fn capture_live_scene(
     );
     for (id, slot) in &snapshot.agents {
         println!(
-            "  {} ({}) at desk {:?}: {:?} model={:?} effort={:?}",
+            "  {} ({}) at desk {:?}: {:?} model={:?} effort={:?} ultracode={}",
             slot.label,
             id,
             slot.desk,
             slot.state,
             slot.model,
-            slot.effort.as_ref().map(|e| e.value.clone())
+            slot.effort.as_ref().map(|e| e.value.clone()),
+            slot.ultracode_since.is_some()
         );
     }
     watcher_handle.abort();
@@ -353,6 +354,7 @@ fn fill_sample_agents(s: &mut SceneState, now: SystemTime, desks: std::ops::Rang
                 pid: None,
                 model: None,
                 effort: None,
+                ultracode_since: None,
                 tokens_used: TIER_EXEMPLARS[i % 4],
                 last_usage: None,
             },
@@ -555,6 +557,7 @@ pub(crate) fn meeting_scene(
                 pid: None,
                 model: None,
                 effort: None,
+                ultracode_since: None,
                 tokens_used: 0,
                 last_usage: None,
             },
@@ -676,6 +679,7 @@ pub(crate) fn dashboard_scene(now: SystemTime) -> SceneState {
                 pid: None,
                 model: None,
                 effort: None,
+                ultracode_since: None,
                 tokens_used: 0,
                 last_usage: None,
             },
@@ -855,6 +859,7 @@ pub(crate) fn anim_scene(
             pid: None,
             model: None,
             effort: None,
+            ultracode_since: None,
             tokens_used: 0,
             last_usage: None,
         },

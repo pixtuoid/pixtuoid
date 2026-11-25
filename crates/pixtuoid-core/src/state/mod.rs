@@ -364,10 +364,16 @@ pub struct AgentSlot {
         default
     )]
     pub model: Option<Arc<str>>,
-    /// The RAW effort observation last seen. The scene layer shows the value
-    /// only within its TTL — no sighting means it drops off.
+    /// The RAW effort level last seen. The scene layer shows the value only
+    /// within its TTL — no sighting means it drops off.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub effort: Option<EffortObservation>,
+    /// Since when ultracode has been on ([`AgentEvent::Ultracode`]), `None`
+    /// while it is off: a setting held until it turns off, so no TTL ends it.
+    ///
+    /// [`AgentEvent::Ultracode`]: crate::source::AgentEvent::Ultracode
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub ultracode_since: Option<SystemTime>,
     /// Session-cumulative FRESH tokens (new input + cache writes + output —
     /// cache READS excluded), accumulated from `AgentEvent::Usage` deltas. Flat
     /// (not inside `last_usage`) on purpose: a monotone accumulator like
@@ -397,6 +403,10 @@ impl AgentSlot {
 fn u64_is_zero(v: &u64) -> bool {
     *v == 0
 }
+
+/// The one word a slot's effort shows as while its ultracode is on
+/// ([`AgentSlot::ultracode_since`]), in the dossier and on the remote wire.
+pub const ULTRACODE_LABEL: &str = "ultra";
 
 /// A RAW effort string + WHEN it was last observed — the freshness the scene
 /// layer's effort TTL reads (see `AgentSlot::effort`).
@@ -884,6 +894,7 @@ mod tests {
             pid: None,
             model: None,
             effort: None,
+            ultracode_since: None,
             tokens_used: 0,
             last_usage: None,
         }
