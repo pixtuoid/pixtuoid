@@ -248,14 +248,11 @@ pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
 /// argument that key is. Naming each function here breaks this build when one
 /// is renamed, so the census can't silently stop crediting its keys.
 const KEY_READERS: [(&str, usize); 2] = {
-    let _: fn(&str, &str, &'static str, fn(&'static str) -> Option<()>) -> Option<()> =
-        crate::source::decoder::required;
-    let _: fn(
-        &str,
-        Option<&str>,
-        &'static str,
-        fn(&'static str) -> Option<()>,
-    ) -> crate::source::decoder::DecodeResult<()> = crate::source::decoder::required_or_err;
+    type Read = fn(&'static str) -> Option<()>;
+    type Found = crate::source::decoder::DecodeResult<()>;
+    let _: fn(&str, &str, &'static str, Read) -> Option<()> = crate::source::decoder::required;
+    let _: fn(&str, Option<&str>, &'static str, Read) -> Found =
+        crate::source::decoder::required_or_err;
     [("required", 2), ("required_or_err", 2)]
 };
 
