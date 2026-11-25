@@ -1022,9 +1022,9 @@ impl Reducer {
 
     /// Updates an EXISTING slot only; a model line must never register a
     /// session. Legitimate on BOTH transports: model/effort are wire data, not
-    /// liveness. Known cosmetic residual: a first-sight replay stamps a
-    /// HISTORICAL effort marker with apply-time `now`, so a session that used
-    /// max effort earlier shows it until the scene's effort TTL expires.
+    /// liveness. Known cosmetic residual: a first-sight replay stamps the last
+    /// level it reads with apply-time `now`, so a session idle past the TTL
+    /// shows that level for one more TTL.
     fn apply_model_info(
         scene: &mut SceneState,
         agent_id: AgentId,

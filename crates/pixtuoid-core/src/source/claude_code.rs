@@ -229,8 +229,9 @@ fn attribution_label(obj: &serde_json::Map<String, Value>) -> Option<String> {
 
 /// Whether an `attachment` line turns ultracode on or off: CC stamps a
 /// reminder while it is on and a marker on leaving it. Its `ultrathink_effort`
-/// reminder says nothing of its own: the turn's level carries an ultrathink
-/// raise (hooks.md, Common input fields, `effort`).
+/// reminder says nothing of its own: the raise it asks for is the turn's level
+/// (code.claude.com/docs/en/model-config, "Use ultrathink for one-off deep
+/// reasoning"), which [`turn_effort`] reads.
 fn attachment_ultracode(obj: &serde_json::Map<String, Value>) -> Option<bool> {
     match obj
         .get("attachment")
@@ -915,7 +916,7 @@ mod tests {
             assert!(
                 !evs.iter()
                     .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-                "{model:?} must not emit ModelInfo, got {evs:?}"
+                "{model:?} on a line with no level must not emit ModelInfo, got {evs:?}"
             );
         }
     }
@@ -943,24 +944,34 @@ mod tests {
 
     #[test]
     fn an_assistant_line_carries_its_turns_effort_level() {
-        let level = |line: Value| {
-            decode_cc_line("/p/ses-1.jsonl", "claude-code", line)
-                .into_iter()
-                .find_map(|e| match e {
-                    AgentEvent::ModelInfo { effort, .. } => effort,
-                    _ => None,
-                })
-        };
-        let line = |per_turn: Value| {
-            json!({
+        let info = |model: &str, per_turn: Value| {
+            let line = json!({
                 "type": "assistant",
                 "effort": "high",
                 "perTurnEffort": per_turn,
-                "message": {"model": "claude-fable-5", "content": []}
-            })
+                "message": {"model": model, "content": []}
+            });
+            decode_cc_line("/p/ses-1.jsonl", "claude-code", line)
+                .into_iter()
+                .find_map(|e| match e {
+                    AgentEvent::ModelInfo { model, effort, .. } => Some((model, effort)),
+                    _ => None,
+                })
         };
-        assert_eq!(level(line(json!("xhigh"))).as_deref(), Some("xhigh"));
-        assert_eq!(level(line(Value::Null)).as_deref(), Some("high"));
+        let some = |s: &str| Some(s.to_owned());
+        let fable = some("claude-fable-5");
+        assert_eq!(
+            info("claude-fable-5", json!("xhigh")),
+            Some((fable.clone(), some("xhigh")))
+        );
+        assert_eq!(
+            info("claude-fable-5", Value::Null),
+            Some((fable, some("high")))
+        );
+        assert_eq!(
+            info("<synthetic>", json!("xhigh")),
+            Some((None, some("xhigh")))
+        );
     }
 
     #[test]
