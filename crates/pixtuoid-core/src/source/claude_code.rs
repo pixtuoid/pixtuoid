@@ -311,8 +311,8 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     let Some(message) = message else {
         return out;
     };
-    // `<synthetic>` is CC's marker for tool-generated/error turns, not a model.
     if ty == ASSISTANT {
+        // `<synthetic>` is CC's marker for tool-generated/error turns, not a model.
         let model = message
             .get("model")
             .and_then(|m| m.as_str())
