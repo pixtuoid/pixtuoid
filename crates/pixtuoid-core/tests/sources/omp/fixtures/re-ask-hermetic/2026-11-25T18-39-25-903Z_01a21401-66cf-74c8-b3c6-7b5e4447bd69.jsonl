@@ -1,0 +1,21 @@
+{"type":"title","v":0,"title":"Hermetic","source":"","updatedAt":"","pad":""}
+{"type":"session","version":0,"id":"","timestamp":"2026-11-25T18:39:25.903Z","cwd":"/tmp/pixtuoid-capture/proj"}
+{}
+{"type":"thinking_level_change","id":"","parentId":"","timestamp":"2026-11-25T18:39:25.984Z","runtime":{},"thinkingLevel":"high","configured":null}
+{}
+{}
+{}
+{"type":"message","id":"203ff4cf","parentId":"","timestamp":"2026-11-25T18:39:29.725Z","runtime":{},"message":{"role":"assistant","content":[{"type":"toolCall","id":"call_zwu9fd99MFcl7fxC","name":"bash","arguments":{"i":"","command":"apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: COPY.txt\n+pong\n*** End Patch\nEOF"},"partialArgs":"","streamIndex":0,"intent":""}],"api":"","provider":"","model":"gpt-4.1","usage":{"input":3579,"output":35,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{}
+{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"call_zwu9fd99MFcl7fxC","toolName":"bash","approvalMode":"","requestedAt":""},"id":"ef20d730","parentId":"","timestamp":"2026-11-25T18:39:29.743Z","runtime":{}}
+{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_zwu9fd99MFcl7fxC","toolName":"","approved":true,"resolvedAt":""},"id":"","parentId":"","timestamp":"2026-11-25T18:39:30.286Z","runtime":{}}
+{"type":"custom","customType":"tool_approval_requested","data":{"toolCallId":"call_zwu9fd99MFcl7fxC","toolName":"edit","approvalMode":"","requestedAt":""},"id":"d3e86d01","parentId":"","timestamp":"2026-11-25T18:39:30.305Z","runtime":{}}
+{"type":"model_usage","id":"58e5d912","parentId":"","timestamp":"2026-11-25T18:39:30.672Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":4062,"output":35,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","duration":0,"ttft":0,"completion":{},"activeLeafId":""}
+{"type":"model_usage","id":"a8313808","parentId":"","timestamp":"2026-11-25T18:39:30.688Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":403,"output":6,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","duration":0,"ttft":0,"completion":{}}
+{"type":"custom","customType":"tool_approval_resolved","data":{"toolCallId":"call_zwu9fd99MFcl7fxC","toolName":"","approved":true,"resolvedAt":""},"id":"","parentId":"","timestamp":"2026-11-25T18:39:31.115Z","runtime":{}}
+{"type":"message","id":"","parentId":"","timestamp":"2026-11-25T18:39:31.130Z","runtime":{},"message":{"role":"toolResult","toolCallId":"call_zwu9fd99MFcl7fxC","toolName":"","content":[],"details":{},"isError":false,"timestamp":0}}
+{"type":"message","id":"db6c04f7","parentId":"","timestamp":"2026-11-25T18:39:32.121Z","runtime":{},"message":{"role":"assistant","content":[],"api":"","provider":"","model":"gpt-4.1","usage":{"input":3583,"output":2,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{"type":"model_usage","id":"e877fc07","parentId":"","timestamp":"2026-11-25T18:39:33.715Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":427,"output":35,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","duration":0,"ttft":0,"completion":{},"activeLeafId":""}
+{"type":"title_change","id":"","parentId":"","timestamp":"2026-11-25T18:39:33.717Z","runtime":{},"title":"Hermetic","source":""}
+{"type":"model_usage","id":"d6423504","parentId":"","timestamp":"2026-11-25T18:39:35.179Z","runtime":{},"purpose":"","api":"","provider":"","model":"","usage":{"input":3865,"output":35,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","duration":0,"ttft":0,"completion":{},"activeLeafId":""}
+{"type":"custom","customType":"session_exit","data":{},"id":"","parentId":"","timestamp":"2026-11-25T18:39:37.103Z","runtime":{}}
