@@ -276,9 +276,9 @@ pub enum AgentEvent {
         /// `Some` = an effort level observation (e.g. `"xhigh"`).
         effort: Option<String>,
     },
-    /// The model a hook offers for a session whose transcript owns its model:
-    /// the reducer sets an EXISTING slot's model from it only while none is
-    /// set, so a [`ModelInfo`](Self::ModelInfo)'s replaces it, in either order.
+    /// The model a hook offers for a CLI whose transcript owns the model: the
+    /// reducer sets an EXISTING slot's model from it only while none is set,
+    /// so a [`ModelInfo`](Self::ModelInfo)'s replaces it, in either order.
     ModelHint {
         /// The agent this observation is attributed to.
         agent_id: AgentId,

@@ -564,12 +564,11 @@ pub(crate) fn shared_hook_arms(
                 cwd,
                 parent_id: None,
             }];
-            // "Only SessionStart hooks can receive a `model` field, and it is not
-            // guaranteed to be present" (hooks.md) — take it when offered.
+            // Only SessionStart hooks get `model`, "and Claude Code doesn't
+            // always include it" (hooks.md, Common input fields).
             let model = non_empty(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
-            // A transcript owns the model it carries; the hook's stands in
-            // until it names one.
             evs.extend(model.map(|model| {
+                // Beside a transcript, the hook's stands in until it names one.
                 if desc.is_some_and(|d| d.line_decoder().is_some()) {
                     AgentEvent::ModelHint { agent_id, model }
                 } else {
