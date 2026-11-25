@@ -951,6 +951,11 @@ mod run {
     /// (curl.se/docs/manpage.html, `--fail`).
     const HTTP_ERROR: u16 = 400;
 
+    /// What [`CURL_STATUS`] reads when no response arrived: the code "is zero
+    /// if no server response code has been received"
+    /// (https://curl.se/libcurl/c/CURLINFO_RESPONSE_CODE.html).
+    const NO_RESPONSE: u16 = 0;
+
     /// `url`'s headers or body; a failure names curl's own reason.
     fn curl_get(url: &str, part: Curl) -> std::io::Result<Vec<u8>> {
         curl(url, &[OsStr::new(part.flags())])
@@ -979,8 +984,8 @@ mod run {
     }
 
     /// A curl run's `stdout` without the [`CURL_STATUS`] it ends with, or why
-    /// there is none: an HTTP error is one though curl exited 0, as macOS's
-    /// `/usr/bin/curl` 8.14.1 does on a 404 under `--retry`.
+    /// there is none: an HTTP error or no response is one though curl exited
+    /// 0, as curl 8.14 does under `--retry` (curl/curl#17554).
     fn curl_answer(
         url: &str,
         status: ExitStatus,
@@ -989,7 +994,7 @@ mod run {
     ) -> std::io::Result<Vec<u8>> {
         let answered = stdout.iter().rposition(|&b| b == b'\n').and_then(|at| {
             let code: u16 = std::str::from_utf8(&stdout[at + 1..]).ok()?.parse().ok()?;
-            Some((at, code))
+            (code != NO_RESPONSE).then_some((at, code))
         });
         match answered {
             Some((at, code)) if status.success() && code < HTTP_ERROR => {
@@ -3695,6 +3700,8 @@ mod run {
             assert!(why.to_string().contains("404"), "{why}");
             assert!(answer(failed, b"\n404").is_err(), "curl's own failure");
             assert!(answer(ok, b"no status").is_err(), "nothing written out");
+            let why = answer(ok, b"\n000").expect_err("no response");
+            assert!(why.to_string().contains("no status"), "{why}");
         }
 
         #[test]
