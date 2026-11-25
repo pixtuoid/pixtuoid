@@ -4,16 +4,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use pixtuoid_core::harness::Drive;
-use pixtuoid_core::harness::HOOK_PAYLOADS;
 use pixtuoid_core::harness::merge::{Merged, Merges, Step};
-use pixtuoid_core::source::{AgentEvent, registry};
+use pixtuoid_core::harness::{Drive, Driven, HOOK_PAYLOADS};
+use pixtuoid_core::source::{AgentEvent, Resolution, registry};
 use pixtuoid_core::state::TurnKey;
 use pixtuoid_core::{ActivityState, AgentId, ToolUse, Transport};
 use serde_json::Value;
 
-use super::captures::{fixture_lines, sources_root, transcript_in, transcripts_in};
+use super::captures::{Capture, every_capture, fixture_lines, sources_root, transcript_in};
 
 /// One recorded run's two streams.
 struct Run {
@@ -30,16 +30,15 @@ impl Run {
     fn of(source: &str, scenario: &str) -> Self {
         let dir = pixtuoid_core::harness::fixtures_dir(&sources_root(), source).join(scenario);
         let transcript = transcript_in(&dir);
-        Self::of_transcript(source, &dir, transcript)
+        Self::of_transcript(source, &dir.join(HOOK_PAYLOADS), transcript)
     }
 
-    /// The run of `transcript` against every hook its capture `dir` recorded.
-    fn of_transcript(source: &str, dir: &Path, transcript: PathBuf) -> Self {
-        let hooks = fixture_lines(&dir.join(HOOK_PAYLOADS));
+    /// The run of `transcript` against its capture's hook payloads at `hooks`.
+    fn of_transcript(source: &str, hooks: &Path, transcript: PathBuf) -> Self {
+        let hooks = fixture_lines(hooks);
         let lines = fixture_lines(&transcript);
         let parsed = |raw: &[String]| -> Vec<Value> {
             raw.iter()
-                .filter(|l| !l.trim().is_empty())
                 .map(|l| serde_json::from_str(l).expect("a recorded line is JSON"))
                 .collect()
         };
@@ -426,7 +425,8 @@ fn grok_s_hook_set_item_survives_its_last_turn_s_lagging_end() {
 
 /// What an order leaves of a slot that the order must not decide: its
 /// presence, whether it is exiting, its parent, its activity with its item's
-/// call id and tool kind, its tool-call count and its tokens. Its presence
+/// call id and tool kind, its tool-call count, its tokens, its model, its
+/// effort level and whether ultracode is on. Its presence
 /// and `exiting` still read the clock: the fold's final tick is the run's
 /// last arrival plus `harness::CASCADE_TICK`, and a slot goes once its exit is
 /// `EXIT_GRACE_WINDOW` old, so a slot whose exit can start on either side of
@@ -439,6 +439,9 @@ struct Final {
     state: ActivityState,
     tool_call_count: u32,
     tokens_used: u64,
+    model: Option<Arc<str>>,
+    effort: Option<Arc<str>>,
+    ultracode: bool,
 }
 
 /// Each slot `m` left, by agent: a slot only some orders leave differs too.
@@ -461,6 +464,10 @@ fn finals(m: &Merged) -> BTreeMap<AgentId, Final> {
                 state,
                 tool_call_count: slot.tool_call_count,
                 tokens_used: slot.tokens_used,
+                model: slot.model.clone(),
+                // Its `seen_at` is the instant an order applied it.
+                effort: slot.effort.as_ref().map(|e| Arc::clone(&e.value)),
+                ultracode: slot.ultracode,
             };
             (agent, last)
         })
@@ -478,17 +485,142 @@ fn two_transport_sources() -> Vec<&'static str> {
         .collect()
 }
 
+/// `source`'s captures that recorded its hooks too, each with its hook payloads.
+fn two_stream_captures(source: &str) -> Vec<(Capture, PathBuf)> {
+    (every_capture().into_iter())
+        .filter(|c| c.source == source)
+        .filter_map(|c| c.hook_payloads().map(|hooks| (c, hooks)))
+        .collect()
+}
+
 /// `source`'s recorded runs: each transcript of each capture that recorded its
 /// hooks too.
 fn runs_of(source: &str) -> Vec<Run> {
-    let captures = pixtuoid_core::harness::captures(&sources_root()).into_iter();
-    captures
-        .filter(|c| c.source == source && c.dir.join(HOOK_PAYLOADS).is_file())
-        .flat_map(|c| {
-            let transcripts = transcripts_in(&c.dir).into_iter();
-            transcripts.map(move |t| Run::of_transcript(source, &c.dir, t))
+    (two_stream_captures(source).into_iter())
+        .flat_map(|(c, hooks)| {
+            let transcripts = c.transcripts().into_iter();
+            transcripts.map(move |t| Run::of_transcript(source, &hooks, t))
         })
         .collect()
+}
+
+/// A fact no key merges across transports, so two producers of it race for the
+/// slot or count it twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Unkeyed {
+    Model,
+    /// A hook's model, which fills only an unset one: one producer of it, apart
+    /// from the transcript's.
+    ModelHint,
+    Effort,
+    Ultracode,
+    Label,
+    /// A start supersedes the open turn whatever its key, so starts are
+    /// ordered across turns.
+    TurnStart,
+    TurnEnd,
+    /// A wait naming no call: a tool's name binds every call pending under it.
+    Wait,
+    Tool,
+    Usage,
+    /// A variant newer than this match, held to one producer until sorted.
+    Unsorted,
+}
+
+/// Each unkeyed fact `event` states.
+fn unkeyed(event: &AgentEvent) -> Vec<Unkeyed> {
+    match event {
+        AgentEvent::ModelInfo { model, effort, .. } => [
+            model.as_ref().map(|_| Unkeyed::Model),
+            effort.as_ref().map(|_| Unkeyed::Effort),
+        ]
+        .into_iter()
+        .flatten()
+        .collect(),
+        AgentEvent::ModelHint { .. } => vec![Unkeyed::ModelHint],
+        AgentEvent::Ultracode { .. } => vec![Unkeyed::Ultracode],
+        AgentEvent::Rename { .. } => vec![Unkeyed::Label],
+        AgentEvent::TurnStart { .. } => vec![Unkeyed::TurnStart],
+        AgentEvent::TurnEnd { turn: None, .. } => vec![Unkeyed::TurnEnd],
+        AgentEvent::UserActionRequest {
+            tool_use_id: None, ..
+        } => vec![Unkeyed::Wait],
+        AgentEvent::ToolUseStart {
+            tool_use_id: None, ..
+        }
+        | AgentEvent::ToolUseEnd {
+            tool_use_id: None, ..
+        } => vec![Unkeyed::Tool],
+        AgentEvent::Usage {
+            reading_id: None, ..
+        } => vec![Unkeyed::Usage],
+        // Keyed: a call, a turn or a reading names the record both merge on.
+        AgentEvent::ToolUseStart { .. }
+        | AgentEvent::ToolUseEnd { .. }
+        | AgentEvent::ToolUsePending { .. }
+        | AgentEvent::TurnEnd { .. }
+        | AgentEvent::UserActionRequest { .. }
+        | AgentEvent::UserActionResolved {
+            by: Resolution::Approved(_) | Resolution::Turn(_),
+            ..
+        }
+        | AgentEvent::Usage { .. }
+        // Lifecycle: `Reducer::authorizes` rules on its transport.
+        | AgentEvent::SessionStart { .. }
+        | AgentEvent::SessionEnd { .. }
+        | AgentEvent::Identity { .. }
+        // The watcher's own: no decoder emits them.
+        | AgentEvent::LabelHint { .. }
+        | AgentEvent::ProofOfLife { .. }
+        | AgentEvent::Backlog { .. } => vec![],
+        _ => vec![Unkeyed::Unsorted],
+    }
+}
+
+/// Each unkeyed fact `driven` decoded, with its agent.
+fn unkeyed_facts(driven: &Driven, what: &str) -> BTreeSet<(AgentId, Unkeyed)> {
+    driven.assert_clean(what);
+    let events = driven.events.iter();
+    events
+        .flat_map(|e| unkeyed(e).into_iter().map(|f| (e.agent_id(), f)))
+        .collect()
+}
+
+/// Every recorded capture of a two-transport source decodes each unkeyed fact
+/// of an agent from one transport alone, and each transport decodes one in
+/// some capture.
+#[test]
+fn every_two_transport_capture_decodes_each_unkeyed_fact_from_one_transport() {
+    let (mut both, mut hooked, mut transcribed) = (Vec::new(), false, false);
+    for source in two_transport_sources() {
+        let captures = two_stream_captures(source);
+        assert!(
+            !captures.is_empty(),
+            "{source}: no capture records both streams"
+        );
+        for (c, hooks) in captures {
+            let name = c.label();
+            let hooks = unkeyed_facts(&Drive::hooks().lines(fixture_lines(&hooks)), &name);
+            let transcripts: BTreeSet<_> = (c.transcripts().iter())
+                .flat_map(|t| {
+                    let drive = Drive::transcript_at(source, t).expect("a transcript source");
+                    unkeyed_facts(&drive.lines(fixture_lines(t)), &name)
+                })
+                .collect();
+            hooked |= !hooks.is_empty();
+            transcribed |= !transcripts.is_empty();
+            both.extend(
+                (hooks.intersection(&transcripts))
+                    .map(|(agent, fact)| format!("{name}: {fact:?} of {agent:?}")),
+            );
+        }
+    }
+    assert!(
+        both.is_empty(),
+        "decoded from both transports:\n{}",
+        both.join("\n")
+    );
+    assert!(hooked && transcribed, "a transport decodes no unkeyed fact");
 }
 
 /// Asserts that no step of `m`'s order after an end of a call shows that

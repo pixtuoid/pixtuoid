@@ -152,21 +152,13 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             // — the start REASON, exactly CC's overload). Never read it:
             // attribution comes ONLY from `_pixtuoid_source`, else agents split
             // into un-reapable ghosts.
-            let mut evs = vec![AgentEvent::SessionStart {
+            Ok(vec![AgentEvent::SessionStart {
                 agent_id,
                 source: SOURCE_NAME.to_string(),
                 session_id: key.to_string(),
                 cwd: cwd.unwrap_or("").into(),
                 parent_id: None,
-            }];
-            // The fire site passes None today; take `modelId` if a future
-            // build offers it.
-            evs.extend(AgentEvent::model_info(
-                agent_id,
-                obj.get("modelId").and_then(|m| m.as_str()),
-                None,
-            ));
-            Ok(evs)
+            }])
         }
         "user_prompt_submit" => {
             let mut evs = vec![AgentEvent::SessionStart {
@@ -250,9 +242,8 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
         }
         "subagent_start" => {
             let child_session_id = subagent_child_key(obj, event)?;
-            let child = AgentId::from_parts(SOURCE_NAME, &child_session_id);
-            let mut evs = vec![AgentEvent::SessionStart {
-                agent_id: child,
+            Ok(vec![AgentEvent::SessionStart {
+                agent_id: AgentId::from_parts(SOURCE_NAME, &child_session_id),
                 source: SOURCE_NAME.to_string(),
                 session_id: child_session_id,
                 // The envelope cwd is the PARENT's — correct for the default
@@ -261,16 +252,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // parent-tinted: accepted residual.
                 cwd: cwd.unwrap_or("").into(),
                 parent_id: Some(agent_id),
-            }];
-            if let Some(label) =
-                non_empty(obj, "description").or_else(|| non_empty(obj, "subagentType"))
-            {
-                evs.push(AgentEvent::Rename {
-                    agent_id: child,
-                    label: ellipsize(label, MAX_DECODED_FIELD_CHARS),
-                });
-            }
-            Ok(evs)
+            }])
         }
         "subagent_stop" => Ok(vec![AgentEvent::SessionEnd {
             agent_id: AgentId::from_parts(SOURCE_NAME, &subagent_child_key(obj, event)?),
@@ -637,7 +619,7 @@ mod tests {
     }
 
     /// The payload's MAIN event is the LAST decoded one — activity arms
-    /// prepend an `Identity`, subagent_start appends a `Rename`.
+    /// prepend an `Identity`.
     fn decode(v: Value) -> AgentEvent {
         decode_all(v).pop().expect("at least one event")
     }
@@ -684,17 +666,15 @@ mod tests {
         );
     }
 
+    /// The transcript's `_meta.modelId` owns the model.
     #[test]
-    fn session_start_takes_model_id_when_offered() {
+    fn session_start_decodes_no_model() {
         let mut v = envelope("session_start");
         v["modelId"] = json!("grok-4-code");
-        let evs = decode_all(v);
-        assert_eq!(evs.len(), 2);
-        assert!(
-            matches!(&evs[1], AgentEvent::ModelInfo { model: Some(m), effort: None, .. }
-            if m == "grok-4-code")
-        );
-        assert_eq!(decode_all(envelope("session_start")).len(), 1);
+        assert!(matches!(
+            &decode_all(v)[..],
+            [AgentEvent::SessionStart { .. }]
+        ));
     }
 
     #[test]
@@ -816,15 +796,16 @@ mod tests {
         v["subagentId"] = json!("0197fa31-child");
         v["subagentType"] = json!("explore");
         v["description"] = json!("map the build");
-        let evs = decode_all(v);
-        assert_eq!(evs.len(), 2);
-        match &evs[0] {
-            AgentEvent::SessionStart {
-                agent_id,
-                session_id,
-                parent_id,
-                ..
-            } => {
+        // The parent transcript's `subagent_spawned` owns the child's label.
+        match &decode_all(v)[..] {
+            [
+                AgentEvent::SessionStart {
+                    agent_id,
+                    session_id,
+                    parent_id,
+                    ..
+                },
+            ] => {
                 assert_eq!(
                     *agent_id,
                     AgentId::from_parts(SOURCE_NAME, "0197fa31-child"),
@@ -837,22 +818,17 @@ mod tests {
                     "parent link from the envelope's (parent) sessionId"
                 );
             }
-            other => panic!("expected child SessionStart, got {other:?}"),
+            other => panic!("expected the child's SessionStart alone, got {other:?}"),
         }
-        assert!(
-            matches!(&evs[1], AgentEvent::Rename { agent_id, label }
-                if *agent_id == AgentId::from_parts(SOURCE_NAME, "0197fa31-child")
-                    && label == "map the build"),
-            "description is the primary label (grok's own precedence)"
-        );
     }
 
     #[test]
     fn subagent_rename_falls_back_to_type_when_description_absent() {
-        let mut v = envelope("subagent_start");
-        v["subagentId"] = json!("c");
-        v["subagentType"] = json!("explore");
-        let evs = decode_all(v);
+        let evs = decode_line(xai_line(json!({
+            "sessionUpdate": "subagent_spawned",
+            "child_session_id": "c",
+            "subagent_type": "explore",
+        })));
         assert!(matches!(&evs[1], AgentEvent::Rename { label, .. } if label == "explore"));
     }
 

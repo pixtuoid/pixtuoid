@@ -567,24 +567,26 @@ pub(crate) fn shared_hook_arms(
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);
     let tool_id_key = hook_tool_id_key(desc);
+    let start = || AgentEvent::SessionStart {
+        agent_id,
+        source: source.to_string(),
+        session_id: session_id.clone(),
+        cwd: obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into(),
+        parent_id: None,
+    };
 
     match event {
         "SessionStart" => {
-            let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-            let mut evs = vec![AgentEvent::SessionStart {
-                agent_id,
-                source: source.to_string(),
-                session_id,
-                cwd,
-                parent_id: None,
-            }];
-            // "Only SessionStart hooks can receive a `model` field, and it is not
-            // guaranteed to be present" (hooks.md) — take it when offered.
-            evs.extend(AgentEvent::model_info(
-                agent_id,
-                obj.get("model").and_then(|m| m.as_str()),
-                None,
-            ));
+            let mut evs = vec![start()];
+            // CC sends `model` on SessionStart alone, "and Claude Code doesn't always
+            // include it" (hooks.md, Common input fields); codex's later hints add nothing.
+            let model = non_empty(obj, "model");
+            // Beside a transcript, the hook's stands in until it names one.
+            evs.extend(if desc.is_some_and(|d| d.line_decoder().is_some()) {
+                AgentEvent::model_hint(agent_id, model)
+            } else {
+                AgentEvent::model_info(agent_id, model, None)
+            });
             Ok(evs)
         }
         "PreToolUse" => {
@@ -652,16 +654,7 @@ pub(crate) fn shared_hook_arms(
             ),
         ]),
         // The JSONL rollout stays the system of record for Codex tool activity.
-        "UserPromptSubmit" => {
-            let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-            Ok(vec![AgentEvent::SessionStart {
-                agent_id,
-                source: source.to_string(),
-                session_id,
-                cwd,
-                parent_id: None,
-            }])
-        }
+        "UserPromptSubmit" => Ok(vec![start()]),
         // Stop must NOT end the session: turns end many times per session.
         "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
@@ -1007,34 +1000,32 @@ mod tests {
         }
     }
 
+    /// CC's and codex's transcripts carry the model, so their `SessionStart`
+    /// hook's is a hint; kimi's hook is the only one.
     #[test]
-    fn session_start_hook_surfaces_the_model_when_offered() {
-        let v = serde_json::json!({
-            "_pixtuoid_source": "claude-code",
-            "hook_event_name": "SessionStart",
-            "session_id": "ses-m",
-            "transcript_path": "/p/ses-m.jsonl",
-            "cwd": "/repo",
-            "model": "claude-fable-5"
-        });
-        let evs = decode_hook_payload(v).unwrap();
-        assert!(
-            evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), effort: None, .. } if m == "claude-fable-5")),
-            "got {evs:?}"
-        );
-        let v = serde_json::json!({
-            "_pixtuoid_source": "claude-code",
-            "hook_event_name": "SessionStart",
-            "session_id": "ses-m",
-            "transcript_path": "/p/ses-m.jsonl",
-            "cwd": "/repo"
-        });
-        let evs = decode_hook_payload(v).unwrap();
-        assert!(
-            !evs.iter()
-                .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-            "got {evs:?}"
-        );
+    fn a_session_start_hook_s_model_is_a_hint_beside_a_transcript() {
+        let long = "m".repeat(MAX_DECODED_FIELD_CHARS + 1);
+        let capped = ellipsize(&long, MAX_DECODED_FIELD_CHARS);
+        for (source, hint) in [("claude-code", true), ("codex", true), ("kimi", false)] {
+            let models = |model: &str| {
+                let evs = decode_hook_payload(serde_json::json!({
+                    "_pixtuoid_source": source,
+                    "hook_event_name": "SessionStart",
+                    "session_id": "ses-m",
+                    "cwd": "/repo",
+                    "model": model
+                }))
+                .unwrap();
+                let models = evs.iter().filter_map(|e| match e {
+                    AgentEvent::ModelHint { model, .. } => Some((true, model.clone())),
+                    AgentEvent::ModelInfo { model, .. } => Some((false, model.clone()?)),
+                    _ => None,
+                });
+                models.collect::<Vec<_>>()
+            };
+            assert_eq!(models(&long), [(hint, capped.clone())], "{source}");
+            assert_eq!(models(""), [], "{source}");
+        }
     }
     use serde_json::json;
 

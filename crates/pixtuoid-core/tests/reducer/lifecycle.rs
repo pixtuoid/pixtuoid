@@ -1173,7 +1173,7 @@ fn model_info_caches_model_and_effort_on_an_existing_slot() {
 }
 
 #[test]
-fn model_info_and_ultracode_for_an_unknown_agent_never_register() {
+fn model_events_and_ultracode_for_an_unknown_agent_never_register() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let ghost = AgentId::from_parts("claude-code", "ses_ghost");
@@ -1182,12 +1182,16 @@ fn model_info_and_ultracode_for_an_unknown_agent_never_register() {
         model: Some("claude-fable-5".into()),
         effort: Some("xhigh".into()),
     };
+    let model_hint = AgentEvent::ModelHint {
+        agent_id: ghost,
+        model: "claude-opus-5-5".into(),
+    };
     let ultracode = AgentEvent::Ultracode {
         agent_id: ghost,
         on: true,
     };
     for transport in [Transport::Jsonl, Transport::Hook] {
-        for event in [&model_info, &ultracode] {
+        for event in [&model_info, &model_hint, &ultracode] {
             r.apply(
                 &mut scene,
                 event.clone(),
@@ -1233,6 +1237,52 @@ fn a_cc_effort_level_and_ultracode_end_alike_in_either_order() {
     let both = (Some("xhigh".to_owned()), true);
     assert_eq!(end([&level, &ultracode]), both);
     assert_eq!(end([&ultracode, &level]), both);
+}
+
+#[test]
+fn a_model_hint_fills_only_an_unset_model() {
+    let id = AgentId::from_parts("claude-code", "ses_h");
+    let hint = (
+        AgentEvent::ModelHint {
+            agent_id: id,
+            model: "claude-opus-5-5".into(),
+        },
+        Transport::Hook,
+    );
+    let info = (
+        AgentEvent::ModelInfo {
+            agent_id: id,
+            model: Some("claude-fable-5".into()),
+            effort: None,
+        },
+        Transport::Jsonl,
+    );
+    let rows = [
+        (
+            "a hint fills an unset model",
+            vec![&hint],
+            "claude-opus-5-5",
+        ),
+        (
+            "a model replaces a hint",
+            vec![&hint, &info],
+            "claude-fable-5",
+        ),
+        (
+            "a hint never replaces a model",
+            vec![&info, &hint],
+            "claude-fable-5",
+        ),
+    ];
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for (row, events, model) in rows {
+        let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+        start(&mut r, &mut scene, id);
+        for (event, from) in events {
+            r.apply(&mut scene, event.clone(), t0, *from);
+        }
+        assert_eq!(scene.agents[&id].model.as_deref(), Some(model), "{row}");
+    }
 }
 
 #[test]

@@ -370,9 +370,10 @@ pub struct AgentSlot {
     /// is the liveness probe, queried at click time.
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub pid: Option<crate::source::PidIdentity>,
-    /// The RAW model string last observed on this agent's wire —
-    /// last-seen-wins, so a mid-session `/model` switch tracks; this stays
-    /// uninterpreted wire truth.
+    /// The RAW model string, uninterpreted wire truth: the last
+    /// [`ModelInfo`](crate::AgentEvent::ModelInfo)'s, so a mid-session `/model`
+    /// switch tracks, else a [`ModelHint`](crate::AgentEvent::ModelHint)'s while
+    /// none is set.
     #[serde(
         with = "opt_arc_str_serde",
         skip_serializing_if = "Option::is_none",

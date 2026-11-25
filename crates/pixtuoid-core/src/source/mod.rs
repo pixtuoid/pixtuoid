@@ -276,6 +276,15 @@ pub enum AgentEvent {
         /// `Some` = an effort level observation (e.g. `"xhigh"`).
         effort: Option<String>,
     },
+    /// The model a hook offers for a CLI whose transcript owns the model: the
+    /// reducer sets an EXISTING slot's model from it only while none is set,
+    /// so a [`ModelInfo`](Self::ModelInfo)'s replaces it, in either order.
+    ModelHint {
+        /// The agent this observation is attributed to.
+        agent_id: AgentId,
+        /// The RAW model string.
+        model: String,
+    },
     /// Whether ultracode is on: "a Claude Code setting rather than a model
     /// effort level", so it never rides [`ModelInfo`](Self::ModelInfo)'s
     /// effort (code.claude.com/docs/en/model-config, Adjust effort level).
@@ -473,25 +482,36 @@ impl AgentEvent {
         }
     }
 
-    /// A model observation of whichever of `model` and `effort` is not empty,
-    /// each capped at decode; `None` when neither is. THE constructor every
-    /// decoder mints one through, so these rules and a field it gains land
+    /// A model observation of whichever of `model` and `effort`
+    /// [decodes](Self::decoded_model_fact); `None` when neither does. THE
+    /// constructor every decoder mints one through, so a field it gains lands
     /// here, never at a decoder.
     pub(crate) fn model_info(
         agent_id: AgentId,
         model: Option<&str>,
         effort: Option<&str>,
     ) -> Option<Self> {
-        let decoded = |v: Option<&str>| {
-            v.filter(|s| !s.is_empty())
-                .map(|s| decoder::ellipsize(s, decoder::MAX_DECODED_FIELD_CHARS))
-        };
-        let (model, effort) = (decoded(model), decoded(effort));
+        let (model, effort) = (
+            Self::decoded_model_fact(model),
+            Self::decoded_model_fact(effort),
+        );
         (model.is_some() || effort.is_some()).then_some(AgentEvent::ModelInfo {
             agent_id,
             model,
             effort,
         })
+    }
+
+    /// A model hint, `None` unless `model` [decodes](Self::decoded_model_fact).
+    pub(crate) fn model_hint(agent_id: AgentId, model: Option<&str>) -> Option<Self> {
+        Self::decoded_model_fact(model).map(|model| AgentEvent::ModelHint { agent_id, model })
+    }
+
+    /// The one rule both model constructors decode a fact by: dropped when
+    /// empty, else capped at decode.
+    fn decoded_model_fact(fact: Option<&str>) -> Option<String> {
+        fact.filter(|s| !s.is_empty())
+            .map(|s| decoder::ellipsize(s, decoder::MAX_DECODED_FIELD_CHARS))
     }
 
     /// A request for the user's action. THE constructor every site mints one
@@ -537,6 +557,7 @@ impl AgentEvent {
             AgentEvent::ProofOfLife { agent_id, .. } => *agent_id,
             AgentEvent::Identity { agent_id, .. } => *agent_id,
             AgentEvent::ModelInfo { agent_id, .. } => *agent_id,
+            AgentEvent::ModelHint { agent_id, .. } => *agent_id,
             AgentEvent::Ultracode { agent_id, .. } => *agent_id,
             AgentEvent::Usage { agent_id, .. } => *agent_id,
             AgentEvent::Backlog { agent_id, .. } => *agent_id,
@@ -563,6 +584,7 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
+            | AgentEvent::ModelHint { .. }
             | AgentEvent::Ultracode { .. }
             | AgentEvent::Usage { .. }
             | AgentEvent::Backlog { .. } => false,
@@ -624,6 +646,7 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
+            | AgentEvent::ModelHint { .. }
             | AgentEvent::Ultracode { .. }
             | AgentEvent::Backlog { .. } => (None, None),
         };
