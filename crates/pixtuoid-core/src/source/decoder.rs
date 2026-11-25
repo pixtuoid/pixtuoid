@@ -73,18 +73,10 @@ impl DecodeError {
         }
     }
 
-    pub(crate) fn missing(cli: &str, field: &'static str) -> Self {
+    pub(crate) fn missing(cli: &str, context: Option<&str>, field: &'static str) -> Self {
         Self::Missing {
             cli: display_safe(cli),
-            context: None,
-            field,
-        }
-    }
-
-    pub(crate) fn missing_in(cli: &str, context: &str, field: &'static str) -> Self {
-        Self::Missing {
-            cli: display_safe(cli),
-            context: Some(display_safe(context)),
+            context: context.map(display_safe),
             field,
         }
     }
@@ -428,10 +420,7 @@ pub(crate) fn required_or_err<T>(
     key: &'static str,
     read: impl FnOnce(&'static str) -> Option<T>,
 ) -> DecodeResult<T> {
-    read(key).ok_or_else(|| match context {
-        Some(event) => DecodeError::missing_in(source, event, key),
-        None => DecodeError::missing(source, key),
-    })
+    read(key).ok_or_else(|| DecodeError::missing(source, context, key))
 }
 
 /// The hook field naming the root session.
@@ -849,8 +838,8 @@ mod tests {
         let hostile = "x\u{1b}]0;pwned\u{7}\u{202e}y";
         for e in [
             DecodeError::not_an_object(hostile),
-            DecodeError::missing(hostile, "cwd"),
-            DecodeError::missing_in(hostile, hostile, "cwd"),
+            DecodeError::missing(hostile, None, "cwd"),
+            DecodeError::missing(hostile, Some(hostile), "cwd"),
             DecodeError::unsupported(hostile, hostile),
             DecodeError::invalid(hostile, "port", hostile),
         ] {
@@ -861,7 +850,7 @@ mod tests {
             );
         }
         assert_eq!(
-            DecodeError::missing("cursor", "cwd").to_string(),
+            DecodeError::missing("cursor", None, "cwd").to_string(),
             "cursor payload has no cwd"
         );
     }
