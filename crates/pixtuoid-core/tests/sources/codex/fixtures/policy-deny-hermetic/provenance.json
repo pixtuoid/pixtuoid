@@ -1,15 +1,15 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.171.0",
-  "captured": "2026-11-20",
+  "version": "codex-cli 0.172.0",
+  "captured": "2026-11-25",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 100
   },
   "seed": "tests/sources/codex/hermetic/policy-deny",
-  "aimock": "1.47.0",
+  "aimock": "1.48.0",
   "script": "tests/sources/codex/hermetic/policy-deny.json",
   "dropped": {
     "os": "macos",
@@ -30,7 +30,7 @@
     }
   },
   "sentinel_reads": {
-    "rollout-2026-11-20T16-55-59-01a1f9e2-e771-7980-8798-fa1d5e49bed2.jsonl": [
+    "rollout-2026-11-25T18-47-02-01a21408-5ec9-7cc2-ac0a-9332b2914be9.jsonl": [
       "15:/payload/info/last_token_usage/cached_input_tokens",
       "21:/payload/info/last_token_usage/cached_input_tokens"
     ]

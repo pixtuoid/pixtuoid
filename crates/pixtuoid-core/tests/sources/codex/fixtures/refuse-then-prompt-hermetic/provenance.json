@@ -1,14 +1,14 @@
 {
   "origin": "recorded",
   "cli": "codex",
-  "version": "codex-cli 0.171.0",
-  "captured": "2026-11-20",
+  "version": "codex-cli 0.172.0",
+  "captured": "2026-11-25",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
     "blanked": 144
   },
-  "aimock": "1.47.0",
+  "aimock": "1.48.0",
   "script": "tests/sources/codex/hermetic/refuse-then-prompt.json",
   "dropped": {
     "os": "macos",
@@ -29,7 +29,7 @@
     }
   },
   "sentinel_reads": {
-    "rollout-2026-11-20T16-55-13-01a1f9e2-32d2-77c3-986f-9ceb90c7e333.jsonl": [
+    "rollout-2026-11-25T18-46-17-01a21407-b049-7b40-8750-01ab3f5a22dc.jsonl": [
       "15:/payload/info/last_token_usage/cached_input_tokens",
       "28:/payload/info/last_token_usage/cached_input_tokens"
     ]

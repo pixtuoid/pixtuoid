@@ -1,8 +1,8 @@
 {
   "origin": "recorded",
   "cli": "omp",
-  "version": "omp/19.1.0",
-  "captured": "2026-11-23",
+  "version": "omp/19.2.1",
+  "captured": "2026-11-25",
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
@@ -19,7 +19,7 @@
     }
   },
   "sentinel_reads": {
-    "2026-11-23T04-58-13-227Z_01a206c4-d76b-7109-a10f-d664d08e1990.jsonl": [
+    "2026-11-25T18-41-07-954Z_01a21402-f572-740b-9c02-75b275b9c659.jsonl": [
       "1:/title"
     ]
   }
