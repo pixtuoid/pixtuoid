@@ -362,15 +362,15 @@ pub fn agent(office: &SceneState, id: AgentId, now: SystemTime) -> Option<Toolti
 
 /// How long an effort observation stays fresh. The per-turn carriers (Codex,
 /// CC) re-stamp well inside it; omp's fires only on a change, so a pinned
-/// effort's suffix drops past it — cosmetic, accepted.
+/// effort drops off the ★ row past it — cosmetic, accepted.
 const EFFORT_TTL_SECS: u64 = 600;
 
-/// What the dossier's effort suffix shows while ultracode is on.
+/// What the ★ row's effort shows while ultracode is on.
 const ULTRACODE_LABEL: &str = "ultra";
 
 /// The agent's effort: ultracode's label while it is on, else its level IF
-/// still fresh. The ONE rule the dossier's `· effort` suffix reads, so the
-/// tooltip never shows an effort gone stale.
+/// still fresh. The ONE rule the ★ row's effort reads, so the tooltip never
+/// shows an effort gone stale.
 fn shown_effort(slot: &pixtuoid_core::AgentSlot, now: SystemTime) -> Option<&str> {
     if slot.ultracode {
         return Some(ULTRACODE_LABEL);
