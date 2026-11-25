@@ -1,0 +1,15 @@
+{"type":"title","v":0,"title":"","updatedAt":"","pad":""}
+{"type":"session","version":0,"id":"","timestamp":"2026-11-25T18:40:50.775Z","cwd":"/tmp/pixtuoid-capture/proj","parentSession":""}
+{}
+{}
+{"type":"model_usage","id":"3744329d","parentId":"","timestamp":"2026-11-25T18:40:52.321Z","runtime":{},"purpose":"","role":"","api":"","provider":"","model":"","usage":{"input":230,"output":11,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","duration":0}
+{"type":"model_usage","id":"3d3cee49","parentId":"","timestamp":"2026-11-25T18:40:53.868Z","runtime":{},"purpose":"","role":"","api":"","provider":"","model":"","usage":{"input":256,"output":11,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","duration":0}
+{}
+{}
+{}
+{}
+{"type":"message","id":"c323dac5","parentId":"","timestamp":"2026-11-25T18:40:56.650Z","runtime":{},"message":{"role":"assistant","content":[{"type":"toolCall","id":"call_pgSQfoD125ZA1fAn","name":"read","arguments":{"i":"","path":"NOTE.txt"},"partialArgs":"","streamIndex":0}],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2982,"output":12,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{}
+{"type":"message","id":"","parentId":"","timestamp":"2026-11-25T18:40:56.657Z","runtime":{},"message":{"role":"toolResult","toolCallId":"call_pgSQfoD125ZA1fAn","toolName":"","content":[],"details":{},"isError":false,"timestamp":0}}
+{"type":"message","id":"8969db4d","parentId":"","timestamp":"2026-11-25T18:40:57.576Z","runtime":{},"message":{"role":"assistant","content":[],"api":"","provider":"","model":"gpt-4.1","usage":{"input":2987,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{}},"stopReason":"","timestamp":0,"responseId":"","duration":0,"ttft":0,"completedAt":0,"contextSnapshot":{}}}
+{"type":"custom","customType":"session_exit","data":{},"id":"","parentId":"","timestamp":"2026-11-25T18:40:58.514Z","runtime":{}}
