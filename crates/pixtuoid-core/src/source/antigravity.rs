@@ -237,10 +237,8 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             (!cwd.is_empty()).then(|| cwd.into()),
         )
     };
-    let call = || {
-        let step = required(SOURCE_NAME, event, "stepIdx", |k| obj.get(k)?.as_i64());
-        (step.map(step_tool_id), obj.get("toolCall"))
-    };
+    let call_id =
+        || required(SOURCE_NAME, event, "stepIdx", |k| obj.get(k)?.as_i64()).map(step_tool_id);
     match event {
         // The focus pid rides an `Identity`, so a session that never calls a
         // tool still names it.
@@ -255,14 +253,11 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             identity(),
         ]),
         "PreToolUse" => {
-            let (tool_use_id, tool) = call();
+            let tool_use_id = call_id();
+            let tool = required(SOURCE_NAME, event, "toolCall", |k| obj.get(k));
             let name = tool
-                .and_then(|t| t.get("name"))
-                .and_then(Value::as_str)
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, event, "toolCall.name");
-                    "?"
-                });
+                .and_then(|t| required(SOURCE_NAME, event, "name", |k| t.get(k)?.as_str()))
+                .unwrap_or("?");
             let args = tool.and_then(|t| t.get("args"));
             Ok(vec![
                 identity(),
@@ -273,7 +268,7 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             identity(),
             AgentEvent::ToolUseEnd {
                 agent_id,
-                tool_use_id: call().0,
+                tool_use_id: call_id(),
             },
         ]),
         // Turn end: the session lives on to the next prompt.

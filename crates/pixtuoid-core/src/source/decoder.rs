@@ -41,7 +41,7 @@ pub enum DecodeError {
         /// The event or part of the payload the field belongs to, when it
         /// isn't the payload itself.
         context: Option<String>,
-        /// The field, or `|`-joined fields any one of which would do.
+        /// The field.
         field: &'static str,
     },
     /// An event name the decoder has no arm for.

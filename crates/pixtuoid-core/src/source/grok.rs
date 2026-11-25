@@ -141,12 +141,9 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 .and_then(|s| s.as_str())
                 .filter(|s| !s.is_empty())
         });
-    let key = obj
-        .get("sessionId")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .or(cwd)
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "sessionId|cwd|workspaceRoot"))?;
+    let key = required_or_err(SOURCE_NAME, None, "sessionId", |k| {
+        non_empty(obj, k).or(cwd)
+    })?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd_path = || cwd.map(PathBuf::from);
 
