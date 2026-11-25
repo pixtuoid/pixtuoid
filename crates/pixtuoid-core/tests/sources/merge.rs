@@ -567,6 +567,7 @@ fn unkeyed(event: &AgentEvent) -> Vec<Unkeyed> {
         | AgentEvent::SessionStart { .. }
         | AgentEvent::SessionEnd { .. }
         | AgentEvent::Identity { .. }
+        // The watcher's own: no decoder emits them.
         | AgentEvent::ProofOfLife { .. }
         | AgentEvent::Backlog { .. } => vec![],
         _ => vec![Unkeyed::Unsorted],
