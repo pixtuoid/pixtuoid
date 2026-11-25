@@ -1,7 +1,7 @@
 //! Codex CLI source. Watches the Codex session transcript
 //! (`~/.codex/sessions/**/rollout-<ts>-<UUID>.jsonl`) via `JsonlWatcher` for
-//! the lifecycle signals the shared hook socket lacks — most importantly the
-//! post-approval resume (`function_call_output`).
+//! the lifecycle signals the shared hook socket lacks: the turns, the calls'
+//! starts, and the ends no `PostToolUse` reports.
 //!
 //! Coalescing: a root's hook `session_id` (a child's: its `agent_id`) ==
 //! session_meta.id == filename UUID (verified), so both transports merge onto
@@ -108,11 +108,10 @@ const PARENT_THREAD_ID: &str = "parent_thread_id";
 /// The field naming the turn on codex's rollout payloads and hooks.
 const TURN_ID: &str = "turn_id";
 
-/// Codex's source-specific hook arms. The hooks carry only what the rollout
-/// lacks: a call about to run, the approval prompt, and its answers; the
-/// rollout owns the turns and the items. `SubagentStart`/`SubagentStop`
-/// change the event's SUBJECT to a child's AgentId; every other session event
-/// falls through to the shared arms, a child's under its own id.
+/// Codex's source-specific hook arms: [`decode_call_hook`]'s, around a call
+/// and `Stop`, and `SubagentStart`/`SubagentStop`, which change the event's
+/// SUBJECT to a child's AgentId; every other session event falls through to
+/// the shared arms, a child's under its own id.
 pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
         .get("hook_event_name")
@@ -169,7 +168,7 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
             }]))
         }
         "PreToolUse" | "PostToolUse" | "PermissionRequest" | "Stop" => {
-            decode_approval_hook(obj, event).map(Some)
+            decode_call_hook(obj, event).map(Some)
         }
         // A child's other events name it in `agent_id` beside the root's
         // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:282-285`,
@@ -178,11 +177,12 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
     }
 }
 
-/// The approval's hooks, which the rollout lacks, on their [`HookSubject`].
-/// `PostToolUse` fires only on success and `PreToolUse` only for a tool with a
-/// pre-use payload (`codex-rs/core/src/tools/registry.rs` at rust-v0.164.0), so
-/// neither is an item: the rollout's call and output are.
-fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
+/// The hooks around a call and `Stop`, on their [`HookSubject`]. `PreToolUse`
+/// fires only for a tool with a pre-use payload, and `PostToolUse` only on a
+/// success whose tool has a post-use payload (`codex-rs/core/src/tools/registry.rs:1173`,
+/// `:141-148`, `:1025-1032` at rust-v0.171.0), so the rollout's call is the
+/// item, and its output the one end of a call no `PostToolUse` reports.
+fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
     let session_id = match HookSubject::of(obj).child {
         Some(child) => child.to_owned(),
         None => hook_session_id(obj, SOURCE_NAME, event)?,
@@ -211,9 +211,9 @@ fn decode_approval_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>
             [identity()].into_iter().chain(pending).collect()
         }
         "PostToolUse" => {
-            let ran = call().map(|c| AgentEvent::UserActionResolved {
+            let ran = call().map(|c| AgentEvent::ToolUseEnd {
                 agent_id,
-                by: Resolution::Call(c),
+                tool_use_id: Some(c),
             });
             [identity()].into_iter().chain(ran).collect()
         }
@@ -784,23 +784,17 @@ mod tests {
     }
 
     #[test]
-    fn the_hooks_carry_only_what_the_rollout_lacks() {
+    fn a_pre_use_a_permission_request_and_a_stop_carry_their_keys() {
         const TURN: &str = "01a14e36-7827-7f92-a603-b700dc3aa71c";
         let turn = Some(TurnKey::Id(TURN.into()));
         let tool = json!({"tool_name": "Bash", "tool_input": {"command": "rm NOTE.txt"},
                           "tool_use_id": "call_P60"});
-        let pre = hook("PreToolUse", false, tool.clone());
+        let pre = hook("PreToolUse", false, tool);
         assert!(
             matches!(&pre[..], [AgentEvent::Identity { .. }, AgentEvent::ToolUsePending {
                 tool_use_id, tool_name, turn: t, .. }]
                 if tool_use_id == "call_P60" && tool_name.as_deref() == Some("Bash") && *t == turn),
             "{pre:?}"
-        );
-        let post = hook("PostToolUse", false, tool);
-        assert!(
-            matches!(&post[..], [AgentEvent::Identity { .. }, AgentEvent::UserActionResolved {
-                by: Resolution::Call(c), .. }] if c == "call_P60"),
-            "{post:?}"
         );
         let stop = hook("Stop", false, json!({"stop_hook_active": false}));
         assert!(
@@ -1012,7 +1006,7 @@ mod tests {
     }
 
     #[test]
-    fn the_approval_hooks_read_the_rows_tool_id_key() {
+    fn post_tool_use_ends_its_call() {
         let key = crate::source::decoder::hook_tool_id_key(
             crate::source::registry::descriptor_for(SOURCE_NAME),
         );
@@ -1022,8 +1016,8 @@ mod tests {
             json!({"tool_name": "Bash", key: "call_k"}),
         );
         assert!(
-            matches!(&evs[..], [_, AgentEvent::UserActionResolved {
-                by: Resolution::Call(c), .. }] if c == "call_k"),
+            matches!(&evs[..], [AgentEvent::Identity { .. }, AgentEvent::ToolUseEnd {
+                tool_use_id: Some(c), .. }] if c == "call_k"),
             "{evs:?}"
         );
     }

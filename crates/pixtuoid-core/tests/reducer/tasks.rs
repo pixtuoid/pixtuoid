@@ -724,7 +724,7 @@ fn oversized_attach_synthesized_task_start_arms_b1() {
     assert_delegating(
         &scene,
         parent,
-        "the synthesized Jsonl Task start must seed tasks_in_flight",
+        "the synthesized Jsonl Task start must seed a Task in flight",
     );
 
     tool_use_end(
@@ -930,6 +930,53 @@ fn late_jsonl_replay_of_drained_task_end_does_not_false_resolve_requires_action(
         ),
         "a late JSONL replay of the drained Task END must not false-resolve a still-pending permission RequiresAction"
     );
+}
+
+/// #152: a subagent returning answers a prompt only when the prompt named its
+/// Task on the wire, never one a deduction bound to it.
+#[test]
+fn a_drained_task_answers_only_a_request_naming_it() {
+    for (what, names, answered) in [
+        ("bound by deduction", None, false),
+        ("naming the Task", Some("task-T"), true),
+    ] {
+        let mut scene = SceneState::uniform(8);
+        let mut r = Reducer::new();
+        let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let (parent, _child) = delegating_pair(&mut r, &mut scene, "orch-152-named", t0);
+        let t1 = t0 + Duration::from_secs(1);
+        tool_use_start(
+            &mut r,
+            &mut scene,
+            parent,
+            Some("task-T"),
+            Some("Agent"),
+            t1,
+            Transport::Hook,
+        );
+        user_action_request_for(
+            &mut r,
+            &mut scene,
+            parent,
+            "permission",
+            names,
+            t1 + Duration::from_millis(100),
+            Transport::Hook,
+        );
+        tool_use_end(
+            &mut r,
+            &mut scene,
+            parent,
+            Some("task-T"),
+            t1 + Duration::from_secs(1),
+            Transport::Hook,
+        );
+        let waits = matches!(
+            scene.agents[&parent].state,
+            ActivityState::RequiresAction { .. }
+        );
+        assert_eq!(waits, !answered, "{what}");
+    }
 }
 
 /// A parent that dispatched one Task at `t1`, by hook.
@@ -1366,6 +1413,55 @@ fn a_turn_end_while_delegating_keeps_the_delegating_clock() {
     assert_eq!(scene.agents[&parent].state_started_at, dispatched);
 }
 
+/// A Task its turn's end left running delegates on outside the later turns'
+/// requests, so a keyless prompt still binds the one call of its own turn,
+/// whose end answers it.
+#[test]
+fn a_task_that_outlived_its_turn_binds_no_later_request() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let parent = AgentId::from_transcript_path("/p/outlived.jsonl");
+    start(&mut r, &mut scene, parent);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let at = |s| t0 + Duration::from_secs(s);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("task-T"),
+        Some("Agent"),
+        at(1),
+        Transport::Hook,
+    );
+    turn_end(&mut r, &mut scene, parent, at(2), Transport::Hook);
+    tool_use_start(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("c"),
+        Some("Bash: ls"),
+        at(3),
+        Transport::Hook,
+    );
+    user_action_request(
+        &mut r,
+        &mut scene,
+        parent,
+        "permission",
+        at(4),
+        Transport::Hook,
+    );
+    tool_use_end(
+        &mut r,
+        &mut scene,
+        parent,
+        Some("c"),
+        at(5),
+        Transport::Hook,
+    );
+    assert_delegating(&scene, parent, "c's end answered the prompt");
+}
+
 /// The drain settles only a slot showing a Task: a parent showing its own call,
 /// named or not, keeps it until that call ends.
 #[test]
@@ -1787,7 +1883,7 @@ fn jsonl_task_self_end_drains_when_hook_end_drops() {
     );
     assert!(
         scene.agents.get(&child).unwrap().exiting_at.is_some(),
-        "the JSONL Task self-END must drain tasks_in_flight and fire the b1 cascade (after the #151 grace) — it is the fallback for the dropped hook END"
+        "the JSONL Task self-END must drain its Task in flight and fire the b1 cascade (after the #151 grace) — it is the fallback for the dropped hook END"
     );
     tool_use_start(
         &mut r,

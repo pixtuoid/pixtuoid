@@ -513,10 +513,6 @@ fn a_lap_names_every_merge_key_apart() {
         pending(),
         AgentEvent::UserActionResolved {
             agent_id,
-            by: Resolution::Call(id()),
-        },
-        AgentEvent::UserActionResolved {
-            agent_id,
             by: Resolution::Approved(id()),
         },
         AgentEvent::usage(agent_id, 1, Some(id())),

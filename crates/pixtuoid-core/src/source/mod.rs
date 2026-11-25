@@ -16,8 +16,8 @@ pub(crate) const DEFAULT_POLL_INTERVAL: std::time::Duration = std::time::Duratio
 /// - a session's lifecycle: what may create, end or revive it
 ///   (`Reducer::authorizes`), and only a hook's `Identity` registers one;
 /// - whether an event counts as live work or as a replay;
-/// - which pending calls a request binds by tool name or by deduction: those
-///   seen on the transport that raised it;
+/// - which pending call a request binds by deduction: one seen on the
+///   transport that raised it;
 /// - which start answers a request the wire gave no key: one on the
 ///   transport that raised it, its call's first there or one naming no call;
 /// - whether a tool end naming no call answers a request: only a hook's does;
@@ -173,8 +173,8 @@ pub enum AgentEvent {
         /// `tool_approval_requested`, kimi `tool_call_id`).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_use_id: Option<String>,
-        /// The gated tool's wire name, when the wire names one: the request
-        /// holds that tool's pending calls.
+        /// The gated tool's wire name, when the wire names one: a request
+        /// naming no call holds that tool's pending calls.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         tool_name: Option<String>,
         /// The turn the request blocks, when the wire names it.
@@ -338,14 +338,13 @@ pub struct RequestKeys {
     pub parent_tool_use_id: Option<String>,
 }
 
-/// What answered an agent's request: one call, or the whole turn it blocked.
+/// What answered an agent's request: an approval of one call, or the whole
+/// turn it blocked.
 ///
 /// `#[non_exhaustive]`: keeps adding a resolution non-breaking.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum Resolution {
-    /// The call ran (codex's `PostToolUse`).
-    Call(String),
     /// The turn stopped with nothing left pending (codex's `Stop`).
     Turn(TurnKey),
     /// The user approved the call its wait named, which runs on (omp's
@@ -586,7 +585,7 @@ impl AgentEvent {
                 (tool_use_id.as_mut(), turn.as_mut())
             }
             AgentEvent::UserActionResolved { agent_id: _, by } => match by {
-                Resolution::Call(id) | Resolution::Approved(id) => (Some(id), None),
+                Resolution::Approved(id) => (Some(id), None),
                 Resolution::Turn(turn) => (None, Some(turn)),
             },
             AgentEvent::TurnStart { agent_id: _, turn } => (None, Some(turn)),

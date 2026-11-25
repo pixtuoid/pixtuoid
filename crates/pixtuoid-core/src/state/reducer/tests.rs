@@ -718,8 +718,7 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
         t0 + Duration::from_secs(1),
         Transport::Hook,
     );
-    // A dispatch that fully drains arms the b1 cascade and leaves an (empty)
-    // tasks_in_flight entry behind.
+    // A dispatch that fully drains arms the b1 cascade.
     r.apply(
         &mut scene,
         AgentEvent::ToolUseStart {
@@ -747,8 +746,8 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
         Transport::Hook,
     );
     assert!(
-        r.corr.tasks_in_flight.contains_key(&id),
-        "task in flight populated"
+        r.corr.calls.newest_in_flight(&id).is_some(),
+        "a call in flight"
     );
     assert!(r.corr.action_requests.contains(&id), "request populated");
     assert!(r.pending_b1_cascades.contains_key(&id), "cascade armed");
@@ -783,8 +782,8 @@ fn resurrect_in_place_evicts_correlation_maps_but_keeps_proof_of_life() {
         "resurrected"
     );
     assert!(
-        !r.corr.tasks_in_flight.contains_key(&id),
-        "resurrect must evict the dead life's tasks_in_flight entry"
+        r.corr.calls.newest_in_flight(&id).is_none(),
+        "resurrect must end the dead life's calls"
     );
     assert!(
         !r.corr.action_requests.contains(&id),
@@ -1134,10 +1133,7 @@ fn the_tick_reaps_what_an_id_no_slot_holds_left() {
     };
     r.apply(&mut scene, backlog, t0, Transport::Jsonl);
     assert!(!scene.agents.contains_key(&id), "premise: no slot");
-    assert!(
-        !r.corr.tasks_in_flight.contains_key(&id) && r.corr.calls.len() == 0,
-        "a Task with no slot keeps nothing"
-    );
+    assert!(r.corr.calls.len() == 0, "a Task with no slot keeps nothing");
     assert!(r.corr.caught_up.contains(&id), "premise: a marker kept");
 
     r.tick(&mut scene, t0);

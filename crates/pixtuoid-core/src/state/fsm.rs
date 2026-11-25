@@ -3,8 +3,8 @@
 //! `parent_id` lives in [`super::scope`].
 //!
 //! **Scope:** these fns mutate ONE `AgentSlot` only. The cross-slot correlation
-//! state — `tasks_in_flight`, the action requests (permission), the call
-//! records — stays in the reducer: it spans slots and is not the FSM. The reducer decides *whether* and *which* transition fires; these fns
+//! state — the action requests (permission), the call records and the Tasks
+//! in flight among them — stays in the reducer: it spans slots and is not the FSM. The reducer decides *whether* and *which* transition fires; these fns
 //! decide *how* the slot changes.
 
 use std::sync::Arc;
@@ -36,12 +36,7 @@ pub(crate) fn enter_running(slot: &mut AgentSlot, item: ToolUse, now: SystemTime
 
 /// The `Running("Delegating")` item of the Task `tool_use_id`.
 pub(crate) fn delegating_item(tool_use_id: Option<Arc<str>>) -> ToolUse {
-    ToolUse {
-        tool_use_id,
-        // HUD text only — semantics ride on `kind`, never on this string.
-        detail: Some(Arc::<str>::from(ToolDetail::Task.display())),
-        kind: ToolKind::Task,
-    }
+    ToolUse::started(tool_use_id, Some(&ToolDetail::Task))
 }
 
 /// Enter the `Running("Delegating")` state — a parent dispatched a Task.
@@ -73,10 +68,9 @@ pub(crate) fn enter_requires_action(
 
 /// What a [`settle`] lands on besides the slot's own state.
 pub(crate) struct SettleCtx {
-    /// The item of the slot's newest call that started and has not ended.
+    /// The item of the slot's newest call that started and has not ended, a
+    /// Task it dispatched included.
     pub(crate) in_flight: Option<ToolUse>,
-    /// A Task the slot dispatched that still runs.
-    pub(crate) task_in_flight: Option<Arc<str>>,
     /// The slot's open turn shows it working (`SourceCaps::brackets_turns`).
     pub(crate) turn_shown: bool,
 }
@@ -91,12 +85,11 @@ pub(crate) fn enter_turn(slot: &mut AgentSlot, now: SystemTime) {
 }
 
 /// The slot's item or wait ended: land on its newest call still in flight,
-/// else on Delegating while a Task it dispatched still runs, else on Running
-/// with no item while its open turn shows, else on Idle. Landing on the state the
-/// slot is already in keeps its clock. The caller owns `last_event_at`.
+/// else on Running with no item while its open turn shows, else on Idle.
+/// Landing on the state the slot is already in keeps its clock. The caller
+/// owns `last_event_at`.
 pub(crate) fn settle(slot: &mut AgentSlot, ctx: SettleCtx, now: SystemTime) {
-    let task = ctx.task_in_flight.map(|task| delegating_item(Some(task)));
-    if let Some(item) = ctx.in_flight.or(task) {
+    if let Some(item) = ctx.in_flight {
         return show(slot, item, now);
     }
     match slot.state {
@@ -205,8 +198,7 @@ mod tests {
 
     fn ctx(task_in_flight: Option<&str>, turn_shown: bool) -> SettleCtx {
         SettleCtx {
-            in_flight: None,
-            task_in_flight: task_in_flight.map(Arc::from),
+            in_flight: task_in_flight.map(|task| delegating_item(Some(Arc::from(task)))),
             turn_shown,
         }
     }
@@ -227,7 +219,7 @@ mod tests {
         let mut s = slot_at(asking, t0);
         let first = SettleCtx {
             in_flight: Some(call("c2")),
-            ..ctx(Some("task-1"), true)
+            ..ctx(None, true)
         };
         settle(&mut s, first, now);
         assert_eq!(
