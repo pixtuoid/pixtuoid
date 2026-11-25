@@ -2,7 +2,7 @@
 
 use super::event_field;
 use crate::harness::hermetic::{
-    ConfigFile, Latest, Package, PerOs, Profile, Scenario, Shape, Surface, Turn,
+    ConfigFile, Fallback, Latest, Package, PerOs, Profile, Scenario, Shape, Surface, Turn,
 };
 use crate::harness::plan::Placeholder;
 
@@ -19,10 +19,13 @@ pub(crate) const PROFILE: Profile = Profile {
             ("windows", "x86_64", "jcode-windows-x86_64.exe"),
         ],
         sums: "SHA256SUMS",
-        // As `scripts/install.sh:377-421` takes it at v1.1.2.
-        // `scripts/install.ps1:162-201` falls back too, by its own reading:
-        // the sums file alone, in listing order, paging while a page is full.
-        latest: Latest::Carrying,
+        // As each platform's installer takes it at v1.1.2.
+        latest: Latest::Carrying(PerOs {
+            // `scripts/install.sh:377-421`.
+            unix: Fallback::Newest,
+            // `scripts/install.ps1:162-201`.
+            windows: Fallback::Listed,
+        }),
     },
     plugin_types: &[],
     invocation: &[

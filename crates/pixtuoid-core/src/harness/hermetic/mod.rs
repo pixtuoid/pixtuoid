@@ -135,10 +135,23 @@ pub enum Package {
 pub enum Latest {
     /// The one GitHub marks latest.
     Marked,
-    /// The marked one when it carries the platform's asset and the sums
-    /// file's line for it, else the newest other stable `v<semver>` release
-    /// that does: a release whose assets publish per platform can lack some.
-    Carrying,
+    /// The marked one when it carries the platform's asset, else the release
+    /// that platform's installer falls back to, else the marked one again: a
+    /// release whose assets publish per platform can lack some.
+    Carrying(PerOs<Fallback>),
+}
+
+/// The release an installer falls back to when GitHub's marked latest lacks
+/// its platform's asset: the first other stable `v<semver>` release that
+/// carries it, a page of the listing at a time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fallback {
+    /// Each page newest first, a release carrying the asset and its line in
+    /// the sums file, until a page holds no stable release.
+    Newest,
+    /// Each page in listing order, a release whose sums file names the
+    /// asset's artifact, while a page is full.
+    Listed,
 }
 
 impl Package {
@@ -156,8 +169,13 @@ impl Package {
                 repo,
                 assets,
                 sums,
-                latest: Latest::Carrying,
-            } => Feed::GithubCarrying { repo, assets, sums },
+                latest: Latest::Carrying(fallback),
+            } => Feed::GithubCarrying {
+                repo,
+                assets,
+                sums,
+                fallback,
+            },
             Self::UpdaterManifest {
                 manifest,
                 platforms,
@@ -186,6 +204,8 @@ pub enum Feed {
         assets: &'static [(&'static str, &'static str, &'static str)],
         /// Its `sums`.
         sums: &'static str,
+        /// Each platform's [`Fallback`].
+        fallback: PerOs<Fallback>,
     },
     /// The build an updater's manifest names now, as [`Package::UpdaterManifest`]
     /// spells it.
