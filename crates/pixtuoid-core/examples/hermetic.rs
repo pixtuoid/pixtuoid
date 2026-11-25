@@ -1068,7 +1068,9 @@ mod run {
                 let asset = asset_here(assets).map_err(|e| e.to_string())?;
                 let pages = (1..).map(|page| releases_page(repo, page));
                 newest_carrying(&marked_latest(repo)?, pages, |v| {
-                    carries(repo, v, asset, sums)
+                    carries(asset, sums, |name, part| {
+                        curl_get(&release_file(repo, v, name), part)
+                    })
                 })?
                 .map(|v| v.to_string())
                 .ok_or_else(|| {
@@ -1235,13 +1237,18 @@ mod run {
         format!("https://github.com/{repo}/releases/download/v{version}/{name}")
     }
 
-    /// Whether `repo`'s `v<version>` release carries `asset` and its line in
-    /// `sums`, as jcode's installer asks (`scripts/install.sh:244-256` at
-    /// v1.1.2), which takes a file it can't read as one the release lacks.
-    fn carries(repo: &str, version: &Version, asset: &str, sums: &str) -> bool {
-        curl_get(&release_file(repo, version, sums), Curl::Body)
+    /// Whether a release whose files `fetch` reads by name carries `asset` and
+    /// its line in `sums`, as jcode's installer asks
+    /// (`scripts/install.sh:244-256` at v1.1.2), which takes a file it can't
+    /// read as one the release lacks.
+    fn carries(
+        asset: &str,
+        sums: &str,
+        fetch: impl Fn(&str, Curl) -> std::io::Result<Vec<u8>>,
+    ) -> bool {
+        fetch(sums, Curl::Body)
             .is_ok_and(|listed| digest::lists(&String::from_utf8_lossy(&listed), asset))
-            && curl_get(&release_file(repo, version, asset), Curl::Headers).is_ok()
+            && fetch(asset, Curl::Headers).is_ok()
     }
 
     /// As many releases as a page of GitHub's listing holds
@@ -3932,6 +3939,37 @@ mod run {
                 Ok(Some(carried)),
                 "a marked release that carries it, the listing unread"
             );
+        }
+
+        #[test]
+        fn a_release_carries_its_asset_when_its_sums_line_and_the_asset_both_answer() {
+            const ASSET: &str = "jcode-macos-aarch64.tar.gz";
+            const SUMS: &str = "SHA256SUMS";
+            /// A release whose sums file reads `sums`, if it can be read, and
+            /// whose `ASSET` answers when `asset` says so.
+            fn files(
+                sums: Option<&str>,
+                asset: bool,
+            ) -> impl Fn(&str, Curl) -> std::io::Result<Vec<u8>> + '_ {
+                move |name, _| match (name, sums) {
+                    (SUMS, Some(text)) => Ok(text.as_bytes().to_vec()),
+                    (ASSET, _) if asset => Ok(Vec::new()),
+                    _ => Err(std::io::Error::other("HTTP 404")),
+                }
+            }
+            let digest = "0".repeat(64);
+            let line = format!("{digest}  {ASSET}\n");
+            let other = format!("{digest}  jcode-linux-x86_64.tar.gz\n");
+            assert!(!carries(ASSET, SUMS, files(None, true)), "sums unreadable");
+            assert!(
+                !carries(ASSET, SUMS, files(Some(&other), true)),
+                "sums without its line"
+            );
+            assert!(
+                !carries(ASSET, SUMS, files(Some(&line), false)),
+                "its line, the asset erring"
+            );
+            assert!(carries(ASSET, SUMS, files(Some(&line), true)), "both");
         }
 
         // GNU tar reads an archive path's `C:` as a remote host.
