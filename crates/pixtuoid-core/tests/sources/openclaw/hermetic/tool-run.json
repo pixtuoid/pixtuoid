@@ -7,6 +7,10 @@
     {
       "match": { "toolResultContains": "{note}" },
       "response": { "content": "pong" }
+    },
+    {
+      "match": { "hasToolResult": false },
+      "response": { "content": "pong" }
     }
   ]
 }
