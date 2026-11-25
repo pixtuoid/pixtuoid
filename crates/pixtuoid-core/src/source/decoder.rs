@@ -493,14 +493,11 @@ pub(crate) fn hook_model(
     agent_id: AgentId,
     obj: &serde_json::Map<String, Value>,
 ) -> Option<AgentEvent> {
-    obj.get("model")
-        .and_then(|m| m.as_str())
-        .filter(|m| !m.is_empty())
-        .map(|model| AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        })
+    non_empty(obj, "model").map(|model| AgentEvent::ModelInfo {
+        agent_id,
+        model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
+        effort: None,
+    })
 }
 
 /// Where the shim stamps an installed command's `--hook-event`, for a CLI whose

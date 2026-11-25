@@ -129,19 +129,8 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
         .get("hookEventName")
         .and_then(|s| s.as_str())
         .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "hookEventName"))?;
-    let cwd = obj
-        .get("cwd")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            obj.get("workspaceRoot")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty())
-        });
-    let key = obj
-        .get("sessionId")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
+    let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
+    let key = non_empty(obj, "sessionId")
         .or(cwd)
         .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "sessionId|cwd|workspaceRoot"))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
@@ -237,11 +226,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // hook (the tool proceeds → its post_tool_use End clears the
                 // gate); denial fires permission_denied (same End, above).
                 "permission_prompt" | "elicitation_dialog" => {
-                    let msg = obj
-                        .get("message")
-                        .and_then(|s| s.as_str())
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or(kind);
+                    let msg = non_empty(obj, "message").unwrap_or(kind);
                     Ok(vec![
                         identity(),
                         AgentEvent::user_action_request(
