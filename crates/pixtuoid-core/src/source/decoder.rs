@@ -553,17 +553,17 @@ pub(crate) fn shared_hook_arms(
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);
     let tool_id_key = hook_tool_id_key(desc);
+    let root_start = || AgentEvent::SessionStart {
+        agent_id,
+        source: source.to_string(),
+        session_id: session_id.clone(),
+        cwd: obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into(),
+        parent_id: None,
+    };
 
     match event {
         "SessionStart" => {
-            let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-            let mut evs = vec![AgentEvent::SessionStart {
-                agent_id,
-                source: source.to_string(),
-                session_id,
-                cwd,
-                parent_id: None,
-            }];
+            let mut evs = vec![root_start()];
             // Only SessionStart hooks get `model`, "and Claude Code doesn't
             // always include it" (hooks.md, Common input fields).
             let model = non_empty(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
@@ -646,16 +646,7 @@ pub(crate) fn shared_hook_arms(
             ),
         ]),
         // The JSONL rollout stays the system of record for Codex tool activity.
-        "UserPromptSubmit" => {
-            let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-            Ok(vec![AgentEvent::SessionStart {
-                agent_id,
-                source: source.to_string(),
-                session_id,
-                cwd,
-                parent_id: None,
-            }])
-        }
+        "UserPromptSubmit" => Ok(vec![root_start()]),
         // Stop must NOT end the session: turns end many times per session.
         "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
