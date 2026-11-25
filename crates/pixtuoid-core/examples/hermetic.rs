@@ -936,7 +936,8 @@ mod run {
     /// How many times curl retries a transient failure.
     const CURL_RETRIES: &str = "3";
 
-    /// What [`curl_get`] returns of a response.
+    /// Which part of a response curl fetches, and its flags: [`curl_get`]
+    /// reads any, and [`curl_download`] saves a `Body`.
     enum Curl {
         /// The headers, redirects unfollowed: a redirect's `location` is the answer.
         Headers,
