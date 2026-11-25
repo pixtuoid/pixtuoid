@@ -77,8 +77,8 @@ pub fn unknown_event(source: &str, name: &str) {
     tracing::warn!(target: TARGET, source = %display_safe(source), kind = <&str>::from(DriftKind::UnknownEvent), name = %display_safe(name));
 }
 
-/// A REQUIRED field of an event we DO handle is absent — the decode degrades to
-/// a graceful default, but attribution is wrong. Decoders raise it only through
+/// A REQUIRED field of an event we DO handle is absent — the decode degrades, or
+/// fails for a key it can't do without. Decoders raise it only through
 /// `decoder::required`.
 pub fn missing_field(source: &str, event: &str, field: &str) {
     tracing::warn!(target: TARGET, source = %display_safe(source), kind = <&str>::from(DriftKind::MissingField), event = %display_safe(event), field = %display_safe(field));
