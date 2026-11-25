@@ -387,10 +387,8 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
                     cwd: PathBuf::new(),
                     parent_id: Some(agent_id),
                 }];
-                if let Some(label) = str_field("description")
-                    .filter(|s| !s.is_empty())
-                    .or_else(|| str_field("subagent_type"))
-                    .filter(|s| !s.is_empty())
+                if let Some(label) =
+                    non_empty(update, "description").or_else(|| non_empty(update, "subagent_type"))
                 {
                     evs.push(AgentEvent::Rename {
                         agent_id: child,

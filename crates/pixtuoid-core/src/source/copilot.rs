@@ -139,13 +139,16 @@ fn str_at<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(|x| x.as_str())
 }
 
-fn copilot_child_key<'a>(v: &'a Value, data: Option<&'a Value>) -> Option<&'a str> {
+fn copilot_child_key<'a>(
+    obj: &'a serde_json::Map<String, Value>,
+    data: Option<&'a Value>,
+) -> Option<&'a str> {
     // BOTH branches filter empty: an empty `toolCallId` would otherwise mint a
     // child `AgentId` keyed on "", colliding every such child onto one slot.
-    str_at(v, "agentId")
-        .filter(|s| !s.is_empty())
-        .or_else(|| data.and_then(|d| str_at(d, TOOL_CALL_ID)))
-        .filter(|s| !s.is_empty())
+    non_empty(obj, "agentId").or_else(|| {
+        data.and_then(|d| str_at(d, TOOL_CALL_ID))
+            .filter(|s| !s.is_empty())
+    })
 }
 
 /// First-sight cwd extractor for the walker's head scan. Without it a copilot
@@ -281,7 +284,7 @@ pub(crate) fn decode_copilot_line(
             }
         }
         SUBAGENT_STARTED => {
-            let Some(child_key) = copilot_child_key(&v, data) else {
+            let Some(child_key) = copilot_child_key(obj, data) else {
                 return vec![];
             };
             let child = AgentId::from_parts(source, child_key);
@@ -308,7 +311,7 @@ pub(crate) fn decode_copilot_line(
             evs
         }
         SUBAGENT_COMPLETED | SUBAGENT_FAILED => {
-            let Some(child_key) = copilot_child_key(&v, data) else {
+            let Some(child_key) = copilot_child_key(obj, data) else {
                 return vec![];
             };
             vec![AgentEvent::SessionEnd {
