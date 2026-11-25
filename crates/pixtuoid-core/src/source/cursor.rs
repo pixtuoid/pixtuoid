@@ -108,7 +108,9 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
     // Key on `session_id` — present and CONSISTENT across every CLI hook event,
     // so it distinguishes concurrent sessions in one project AND coalesces all of
     // a session's events.
-    let key = required_or_err(SOURCE_NAME, None, "session_id", |k| non_empty(obj, k))?;
+    let key = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| {
+        non_empty(obj, k)
+    })?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = workspace.unwrap_or("");
 

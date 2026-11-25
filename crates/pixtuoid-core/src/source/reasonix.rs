@@ -135,7 +135,7 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
 pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = required_or_err(SOURCE_NAME, None, "event", |k| obj.get(k)?.as_str())?;
     // An empty cwd would mint a phantom agent that nothing else coalesces with.
-    let cwd = required_or_err(SOURCE_NAME, None, "cwd", |k| non_empty(obj, k))?;
+    let cwd = required_or_err(SOURCE_NAME, Some(event), "cwd", |k| non_empty(obj, k))?;
     let key = required_or_err(SOURCE_NAME, Some(event), "sessionId", |k| {
         required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
     })?;

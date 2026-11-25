@@ -133,7 +133,7 @@ pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
 pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = required_or_err(SOURCE_NAME, None, HOOK_EVENT_NAME, |k| obj.get(k)?.as_str())?;
     let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
-    let key = required_or_err(SOURCE_NAME, None, "sessionId", |k| {
+    let key = required_or_err(SOURCE_NAME, Some(event), "sessionId", |k| {
         non_empty(obj, k).or(cwd)
     })?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
