@@ -587,8 +587,8 @@ fn unkeyed_facts(driven: &Driven, what: &str) -> BTreeSet<(AgentId, Unkeyed)> {
 }
 
 /// Every recorded capture of a two-transport source decodes each unkeyed fact
-/// of an agent from one transport alone, and some capture decodes one from
-/// each.
+/// of an agent from one transport alone, and each transport decodes one in
+/// some capture.
 #[test]
 fn every_two_transport_capture_decodes_each_unkeyed_fact_from_one_transport() {
     let (mut both, mut hooked, mut transcribed) = (Vec::new(), false, false);

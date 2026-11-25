@@ -553,7 +553,7 @@ pub(crate) fn shared_hook_arms(
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);
     let tool_id_key = hook_tool_id_key(desc);
-    let root_start = || AgentEvent::SessionStart {
+    let start = || AgentEvent::SessionStart {
         agent_id,
         source: source.to_string(),
         session_id: session_id.clone(),
@@ -563,7 +563,7 @@ pub(crate) fn shared_hook_arms(
 
     match event {
         "SessionStart" => {
-            let mut evs = vec![root_start()];
+            let mut evs = vec![start()];
             // CC sends `model` on SessionStart alone, "and Claude Code doesn't always
             // include it" (hooks.md, Common input fields); codex's later hints add nothing.
             let model = non_empty(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
@@ -646,7 +646,7 @@ pub(crate) fn shared_hook_arms(
             ),
         ]),
         // The JSONL rollout stays the system of record for Codex tool activity.
-        "UserPromptSubmit" => Ok(vec![root_start()]),
+        "UserPromptSubmit" => Ok(vec![start()]),
         // Stop must NOT end the session: turns end many times per session.
         "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
