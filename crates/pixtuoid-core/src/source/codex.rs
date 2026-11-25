@@ -120,12 +120,12 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
     // A malformed SubagentStart/Stop is an Err, not Ok(None): an empty
     // `session_id`/`agent_id` would mint a phantom that never coalesces with
     // the real rollout.
-    let guards = |obj: &Map<String, Value>| -> Result<(String, Option<String>)> {
-        let subject = HookSubject::of(obj);
-        let session_id = subject
-            .root
-            .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "session_id"))?;
-        Ok((session_id.to_owned(), subject.child.map(String::from)))
+    let guards = || -> Result<(String, String)> {
+        let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
+        let child = HookSubject::of(obj).child.ok_or_else(|| {
+            DecodeError::missing_in(SOURCE_NAME, event, crate::source::decoder::SUBAGENT_ID)
+        })?;
+        Ok((session_id, child.to_owned()))
     };
     match event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
@@ -133,14 +133,7 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
         // rollout and joins the parent's scope tree (cascade / liveness /
         // readiness).
         "SubagentStart" => {
-            let (session_id, child) = guards(obj)?;
-            let child = child.ok_or_else(|| {
-                DecodeError::missing_in(
-                    SOURCE_NAME,
-                    "SubagentStart",
-                    crate::source::decoder::SUBAGENT_ID,
-                )
-            })?;
+            let (session_id, child) = guards()?;
             let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
             Ok(Some(vec![AgentEvent::SessionStart {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child),
@@ -154,14 +147,7 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
         // stale-sweep. Losing the race against the child's slot creation
         // leaves a harmless no-op plus that same fallback.
         "SubagentStop" => {
-            let (_session_id, child) = guards(obj)?;
-            let child = child.ok_or_else(|| {
-                DecodeError::missing_in(
-                    SOURCE_NAME,
-                    "SubagentStop",
-                    crate::source::decoder::SUBAGENT_ID,
-                )
-            })?;
+            let (_session_id, child) = guards()?;
             Ok(Some(vec![AgentEvent::SessionEnd {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child),
                 as_child: true,

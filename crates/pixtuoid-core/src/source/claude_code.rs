@@ -104,11 +104,7 @@ pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<Agent
     }
     // Registry contract: claim our two events FULLY (Err on malformed), never
     // fall through — an empty id mints a phantom that never coalesces.
-    let session_id = obj
-        .get("session_id")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "session_id"))?;
+    let session_id = crate::source::decoder::hook_session_id(obj, SOURCE_NAME, event)?;
     let wire_agent_id = obj
         .get(crate::source::decoder::SUBAGENT_ID)
         .and_then(|s| s.as_str())
@@ -124,7 +120,7 @@ pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<Agent
             source: SOURCE_NAME.to_string(),
             session_id: prefixed,
             cwd,
-            parent_id: Some(AgentId::from_parts(SOURCE_NAME, session_id)),
+            parent_id: Some(AgentId::from_parts(SOURCE_NAME, &session_id)),
         }]))
     } else {
         // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
