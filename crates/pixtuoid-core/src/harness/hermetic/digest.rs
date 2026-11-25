@@ -19,7 +19,10 @@ fn digests<'a>(sums: &'a str, name: &'a str) -> impl Iterator<Item = &'a str> {
     sums.lines().filter_map(move |l| {
         let mut cols = l.split_whitespace();
         let digest = cols.next()?;
-        (cols.next() == Some(name)).then_some(digest)
+        let listed = cols.next()?;
+        // A binary-mode line marks its name with one `*`, which jcode's
+        // installer accepts (`scripts/install.sh:249` at v1.1.2).
+        (listed.strip_prefix('*').unwrap_or(listed) == name).then_some(digest)
     })
 }
 
@@ -75,5 +78,18 @@ mod tests {
         assert!(lists(&sums, "jcode-linux-x86_64.tar.gz"));
         assert!(!lists(&sums, "jcode-macos-aarch64.tar.gz"), "unlisted");
         assert!(!lists(&sums, "jcode-linux-x86_64"), "a longer name's line");
+    }
+
+    #[test]
+    fn a_binary_mode_line_lists_and_vouches_for_its_name() {
+        let sums = format!("{} *jcode-linux-x86_64.tar.gz\n", sha256_hex(b"linux"));
+        assert!(lists(&sums, "jcode-linux-x86_64.tar.gz"));
+        assert!(vouches(&sums, "jcode-linux-x86_64.tar.gz", b"linux"));
+        assert!(
+            !lists(&sums, "*jcode-linux-x86_64.tar.gz"),
+            "the marker is no part of the name"
+        );
+        let twice = format!("{} **jcode-linux-x86_64.tar.gz\n", sha256_hex(b"linux"));
+        assert!(!lists(&twice, "jcode-linux-x86_64.tar.gz"), "one marker");
     }
 }
