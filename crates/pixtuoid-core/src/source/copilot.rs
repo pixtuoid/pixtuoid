@@ -39,7 +39,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     name: SOURCE_NAME,
     display_name: "Copilot CLI",
     label_prefix: "cp",
-    verified_version: "1.0.114",
+    verified_version: "1.0.115",
     version_probe: Some(&["copilot", "--version"]),
     version_hyphen: Hyphen::Prerelease,
     home_env: Some("COPILOT_HOME"),
@@ -168,6 +168,7 @@ const SUBAGENT_COMPLETED: &str = "subagent.completed";
 const SUBAGENT_FAILED: &str = "subagent.failed";
 const SESSION_TASK_COMPLETE: &str = "session.task_complete";
 const SESSION_USAGE_RECORD: &str = "session.usage_record";
+const SESSION_TOOL_BASELINE: &str = "session.tool_baseline";
 const SESSION_SHUTDOWN: &str = "session.shutdown";
 
 /// Decode one `events.jsonl` line into zero or more `AgentEvent`s. Unknown,
@@ -250,14 +251,19 @@ pub(crate) fn decode_copilot_line(
             // mid-session), attributed to the ACTING agent so a subagent's
             // tool doesn't repaint the root.
             if let Some(model) = str_at(d, "model").filter(|m| !m.is_empty()) {
-                out.push(AgentEvent::ModelInfo {
-                    agent_id: acting,
-                    model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-                    effort: None,
-                });
+                out.push(model_info(acting, model));
             }
             out
         }
+        // Written before the model's first answer, so a turn that calls no
+        // tool still names its model.
+        SESSION_TOOL_BASELINE => match data.and_then(|d| str_at(d, "model")) {
+            Some(model) if !model.is_empty() => vec![model_info(acting, model)],
+            _ => {
+                crate::source::drift::missing_field(source, SESSION_TOOL_BASELINE, "model");
+                vec![]
+            }
+        },
         PERMISSION_REQUESTED => {
             let request = data.and_then(|d| d.get("permissionRequest"));
             let reason = request
@@ -369,6 +375,15 @@ pub(crate) fn decode_copilot_line(
     }
 }
 
+/// `model`, capped at decode, as `agent`'s observation.
+fn model_info(agent: AgentId, model: &str) -> AgentEvent {
+    AgentEvent::ModelInfo {
+        agent_id: agent,
+        model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
+        effort: None,
+    }
+}
+
 /// Copilot's tool-detail dispatch. The sub-agent dispatch is the `task` tool,
 /// detected by NAME — routing non-`task` tools through the shared
 /// [`crate::source::decoder::make_tool_detail`] (which flags a Task on the mere
@@ -419,6 +434,7 @@ mod tests {
             SUBAGENT_FAILED,
             SESSION_TASK_COMPLETE,
             SESSION_USAGE_RECORD,
+            SESSION_TOOL_BASELINE,
             SESSION_SHUTDOWN,
         ] {
             assert!(drive(kind), "{kind} must reach a real arm");
@@ -834,6 +850,20 @@ mod tests {
                 "{data}"
             );
         }
+    }
+
+    /// Recorded at 1.0.115 (`just hermetic --cli latest copilot`).
+    #[test]
+    fn a_tool_baseline_names_the_model() {
+        let line = r#"{"type":"session.tool_baseline","data":{"model":"gpt-4.1","surface":"chat:byok:none:agent=","tools":[{"name":"bash","deferred":false},{"name":"read_bash","deferred":false},{"name":"stop_bash","deferred":false},{"name":"list_bash","deferred":false},{"name":"view","deferred":false},{"name":"create","deferred":false},{"name":"edit","deferred":false},{"name":"fetch_copilot_cli_documentation","deferred":false},{"name":"skill","deferred":false},{"name":"run_dynamic_workflow","deferred":false},{"name":"dynamic_workflows_manage","deferred":false},{"name":"sql","deferred":false},{"name":"session_store_sql","deferred":false},{"name":"read_agent","deferred":false},{"name":"list_agents","deferred":false},{"name":"write_agent","deferred":false},{"name":"grep","deferred":false},{"name":"glob","deferred":false},{"name":"task","deferred":false}]},"id":"4e9f3019-57f1-4ac5-b08a-a507739b0ce1","timestamp":"2026-11-25T01:57:24.956Z","parentId":"3ff5472a-0763-4213-969f-f8769b5c7545"}"#;
+        assert_eq!(
+            decode(line),
+            [AgentEvent::ModelInfo {
+                agent_id: root(),
+                model: Some("gpt-4.1".to_owned()),
+                effort: None,
+            }]
+        );
     }
 
     #[test]

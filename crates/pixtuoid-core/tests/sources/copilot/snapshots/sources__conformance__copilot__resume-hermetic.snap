@@ -3,45 +3,49 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 8747165500839284571
+    agent_id: 11143479988656057308
     source: copilot
-    session_id: d2d7fc6e-db6d-482a-b7a4-5a63b2ad5c7f
+    session_id: a4acdb49-8dfd-4b05-9a94-38c33538fe03
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
+- ModelInfo:
+    agent_id: 11143479988656057308
+    model: gpt-4.1
+    effort: ~
 - Usage:
-    agent_id: 8747165500839284571
-    fresh_tokens: 5681
-    reading_id: 2d88df9b-3307-4b29-8825-49cd8481672a
+    agent_id: 11143479988656057308
+    fresh_tokens: 5657
+    reading_id: 38fda574-411c-469e-8abf-f9b528190674
 - ToolUseStart:
-    agent_id: 8747165500839284571
-    tool_use_id: call_BYlBaw_Ztvx8ROqW
+    agent_id: 11143479988656057308
+    tool_use_id: call_PvFTEv3lmxYGykrZ
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 8747165500839284571
-    tool_use_id: call_BYlBaw_Ztvx8ROqW
+    agent_id: 11143479988656057308
+    tool_use_id: call_PvFTEv3lmxYGykrZ
 - ModelInfo:
-    agent_id: 8747165500839284571
+    agent_id: 11143479988656057308
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 8747165500839284571
-    fresh_tokens: 5668
-    reading_id: 23a7c410-a3f7-426d-8dd8-ad2ad08bf8f0
+    agent_id: 11143479988656057308
+    fresh_tokens: 5645
+    reading_id: ed4e2929-1a87-43f6-babe-67140f088836
 - SessionEnd:
-    agent_id: 8747165500839284571
+    agent_id: 11143479988656057308
     as_child: false
 - SessionStart:
-    agent_id: 8747165500839284571
+    agent_id: 11143479988656057308
     source: copilot
-    session_id: d2d7fc6e-db6d-482a-b7a4-5a63b2ad5c7f
+    session_id: a4acdb49-8dfd-4b05-9a94-38c33538fe03
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Usage:
-    agent_id: 8747165500839284571
-    fresh_tokens: 5688
-    reading_id: f1dec441-648a-4e1c-b52a-a22e83dbd95e
+    agent_id: 11143479988656057308
+    fresh_tokens: 5665
+    reading_id: d6bbd53f-1738-4c69-81fd-08faa77884fd
 - SessionEnd:
-    agent_id: 8747165500839284571
+    agent_id: 11143479988656057308
     as_child: false
