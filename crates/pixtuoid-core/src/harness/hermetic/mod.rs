@@ -146,7 +146,7 @@ pub enum Latest {
 /// that carries it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fallback {
-    /// `scripts/install.sh:377-421` at v1.1.2: each page newest first, a
+    /// `scripts/install.sh:381-421` at v1.1.2: each page newest first, a
     /// release carrying the asset and its line in the sums file, until a page
     /// holds no stable release.
     Newest,

@@ -1357,9 +1357,8 @@ mod run {
 
     /// The release [`hermetic::Latest::Carrying`] takes: `marked` when it
     /// `carries`, else the other stable one `fallback` takes from at most
-    /// [`RELEASE_PAGES`], else `marked` again, as both of jcode's installers
-    /// return it (`scripts/install.sh:381-421`, `scripts/install.ps1:162-201`
-    /// at v1.1.2).
+    /// [`RELEASE_PAGES`], else `marked` again, as the installers
+    /// [`Fallback::Newest`] and [`Fallback::First`] mirror return it.
     fn carrying_release<E>(
         fallback: Fallback,
         marked: &Version,
