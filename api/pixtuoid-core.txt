@@ -1763,7 +1763,6 @@ impl core::marker::UnsafeUnpin for pixtuoid_core::state::UsageObservation
 impl core::panic::unwind_safe::RefUnwindSafe for pixtuoid_core::state::UsageObservation
 impl core::panic::unwind_safe::UnwindSafe for pixtuoid_core::state::UsageObservation
 pub const pixtuoid_core::state::MAX_FLOORS: usize
-pub const pixtuoid_core::state::ULTRACODE_LABEL: &str
 pub enum pixtuoid_core::ActivityState
 pub pixtuoid_core::ActivityState::Idle
 pub pixtuoid_core::ActivityState::RequiresAction

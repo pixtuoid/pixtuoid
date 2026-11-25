@@ -419,10 +419,6 @@ fn u64_is_zero(v: &u64) -> bool {
     *v == 0
 }
 
-/// The one word a slot's effort shows as while its ultracode is on
-/// ([`AgentSlot::ultracode_since`]), in the dossier and on the remote wire.
-pub const ULTRACODE_LABEL: &str = "ultra";
-
 /// A RAW effort string + WHEN it was last observed — the freshness the scene
 /// layer's effort TTL reads (see `AgentSlot::effort`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

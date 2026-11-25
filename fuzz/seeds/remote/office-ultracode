@@ -1,0 +1,1 @@
+{"v":2,"now_ms":1800000000000,"machine":{"name":"studio","os":{"kind":"macos"}},"agents":[{"id":4715481297416783295,"source":"claude-code","cwd_basename":"a","activity":{"state":"idle"},"state_since_ms":1799999998000,"created_ms":1799999999000,"tool_calls":3,"running_ms":4000,"tokens":0,"effort":{"value":"xhigh","at_ms":1799999999500},"ultracode_ms":1799999999100}],"daemons":[]}
