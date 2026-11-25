@@ -1362,8 +1362,8 @@ mod tests {
         scene
     }
 
-    /// Ultracode rides its own field, as agreed with the App: `effort` stays
-    /// the level while ultracode is on, and a receiver reads both back.
+    /// Ultracode rides its own field: `effort` stays the level while
+    /// ultracode is on, and a receiver reads both back.
     #[test]
     fn ultracode_crosses_the_wire_in_its_own_field_beside_the_level() {
         let id = AgentId::from_parts("claude-code", "a");
