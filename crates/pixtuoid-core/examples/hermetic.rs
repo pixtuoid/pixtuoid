@@ -941,9 +941,8 @@ mod run {
     enum Curl {
         /// The headers, redirects unfollowed: a redirect's `location` is the answer.
         Headers,
-        /// The headers at the end of its redirects: whether the file answers
-        /// there, as jcode's installer probes an asset
-        /// (`scripts/install.sh:250` at v1.1.2).
+        /// Whether the file answers at the end of its redirects, as jcode's
+        /// installer probes an asset (`scripts/install.sh:250` at v1.1.2).
         Probe,
         Body,
     }
@@ -985,8 +984,8 @@ mod run {
     }
 
     /// `url`'s `part` written to the file `to`, never stdout: before it
-    /// retries, curl "removes data that the failed attempt wrote to an output
-    /// file", and none it wrote to stdout (curl.se/docs/manpage.html,
+    /// retries, curl removes the body the failed attempt wrote to an output
+    /// file, and none it wrote to stdout (curl.se/docs/manpage.html,
     /// `--retry`).
     fn curl(url: &str, part: Curl, to: &Path) -> std::io::Result<()> {
         let out = tool(CURL)
@@ -1253,9 +1252,12 @@ mod run {
     const TARBALL_SUFFIX: &str = ".tar.gz";
     const UV: &str = "uv";
 
-    /// The release a `releases/latest` response's `location` names.
+    /// The release a `releases/latest` response's `location` names: the last
+    /// one, since a retried `-I` fetch leaves each attempt's headers in turn
+    /// (curl 8.14.1 `src/tool_cb_hdr.c:282-313` counts none toward what
+    /// `src/tool_operate.c:504` removes).
     fn latest_tag(headers: &str) -> Option<Version> {
-        let location = headers.lines().find_map(|l| {
+        let location = headers.lines().rev().find_map(|l| {
             let (name, value) = l.split_once(':')?;
             name.eq_ignore_ascii_case("location").then(|| value.trim())
         })?;
@@ -3921,6 +3923,15 @@ mod run {
             let headers = "HTTP/2 302\r\ndate: x\r\n\
                            Location: https://github.com/o/r/releases/tag/v18.12.1\r\n\r\n";
             assert_eq!(latest_tag(headers), Some(Version::new(18, 12, 1)));
+            let retried = "HTTP/2 503\r\n\
+                           location: https://github.com/o/r/releases/tag/v1.0.0\r\n\r\n\
+                           HTTP/2 302\r\n\
+                           location: https://github.com/o/r/releases/tag/v18.12.1\r\n\r\n";
+            assert_eq!(
+                latest_tag(retried),
+                Some(Version::new(18, 12, 1)),
+                "the last attempt's"
+            );
             for bad in [
                 "HTTP/2 200\r\n\r\n",
                 "location: https://github.com/o/r/releases\r\n",
