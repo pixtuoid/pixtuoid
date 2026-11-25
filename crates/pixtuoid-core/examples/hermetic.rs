@@ -953,7 +953,7 @@ mod run {
 
     /// What [`RESPONSE_CODE`] reads when no response arrived: the code "is zero
     /// if no server response code has been received"
-    /// (https://curl.se/libcurl/c/CURLINFO_RESPONSE_CODE.html).
+    /// (<https://curl.se/libcurl/c/CURLINFO_RESPONSE_CODE.html>).
     const NO_RESPONSE: u16 = 0;
 
     /// `url`'s headers or body; a failure names curl's own reason.
