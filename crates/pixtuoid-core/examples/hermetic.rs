@@ -371,9 +371,11 @@ mod run {
             ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
             _ => None,
         };
-        installs_everywhere(p.package, &installed, repinned.as_ref(), |url| {
-            curl_get(url, Curl::Body)
-        })?;
+        installs_everywhere(
+            p.package,
+            installed.as_ref().ok().filter(|_| repinned.is_some()),
+            |url| curl_get(url, Curl::Body),
+        )?;
         let (mut judged, mut banners) = (Vec::new(), Vec::new());
         let mut scenarios = selected;
         if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.name == s.name)) {
@@ -1180,24 +1182,22 @@ mod run {
         Ok(lock)
     }
 
-    /// Refuses a recording that moves a GitHub release's pin, `repinned`, to
-    /// `installed` unless that release's sums file, as `fetch` reads it,
-    /// lists every platform's asset, so the pin installs on every leg: a
+    /// Refuses a recording that moves a GitHub release's pin to `repin`
+    /// unless that release's sums file, as `fetch` reads it, lists every
+    /// platform's asset, so the pin installs on every leg: a
     /// [`hermetic::Latest::Carrying`] release need carry only the recording
     /// host's.
     fn installs_everywhere(
         package: Package,
-        installed: &Result<Version, String>,
-        repinned: Option<&String>,
+        repin: Option<&Version>,
         fetch: impl FnOnce(&str) -> std::io::Result<Vec<u8>>,
     ) -> std::io::Result<()> {
         let (
-            Ok(version),
-            Some(_),
+            Some(version),
             Package::GithubRelease {
                 repo, assets, sums, ..
             },
-        ) = (installed, repinned, package)
+        ) = (repin, package)
         else {
             return Ok(());
         };
@@ -3801,7 +3801,6 @@ mod run {
             else {
                 panic!("jcode installs a GitHub release's asset");
             };
-            let moved = Some("the module, repinned".to_owned());
             let (linux_alone, every) = (
                 sums_line("jcode-linux-x86_64.tar.gz"),
                 assets
@@ -3816,13 +3815,8 @@ mod run {
                 }
             };
             let v112 = Version::new(1, 1, 2);
-            let why = installs_everywhere(
-                *jcode,
-                &Ok(v112.clone()),
-                moved.as_ref(),
-                serves(v112.clone(), linux_alone),
-            )
-            .expect_err("v1.1.2 lists a Linux asset alone");
+            let why = installs_everywhere(*jcode, Some(&v112), serves(v112.clone(), linux_alone))
+                .expect_err("v1.1.2 lists a Linux asset alone");
             assert!(
                 why.to_string().contains(
                     "jcode-macos-aarch64.tar.gz, jcode-macos-x86_64.tar.gz, \
@@ -3833,34 +3827,16 @@ mod run {
             );
             let v103 = Version::new(1, 0, 3);
             assert!(
-                installs_everywhere(
-                    *jcode,
-                    &Ok(v103.clone()),
-                    moved.as_ref(),
-                    serves(v103, every)
-                )
-                .is_ok(),
+                installs_everywhere(*jcode, Some(&v103), serves(v103.clone(), every)).is_ok(),
                 "v1.0.3 lists every platform's"
             );
             let unread = |_: &str| Err(std::io::Error::other("fetched"));
-            let installed = Ok(v112);
-            for (why, package, installed, repinned) in [
-                ("a pin that stays", *jcode, &installed, None),
-                (
-                    "no release installed",
-                    *jcode,
-                    &Err("none".to_owned()),
-                    moved.as_ref(),
-                ),
-                (
-                    "an npm package",
-                    Package::Npm("jcode"),
-                    &installed,
-                    moved.as_ref(),
-                ),
+            for (why, package, repin) in [
+                ("a pin that stays", *jcode, None),
+                ("an npm package", Package::Npm("jcode"), Some(&v112)),
             ] {
                 assert!(
-                    installs_everywhere(package, installed, repinned, unread).is_ok(),
+                    installs_everywhere(package, repin, unread).is_ok(),
                     "{why}, its sums file unread"
                 );
             }
