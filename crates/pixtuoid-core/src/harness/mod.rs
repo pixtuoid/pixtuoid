@@ -808,11 +808,11 @@ fn note_reached(scene: &SceneState, reaches: &mut Vec<(AgentId, Reach)>) {
 /// A line's STRUCTURE — its top-level `type` and key names, never its values.
 /// The one content-safe formatter for failure reporting.
 fn shape_of(line: &str) -> String {
+    const TYPE: &str = "type";
     let v = serde_json::from_str::<Value>(line).expect("drive parsed this line");
     // Key NAMES are wire-controlled too, so they route through the crate's ONE
     // terminal-egress policy; a second, laxer sanitizer here would be a
     // chokepoint bypass.
-    const TYPE: &str = "type";
     let ty = display_safe(v.get(TYPE).and_then(Value::as_str).unwrap_or(""));
     let keys = v.as_object().map_or_else(
         || "<non-object>".to_string(),
