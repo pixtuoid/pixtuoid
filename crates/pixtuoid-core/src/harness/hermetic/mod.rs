@@ -151,7 +151,7 @@ impl Package {
                 latest: Latest::Marked,
                 ..
             }
-            | Self::UvLocked(repo) => Feed::GithubLatest(repo),
+            | Self::UvLocked(repo) => Feed::GithubMarked(repo),
             Self::GithubRelease {
                 repo,
                 assets,
@@ -175,8 +175,8 @@ impl Package {
 pub enum Feed {
     /// An npm package's `latest` dist-tag.
     Npm(&'static str),
-    /// A GitHub repository's latest release, spelled as [`Package::GithubRelease`]'s `repo`.
-    GithubLatest(&'static str),
+    /// The release GitHub marks a repository's latest ([`Latest::Marked`]).
+    GithubMarked(&'static str),
     /// The release [`Latest::Carrying`] takes on the host, named as
     /// [`Package::GithubRelease`]'s fields are.
     GithubCarrying {

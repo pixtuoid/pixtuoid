@@ -933,7 +933,6 @@ mod run {
     }
 
     impl Curl {
-        /// Its curl flags.
         const fn flags(&self) -> &'static str {
             match self {
                 Self::Headers => "-fsSI",
@@ -1064,7 +1063,7 @@ mod run {
                     .map_err(|e| format!("npm view {spec}: {e}"))?;
                 npm_release(&spec, out.status, &out.stdout, &out.stderr).map(|v| v.to_string())
             }
-            Feed::GithubLatest(repo) => marked_latest(repo).map(|v| v.to_string()),
+            Feed::GithubMarked(repo) => marked_latest(repo).map(|v| v.to_string()),
             Feed::GithubCarrying { repo, assets, sums } => {
                 let asset = asset_here(assets).map_err(|e| e.to_string())?;
                 let pages = (1..).map(|page| releases_page(repo, page));
@@ -1255,7 +1254,6 @@ mod run {
     /// (`scripts/install.sh:391` at v1.1.2).
     const RELEASE_PAGES: usize = 5;
 
-    /// The `page`th page of `repo`'s releases.
     fn releases_page(repo: &str, page: u32) -> Result<Vec<ListedRelease>, String> {
         let url = format!(
             "https://api.github.com/repos/{repo}/releases?per_page={RELEASES_PER_PAGE}&page={page}"
@@ -3695,7 +3693,6 @@ mod run {
                 Some(redirect.to_vec()),
                 "a redirect, unfollowed"
             );
-            // macOS's `/usr/bin/curl` 8.14.1 exits 0 on a 404 under `--retry`.
             let why = answer(ok, b"\n404").expect_err("an HTTP error");
             assert!(why.to_string().contains("404"), "{why}");
             assert!(answer(failed, b"\n404").is_err(), "curl's own failure");
@@ -3927,7 +3924,7 @@ mod run {
             assert_eq!(
                 newest_carrying(&marked, [Err("listed".to_owned())], carries),
                 Err("listed".to_owned()),
-                "a listing unread once the marked release lacks it"
+                "a listing error once the marked release lacks it"
             );
             let carried = Version::new(1, 0, 1);
             assert_eq!(
