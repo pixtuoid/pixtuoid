@@ -22,7 +22,8 @@ tests/
 │   ├── conformance.rs   per-source SessionStart→tool snapshot harness (insta), a
 │   │                    `harness::Drive` shell; also pins first-sight seed ↔ decoder keying
 │   ├── manager.rs       SourceManager spawn/health
-│   ├── merge.rs         a run's hook and transcript lines in every arrival order (`harness::merge`)
+│   ├── merge.rs         a run's hook and transcript lines in every arrival order (`harness::merge`),
+│   │                    and each unkeyed fact a capture decodes from one transport alone
 │   ├── <module>/        one home per registered source, named as its `source/` module:
 │   │                    fixtures/<scenario>/ (provenance.json required; rules in sources/README.md),
 │   │                    snapshots/, hermetic/ (its aimock scripts and seeds), screens/
