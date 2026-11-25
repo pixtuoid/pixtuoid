@@ -364,7 +364,9 @@ fn decodes_to_nothing(
     let cc = source == crate::source::claude_code::SOURCE_NAME;
     // trace, not warn — and scoped to those two targets, so a FUTURE camelCase
     // source falls through and surfaces as an OBSERVED decode error instead.
-    if (cc || source == crate::source::cursor::SOURCE_NAME) && obj.contains_key("hookEventName") {
+    if (cc || source == crate::source::cursor::SOURCE_NAME)
+        && obj.contains_key(crate::source::grok::HOOK_EVENT_NAME)
+    {
         tracing::trace!(source, "dropping grok cross-fired hook envelope");
         return true;
     }
@@ -520,7 +522,7 @@ pub(crate) fn decode_hook_object(
 ) -> DecodeResult<Vec<AgentEvent>> {
     let Some(source) = hook_source(obj) else {
         // Not `warn!`: a hook that carries no stamp fires once per tool call.
-        tracing::debug!(event = ?obj.get("hook_event_name"), "unstamped hook payload dropped");
+        tracing::debug!(event = ?obj.get(HOOK_EVENT_NAME), "unstamped hook payload dropped");
         return Ok(vec![]);
     };
     let desc = crate::source::registry::descriptor_for(source);
@@ -543,7 +545,6 @@ pub(crate) fn shared_hook_arms(
     source: &str,
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
 ) -> DecodeResult<Vec<AgentEvent>> {
-    const HOOK_EVENT_NAME: &str = "hook_event_name";
     let event = obj
         .get(HOOK_EVENT_NAME)
         .and_then(|s| s.as_str())
@@ -663,6 +664,9 @@ pub(crate) fn shared_hook_arms(
         }
     }
 }
+
+/// The hook field naming the event.
+pub(crate) const HOOK_EVENT_NAME: &str = "hook_event_name";
 
 /// The hook field naming the subagent that fired an event.
 pub(crate) const SUBAGENT_ID: &str = "agent_id";

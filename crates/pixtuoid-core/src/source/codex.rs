@@ -114,7 +114,7 @@ const TURN_ID: &str = "turn_id";
 /// the shared arms, a child's under its own id.
 pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
-        .get("hook_event_name")
+        .get(crate::source::decoder::HOOK_EVENT_NAME)
         .and_then(|s| s.as_str())
         .unwrap_or("");
     // A malformed SubagentStart/Stop is an Err, not Ok(None): an empty

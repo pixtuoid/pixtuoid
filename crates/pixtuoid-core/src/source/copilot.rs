@@ -142,7 +142,7 @@ fn copilot_child_key<'a>(v: &'a Value, data: Option<&'a Value>) -> Option<&'a st
     // child `AgentId` keyed on "", colliding every such child onto one slot.
     str_at(v, "agentId")
         .filter(|s| !s.is_empty())
-        .or_else(|| data.and_then(|d| str_at(d, "toolCallId")))
+        .or_else(|| data.and_then(|d| str_at(d, TOOL_CALL_ID)))
         .filter(|s| !s.is_empty())
 }
 
@@ -150,7 +150,7 @@ fn copilot_child_key<'a>(v: &'a Value, data: Option<&'a Value>) -> Option<&'a st
 /// transcript gated at first sight then tail-revived registers an empty-cwd root
 /// (→ the short unknown-cwd reap) and its label degrades from `cp·<dir>` to `cp#N`.
 pub(crate) fn extract_copilot_cwd(v: &Value) -> Option<PathBuf> {
-    v.get("data")?
+    v.get(DATA)?
         .get("context")?
         .get("cwd")?
         .as_str()
@@ -169,6 +169,8 @@ const SUBAGENT_FAILED: &str = "subagent.failed";
 const SESSION_TASK_COMPLETE: &str = "session.task_complete";
 const SESSION_USAGE_RECORD: &str = "session.usage_record";
 const SESSION_SHUTDOWN: &str = "session.shutdown";
+const DATA: &str = "data";
+const TOOL_CALL_ID: &str = "toolCallId";
 
 /// Decode one `events.jsonl` line into zero or more `AgentEvent`s. Unknown,
 /// ephemeral, or malformed shapes return `vec![]` and never panic — real files
@@ -178,8 +180,6 @@ pub(crate) fn decode_copilot_line(
     source: &str,
     v: Value,
 ) -> Vec<AgentEvent> {
-    const DATA: &str = "data";
-    const TOOL_CALL_ID: &str = "toolCallId";
     let root = AgentId::from_parts(source, &copilot_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
         return vec![];

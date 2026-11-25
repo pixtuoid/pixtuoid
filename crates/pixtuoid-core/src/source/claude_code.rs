@@ -96,7 +96,7 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// so without `SubagentStop` they hold desks until the stale sweep.
 pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
     let event = obj
-        .get("hook_event_name")
+        .get(crate::source::decoder::HOOK_EVENT_NAME)
         .and_then(|s| s.as_str())
         .unwrap_or("");
     if event != "SubagentStart" && event != "SubagentStop" {
@@ -193,6 +193,7 @@ fn resolve_claude_config_dir(
 const ASSISTANT: &str = "assistant";
 const USER: &str = "user";
 const ATTACHMENT: &str = "attachment";
+const MESSAGE: &str = "message";
 
 /// The CC transcript types whose `message` payload this module decodes. CC's
 /// TRANSCRIPT has no fetchable schema: the nightly's latest-release census and
@@ -209,7 +210,7 @@ const DECODED_TYPES: &[&str] = &[ASSISTANT, USER];
 fn is_turn_record(obj: &serde_json::Map<String, Value>) -> bool {
     obj.contains_key("timestamp")
         && obj
-            .get("message")
+            .get(MESSAGE)
             .and_then(Value::as_object)
             .is_some_and(|m| m.contains_key("role") && m.contains_key("content"))
 }
@@ -283,7 +284,6 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     let mut out = Vec::new();
     let ty = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
 
-    const MESSAGE: &str = "message";
     // Both directions of the one rename that can freeze a sprite.
     let message = obj.get(MESSAGE).and_then(|m| m.as_object());
     if DECODED_TYPES.contains(&ty) {

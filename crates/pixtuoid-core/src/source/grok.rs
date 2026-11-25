@@ -113,6 +113,9 @@ const XAI_TURN_COMPLETED: &str = "turn_completed";
 const XAI_HOOK_EXECUTION: &str = "hook_execution";
 const SESSION_END: &str = "session_end";
 
+/// The hook field naming the event, in grok's own camelCase envelope.
+pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
+
 /// Decode one grok hook payload (already identified by
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
 ///
@@ -126,7 +129,6 @@ const SESSION_END: &str = "session_end";
 ///
 /// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
 pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    const HOOK_EVENT_NAME: &str = "hookEventName";
     let event = obj
         .get(HOOK_EVENT_NAME)
         .and_then(|s| s.as_str())
