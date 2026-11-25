@@ -587,11 +587,7 @@ pub(crate) fn shared_hook_arms(
                 .and_then(|m| m.as_str())
                 .filter(|m| !m.is_empty())
             {
-                evs.push(AgentEvent::ModelInfo {
-                    agent_id,
-                    model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-                    effort: None,
-                });
+                evs.push(AgentEvent::model_info(agent_id, model));
             }
             Ok(evs)
         }

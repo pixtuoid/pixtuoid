@@ -245,11 +245,7 @@ fn session_start(
         parent_id: field(data, "parentID").map(|p| AgentId::from_parts(SOURCE_NAME, p)),
     });
     if let Some(model) = field(data, "model.id") {
-        out.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        });
+        out.push(AgentEvent::model_info(agent_id, model));
     }
     Ok(out)
 }

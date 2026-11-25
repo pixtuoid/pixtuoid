@@ -320,11 +320,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
             .and_then(|m| m.as_str())
             .filter(|m| !m.is_empty() && *m != "<synthetic>")
         {
-            out.push(AgentEvent::ModelInfo {
-                agent_id,
-                model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-                effort: None,
-            });
+            out.push(AgentEvent::model_info(agent_id, model));
         }
         let fresh = fresh_spend(message);
         if fresh > 0 {

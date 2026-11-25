@@ -853,11 +853,7 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                         .and_then(|m| m.as_str())
                         .filter(|m| !m.is_empty())
                     {
-                        out.push(AgentEvent::ModelInfo {
-                            agent_id: acting,
-                            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-                            effort: None,
-                        });
+                        out.push(AgentEvent::model_info(acting, model));
                     }
                     out.extend(omp_usage(acting, obj, msg.get("usage")));
                     let Some(blocks) = msg.get("content").and_then(|c| c.as_array()) else {

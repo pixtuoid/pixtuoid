@@ -174,11 +174,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 .and_then(|m| m.as_str())
                 .filter(|m| !m.is_empty())
             {
-                evs.push(AgentEvent::ModelInfo {
-                    agent_id,
-                    model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-                    effort: None,
-                });
+                evs.push(AgentEvent::model_info(agent_id, model));
             }
             Ok(evs)
         }
@@ -499,11 +495,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
         .and_then(|m| m.as_str())
         .filter(|s| !s.is_empty())
     {
-        evs.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        });
+        evs.push(AgentEvent::model_info(agent_id, model));
     }
     evs
 }

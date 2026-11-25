@@ -40,7 +40,7 @@ use crate::source::decoder::{DecodeError, DecodeResult as Result};
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, SUBAGENTS_DIR, ellipsize, non_empty};
+use crate::source::decoder::{SUBAGENTS_DIR, non_empty};
 use crate::source::registry::{
     ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind,
@@ -198,11 +198,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         .and_then(|m| m.as_str())
         .filter(|s| !s.is_empty())
     {
-        evs.push(AgentEvent::ModelInfo {
-            agent_id,
-            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-            effort: None,
-        });
+        evs.push(AgentEvent::model_info(agent_id, model));
     }
     Ok(evs)
 }
