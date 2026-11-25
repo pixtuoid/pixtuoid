@@ -37,10 +37,6 @@ expression: events
     session_id: 01a1f9e2-c067-74d2-91f3-8be90bbc5b53
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
-- ModelInfo:
-    agent_id: 12474779673383475758
-    model: gpt-5.5
-    effort: ~
 - SessionStart:
     agent_id: 12474779673383475758
     source: codex

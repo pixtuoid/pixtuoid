@@ -487,6 +487,22 @@ pub(crate) fn hook_identity(
     )
 }
 
+/// The model a `SessionStart` hook offers, for a CLI with no transcript to
+/// own it.
+pub(crate) fn hook_model(
+    agent_id: AgentId,
+    obj: &serde_json::Map<String, Value>,
+) -> Option<AgentEvent> {
+    obj.get("model")
+        .and_then(|m| m.as_str())
+        .filter(|m| !m.is_empty())
+        .map(|model| AgentEvent::ModelInfo {
+            agent_id,
+            model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
+            effort: None,
+        })
+}
+
 /// Where the shim stamps an installed command's `--hook-event`, for a CLI whose
 /// payload names no event.
 pub const EVENT_STAMP: &str = "_pixtuoid_event";
@@ -557,27 +573,13 @@ pub(crate) fn shared_hook_arms(
     match event {
         "SessionStart" => {
             let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-            let mut evs = vec![AgentEvent::SessionStart {
+            Ok(vec![AgentEvent::SessionStart {
                 agent_id,
                 source: source.to_string(),
                 session_id,
                 cwd,
                 parent_id: None,
-            }];
-            // "Only SessionStart hooks can receive a `model` field, and it is not
-            // guaranteed to be present" (hooks.md) — take it when offered.
-            if let Some(model) = obj
-                .get("model")
-                .and_then(|m| m.as_str())
-                .filter(|m| !m.is_empty())
-            {
-                evs.push(AgentEvent::ModelInfo {
-                    agent_id,
-                    model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-                    effort: None,
-                });
-            }
-            Ok(evs)
+            }])
         }
         "PreToolUse" => {
             let tool_name = hook_tool_name(obj, source, event);
@@ -996,34 +998,26 @@ mod tests {
         }
     }
 
+    /// CC's and codex's transcripts carry the model, which the `SessionStart`
+    /// hook offers too, and so no hook decodes it.
     #[test]
-    fn session_start_hook_surfaces_the_model_when_offered() {
-        let v = serde_json::json!({
-            "_pixtuoid_source": "claude-code",
-            "hook_event_name": "SessionStart",
-            "session_id": "ses-m",
-            "transcript_path": "/p/ses-m.jsonl",
-            "cwd": "/repo",
-            "model": "claude-fable-5"
-        });
-        let evs = decode_hook_payload(v).unwrap();
-        assert!(
-            evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), effort: None, .. } if m == "claude-fable-5")),
-            "got {evs:?}"
-        );
-        let v = serde_json::json!({
-            "_pixtuoid_source": "claude-code",
-            "hook_event_name": "SessionStart",
-            "session_id": "ses-m",
-            "transcript_path": "/p/ses-m.jsonl",
-            "cwd": "/repo"
-        });
-        let evs = decode_hook_payload(v).unwrap();
-        assert!(
-            !evs.iter()
-                .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-            "got {evs:?}"
-        );
+    fn a_transcript_bearing_cli_s_session_start_hook_decodes_no_model() {
+        for source in ["claude-code", "codex"] {
+            let v = serde_json::json!({
+                "_pixtuoid_source": source,
+                "hook_event_name": "SessionStart",
+                "session_id": "ses-m",
+                "transcript_path": "/p/ses-m.jsonl",
+                "cwd": "/repo",
+                "model": "claude-fable-5"
+            });
+            let evs = decode_hook_payload(v).unwrap();
+            assert!(
+                !evs.iter()
+                    .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
+                "{source} got {evs:?}"
+            );
+        }
     }
     use serde_json::json;
 

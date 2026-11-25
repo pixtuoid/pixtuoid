@@ -25,7 +25,7 @@
 //! FLAT until a byte-real capture can add nesting.
 
 use crate::source::decoder::{
-    DecodeResult as Result, hook_identity, hook_session_id, shared_hook_arms,
+    DecodeResult as Result, hook_identity, hook_model, hook_session_id, shared_hook_arms,
 };
 use serde_json::Value;
 
@@ -86,6 +86,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// (`Ok(None)`) for the rest, so the CC-shaped remainder falls through to
 /// `decoder::decode_hook_payload`'s shared arms.
 ///
+/// `SessionStart`, whose `model` no transcript carries to pixtuoid, so the
+/// hook owns it.
+///
 /// `Stop`, and `StopFailure` and `Interrupt`, a failed and a cancelled turn
 /// end decoded as `Stop` — kimi's only per-turn hooks (`KIMI_EVENTS`), so each
 /// claims its session: a chat-only session running before the office, or
@@ -97,20 +100,22 @@ pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<Age
         // A cancelled turn fires `Interrupt` in place of `Stop`
         // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:422-424`
         // at `@moonshot-ai/kimi-code@2.5.3`).
-        Some(event @ ("Stop" | "StopFailure" | "Interrupt")) => event,
+        Some(event @ ("SessionStart" | "Stop" | "StopFailure" | "Interrupt")) => event,
         _ => return Ok(None),
     };
     // Read under the event's own name, so a missing id breadcrumbs as sent.
     let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
+    let desc = registry::descriptor_for(SOURCE_NAME);
+    if event == "SessionStart" {
+        let mut evs = shared_hook_arms(obj, SOURCE_NAME, desc)?;
+        evs.extend(hook_model(agent_id, obj));
+        return Ok(Some(evs));
+    }
     let mut evs = vec![hook_identity(agent_id, SOURCE_NAME, &session_id, obj)];
     let mut own = obj.clone();
     own.insert("hook_event_name".into(), Value::from("Stop"));
-    evs.extend(shared_hook_arms(
-        &own,
-        SOURCE_NAME,
-        registry::descriptor_for(SOURCE_NAME),
-    )?);
+    evs.extend(shared_hook_arms(&own, SOURCE_NAME, desc)?);
     Ok(Some(evs))
 }
 
@@ -138,11 +143,27 @@ mod tests {
     }
 
     #[test]
+    fn its_session_start_hook_decodes_the_model() {
+        let evs = crate::source::decoder::decode_hook_payload(json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "s",
+            "cwd": "/repo",
+            "model": "kimi-k3",
+            "_pixtuoid_source": SOURCE_NAME,
+        }))
+        .expect("decodes");
+        assert!(
+            evs.iter().any(|e| matches!(e,
+                AgentEvent::ModelInfo { model: Some(m), effort: None, .. } if m == "kimi-k3")),
+            "got {evs:?}"
+        );
+    }
+
+    #[test]
     fn unclaimed_events_decline_to_the_shared_arms() {
         // SubagentStart is deliberately UNregistered — included to pin that the
         // custom decoder declines it too.
         for ev in [
-            "SessionStart",
             "PreToolUse",
             "PostToolUse",
             "PostToolUseFailure",
@@ -168,7 +189,7 @@ mod tests {
     #[test]
     fn a_claimed_event_without_session_id_errs_and_breadcrumbs() {
         use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
-        for ev in ["Stop", "StopFailure", "Interrupt"] {
+        for ev in ["SessionStart", "Stop", "StopFailure", "Interrupt"] {
             for payload in [
                 json!({ "hook_event_name": ev, "cwd": "/repo" }),
                 json!({ "hook_event_name": ev, "session_id": "" }),
