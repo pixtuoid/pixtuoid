@@ -787,7 +787,8 @@ mod tests {
 
     #[test]
     fn a_usage_record_with_no_fresh_tokens_counts_none() {
-        // A reading of zero would be pushed into a monotone accumulator.
+        // A reading of zero would be pushed into a monotone accumulator, while
+        // the call's model is still the one it ran on.
         for data in [
             r#"{"usage":{"model":"m"}}"#,
             r#"{"usage":{"model":"m","inputTokens":900,"outputTokens":0,"cacheReadTokens":900,"cacheWriteTokens":0}}"#,
@@ -795,10 +796,14 @@ mod tests {
             let line = format!(
                 r#"{{"type":"session.usage_record","data":{data},"id":"e2","timestamp":"t","parentId":null}}"#
             );
+            let evs = decode(&line);
             assert!(
-                !decode(&line)
-                    .iter()
-                    .any(|e| matches!(e, AgentEvent::Usage { .. })),
+                !evs.iter().any(|e| matches!(e, AgentEvent::Usage { .. })),
+                "{data}"
+            );
+            assert!(
+                evs.iter()
+                    .any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), .. } if m == "m")),
                 "{data}"
             );
         }

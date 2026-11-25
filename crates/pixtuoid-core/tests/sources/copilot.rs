@@ -169,7 +169,8 @@ fn a_rewinds_re_read_counts_no_call_twice() {
     assert_eq!(meter, records.values().sum::<u64>());
 }
 
-/// A child's usage records name it, so its spend lands on its own slot.
+/// A child's usage records name it, so its spend and its model land on its own
+/// slot.
 #[test]
 fn a_childs_usage_is_its_own() {
     let (t, lines, records) = usage_records("copilot/fixtures/subagent-hermetic");
@@ -186,4 +187,8 @@ fn a_childs_usage_is_its_own() {
         .map(|a| (a.parent_id.map(|_| a.session_id.to_string()), a.tokens_used))
         .collect();
     assert_eq!(meters, records);
+    let child = (d.scene.agents.values())
+        .find(|a| a.parent_id.is_some())
+        .expect("the recording's child");
+    assert_eq!(child.model.as_deref(), Some("gpt-4.1"));
 }
