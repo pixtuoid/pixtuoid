@@ -1012,14 +1012,17 @@ mod run {
                     .map_err(|e| format!("npm view {spec}: {e}"))?;
                 npm_release(&spec, out.status, &out.stdout, &out.stderr).map(|v| v.to_string())
             }
-            Feed::GithubLatest(repo) => {
-                // It redirects to the latest release
-                // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
-                let url = format!("https://github.com/{repo}/releases/latest");
-                let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
-                latest_tag(&String::from_utf8_lossy(&headers))
-                    .map(|v| v.to_string())
-                    .ok_or_else(|| format!("{url} redirected to no release tag"))
+            Feed::GithubLatest(repo) => marked_latest(repo).map(|v| v.to_string()),
+            Feed::GithubCarrying { repo, assets, sums } => {
+                let asset = asset_here(assets).map_err(|e| e.to_string())?;
+                let pages = (1..).map(|page| releases_page(repo, page));
+                newest_carrying(&marked_latest(repo)?, pages, |v| {
+                    carries(repo, v, asset, sums)
+                })?
+                .map(|v| v.to_string())
+                .ok_or_else(|| {
+                    format!("no stable release of {repo} carries {asset} and its {sums} line")
+                })
             }
             Feed::UpdaterManifest {
                 manifest,
@@ -1162,6 +1165,91 @@ mod run {
         Version::parse(tag.strip_prefix('v')?).ok()
     }
 
+    /// The release GitHub marks `repo`'s latest, which `releases/latest`
+    /// redirects to
+    /// (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
+    fn marked_latest(repo: &str) -> Result<Version, String> {
+        let url = format!("https://github.com/{repo}/releases/latest");
+        let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
+        latest_tag(&String::from_utf8_lossy(&headers))
+            .ok_or_else(|| format!("{url} redirected to no release tag"))
+    }
+
+    /// `name` among the files of `repo`'s `v<version>` release.
+    fn release_file(repo: &str, version: &Version, name: &str) -> String {
+        format!("https://github.com/{repo}/releases/download/v{version}/{name}")
+    }
+
+    /// Whether `repo`'s `v<version>` release carries `asset` and its line in
+    /// `sums`, as jcode's installer asks (`scripts/install.sh:244-256` at
+    /// v1.1.2), which takes a file it can't read as one the release lacks.
+    fn carries(repo: &str, version: &Version, asset: &str, sums: &str) -> bool {
+        curl_get(&release_file(repo, version, sums), Curl::Body)
+            .is_ok_and(|listed| digest::lists(&String::from_utf8_lossy(&listed), asset))
+            && curl_get(&release_file(repo, version, asset), Curl::Headers).is_ok()
+    }
+
+    /// As many releases as a page of GitHub's listing holds
+    /// (docs.github.com/en/rest/releases/releases#list-releases): jcode's
+    /// installer sorts each such page on its own (`scripts/install.sh:392-398`
+    /// at v1.1.2).
+    const RELEASES_PER_PAGE: u8 = 100;
+
+    /// The `page`th page of `repo`'s releases.
+    fn releases_page(repo: &str, page: u32) -> Result<Vec<Listed>, String> {
+        let url = format!(
+            "https://api.github.com/repos/{repo}/releases?per_page={RELEASES_PER_PAGE}&page={page}"
+        );
+        let body = curl_get(&url, Curl::Body).map_err(|e| e.to_string())?;
+        serde_json::from_slice(&body).map_err(|e| format!("{url}: {e}"))
+    }
+
+    /// What jcode's installer reads of a listed release
+    /// (`scripts/install.sh:394-398` at v1.1.2).
+    #[derive(serde::Deserialize)]
+    struct Listed {
+        tag_name: String,
+        draft: bool,
+        prerelease: bool,
+    }
+
+    impl Listed {
+        /// Its release, when it is a stable `v<major>.<minor>.<patch>` one.
+        fn stable(&self) -> Option<Version> {
+            if self.draft || self.prerelease {
+                return None;
+            }
+            Version::parse(self.tag_name.strip_prefix('v')?)
+                .ok()
+                .filter(|v| v.pre.is_empty() && v.build.is_empty())
+        }
+    }
+
+    /// The release [`hermetic::Latest::Carrying`] takes: `marked` when it
+    /// `carries`, else the newest stable one that does, read a page at a time
+    /// until one holds no stable release, as jcode's installer reads them
+    /// (`scripts/install.sh:381-420` at v1.1.2).
+    fn newest_carrying<E>(
+        marked: &Version,
+        pages: impl IntoIterator<Item = Result<Vec<Listed>, E>>,
+        mut carries: impl FnMut(&Version) -> bool,
+    ) -> Result<Option<Version>, E> {
+        if carries(marked) {
+            return Ok(Some(marked.clone()));
+        }
+        for page in pages {
+            let mut stable: Vec<Version> = page?.iter().filter_map(Listed::stable).collect();
+            if stable.is_empty() {
+                break;
+            }
+            stable.sort_unstable_by(|a, b| b.cmp(a));
+            if let Some(v) = stable.into_iter().find(|v| carries(v)) {
+                return Ok(Some(v));
+            }
+        }
+        Ok(None)
+    }
+
     /// This platform's binary among a release's `assets`.
     fn asset_here(assets: &[(&str, &str, &'static str)]) -> std::io::Result<&'static str> {
         let here = (std::env::consts::OS, std::env::consts::ARCH);
@@ -1182,8 +1270,8 @@ mod run {
         sums: &str,
         to: &Path,
     ) -> std::io::Result<()> {
-        let base = format!("https://github.com/{repo}/releases/download/v{version}");
-        let fetch = |name: &str, dest: &Path| curl_download(&format!("{base}/{name}"), dest);
+        let fetch =
+            |name: &str, dest: &Path| curl_download(&release_file(repo, version, name), dest);
         let listed = to.with_file_name(sums);
         fetch(sums, &listed)?;
         let payload = to.with_file_name("payload");
@@ -1287,7 +1375,9 @@ mod run {
                     bin,
                 })
             }
-            Package::GithubRelease { repo, assets, sums } => {
+            Package::GithubRelease {
+                repo, assets, sums, ..
+            } => {
                 let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
                 install_once(&prefix, |_| {
                     fetch_release(repo, version, asset_here(assets)?, sums, &program)
@@ -3642,6 +3732,60 @@ mod run {
             ] {
                 assert_eq!(latest_tag(bad), None, "{bad:?}");
             }
+        }
+
+        /// jcode's v1.1.2: GitHub marks it latest, and it carries a Linux
+        /// asset alone.
+        #[test]
+        fn a_platform_the_marked_release_lacks_takes_the_newest_stable_release_carrying_it() {
+            const MACOS: &str = "jcode-macos-aarch64.tar.gz";
+            const LINUX: &str = "jcode-linux-x86_64.tar.gz";
+            // (tag, draft, prerelease, assets), in the listing's order.
+            type Row = (&'static str, bool, bool, &'static [&'static str]);
+            const ROWS: &[Row] = &[
+                ("v1.2.0", true, false, &[MACOS, LINUX]),
+                ("v1.1.4-rc.1", false, false, &[MACOS, LINUX]),
+                ("v1.1.3", false, true, &[MACOS, LINUX]),
+                ("v1.1.2", false, false, &[LINUX]),
+                ("v1.1.1", false, false, &[LINUX]),
+                ("readme-assets", false, false, &[MACOS]),
+                ("v1.0.1", false, false, &[MACOS, LINUX]),
+                ("v1.0.3", false, false, &[MACOS, LINUX]),
+            ];
+            let page = |rows: &[Row]| -> Result<Vec<Listed>, String> {
+                Ok(rows
+                    .iter()
+                    .map(|(tag, draft, prerelease, _)| Listed {
+                        tag_name: (*tag).to_owned(),
+                        draft: *draft,
+                        prerelease: *prerelease,
+                    })
+                    .collect())
+            };
+            let carries = |v: &Version| {
+                ROWS.iter().any(|(tag, _, _, assets)| {
+                    tag.strip_prefix('v') == Some(v.to_string().as_str()) && assets.contains(&MACOS)
+                })
+            };
+            let marked = Version::new(1, 1, 2);
+            let newest = Ok(Some(Version::new(1, 0, 3)));
+            assert_eq!(newest_carrying(&marked, [page(ROWS)], carries), newest);
+            assert_eq!(
+                newest_carrying(&marked, [page(&ROWS[..5]), page(&ROWS[5..])], carries),
+                newest,
+                "a page with none reads on"
+            );
+            assert_eq!(
+                newest_carrying(&marked, [page(&ROWS[..3]), page(ROWS)], carries),
+                Ok(None),
+                "a page with no stable release ends the listing"
+            );
+            let carried = Version::new(1, 0, 1);
+            assert_eq!(
+                newest_carrying(&carried, [Err("listed".to_owned())], carries),
+                Ok(Some(carried)),
+                "a marked release that carries it, the listing unread"
+            );
         }
 
         // GNU tar reads an archive path's `C:` as a remote host.

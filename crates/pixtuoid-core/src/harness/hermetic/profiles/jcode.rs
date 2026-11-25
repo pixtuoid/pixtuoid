@@ -2,7 +2,7 @@
 
 use super::event_field;
 use crate::harness::hermetic::{
-    ConfigFile, Package, PerOs, Profile, Scenario, Shape, Surface, Turn,
+    ConfigFile, Latest, Package, PerOs, Profile, Scenario, Shape, Surface, Turn,
 };
 use crate::harness::plan::Placeholder;
 
@@ -19,6 +19,9 @@ pub(crate) const PROFILE: Profile = Profile {
             ("windows", "x86_64", "jcode-windows-x86_64.exe"),
         ],
         sums: "SHA256SUMS",
+        // As both its installers take it (`scripts/install.sh:377-421`,
+        // `scripts/install.ps1:162-201` at v1.1.2).
+        latest: Latest::Carrying,
     },
     plugin_types: &[],
     invocation: &[

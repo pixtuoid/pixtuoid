@@ -14,13 +14,24 @@ pub fn digest_hex<D: sha2::Digest>(bytes: &[u8]) -> String {
     })
 }
 
+/// The digests a release's `sums` file lists for `name`.
+fn digests<'a>(sums: &'a str, name: &'a str) -> impl Iterator<Item = &'a str> {
+    sums.lines().filter_map(move |l| {
+        let mut cols = l.split_whitespace();
+        let digest = cols.next()?;
+        (cols.next() == Some(name)).then_some(digest)
+    })
+}
+
+/// Whether a release's `sums` file lists `name`.
+pub fn lists(sums: &str, name: &str) -> bool {
+    digests(sums, name).next().is_some()
+}
+
 /// Whether a release's `sums` file lists `bytes`' digest for `name`.
 pub fn vouches(sums: &str, name: &str, bytes: &[u8]) -> bool {
     let digest = sha256_hex(bytes);
-    sums.lines().any(|l| {
-        let mut cols = l.split_whitespace();
-        cols.next() == Some(digest.as_str()) && cols.next() == Some(name)
-    })
+    digests(sums, name).any(|d| d == digest)
 }
 
 #[cfg(test)]
@@ -55,5 +66,14 @@ mod tests {
         );
         assert!(!vouches(&sums, "omp-linux-x64", b"tampered"));
         assert!(!vouches(&sums, "omp-windows-x64.exe", b"linux"), "unlisted");
+    }
+
+    /// jcode's v1.1.2 lists its Linux asset alone.
+    #[test]
+    fn a_sums_file_lists_a_name_by_its_own_line_alone() {
+        let sums = format!("{}  jcode-linux-x86_64.tar.gz\n", sha256_hex(b"linux"));
+        assert!(lists(&sums, "jcode-linux-x86_64.tar.gz"));
+        assert!(!lists(&sums, "jcode-macos-aarch64.tar.gz"), "unlisted");
+        assert!(!lists(&sums, "jcode-linux-x86_64"), "a longer name's line");
     }
 }

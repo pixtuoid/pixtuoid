@@ -2,7 +2,7 @@
 
 use super::event_field;
 use crate::harness::hermetic::{
-    ConfigFile, HostConfig, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
+    ConfigFile, HostConfig, Latest, Package, PerOs, Profile, Scenario, Shape, Surface, Turn, tui,
 };
 
 /// Its TUI, the one surface that fires a session's lifecycle: `exec --hooks`
@@ -45,6 +45,9 @@ pub(crate) const PROFILE: Profile = Profile {
             ("windows", "x86_64", "codewhale-windows-x64.exe"),
         ],
         sums: "codewhale-artifacts-sha256.txt",
+        // `releases/latest/download` (`web/public/install.sh:254-260` at
+        // v0.10.4).
+        latest: Latest::Marked,
     },
     plugin_types: &[],
     invocation: &["codewhale"],

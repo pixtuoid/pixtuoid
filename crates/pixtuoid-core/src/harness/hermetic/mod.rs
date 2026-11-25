@@ -108,6 +108,8 @@ pub enum Package {
         /// The release's file that must vouch for the download
         /// ([`digest::vouches`]).
         sums: &'static str,
+        /// Which release its installer takes as the latest.
+        latest: Latest,
     },
     /// The `v<version>` tag of the repository it names (spelled as
     /// [`GithubRelease`](Self::GithubRelease)'s `repo`), synced from its
@@ -127,12 +129,34 @@ pub enum Package {
     },
 }
 
+/// How an installer picks a GitHub repository's latest release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Latest {
+    /// The one GitHub marks latest.
+    Marked,
+    /// The marked one when it carries the platform's asset and the sums
+    /// file's line for it, else the newest other stable `v<semver>` release
+    /// that does: a release whose assets publish per platform can lack some.
+    Carrying,
+}
+
 impl Package {
     /// Where its releases are published.
     pub const fn feed(&self) -> Feed {
         match *self {
             Self::Npm(package) => Feed::Npm(package),
-            Self::GithubRelease { repo, .. } | Self::UvLocked(repo) => Feed::GithubLatest(repo),
+            Self::GithubRelease {
+                repo,
+                latest: Latest::Marked,
+                ..
+            }
+            | Self::UvLocked(repo) => Feed::GithubLatest(repo),
+            Self::GithubRelease {
+                repo,
+                assets,
+                sums,
+                latest: Latest::Carrying,
+            } => Feed::GithubCarrying { repo, assets, sums },
             Self::UpdaterManifest {
                 manifest,
                 platforms,
@@ -152,6 +176,16 @@ pub enum Feed {
     Npm(&'static str),
     /// A GitHub repository's latest release, spelled as [`Package::GithubRelease`]'s `repo`.
     GithubLatest(&'static str),
+    /// The release [`Latest::Carrying`] takes on the host, named as
+    /// [`Package::GithubRelease`]'s fields are.
+    GithubCarrying {
+        /// Its `repo`.
+        repo: &'static str,
+        /// Its `assets`.
+        assets: &'static [(&'static str, &'static str, &'static str)],
+        /// Its `sums`.
+        sums: &'static str,
+    },
     /// The build an updater's manifest names now, as [`Package::UpdaterManifest`]
     /// spells it.
     UpdaterManifest {
