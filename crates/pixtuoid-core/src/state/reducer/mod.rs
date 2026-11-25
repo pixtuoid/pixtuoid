@@ -507,6 +507,11 @@ impl Reducer {
                 },
                 now,
             ),
+            AgentEvent::ModelHint { agent_id, model } => {
+                if let Some(slot) = scene.agents.get_mut(&agent_id) {
+                    slot.model.get_or_insert_with(|| Arc::from(model));
+                }
+            }
             AgentEvent::Ultracode { agent_id, on } => {
                 if let Some(slot) = scene.agents.get_mut(&agent_id) {
                     slot.ultracode = on;
