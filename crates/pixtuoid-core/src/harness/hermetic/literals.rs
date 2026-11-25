@@ -244,33 +244,40 @@ pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
     c.resolve()
 }
 
-/// Each accessor's name from one spelling, which also pins that name to its
-/// `decoder` function at the signature given, so a renamed or reshaped
-/// accessor breaks this build instead of leaving the census matching a stale
-/// name.
+/// An accessor a decoder reads a required key through.
+struct KeyReader {
+    name: &'static str,
+    /// How many arguments it takes: a namesake of another arity is some other
+    /// function.
+    arity: usize,
+    /// Which of them is the key.
+    key_index: usize,
+}
+
+/// Each accessor from one row, which also pins its name to its `decoder`
+/// function at the signature given, so a renamed or reshaped accessor breaks
+/// this build on the row its key's index sits on, instead of leaving the census
+/// matching a stale name or arity.
 macro_rules! key_readers {
-    ($($reader:ident: $signature:ty),* $(,)?) => {{
-        $(let _: $signature = crate::source::decoder::$reader;)*
-        [$(stringify!($reader)),*]
+    ($($reader:ident: fn($($arg:ty),*) -> $found:ty, key_index = $key_index:literal;)*) => {{
+        $(let _: fn($($arg),*) -> $found = crate::source::decoder::$reader;)*
+        [$(KeyReader {
+            name: stringify!($reader),
+            arity: [$(stringify!($arg)),*].len(),
+            key_index: $key_index,
+        }),*]
     }};
 }
 
 /// The accessors a decoder reads a required key through.
-const KEY_READERS: [&str; 2] = {
+const KEY_READERS: [KeyReader; 2] = {
     type Read = fn(&'static str) -> Option<()>;
     type Found = crate::source::decoder::DecodeResult<()>;
     key_readers!(
-        required: fn(&str, &str, &'static str, Read) -> Option<()>,
-        required_or_err: fn(&str, Option<&str>, &'static str, Read) -> Found,
+        required: fn(&str, &str, &'static str, Read) -> Option<()>, key_index = 2;
+        required_or_err: fn(&str, Option<&str>, &'static str, Read) -> Found, key_index = 2;
     )
 };
-
-/// How many arguments the signatures in [`KEY_READERS`] take: a namesake of
-/// another arity is some other function.
-const KEY_READER_ARITY: usize = 4;
-
-/// Which argument of those signatures is the key.
-const KEY_READER_KEY: usize = 2;
 
 struct Collect {
     module: String,
@@ -455,11 +462,13 @@ impl<'ast> Visit<'ast> for Collect {
     /// not: a breadcrumb (`drift::missing_field`) or an error only repeats the key.
     fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
         if let syn::Expr::Path(p) = &*c.func {
-            let name = p.path.segments.last().map(|s| s.ident.to_string());
-            if name.is_some_and(|n| KEY_READERS.contains(&n.as_str()))
-                && c.args.len() == KEY_READER_ARITY
-            {
-                if let Some(s) = c.args.iter().nth(KEY_READER_KEY).and_then(Self::lit) {
+            let reader = p.path.segments.last().and_then(|s| {
+                KEY_READERS
+                    .iter()
+                    .find(|r| s.ident == r.name && c.args.len() == r.arity)
+            });
+            if let Some(reader) = reader {
+                if let Some(s) = c.args.iter().nth(reader.key_index).and_then(Self::lit) {
                     self.add(s, Match::Exact);
                 }
             } else if p.path.get_ident().is_some_and(|i| i != "Some") {
