@@ -244,6 +244,21 @@ pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
     c.resolve()
 }
 
+/// The accessors a decoder reads a required key through, by name, and the
+/// argument that key is. Naming each function here breaks this build when one
+/// is renamed, so the census can't silently stop crediting its keys.
+const KEY_READERS: [(&str, usize); 2] = {
+    let _: fn(&str, &str, &'static str, fn(&'static str) -> Option<()>) -> Option<()> =
+        crate::source::decoder::required;
+    let _: fn(
+        &str,
+        Option<&str>,
+        &'static str,
+        fn(&'static str) -> Option<()>,
+    ) -> crate::source::decoder::DecodeResult<()> = crate::source::decoder::required_or_err;
+    [("required", 2), ("required_or_err", 2)]
+};
+
 struct Collect {
     module: String,
     item: String,
@@ -422,15 +437,29 @@ impl<'ast> Visit<'ast> for Collect {
     }
 
     /// A string a local accessor takes (`field(obj, "id")`, a closure's
-    /// `n("inputTokens")`) is a key it reads. A path call's is not: a
-    /// breadcrumb (`drift::missing_field`) or an error only repeats the key.
+    /// `n("inputTokens")`) is a key it reads, and so is a required key's
+    /// ([`KEY_READERS`]) whatever path names its reader. Another path call's is
+    /// not: a breadcrumb (`drift::missing_field`) or an error only repeats the key.
     fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
-        if matches!(&*c.func, syn::Expr::Path(p) if p.path.get_ident().is_some_and(|i| i != "Some"))
-        {
-            for arg in &c.args {
-                if let Some(s) = Self::lit(arg) {
-                    self.add(s, Match::Exact);
+        if let syn::Expr::Path(p) = &*c.func {
+            let name = p.path.segments.last().map(|s| s.ident.to_string());
+            match KEY_READERS
+                .iter()
+                .find(|(n, _)| name.as_deref() == Some(*n))
+            {
+                Some((_, at)) => {
+                    if let Some(s) = c.args.iter().nth(*at).and_then(Self::lit) {
+                        self.add(s, Match::Exact);
+                    }
                 }
+                None if p.path.get_ident().is_some_and(|i| i != "Some") => {
+                    for arg in &c.args {
+                        if let Some(s) = Self::lit(arg) {
+                            self.add(s, Match::Exact);
+                        }
+                    }
+                }
+                None => {}
             }
         }
         syn::visit::visit_expr_call(self, c);
@@ -1173,6 +1202,25 @@ mod tests {
         for absent in ["breadcrumb", "test_only", "unix_test_only"] {
             assert!(!got.contains_key(absent), "{absent}: {got:?}");
         }
+    }
+
+    #[test]
+    fn the_scan_reads_a_required_keys_key_whatever_path_calls_it() {
+        let file = syn::parse_file(
+            r#"
+        fn decode(obj: &Map) {
+            let _ = crate::source::decoder::required(SOURCE_NAME, "pathed_event", "pathed", |k| obj.get(k));
+            let _ = required(SOURCE_NAME, "bare_event", "bare", |k| obj.get(k));
+            let _ = decoder::required_or_err(SOURCE_NAME, Some("erring_event"), "erring", |k| obj.get(k));
+        }
+"#,
+        )
+        .expect("parses");
+        let got: BTreeSet<String> = collect("x.rs", &file).into_iter().map(|l| l.text).collect();
+        assert_eq!(
+            got,
+            BTreeSet::from(["pathed", "bare", "erring"].map(String::from))
+        );
     }
 
     /// An export a plugin installer reads is exactly its decoder's dispatch
