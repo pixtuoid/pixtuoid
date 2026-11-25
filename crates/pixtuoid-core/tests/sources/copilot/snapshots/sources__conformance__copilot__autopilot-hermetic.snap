@@ -3,51 +3,47 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 411531777736714449
+    agent_id: 4284252491792751427
     source: copilot
-    session_id: b68841c8-2ff7-4609-952f-2696166e0d19
+    session_id: 95cce7eb-ccc2-4a20-a691-62d9ad50575c
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 411531777736714449
+    agent_id: 4284252491792751427
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 411531777736714449
+    agent_id: 4284252491792751427
     fresh_tokens: 7270
-    reading_id: 772b6747-cbb2-4516-936b-0bf20caecdb7
+    reading_id: 857f0970-9b7c-4348-a52d-c6cef440ba95
 - ToolUseStart:
-    agent_id: 411531777736714449
-    tool_use_id: call_NkuvKbM1U2kwoif9
+    agent_id: 4284252491792751427
+    tool_use_id: call_29OUhyb-0JYTOebr
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 411531777736714449
-    tool_use_id: call_NkuvKbM1U2kwoif9
+    agent_id: 4284252491792751427
+    tool_use_id: call_29OUhyb-0JYTOebr
 - ModelInfo:
-    agent_id: 411531777736714449
+    agent_id: 4284252491792751427
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 411531777736714449
+    agent_id: 4284252491792751427
     fresh_tokens: 7264
-    reading_id: 4a68665f-0964-4aba-9359-0caecf1566ea
+    reading_id: 99cc232a-37c1-4e0a-aef0-c3874efee072
 - ToolUseStart:
-    agent_id: 411531777736714449
-    tool_use_id: call_g95aR4wVD9EwCYjP
+    agent_id: 4284252491792751427
+    tool_use_id: call_zVKd_ehhQgIA89fL
     detail:
       Generic:
         display: task_complete
 - ToolUseEnd:
-    agent_id: 411531777736714449
-    tool_use_id: call_g95aR4wVD9EwCYjP
-- ModelInfo:
-    agent_id: 411531777736714449
-    model: gpt-4.1
-    effort: ~
+    agent_id: 4284252491792751427
+    tool_use_id: call_zVKd_ehhQgIA89fL
 - TurnEnd:
-    agent_id: 411531777736714449
+    agent_id: 4284252491792751427
 - SessionEnd:
-    agent_id: 411531777736714449
+    agent_id: 4284252491792751427
     as_child: false

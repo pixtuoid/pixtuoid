@@ -464,6 +464,17 @@ impl AgentEvent {
         }
     }
 
+    /// A model observation naming no effort: THE constructor every decoder
+    /// whose wire names only a model mints one through, so the decode cap and
+    /// a field it gains land here, never at a decoder.
+    pub(crate) fn model_info(agent_id: AgentId, model: &str) -> Self {
+        AgentEvent::ModelInfo {
+            agent_id,
+            model: Some(decoder::ellipsize(model, decoder::MAX_DECODED_FIELD_CHARS)),
+            effort: None,
+        }
+    }
+
     /// A request for the user's action. THE constructor every site mints one
     /// through, so a field it gains lands in ONE place: a key in
     /// [`RequestKeys`], which a keyless site leaves at its default.

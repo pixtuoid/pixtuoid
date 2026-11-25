@@ -1,0 +1,20 @@
+{"type":"session.start","data":{"sessionId":"273fb636-3c94-471e-ac6b-bf04d794d4d7","version":0,"producer":"","copilotVersion":"","startTime":"","selectedModel":"","contextTier":null,"context":{"cwd":"/private/tmp/pixtuoid-capture/proj"},"remoteSteerable":false,"alreadyInUse":false},"id":"","timestamp":"","parentId":null}
+{}
+{}
+{}
+{}
+{}
+{}
+{"type":"session.usage_record","data":{"apiCallIdFromUsageId":false,"usage":{"accounting":{},"model":"gpt-4.1","modelDisplayName":"","initiator":"","aiCreditsStatus":"","cost":0,"duration":0,"inputTokens":5642,"outputTokens":16,"cacheReadTokens":0,"cacheWriteTokens":0,"timeToFirstTokenMs":0,"outputTtftMs":0,"interTokenLatencyMs":0,"apiEndpoint":"","finishReason":"","contentFilterTriggered":false,"interactionType":"","maxPromptTokens":0,"availableToolCount":0,"toolTokenCount":0}},"id":"b8125e7d-a4df-46aa-9ebb-ab9fc13d437e","timestamp":"","parentId":""}
+{}
+{"type":"tool.execution_start","data":{"toolCallId":"call_kKgmA4BJ2wF6DGxp","toolName":"bash","arguments":{"command":"rm NOTE.txt","description":""},"turnId":"","model":"","toolTitle":"","shellToolInfo":{}},"id":"","timestamp":"","parentId":""}
+{"type":"permission.requested","data":{"requestId":"","permissionRequest":{"kind":"shell","toolCallId":"call_kKgmA4BJ2wF6DGxp","fullCommandText":"","shellType":"","intention":"","commands":[],"hasParseErrors":false,"commandSegments":[],"possiblePaths":[],"canOfferSessionApproval":false,"hasWriteFileRedirection":false,"possibleUrls":[]},"promptRequest":{},"assistedApprovalAssessment":{},"agentMode":"","permissionMode":"","ownerSessionId":""},"id":"","timestamp":"","parentId":""}
+{"type":"permission.completed","data":{"requestId":"","toolCallId":"call_kKgmA4BJ2wF6DGxp","result":{},"decisionSource":""},"id":"","timestamp":"","parentId":""}
+{"type":"tool.execution_complete","data":{"toolCallId":"call_kKgmA4BJ2wF6DGxp","model":"","interactionId":"","turnId":"","rte":false,"success":false,"error":{},"toolTelemetry":{}},"id":"","timestamp":"","parentId":""}
+{}
+{}
+{"type":"session.usage_record","data":{"apiCallIdFromUsageId":false,"usage":{"accounting":{},"model":"gpt-4.1","modelDisplayName":"","initiator":"","aiCreditsStatus":"","cost":0,"duration":0,"inputTokens":5690,"outputTokens":1,"cacheReadTokens":0,"cacheWriteTokens":0,"timeToFirstTokenMs":0,"outputTtftMs":0,"interTokenLatencyMs":0,"apiEndpoint":"","finishReason":"","contentFilterTriggered":false,"interactionType":"","maxPromptTokens":0,"availableToolCount":0,"toolTokenCount":0}},"id":"4ca72c97-cfa0-4181-8e28-08272a8c496d","timestamp":"","parentId":""}
+{}
+{}
+{}
+{"type":"session.shutdown","data":{},"id":"","timestamp":"","parentId":""}

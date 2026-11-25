@@ -168,7 +168,6 @@ const SUBAGENT_COMPLETED: &str = "subagent.completed";
 const SUBAGENT_FAILED: &str = "subagent.failed";
 const SESSION_TASK_COMPLETE: &str = "session.task_complete";
 const SESSION_USAGE_RECORD: &str = "session.usage_record";
-const SESSION_TOOL_BASELINE: &str = "session.tool_baseline";
 const SESSION_SHUTDOWN: &str = "session.shutdown";
 
 /// Decode one `events.jsonl` line into zero or more `AgentEvent`s. Unknown,
@@ -196,7 +195,7 @@ pub(crate) fn decode_copilot_line(
             let session_id = data
                 .and_then(|d| str_at(d, "sessionId"))
                 .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(source, "session.start", "sessionId");
+                    crate::source::drift::missing_field(source, SESSION_START, "sessionId");
                     ""
                 });
             vec![root_start(root, source, session_id, data)]
@@ -211,15 +210,15 @@ pub(crate) fn decode_copilot_line(
         )],
         TOOL_EXECUTION_START => {
             let Some(d) = data else {
-                crate::source::drift::missing_field(source, "tool.execution_start", "data");
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, "data");
                 return vec![];
             };
             let Some(tool_call_id) = str_at(d, "toolCallId") else {
-                crate::source::drift::missing_field(source, "tool.execution_start", "toolCallId");
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, "toolCallId");
                 return vec![];
             };
             let tool_name = str_at(d, "toolName").unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, "tool.execution_start", "toolName");
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, "toolName");
                 ""
             });
             let detail = copilot_tool_detail(tool_name, d.get("arguments"));
@@ -232,38 +231,18 @@ pub(crate) fn decode_copilot_line(
         }
         TOOL_EXECUTION_COMPLETE => {
             let Some(d) = data else {
-                crate::source::drift::missing_field(source, "tool.execution_complete", "data");
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_COMPLETE, "data");
                 return vec![];
             };
             let Some(tool_call_id) = str_at(d, "toolCallId") else {
-                crate::source::drift::missing_field(
-                    source,
-                    "tool.execution_complete",
-                    "toolCallId",
-                );
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_COMPLETE, "toolCallId");
                 return vec![];
             };
-            let mut out = vec![AgentEvent::ToolUseEnd {
+            vec![AgentEvent::ToolUseEnd {
                 agent_id: acting,
                 tool_use_id: Some(tool_call_id.to_string()),
-            }];
-            // Copilot stamps the model PER TOOL (`data.model` can differ
-            // mid-session), attributed to the ACTING agent so a subagent's
-            // tool doesn't repaint the root.
-            if let Some(model) = str_at(d, "model").filter(|m| !m.is_empty()) {
-                out.push(model_info(acting, model));
-            }
-            out
+            }]
         }
-        // Written before the model's first answer, so a turn that calls no
-        // tool still names its model.
-        SESSION_TOOL_BASELINE => match data.and_then(|d| str_at(d, "model")) {
-            Some(model) if !model.is_empty() => vec![model_info(acting, model)],
-            _ => {
-                crate::source::drift::missing_field(source, SESSION_TOOL_BASELINE, "model");
-                vec![]
-            }
-        },
         PERMISSION_REQUESTED => {
             let request = data.and_then(|d| d.get("permissionRequest"));
             let reason = request
@@ -341,46 +320,45 @@ pub(crate) fn decode_copilot_line(
         // bundled `cli-main.js` (:2122, :3100) passes `includeSubAgents`, without
         // which `SessionClient._dispatchEvent` (:1536) skips one with an `agentId`.
         SESSION_TASK_COMPLETE if acting == root => vec![AgentEvent::turn_end(root)],
-        // Each call's own usage record (1.0.105's `schemas/session-events.schema.json`,
+        // Each call's own usage record (1.0.115's `schemas/session-events.schema.json`,
         // `UsageAccountingRecordData`), since a shutdown's `modelMetrics` totals
-        // every lifetime of a resumed session. `inputTokens` counts cache reads.
+        // every lifetime of a resumed session. Its required `usage.model` is the
+        // "Model identifier used for this API call" (`AssistantUsageData`), so a
+        // child's calls and a resumed lifetime's name theirs. `inputTokens`
+        // counts cache reads.
         SESSION_USAGE_RECORD => {
             let Some(usage) = data.and_then(|d| d.get("usage")) else {
-                crate::source::drift::missing_field(source, "session.usage_record", "usage");
+                crate::source::drift::missing_field(source, SESSION_USAGE_RECORD, "usage");
                 return vec![];
             };
+            let mut out: Vec<AgentEvent> = str_at(usage, "model")
+                .filter(|m| !m.is_empty())
+                .map(|m| AgentEvent::model_info(acting, m))
+                .into_iter()
+                .collect();
             let count = |k: &str| usage.get(k).and_then(Value::as_u64).unwrap_or(0);
             let fresh = count("inputTokens")
                 .saturating_sub(count("cacheReadTokens"))
                 .saturating_add(count("outputTokens"));
-            if fresh == 0 {
-                return vec![];
+            if fresh > 0 {
+                out.push(AgentEvent::Usage {
+                    agent_id: acting,
+                    fresh_tokens: fresh,
+                    // A rewind rewrites the log without the events it removes, and the
+                    // watcher re-reads a shorter file from its top: 1.0.105's
+                    // `runtime.node` ("persisted history truncation", "read back …
+                    // after the rewrite", `src/runtime/src/shared_api/history.rs`).
+                    reading_id: non_empty(obj, "id").map(str::to_owned),
+                    copy_id: None,
+                });
             }
-            vec![AgentEvent::Usage {
-                agent_id: acting,
-                fresh_tokens: fresh,
-                // A rewind rewrites the log without the events it removes, and the
-                // watcher re-reads a shorter file from its top: 1.0.105's
-                // `runtime.node` ("persisted history truncation", "read back …
-                // after the rewrite", `src/runtime/src/shared_api/history.rs`).
-                reading_id: non_empty(obj, "id").map(str::to_owned),
-                copy_id: None,
-            }]
+            out
         }
         SESSION_SHUTDOWN => vec![AgentEvent::SessionEnd {
             agent_id: root,
             as_child: false,
         }],
         _ => vec![],
-    }
-}
-
-/// `model`, capped at decode, as `agent`'s observation.
-fn model_info(agent: AgentId, model: &str) -> AgentEvent {
-    AgentEvent::ModelInfo {
-        agent_id: agent,
-        model: Some(ellipsize(model, MAX_DECODED_FIELD_CHARS)),
-        effort: None,
     }
 }
 
@@ -434,7 +412,6 @@ mod tests {
             SUBAGENT_FAILED,
             SESSION_TASK_COMPLETE,
             SESSION_USAGE_RECORD,
-            SESSION_TOOL_BASELINE,
             SESSION_SHUTDOWN,
         ] {
             assert!(drive(kind), "{kind} must reach a real arm");
@@ -445,30 +422,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn execution_complete_surfaces_the_per_tool_model() {
-        let line = r#"{"type":"tool.execution_complete","data":{"toolCallId":"t1","model":"claude-haiku-4.5","success":true},"id":"e1","timestamp":"ts","parentId":null}"#;
-        let evs = decode_copilot_line(
-            "/p/11111111-2222-3333-4444-555555555555/events.jsonl",
-            "copilot",
-            serde_json::from_str(line).unwrap(),
-        );
-        assert!(
-            evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: Some(m), effort: None, .. } if m == "claude-haiku-4.5")),
-            "per-tool model must surface, got {evs:?}"
-        );
-        let line = r#"{"type":"tool.execution_complete","data":{"toolCallId":"t2","success":true},"id":"e2","timestamp":"ts","parentId":null}"#;
-        let evs = decode_copilot_line(
-            "/p/11111111-2222-3333-4444-555555555555/events.jsonl",
-            "copilot",
-            serde_json::from_str(line).unwrap(),
-        );
-        assert!(
-            !evs.iter()
-                .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-            "got {evs:?}"
-        );
-    }
     use serde_json::json;
 
     const PATH: &str = "/p/session-state/65f8cef9-7dd8-46fa-9f6a-78cc95f68ab3/events.jsonl";
@@ -834,7 +787,7 @@ mod tests {
     }
 
     #[test]
-    fn a_usage_record_with_no_fresh_tokens_reads_nothing() {
+    fn a_usage_record_with_no_fresh_tokens_counts_none() {
         // A reading of zero would be pushed into a monotone accumulator.
         for data in [
             r#"{"usage":{"model":"m"}}"#,
@@ -852,17 +805,15 @@ mod tests {
         }
     }
 
-    /// Recorded at 1.0.115 (`just hermetic --cli latest copilot`).
     #[test]
-    fn a_tool_baseline_names_the_model() {
-        let line = r#"{"type":"session.tool_baseline","data":{"model":"gpt-4.1","surface":"chat:byok:none:agent=","tools":[{"name":"bash","deferred":false},{"name":"read_bash","deferred":false},{"name":"stop_bash","deferred":false},{"name":"list_bash","deferred":false},{"name":"view","deferred":false},{"name":"create","deferred":false},{"name":"edit","deferred":false},{"name":"fetch_copilot_cli_documentation","deferred":false},{"name":"skill","deferred":false},{"name":"run_dynamic_workflow","deferred":false},{"name":"dynamic_workflows_manage","deferred":false},{"name":"sql","deferred":false},{"name":"session_store_sql","deferred":false},{"name":"read_agent","deferred":false},{"name":"list_agents","deferred":false},{"name":"write_agent","deferred":false},{"name":"grep","deferred":false},{"name":"glob","deferred":false},{"name":"task","deferred":false}]},"id":"4e9f3019-57f1-4ac5-b08a-a507739b0ce1","timestamp":"2026-11-25T01:57:24.956Z","parentId":"3ff5472a-0763-4213-969f-f8769b5c7545"}"#;
-        assert_eq!(
-            decode(line),
-            [AgentEvent::ModelInfo {
-                agent_id: root(),
-                model: Some("gpt-4.1".to_owned()),
-                effort: None,
-            }]
+    fn a_usage_record_naming_no_model_names_none() {
+        // An empty model would replace the one the slot shows.
+        let line = r#"{"type":"session.usage_record","data":{"usage":{"model":""}},"id":"e3","timestamp":"t","parentId":null}"#;
+        let evs = decode(line);
+        assert!(
+            !evs.iter()
+                .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
+            "{evs:?}"
         );
     }
 
