@@ -126,10 +126,11 @@ const SESSION_END: &str = "session_end";
 ///
 /// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
 pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
+    const HOOK_EVENT_NAME: &str = "hookEventName";
     let event = obj
-        .get("hookEventName")
+        .get(HOOK_EVENT_NAME)
         .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "hookEventName"))?;
+        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, HOOK_EVENT_NAME))?;
     let cwd = obj
         .get("cwd")
         .and_then(|s| s.as_str())
@@ -200,11 +201,12 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             Ok(evs)
         }
         "pre_tool_use" => {
+            const TOOL_NAME: &str = "toolName";
             let tool = obj
-                .get("toolName")
+                .get(TOOL_NAME)
                 .and_then(|s| s.as_str())
                 .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, event, "toolName");
+                    crate::source::drift::missing_field(SOURCE_NAME, event, TOOL_NAME);
                     "?"
                 });
             Ok(vec![
@@ -230,11 +232,12 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             },
         ]),
         "notification" => {
+            const NOTIFICATION_TYPE: &str = "notificationType";
             let kind = obj
-                .get("notificationType")
+                .get(NOTIFICATION_TYPE)
                 .and_then(|s| s.as_str())
                 .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, event, "notificationType");
+                    crate::source::drift::missing_field(SOURCE_NAME, event, NOTIFICATION_TYPE);
                     "?"
                 });
             match kind {
@@ -275,10 +278,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             }
         }
         "subagent_start" => {
-            let Some(child_session_id) = child_key(obj) else {
-                crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
-                return Err(DecodeError::missing_in(SOURCE_NAME, event, "subagentId"));
-            };
+            let child_session_id = subagent_child_key(obj, event)?;
             let child = AgentId::from_parts(SOURCE_NAME, &child_session_id);
             let mut evs = vec![AgentEvent::SessionStart {
                 agent_id: child,
@@ -306,7 +306,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             Ok(evs)
         }
         "subagent_stop" => Ok(vec![AgentEvent::SessionEnd {
-            agent_id: subagent_child_id(obj, event)?,
+            agent_id: AgentId::from_parts(SOURCE_NAME, &subagent_child_key(obj, event)?),
             as_child: true,
         }]),
         SESSION_END => Ok(vec![AgentEvent::SessionEnd {
@@ -323,32 +323,29 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
 /// The child's `subagentId` — upstream sets `child_session_id = subagent_id`,
 /// so this key coalesces with the child's own tool hooks AND its flat
 /// transcript dir name.
-fn child_key(obj: &serde_json::Map<String, Value>) -> Option<String> {
-    obj.get("subagentId")
+fn subagent_child_key(obj: &serde_json::Map<String, Value>, event: &str) -> Result<String> {
+    const SUBAGENT_ID: &str = "subagentId";
+    obj.get(SUBAGENT_ID)
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
         .map(String::from)
+        .ok_or_else(|| {
+            crate::source::drift::missing_field(SOURCE_NAME, event, SUBAGENT_ID);
+            DecodeError::missing_in(SOURCE_NAME, event, SUBAGENT_ID)
+        })
 }
 
-/// The TRANSCRIPT lane's twin of [`child_key`]: the same id under
+const CHILD_SESSION_ID: &str = "child_session_id";
+
+/// The TRANSCRIPT lane's twin of [`subagent_child_key`]: the same id under
 /// `child_session_id`. Shared by both subagent arms so the non-empty guard
 /// cannot be applied to one and forgotten on the other — an `""` mints a
 /// phantom child parented to the real session.
 fn transcript_child_key(update: &serde_json::Map<String, Value>) -> Option<&str> {
     update
-        .get("child_session_id")
+        .get(CHILD_SESSION_ID)
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
-}
-
-fn subagent_child_id(obj: &serde_json::Map<String, Value>, event: &str) -> Result<AgentId> {
-    match child_key(obj) {
-        Some(id) => Ok(AgentId::from_parts(SOURCE_NAME, &id)),
-        None => {
-            crate::source::drift::missing_field(SOURCE_NAME, event, "subagentId");
-            Err(DecodeError::missing_in(SOURCE_NAME, event, "subagentId"))
-        }
-    }
 }
 
 /// Grok tool detail: `"name: target"` over grok's snake_case tool vocabulary.
@@ -413,7 +410,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
         XAI_SESSION_UPDATE_METHOD => match tag {
             XAI_SUBAGENT_SPAWNED => {
                 let Some(child_key) = transcript_child_key(update) else {
-                    crate::source::drift::missing_field(SOURCE_NAME, tag, "child_session_id");
+                    crate::source::drift::missing_field(SOURCE_NAME, tag, CHILD_SESSION_ID);
                     return vec![];
                 };
                 let child = AgentId::from_parts(SOURCE_NAME, child_key);
@@ -440,7 +437,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
             }
             XAI_SUBAGENT_FINISHED => {
                 let Some(child_key) = transcript_child_key(update) else {
-                    crate::source::drift::missing_field(SOURCE_NAME, tag, "child_session_id");
+                    crate::source::drift::missing_field(SOURCE_NAME, tag, CHILD_SESSION_ID);
                     return vec![];
                 };
                 vec![AgentEvent::SessionEnd {

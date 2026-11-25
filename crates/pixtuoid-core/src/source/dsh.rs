@@ -126,12 +126,16 @@ const SUBAGENT_TOOLS: &[&str] = &["subagent", "subagent_fork"];
 pub fn decode_dsh_payload(
     obj: &HookObject,
 ) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
-    let Some(ty) = obj.get("type").and_then(|t| t.as_str()) else {
-        crate::source::drift::missing_field(SOURCE_NAME, "plugin", "type");
+    const TYPE: &str = "type";
+    const SESSION_ID: &str = "sessionId";
+    const CALL_ID: &str = "callId";
+    const TOOL_NAME: &str = "toolName";
+    let Some(ty) = obj.get(TYPE).and_then(|t| t.as_str()) else {
+        crate::source::drift::missing_field(SOURCE_NAME, "plugin", TYPE);
         return Ok(vec![]);
     };
-    let Some(session_id) = non_empty(obj, "sessionId") else {
-        crate::source::drift::missing_field(SOURCE_NAME, ty, "sessionId");
+    let Some(session_id) = non_empty(obj, SESSION_ID) else {
+        crate::source::drift::missing_field(SOURCE_NAME, ty, SESSION_ID);
         return Ok(vec![]);
     };
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
@@ -142,14 +146,14 @@ pub fn decode_dsh_payload(
             .map(std::path::PathBuf::from)
     };
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, session_id.to_string(), cwd());
-    let call_id = || non_empty(obj, "callId").map(str::to_string);
+    let call_id = || non_empty(obj, CALL_ID).map(str::to_string);
     let tool_display = || {
-        non_empty(obj, "toolName")
+        non_empty(obj, TOOL_NAME)
             .map(|t| ellipsize(t, MAX_DECODED_FIELD_CHARS))
             .unwrap_or_default()
     };
     let tool_detail = || {
-        if non_empty(obj, "toolName").is_some_and(|t| SUBAGENT_TOOLS.contains(&t)) {
+        if non_empty(obj, TOOL_NAME).is_some_and(|t| SUBAGENT_TOOLS.contains(&t)) {
             ToolDetail::Task
         } else {
             ToolDetail::Generic {
@@ -175,11 +179,11 @@ pub fn decode_dsh_payload(
         }]),
         TURN_END => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
         TOOL_CALL => {
-            if non_empty(obj, "callId").is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, "callId");
+            if non_empty(obj, CALL_ID).is_none() {
+                crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, CALL_ID);
             }
-            if non_empty(obj, "toolName").is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, "toolName");
+            if non_empty(obj, TOOL_NAME).is_none() {
+                crate::source::drift::missing_field(SOURCE_NAME, TOOL_CALL, TOOL_NAME);
             }
             Ok(vec![
                 identity(),
@@ -192,8 +196,8 @@ pub fn decode_dsh_payload(
             ])
         }
         TOOL_RESULT => {
-            if non_empty(obj, "callId").is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, TOOL_RESULT, "callId");
+            if non_empty(obj, CALL_ID).is_none() {
+                crate::source::drift::missing_field(SOURCE_NAME, TOOL_RESULT, CALL_ID);
             }
             Ok(vec![
                 identity(),
@@ -204,7 +208,7 @@ pub fn decode_dsh_payload(
             ])
         }
         APPROVAL_ASKED => {
-            let reason = match (non_empty(obj, "toolName"), non_empty(obj, "reason")) {
+            let reason = match (non_empty(obj, TOOL_NAME), non_empty(obj, "reason")) {
                 (Some(t), Some(r)) => format!("{t}: {r}"),
                 (Some(t), None) => t.to_string(),
                 (None, Some(r)) => r.to_string(),
@@ -226,9 +230,10 @@ pub fn decode_dsh_payload(
             // A renamed/dropped `outcome` would fail CLOSED (every grant
             // decodes as the deny arm's End) — breadcrumb it, because no
             // event-name drift row can see a field rename.
-            let outcome = non_empty(obj, "outcome");
+            const OUTCOME: &str = "outcome";
+            let outcome = non_empty(obj, OUTCOME);
             if outcome.is_none() {
-                crate::source::drift::missing_field(SOURCE_NAME, APPROVAL_DECIDED, "outcome");
+                crate::source::drift::missing_field(SOURCE_NAME, APPROVAL_DECIDED, OUTCOME);
             }
             let event = match (outcome == Some(OUTCOME_ALLOWED), call_id()) {
                 // The resume: the gated call now runs; its `tool_call` was

@@ -555,12 +555,13 @@ pub(crate) fn shared_hook_arms(
     source: &str,
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
 ) -> DecodeResult<Vec<AgentEvent>> {
+    const HOOK_EVENT_NAME: &str = "hook_event_name";
     let event = obj
-        .get("hook_event_name")
+        .get(HOOK_EVENT_NAME)
         .and_then(|s| s.as_str())
         .ok_or_else(|| {
-            super::drift::missing_field(source, "hook", "hook_event_name");
-            DecodeError::missing(source, "hook_event_name")
+            super::drift::missing_field(source, "hook", HOOK_EVENT_NAME);
+            DecodeError::missing(source, HOOK_EVENT_NAME)
         })?;
     let session_id = hook_session_id(obj, source, event)?;
     let agent_id = AgentId::from_parts(source, &session_id);

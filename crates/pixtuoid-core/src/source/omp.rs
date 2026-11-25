@@ -828,8 +828,9 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
 
     match kind {
         SESSION => {
-            let cwd = obj.get("cwd").and_then(|c| c.as_str()).unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, SESSION, "cwd");
+            const CWD: &str = "cwd";
+            let cwd = obj.get(CWD).and_then(|c| c.as_str()).unwrap_or_else(|| {
+                crate::source::drift::missing_field(source, SESSION, CWD);
                 ""
             });
             let parent_id = omp_parent_key_from_path(path).map(|k| AgentId::from_parts(source, &k));
@@ -861,12 +862,14 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                     for (index, b) in blocks.iter().enumerate().filter(|(_, b)| {
                         b.get("type").and_then(|t| t.as_str()) == Some(BLOCK_TOOL_CALL)
                     }) {
-                        let Some(id) = b.get("id").and_then(|i| i.as_str()) else {
-                            crate::source::drift::missing_field(source, BLOCK_TOOL_CALL, "id");
+                        const ID: &str = "id";
+                        const NAME: &str = "name";
+                        let Some(id) = b.get(ID).and_then(|i| i.as_str()) else {
+                            crate::source::drift::missing_field(source, BLOCK_TOOL_CALL, ID);
                             continue;
                         };
-                        let name = b.get("name").and_then(|n| n.as_str()).unwrap_or_else(|| {
-                            crate::source::drift::missing_field(source, BLOCK_TOOL_CALL, "name");
+                        let name = b.get(NAME).and_then(|n| n.as_str()).unwrap_or_else(|| {
+                            crate::source::drift::missing_field(source, BLOCK_TOOL_CALL, NAME);
                             ""
                         });
                         out.push(AgentEvent::ToolUseStart {
@@ -891,8 +894,9 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
                     out
                 }
                 Some(ROLE_TOOL_RESULT) => {
-                    let Some(tool_call_id) = msg.get("toolCallId").and_then(|i| i.as_str()) else {
-                        crate::source::drift::missing_field(source, ROLE_TOOL_RESULT, "toolCallId");
+                    const TOOL_CALL_ID: &str = "toolCallId";
+                    let Some(tool_call_id) = msg.get(TOOL_CALL_ID).and_then(|i| i.as_str()) else {
+                        crate::source::drift::missing_field(source, ROLE_TOOL_RESULT, TOOL_CALL_ID);
                         return vec![];
                     };
                     vec![AgentEvent::ToolUseEnd {

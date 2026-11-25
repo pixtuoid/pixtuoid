@@ -287,11 +287,12 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     let mut out = Vec::new();
     let ty = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
 
+    const MESSAGE: &str = "message";
     // Both directions of the one rename that can freeze a sprite.
-    let message = obj.get("message").and_then(|m| m.as_object());
+    let message = obj.get(MESSAGE).and_then(|m| m.as_object());
     if DECODED_TYPES.contains(&ty) {
         if message.is_none() {
-            crate::source::drift::missing_field(source, ty, "message");
+            crate::source::drift::missing_field(source, ty, MESSAGE);
         }
     } else if !ty.is_empty() && is_turn_record(obj) {
         crate::source::drift::unknown_event(source, ty);
@@ -335,6 +336,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     let content = message.get("content");
     match (ty, content) {
         (ASSISTANT, Some(Value::Array(blocks))) => {
+            const NAME: &str = "name";
             for block in blocks {
                 let Some(bobj) = block.as_object() else {
                     continue;
@@ -344,13 +346,10 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
                     continue;
                 }
                 let id = bobj.get("id").and_then(|s| s.as_str()).map(String::from);
-                let name = bobj
-                    .get("name")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or_else(|| {
-                        crate::source::drift::missing_field(SOURCE_NAME, btype, "name");
-                        "?"
-                    });
+                let name = bobj.get(NAME).and_then(|s| s.as_str()).unwrap_or_else(|| {
+                    crate::source::drift::missing_field(SOURCE_NAME, btype, NAME);
+                    "?"
+                });
                 out.push(AgentEvent::ToolUseStart {
                     agent_id,
                     copy_id: (id.as_deref())

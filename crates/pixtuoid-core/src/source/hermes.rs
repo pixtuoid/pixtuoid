@@ -311,12 +311,14 @@ pub const DETAIL_KEYS: &[&str] = KEYS;
 /// If the payload lacks `hook_event_name` or `session_id`, or names an event
 /// the plugin does not forward.
 pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
+    const HOOK_EVENT_NAME: &str = "hook_event_name";
+    const SESSION_ID: &str = "session_id";
     let event = obj
-        .get("hook_event_name")
+        .get(HOOK_EVENT_NAME)
         .and_then(Value::as_str)
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "hook_event_name"))?;
-    let session_id = field(obj, "session_id")
-        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, "session_id"))?;
+        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, HOOK_EVENT_NAME))?;
+    let session_id = field(obj, SESSION_ID)
+        .ok_or_else(|| DecodeError::missing_in(SOURCE_NAME, event, SESSION_ID))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let cwd = field(obj, "cwd");
     let identity =
@@ -335,8 +337,9 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             parent_id: None,
         }],
         PRE_TOOL_CALL => {
-            let tool = field(obj, "tool_name").unwrap_or_else(|| {
-                crate::source::drift::missing_field(SOURCE_NAME, event, "tool_name");
+            const TOOL_NAME: &str = "tool_name";
+            let tool = field(obj, TOOL_NAME).unwrap_or_else(|| {
+                crate::source::drift::missing_field(SOURCE_NAME, event, TOOL_NAME);
                 "?"
             });
             vec![

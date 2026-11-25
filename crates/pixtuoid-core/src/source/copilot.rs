@@ -178,12 +178,14 @@ pub(crate) fn decode_copilot_line(
     source: &str,
     v: Value,
 ) -> Vec<AgentEvent> {
+    const DATA: &str = "data";
+    const TOOL_CALL_ID: &str = "toolCallId";
     let root = AgentId::from_parts(source, &copilot_id_from_path(Path::new(transcript_path)));
     let Some(obj) = v.as_object() else {
         return vec![];
     };
     let kind = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
-    let data = obj.get("data");
+    let data = obj.get(DATA);
 
     let acting = match str_at(&v, "agentId") {
         Some(aid) if !aid.is_empty() => AgentId::from_parts(source, aid),
@@ -192,12 +194,11 @@ pub(crate) fn decode_copilot_line(
 
     match kind {
         SESSION_START => {
-            let session_id = data
-                .and_then(|d| str_at(d, "sessionId"))
-                .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(source, SESSION_START, "sessionId");
-                    ""
-                });
+            const SESSION_ID: &str = "sessionId";
+            let session_id = data.and_then(|d| str_at(d, SESSION_ID)).unwrap_or_else(|| {
+                crate::source::drift::missing_field(source, SESSION_START, SESSION_ID);
+                ""
+            });
             vec![root_start(root, source, session_id, data)]
         }
         // The id rides the path: a resume keeps the sessionId, and its
@@ -209,16 +210,17 @@ pub(crate) fn decode_copilot_line(
             data,
         )],
         TOOL_EXECUTION_START => {
+            const TOOL_NAME: &str = "toolName";
             let Some(d) = data else {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, "data");
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, DATA);
                 return vec![];
             };
-            let Some(tool_call_id) = str_at(d, "toolCallId") else {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, "toolCallId");
+            let Some(tool_call_id) = str_at(d, TOOL_CALL_ID) else {
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, TOOL_CALL_ID);
                 return vec![];
             };
-            let tool_name = str_at(d, "toolName").unwrap_or_else(|| {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, "toolName");
+            let tool_name = str_at(d, TOOL_NAME).unwrap_or_else(|| {
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_START, TOOL_NAME);
                 ""
             });
             let detail = copilot_tool_detail(tool_name, d.get("arguments"));
@@ -231,11 +233,11 @@ pub(crate) fn decode_copilot_line(
         }
         TOOL_EXECUTION_COMPLETE => {
             let Some(d) = data else {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_COMPLETE, "data");
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_COMPLETE, DATA);
                 return vec![];
             };
-            let Some(tool_call_id) = str_at(d, "toolCallId") else {
-                crate::source::drift::missing_field(source, TOOL_EXECUTION_COMPLETE, "toolCallId");
+            let Some(tool_call_id) = str_at(d, TOOL_CALL_ID) else {
+                crate::source::drift::missing_field(source, TOOL_EXECUTION_COMPLETE, TOOL_CALL_ID);
                 return vec![];
             };
             vec![AgentEvent::ToolUseEnd {
@@ -257,7 +259,7 @@ pub(crate) fn decode_copilot_line(
                 RequestKeys {
                     // The gated call (#951), so its own end resolves the wait.
                     tool_use_id: request
-                        .and_then(|p| str_at(p, "toolCallId"))
+                        .and_then(|p| str_at(p, TOOL_CALL_ID))
                         .filter(|id| !id.is_empty())
                         .map(str::to_owned),
                     ..RequestKeys::default()
@@ -272,7 +274,7 @@ pub(crate) fn decode_copilot_line(
                 .and_then(|d| d.get("result"))
                 .and_then(|r| str_at(r, "kind"))
                 .is_some_and(|k| k.starts_with("approved"));
-            match data.and_then(|d| str_at(d, "toolCallId")) {
+            match data.and_then(|d| str_at(d, TOOL_CALL_ID)) {
                 Some(id) if !approved && !id.is_empty() => vec![AgentEvent::ToolUseEnd {
                     agent_id: acting,
                     tool_use_id: Some(id.to_owned()),
@@ -327,8 +329,9 @@ pub(crate) fn decode_copilot_line(
         // child's calls and a resumed lifetime's name theirs. `inputTokens`
         // counts cache reads.
         SESSION_USAGE_RECORD => {
-            let Some(usage) = data.and_then(|d| d.get("usage")) else {
-                crate::source::drift::missing_field(source, SESSION_USAGE_RECORD, "usage");
+            const USAGE: &str = "usage";
+            let Some(usage) = data.and_then(|d| d.get(USAGE)) else {
+                crate::source::drift::missing_field(source, SESSION_USAGE_RECORD, USAGE);
                 return vec![];
             };
             let mut out: Vec<AgentEvent> =

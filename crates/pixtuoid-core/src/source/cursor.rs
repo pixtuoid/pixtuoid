@@ -93,10 +93,12 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 ///
 /// If the payload lacks `hook_event_name` or `session_id`, or names an unregistered event.
 pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
+    const HOOK_EVENT_NAME: &str = "hook_event_name";
+    const SESSION_ID: &str = "session_id";
     let event = obj
-        .get("hook_event_name")
+        .get(HOOK_EVENT_NAME)
         .and_then(|s| s.as_str())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "hook_event_name"))?;
+        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, HOOK_EVENT_NAME))?;
     // The top-level `cwd` is EMPTY/absent in CLI hook payloads —
     // `workspace_roots[0]` is the real one. Label/cwd only, NOT the AgentId key.
     let workspace = obj
@@ -114,10 +116,10 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
     // so it distinguishes concurrent sessions in one project AND coalesces all of
     // a session's events.
     let key = obj
-        .get("session_id")
+        .get(SESSION_ID)
         .and_then(|s| s.as_str())
         .filter(|s| !s.is_empty())
-        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, "session_id"))?;
+        .ok_or_else(|| DecodeError::missing(SOURCE_NAME, SESSION_ID))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = workspace.unwrap_or("");
 
@@ -139,11 +141,12 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             parent_id: None,
         }]),
         "preToolUse" => {
+            const TOOL_NAME: &str = "tool_name";
             let tool = obj
-                .get("tool_name")
+                .get(TOOL_NAME)
                 .and_then(|s| s.as_str())
                 .unwrap_or_else(|| {
-                    crate::source::drift::missing_field(SOURCE_NAME, event, "tool_name");
+                    crate::source::drift::missing_field(SOURCE_NAME, event, TOOL_NAME);
                     "?"
                 });
             Ok(vec![
