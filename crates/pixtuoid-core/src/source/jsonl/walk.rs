@@ -718,9 +718,10 @@ async fn read_tail(path: &Path, bytes: u64) -> Option<Vec<u8>> {
 pub(super) const SKIP_RESCAN_BYTES: u64 = 256 * 1024;
 
 /// Tail-scan an oversized skipped span and re-emit what the skip buried: its
-/// IN-FLIGHT Task dispatches' `ToolUseStart`s (#222), and its last turn
-/// bracket, a start or a keyed end. Mid-attach to a delegating session whose
-/// backlog exceeds `MAX_PENDING_BYTES` never decodes the in-flight dispatch
+/// IN-FLIGHT Task dispatches' `ToolUseStart`s (#222), its last turn bracket, a
+/// start or a keyed end, and its last ultracode setting. Mid-attach to a
+/// delegating session whose backlog exceeds `MAX_PENDING_BYTES` never decodes
+/// the in-flight dispatch
 /// line, leaving the reducer no Task in flight: the parent never shows
 /// Delegating and the b1 completion cascade never arms. A re-emitted start
 /// shows the turn the session is in; a re-emitted end closes its own turn, and
@@ -742,6 +743,7 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
     let transcript_path_str = crate::id::normalize_path_key(&path.to_string_lossy());
     let mut pending: Vec<(String, AgentEvent)> = Vec::new();
     let mut last_bracket = None;
+    let mut last_ultracode = None;
     let parsed = crate::source::admit::lines(&buf)
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
     for v in parsed {
@@ -765,6 +767,8 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
                 AgentEvent::TurnStart { .. } | AgentEvent::TurnEnd { turn: Some(_), .. } => {
                     last_bracket = Some(ev);
                 }
+                // No TTL ends ultracode, so a buried exit would leave it on.
+                AgentEvent::Ultracode { .. } => last_ultracode = Some(ev),
                 _ => {}
             }
         }
@@ -774,7 +778,9 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
         Some(start @ AgentEvent::TurnStart { .. }) => (Some(start), None),
         end => (None, end),
     };
-    let rest = pending.into_iter().map(|(_, ev)| ev).chain(end);
+    let rest = (pending.into_iter().map(|(_, ev)| ev))
+        .chain(end)
+        .chain(last_ultracode);
     for ev in start.into_iter().chain(rest) {
         debug!(path = ?path, event = ?ev, "re-emitting from the oversized tail");
         if ctx.tx.send((Transport::Jsonl, ev)).await.is_err() {
