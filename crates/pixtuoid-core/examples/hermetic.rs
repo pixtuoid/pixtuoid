@@ -930,6 +930,10 @@ mod run {
     enum Curl {
         /// The headers, redirects unfollowed: a redirect's `location` is the answer.
         Headers,
+        /// The headers at the end of its redirects: whether the file answers
+        /// there, as jcode's installer probes an asset
+        /// (`scripts/install.sh:250` at v1.1.2).
+        Probe,
         Body,
     }
 
@@ -937,6 +941,7 @@ mod run {
         const fn flags(&self) -> &'static str {
             match self {
                 Self::Headers => "-fsSI",
+                Self::Probe => "-fsSIL",
                 Self::Body => "-fsSL",
             }
         }
@@ -1256,9 +1261,7 @@ mod run {
         let listed = String::from_utf8_lossy(&listed);
         match fallback {
             // `scripts/install.sh:244-256` at v1.1.2.
-            Fallback::Newest => {
-                digest::lists(&listed, asset) && fetch(asset, Curl::Headers).is_ok()
-            }
+            Fallback::Newest => digest::lists(&listed, asset) && fetch(asset, Curl::Probe).is_ok(),
             // `scripts/install.ps1:149-160` at v1.1.2.
             Fallback::First => names_artifact(&listed, asset),
         }
@@ -4060,7 +4063,7 @@ mod run {
         const SUMS: &str = "SHA256SUMS";
 
         /// A release whose [`SUMS`] body reads `sums`, when it can be read,
-        /// and whose `asset` headers answer when `answers` says so.
+        /// and whose `asset` answers a probe when `answers` says so.
         fn files<'a>(
             sums: Option<&'a str>,
             asset: &'a str,
@@ -4068,7 +4071,7 @@ mod run {
         ) -> impl Fn(&str, Curl) -> std::io::Result<Vec<u8>> + 'a {
             move |name, part| match (part, sums) {
                 (Curl::Body, Some(text)) if name == SUMS => Ok(text.as_bytes().to_vec()),
-                (Curl::Headers, _) if name == asset && answers => Ok(Vec::new()),
+                (Curl::Probe, _) if name == asset && answers => Ok(Vec::new()),
                 _ => Err(std::io::Error::other("HTTP 404")),
             }
         }
