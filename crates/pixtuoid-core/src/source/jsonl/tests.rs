@@ -2513,6 +2513,76 @@ async fn oversized_attach_re_emits_the_last_turn_bracket() {
     }
 }
 
+/// Ultracode holds until it turns off, so a skip that buried its exit must not
+/// leave it on: the window's last setting is re-emitted.
+#[tokio::test]
+async fn oversized_attach_re_emits_the_last_ultracode_setting() {
+    let marker = |kind: &str| {
+        serde_json::json!({"type": "attachment", "attachment": {"type": kind}}).to_string() + "\n"
+    };
+    let tail = [marker("ultra_effort_enter"), marker("ultra_effort_exit")];
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cc-big.jsonl");
+    tokio::fs::write(&path, oversized_body(&tail))
+        .await
+        .unwrap();
+    let (cursors, seen) = Default::default();
+    let events = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        crate::source::claude_code::decode_cc_line,
+        &cursors,
+        &seen,
+    )
+    .await;
+    let settings: Vec<bool> = (events.iter())
+        .filter_map(|(_, e)| match e {
+            AgentEvent::Ultracode { on, .. } => Some(*on),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(settings, [false], "{events:?}");
+}
+
+/// Nothing restores a model or a level the skip buried until the session's
+/// next assistant line, so the window's last of each is re-emitted, even when
+/// the last line names only one.
+#[tokio::test]
+async fn oversized_attach_re_emits_the_last_model_and_level() {
+    let assistant = |model: &str, level: &str| {
+        serde_json::json!({"type": "assistant", "perTurnEffort": level,
+            "message": {"model": model, "content": []}})
+        .to_string()
+            + "\n"
+    };
+    let tail = [
+        assistant("claude-opus-5-5", "xhigh"),
+        assistant("<synthetic>", "max"),
+    ];
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("cc-big.jsonl");
+    tokio::fs::write(&path, oversized_body(&tail))
+        .await
+        .unwrap();
+    let (cursors, seen) = Default::default();
+    let events = walk_once_with(
+        &path,
+        Duration::from_secs(3600),
+        crate::source::claude_code::decode_cc_line,
+        &cursors,
+        &seen,
+    )
+    .await;
+    let infos: Vec<_> = (events.iter())
+        .filter_map(|(_, e)| match e {
+            AgentEvent::ModelInfo { model, effort, .. } => Some((model.clone(), effort.clone())),
+            _ => None,
+        })
+        .collect();
+    let want = (Some("claude-opus-5-5".to_owned()), Some("max".to_owned()));
+    assert_eq!(infos, [want], "{events:?}");
+}
+
 /// The skip's start goes ahead of its turn's in-flight dispatch, so the
 /// dispatch registers in that turn, whose keyed end takes it out of the turn's
 /// requests while its subagent runs on.

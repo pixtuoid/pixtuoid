@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "claude",
   "version": "2.1.330 (Claude Code)",
-  "captured": "2026-11-23",
+  "captured": "2026-11-25",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 498
+    "blanked": 495
   },
   "aimock": "1.48.0",
   "script": "tests/sources/claude_code/hermetic/subagent.json",
@@ -31,14 +31,14 @@
     }
   },
   "sentinel_reads": {
-    "agent-af0e6e7310391bf12.jsonl": [
+    "agent-a112483105a44cf12.jsonl": [
       "14:/message/usage/cache_creation_input_tokens",
       "20:/message/usage/cache_creation_input_tokens"
     ],
-    "ddc8f921-dd8d-4e50-a51f-9a9a106e3a2f.jsonl": [
+    "c8d4afb5-6127-4670-8524-59b075332cea.jsonl": [
       "19:/message/usage/cache_creation_input_tokens",
-      "25:/message/usage/cache_creation_input_tokens",
-      "35:/message/usage/cache_creation_input_tokens"
+      "23:/message/usage/cache_creation_input_tokens",
+      "33:/message/usage/cache_creation_input_tokens"
     ],
     "hook-payloads.jsonl": [
       "7:/agent_transcript_path"

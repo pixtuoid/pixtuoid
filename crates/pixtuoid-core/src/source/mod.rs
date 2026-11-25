@@ -273,9 +273,18 @@ pub enum AgentEvent {
         agent_id: AgentId,
         /// `Some` = a model observation (e.g. `"claude-fable-5"`).
         model: Option<String>,
-        /// `Some` = an effort observation (Codex `"xhigh"` verbatim; CC's
-        /// synthesized `"ultra"`/`"ultrathink"` marker labels).
+        /// `Some` = an effort level observation (e.g. `"xhigh"`).
         effort: Option<String>,
+    },
+    /// Whether ultracode is on: "a Claude Code setting rather than a model
+    /// effort level", so it never rides [`ModelInfo`](Self::ModelInfo)'s
+    /// effort (code.claude.com/docs/en/model-config, Adjust effort level).
+    /// The reducer updates an EXISTING slot only.
+    Ultracode {
+        /// The agent whose setting this is.
+        agent_id: AgentId,
+        /// `true` once it turns on, `false` once it turns off.
+        on: bool,
     },
     /// A FRESH-token spend observation from a source's wire — cache READS are
     /// re-served context, not new spend, and are excluded. Each event is that
@@ -507,6 +516,7 @@ impl AgentEvent {
             AgentEvent::ProofOfLife { agent_id, .. } => *agent_id,
             AgentEvent::Identity { agent_id, .. } => *agent_id,
             AgentEvent::ModelInfo { agent_id, .. } => *agent_id,
+            AgentEvent::Ultracode { agent_id, .. } => *agent_id,
             AgentEvent::Usage { agent_id, .. } => *agent_id,
             AgentEvent::Backlog { agent_id, .. } => *agent_id,
         }
@@ -532,6 +542,7 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
+            | AgentEvent::Ultracode { .. }
             | AgentEvent::Usage { .. }
             | AgentEvent::Backlog { .. } => false,
         }
@@ -592,6 +603,7 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
+            | AgentEvent::Ultracode { .. }
             | AgentEvent::Backlog { .. } => (None, None),
         };
         MergeKeysMut { id, turn, parent }

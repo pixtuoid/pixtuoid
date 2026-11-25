@@ -545,7 +545,7 @@ fn a_hovered_agents_tooltip_shows_model_and_fresh_effort() {
     );
     a.source = std::sync::Arc::from("claude-code");
     a.model = Some("claude-fable-5".into());
-    a.effort = Some(EffortObservation::new("ultra".into(), t0()));
+    a.effort = Some(EffortObservation::new("xhigh".into(), t0()));
     let id = a.agent_id;
     let plain = running(
         "/effort/1.jsonl",
@@ -561,7 +561,7 @@ fn a_hovered_agents_tooltip_shows_model_and_fresh_effort() {
     r.render(&scene, t0()).unwrap();
     let text = frame_text(r.frame_buffer());
     assert!(
-        text.contains("\u{2605} claude-fable-5 \u{b7} ultra"),
+        text.contains("\u{2605} claude-fable-5 \u{b7} xhigh"),
         "model + fresh effort row: {text}"
     );
     super::hover_agent(&mut r, plain_id);
@@ -588,7 +588,7 @@ fn stale_effort_drops_off_the_dossier() {
     a.source = std::sync::Arc::from("claude-code");
     a.model = Some("claude-fable-5".into());
     a.effort = Some(EffortObservation::new(
-        "ultra".into(),
+        "xhigh".into(),
         t0() - Duration::from_secs(3600),
     ));
     let id = a.agent_id;
@@ -603,38 +603,8 @@ fn stale_effort_drops_off_the_dossier() {
         "model row stays: {text}"
     );
     assert!(
-        !text.contains("\u{b7} ultra"),
+        !text.contains("\u{b7} xhigh"),
         "stale effort suffix must be suppressed: {text}"
-    );
-}
-
-#[test]
-fn the_exit_sentinel_never_renders_in_the_dossier() {
-    use pixtuoid_core::source::claude_code::ULTRA_EXIT_LABEL;
-    use pixtuoid_core::state::EffortObservation;
-    let mut a = running(
-        "/effort/3.jsonl",
-        0,
-        "Read src/main.rs",
-        t0() - Duration::from_secs(30),
-    );
-    a.source = std::sync::Arc::from("claude-code");
-    a.model = Some("claude-fable-5".into());
-    a.effort = Some(EffortObservation::new(ULTRA_EXIT_LABEL.into(), t0()));
-    let id = a.agent_id;
-    let scene = scene_with(vec![a], 16);
-    let mut r = build(120, 44, vec![]);
-    r.render(&scene, t0()).unwrap();
-    super::hover_agent(&mut r, id);
-    r.render(&scene, t0()).unwrap();
-    let text = frame_text(r.frame_buffer());
-    assert!(
-        text.contains("\u{2605} claude-fable-5"),
-        "model row stays: {text}"
-    );
-    assert!(
-        !text.contains(ULTRA_EXIT_LABEL),
-        "the internal sentinel must never render: {text}"
     );
 }
 

@@ -203,6 +203,8 @@ struct Agent {
     model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     effort: Option<Effort>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    ultracode: bool,
 }
 
 /// Tagged so `other` can take a newer server's state
@@ -324,6 +326,7 @@ fn project_agent(slot: &AgentSlot) -> Agent {
         pid: _,
         model,
         effort,
+        ultracode,
         tokens_used,
         last_usage,
     } = slot;
@@ -354,6 +357,7 @@ fn project_agent(slot: &AgentSlot) -> Agent {
             value: e.value.to_string(),
             at_ms: epoch_ms(e.seen_at),
         }),
+        ultracode: *ultracode,
     }
 }
 
@@ -1043,6 +1047,7 @@ fn inflate_agent(
         effort: agent
             .effort
             .map(|e| EffortObservation::new(Arc::from(display_safe(&e.value)), local(e.at_ms))),
+        ultracode: agent.ultracode,
         tokens_used: agent.tokens,
         last_usage: agent
             .last_usage
@@ -1130,6 +1135,7 @@ mod tests {
             pid: None,
             model: None,
             effort: None,
+            ultracode: false,
             tokens_used: 0,
             last_usage: None,
         }
@@ -1345,6 +1351,36 @@ mod tests {
             clean(source);
             clean(instance.as_str());
         }
+    }
+
+    /// One agent at a level with ultracode on.
+    fn in_ultracode() -> SceneState {
+        let mut scene = crowd(&["a"]);
+        let slot = (scene.agents.values_mut().next()).expect("a");
+        slot.effort = Some(EffortObservation::new(Arc::from("xhigh"), at(AT - 500)));
+        slot.ultracode = true;
+        scene
+    }
+
+    /// Ultracode rides its own field: `effort` stays the level while
+    /// ultracode is on, and a receiver reads both back.
+    #[test]
+    fn ultracode_crosses_the_wire_in_its_own_field_beside_the_level() {
+        let id = AgentId::from_parts("claude-code", "a");
+        let scene = in_ultracode();
+        let line: Value = serde_json::from_str(&sent(&scene)).expect("a line");
+        let agent = &line["agents"][0];
+        let level = serde_json::json!({"value": "xhigh", "at_ms": AT - 500});
+        assert_eq!(
+            (&agent["effort"], &agent["ultracode"]),
+            (&level, &Value::Bool(true))
+        );
+
+        let mut office = RemoteOffice::new(caps(4));
+        received(&mut office, &scene, AT);
+        let got = &office.scene().agents[&id];
+        assert_eq!(got.effort.as_ref().map(|e| &*e.value), Some("xhigh"));
+        assert!(got.ultracode);
     }
 
     #[test]
@@ -1808,6 +1844,11 @@ mod tests {
             machine("machine-linux", Os::Linux),
             machine("machine-windows", Os::Windows),
             machine("machine-other", Os::Other),
+            assert_line(
+                "office-ultracode",
+                &sample("office-ultracode"),
+                &in_ultracode(),
+            ),
         ];
         let on_disk: BTreeSet<_> = std::fs::read_dir(SAMPLES)
             .expect("the samples")

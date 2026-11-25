@@ -106,9 +106,9 @@ pub(crate) const PROFILE: Profile = Profile {
             ],
             turn: Turn::PROFILE,
         },
-        // Ultracode on enters, a prompt naming ultrathink adds its effort,
-        // and the resumed turn, ultracode off, exits (`GQr`, `jQr` in the
-        // 2.1.302 bundle).
+        // Ultracode on enters, a prompt naming ultrathink adds a reminder
+        // that decodes nothing, and the resumed turn, ultracode off, exits
+        // (`GQr`, `jQr` in the 2.1.302 bundle).
         Scenario {
             name: "ultra-effort",
             shape: Shape::ToolRun,

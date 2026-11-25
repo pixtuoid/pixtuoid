@@ -1162,37 +1162,105 @@ fn model_info_caches_model_and_effort_on_an_existing_slot() {
     );
     assert_eq!(scene.agents[&id].model.as_deref(), Some("claude-fable-5"));
     let t1 = t0 + Duration::from_secs(60);
-    r.apply(&mut scene, info(None, Some("ultra")), t1, Transport::Jsonl);
+    r.apply(&mut scene, info(None, Some("xhigh")), t1, Transport::Jsonl);
     assert_eq!(scene.agents[&id].model.as_deref(), Some("claude-fable-5"));
     let eff = scene.agents[&id].effort.clone().expect("effort cached");
-    assert_eq!(&*eff.value, "ultra");
+    assert_eq!(&*eff.value, "xhigh");
     assert_eq!(eff.seen_at, t1);
     let t2 = t1 + Duration::from_secs(120);
-    r.apply(&mut scene, info(None, Some("ultra")), t2, Transport::Jsonl);
+    r.apply(&mut scene, info(None, Some("xhigh")), t2, Transport::Jsonl);
     assert_eq!(scene.agents[&id].effort.clone().unwrap().seen_at, t2);
 }
 
 #[test]
-fn model_info_for_an_unknown_agent_never_registers() {
+fn model_info_and_ultracode_for_an_unknown_agent_never_register() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
     let ghost = AgentId::from_parts("claude-code", "ses_ghost");
+    let model_info = AgentEvent::ModelInfo {
+        agent_id: ghost,
+        model: Some("claude-fable-5".into()),
+        effort: Some("xhigh".into()),
+    };
+    let ultracode = AgentEvent::Ultracode {
+        agent_id: ghost,
+        on: true,
+    };
     for transport in [Transport::Jsonl, Transport::Hook] {
-        r.apply(
-            &mut scene,
-            AgentEvent::ModelInfo {
-                agent_id: ghost,
-                model: Some("claude-fable-5".into()),
-                effort: Some("ultra".into()),
-            },
-            SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000),
-            transport,
-        );
-        assert!(
-            scene.agents.is_empty(),
-            "ModelInfo must not register a slot ({transport:?})"
-        );
+        for event in [&model_info, &ultracode] {
+            r.apply(
+                &mut scene,
+                event.clone(),
+                SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000),
+                transport,
+            );
+            assert!(
+                scene.agents.is_empty(),
+                "{event:?} must not register a slot ({transport:?})"
+            );
+        }
     }
+}
+
+/// Two facts with one producer each: "Turning ultracode on or off … leaves
+/// the effort level unchanged" (code.claude.com/docs/en/model-config, Adjust
+/// effort level).
+#[test]
+fn a_cc_effort_level_and_ultracode_end_alike_in_either_order() {
+    let id = AgentId::from_parts("claude-code", "ses_x");
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let level = AgentEvent::ModelInfo {
+        agent_id: id,
+        model: None,
+        effort: Some("xhigh".into()),
+    };
+    let ultracode = AgentEvent::Ultracode {
+        agent_id: id,
+        on: true,
+    };
+    let end = |order: [&AgentEvent; 2]| {
+        let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+        start(&mut r, &mut scene, id);
+        for event in order {
+            r.apply(&mut scene, event.clone(), t0, Transport::Jsonl);
+        }
+        let slot = &scene.agents[&id];
+        (
+            slot.effort.as_ref().map(|e| e.value.to_string()),
+            slot.ultracode,
+        )
+    };
+    let both = (Some("xhigh".to_owned()), true);
+    assert_eq!(end([&level, &ultracode]), both);
+    assert_eq!(end([&ultracode, &level]), both);
+}
+
+#[test]
+fn ultracode_holds_until_it_turns_off() {
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let id = AgentId::from_parts("claude-code", "ses_u");
+    start(&mut r, &mut scene, id);
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let ultracode = |on| AgentEvent::Ultracode { agent_id: id, on };
+    r.apply(&mut scene, ultracode(true), t0, Transport::Jsonl);
+    // An hour is past the scene's effort TTL (`tooltip`'s private `EFFORT_TTL_SECS`).
+    let later = t0 + Duration::from_secs(60 * 60);
+    let level = AgentEvent::ModelInfo {
+        agent_id: id,
+        model: None,
+        effort: Some("medium".into()),
+    };
+    let turn_end = AgentEvent::TurnEnd {
+        agent_id: id,
+        turn: None,
+    };
+    for event in [level, turn_end] {
+        r.apply(&mut scene, event, later, Transport::Jsonl);
+    }
+    assert!(scene.agents[&id].ultracode);
+    r.apply(&mut scene, ultracode(false), later, Transport::Jsonl);
+    assert!(!scene.agents[&id].ultracode);
 }
 
 #[test]
