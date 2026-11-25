@@ -5,7 +5,7 @@
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "path": "NOTE.txt" } } ] }
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "userMessage": "{prompt}", "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "run_skill", "arguments": { "name": "explore", "arguments": "CHILD-TASK: read NOTE.txt and report its text." } } ] }
     },
     {

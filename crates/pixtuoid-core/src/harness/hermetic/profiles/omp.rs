@@ -215,6 +215,10 @@ startup:
                 ..Turn::PROFILE
             },
         },
+        // Before a task's child runs, omp has the model judge how open-ended
+        // its solution space is, which the script answers `low`
+        // (`src/auto-thinking/classifier.ts:2-6`,
+        // `src/prompts/judge/auto-thinking.json:20-21` at `v19.1.0`).
         Scenario {
             name: "subagent",
             shape: Shape::Subagent,

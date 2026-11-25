@@ -510,10 +510,15 @@ impl Profile {
             .chain(self.homes.iter().copied())
     }
 
-    /// Every placeholder this profile's scripts may spell, with its value on
+    /// Every placeholder `scenario`'s script may spell, with its value on
     /// this platform: `workspace` as the CLI reports its cwd.
-    pub fn script_values(&self, workspace: &str) -> Vec<(&'static str, String)> {
+    pub fn script_values(
+        &self,
+        scenario: &Scenario,
+        workspace: &str,
+    ) -> Vec<(&'static str, String)> {
         [
+            (Placeholder::Prompt.as_str(), scenario.prompt().to_owned()),
             (Placeholder::Workspace.as_str(), workspace.to_owned()),
             (
                 Placeholder::Note.as_str(),
@@ -803,6 +808,13 @@ impl Scenario {
     /// `source`'s seed for this scenario, if its turn names one.
     pub fn seed(&self, source: &str) -> Option<PathBuf> {
         self.turn.seed.map(|dir| scripts_dir(source).join(dir))
+    }
+
+    /// Its first turn's prompt.
+    pub fn prompt(&self) -> &'static str {
+        self.turn
+            .prompt
+            .unwrap_or(crate::harness::plan::DEFAULT_PROMPT)
     }
 
     /// Why a leg on `windows` doesn't run it, if it doesn't.
@@ -1336,7 +1348,7 @@ mod tests {
                 }
             }
             let declared: BTreeSet<String> = p
-                .script_values("")
+                .script_values(&p.scenarios[0], "")
                 .into_iter()
                 .map(|(k, _)| k.to_owned())
                 .collect();
@@ -1571,6 +1583,63 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A tool call keyed on less than its turn's own words answers a later
+    /// request too: a dispatch that takes the child's delivered result for its
+    /// turn dispatches again until the budget kills the run, Blocked, where an
+    /// unscripted delivery is Script at once (opencode 2.3.0, #2331; 2.4.0,
+    /// #1934). aimock matches `userMessage` in the request's last user text
+    /// (`@copilotkit/aimock` `dist/router.js:129-136`, `:243-250` at 1.48.0),
+    /// which a delivered user message replaces, so a reply binds to its turn
+    /// when that key is the parent's prompt, or a word of the task the
+    /// parent's calls hand the child that the parent's prompt lacks.
+    #[test]
+    fn a_subagent_scripts_tool_calls_each_bind_to_their_turn() {
+        fn carries(v: &Value, key: &str) -> bool {
+            match v {
+                Value::String(s) => s.contains(key),
+                Value::Array(a) => a.iter().any(|x| carries(x, key)),
+                Value::Object(m) => m.values().any(|x| carries(x, key)),
+                _ => false,
+            }
+        }
+        let calls = |f: &Value| {
+            ["toolCalls", "customToolCalls"]
+                .iter()
+                .any(|k| f["response"][k].as_array().is_some_and(|c| !c.is_empty()))
+        };
+        let parent = Placeholder::Prompt.as_str();
+        let mut unbound = Vec::new();
+        for p in PROFILES {
+            for s in p.scenarios.iter().filter(|s| s.shape == Shape::Subagent) {
+                let script: Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                let replies = script["fixtures"].as_array().expect("fixtures");
+                let dispatches: Vec<&Value> = replies
+                    .iter()
+                    .filter(|f| calls(f) && f["match"]["userMessage"] == parent)
+                    .map(|f| &f["response"])
+                    .collect();
+                for (i, reply) in replies.iter().enumerate().filter(|(_, f)| calls(f)) {
+                    let binds = reply["match"]["userMessage"].as_str().is_some_and(|key| {
+                        key == parent
+                            || (!key.is_empty()
+                                && !s.prompt().contains(key)
+                                && dispatches.iter().any(|d| carries(d, key)))
+                    });
+                    if !binds {
+                        unbound.push(format!("{}/{} fixture {i}", p.source, s.name));
+                    }
+                }
+            }
+        }
+        assert!(
+            unbound.is_empty(),
+            "tool calls that answer more than their turn: {unbound:#?}"
+        );
     }
 
     #[test]

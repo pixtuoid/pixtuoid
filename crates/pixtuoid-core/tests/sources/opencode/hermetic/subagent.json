@@ -20,7 +20,7 @@
       "latency": 300
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "userMessage": "{prompt}", "hasToolResult": false },
       "response": {
         "toolCalls": [
           {

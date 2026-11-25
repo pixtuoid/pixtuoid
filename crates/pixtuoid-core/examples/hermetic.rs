@@ -51,7 +51,7 @@ mod run {
         HeldDir, RunDir, SandboxEnv, built, connect, hold_lock, inherited, warmed_shim_dir,
     };
     use pixtuoid_core::harness::plan::{
-        AbsPath, Argv, CapturePlan, DEFAULT_PROMPT, DaemonPlan, Invocation, Placeholder, Sink, Word,
+        AbsPath, Argv, CapturePlan, DaemonPlan, Invocation, Placeholder, Sink, Word,
     };
     use pixtuoid_core::harness::provenance::NonEmpty;
     use pixtuoid_core::harness::tap::Endpoint;
@@ -1988,7 +1988,7 @@ mod run {
             .map(|w| text(w))
             .collect::<std::io::Result<Vec<_>>>()?;
         let ported = |word: &str| expanded(word, run.ports);
-        let prompt = scenario.turn.prompt.unwrap_or(DEFAULT_PROMPT);
+        let prompt = scenario.prompt();
         let prompted =
             |word: &str, prompt: &str| ported(word).replace(Placeholder::Prompt.as_str(), prompt);
         let with_launch =
@@ -2124,7 +2124,10 @@ mod run {
     ) -> std::io::Result<PathBuf> {
         let mut script: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(scenario.script(p.source))?)?;
-        expand_strings(&mut script, &p.script_values(&reported_cwd(workspace)));
+        expand_strings(
+            &mut script,
+            &p.script_values(scenario, &reported_cwd(workspace)),
+        );
         let out = into.join("script.json");
         std::fs::write(&out, serde_json::to_string_pretty(&script)?)?;
         Ok(out)
@@ -2254,7 +2257,7 @@ mod run {
         use super::*;
         use pixtuoid_core::harness::capture_sandbox;
         use pixtuoid_core::harness::host::SANDBOX_HOMES;
-        use pixtuoid_core::harness::plan::Resolved;
+        use pixtuoid_core::harness::plan::{DEFAULT_PROMPT, Resolved};
         use strum::VariantArray;
 
         const TEST_PORTS: Ports = Ports {
@@ -2747,7 +2750,7 @@ mod run {
                 (plan.source.as_str(), plan.scenario.as_str()),
                 (p.source, p.scenarios[0].name)
             );
-            let prompt = p.scenarios[0].turn.prompt.unwrap_or(DEFAULT_PROMPT);
+            let prompt = p.scenarios[0].prompt();
             let want: Vec<String> = ["/cli/node", "/cli/entry.js"]
                 .into_iter()
                 .map(String::from)
@@ -2961,7 +2964,7 @@ mod run {
             assert_eq!(line.scenario, scenario.name);
             assert_eq!(line.log, host("runs/x").join(TUI_LOG));
             assert_eq!(line.scene_log, host("runs/x").join(SCENE_LOG));
-            assert_eq!(line.prompt, scenario.turn.prompt.unwrap_or(DEFAULT_PROMPT));
+            assert_eq!(line.prompt, scenario.prompt());
             let program: Vec<OsString> = launch
                 .argv()
                 .into_iter()
