@@ -3913,7 +3913,7 @@ mod run {
         /// How many of [`ROWS`] lead it with no stable release.
         const NO_STABLE: usize = 4;
         /// How many lead it with no stable release carrying [`MACOS`].
-        const NONE_CARRYING: usize = 6;
+        const NONE_CARRYING: usize = 7;
         const LINUX_ONLY: Row = ("v1.1.1", false, false, &[LINUX]);
         const SELFDEV: Row = ("selfdev-linux-a43cd3e1c", false, true, &[LINUX]);
 
