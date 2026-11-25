@@ -243,10 +243,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // All matched explicitly so none spams the breadcrumb.
                 "idle_prompt" | "agent_error" | "task_complete" => Ok(vec![]),
                 other => {
-                    crate::source::drift::unknown_event(
-                        SOURCE_NAME,
-                        &format!("notification:{other}"),
-                    );
+                    crate::source::drift::unknown_event(SOURCE_NAME, &format!("{event}:{other}"));
                     Ok(vec![])
                 }
             }
