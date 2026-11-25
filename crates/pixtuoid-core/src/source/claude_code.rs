@@ -201,6 +201,7 @@ fn resolve_claude_config_dir(
 
 const ASSISTANT: &str = "assistant";
 const USER: &str = "user";
+const ATTACHMENT: &str = "attachment";
 
 /// The CC transcript types whose `message` payload this module decodes. CC's
 /// TRANSCRIPT has no fetchable schema: the nightly's latest-release census and
@@ -300,7 +301,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
         out.push(AgentEvent::Rename { agent_id, label });
     }
 
-    if ty == "attachment"
+    if ty == ATTACHMENT
         && let Some(effort) = attachment_effort(obj)
     {
         out.extend(AgentEvent::model_info(agent_id, None, Some(effort)));
@@ -391,13 +392,13 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
 /// long-dead transcript, bumping the mtime first-sight trusted as liveness.
 #[cfg(any(feature = "native", test))]
 const ACTIVITY_TYPES: &[&str] = &[
-    "assistant",
-    "attachment",
+    ASSISTANT,
+    ATTACHMENT,
     "file-history-delta",
     "queue-operation",
     // Carries no `AgentEvent` but IS the session speaking — it closes a live tail.
     "system",
-    "user",
+    USER,
 ];
 
 /// The fewest url-safe characters an id's suffix carries for [`looks_random`]:

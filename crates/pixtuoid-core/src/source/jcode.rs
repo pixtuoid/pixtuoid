@@ -46,6 +46,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: crate::source::registry::Native::NONE,
 };
 
+const PRE_TOOL: &str = "pre_tool";
+const POST_TOOL: &str = "post_tool";
+const TURN_END: &str = "turn_end";
+
 pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<AgentEvent>> {
     let required = |field| {
         non_empty(obj, field).ok_or_else(|| {
@@ -68,7 +72,7 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
         }],
         // The Identity is the one claim that registers a session the office joined
         // late: the activity alone registers nothing. It honors its tombstones.
-        "pre_tool" | "post_tool" | "turn_end" => {
+        PRE_TOOL | POST_TOOL | TURN_END => {
             vec![AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd)]
         }
         "session_end" => {
@@ -89,7 +93,7 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
     let model = non_empty(obj, "model").map(display_safe);
     events.extend(AgentEvent::model_info(agent_id, model.as_deref(), None));
     match event {
-        "pre_tool" => events.push(AgentEvent::ToolUseStart {
+        PRE_TOOL => events.push(AgentEvent::ToolUseStart {
             agent_id,
             // pre_tool has no call ID; post_tool's ID cannot pair with it.
             tool_use_id: None,
@@ -98,11 +102,11 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
             }),
             copy_id: None,
         }),
-        "post_tool" => events.push(AgentEvent::ToolUseEnd {
+        POST_TOOL => events.push(AgentEvent::ToolUseEnd {
             agent_id,
             tool_use_id: None,
         }),
-        "turn_end" => events.push(AgentEvent::turn_end(agent_id)),
+        TURN_END => events.push(AgentEvent::turn_end(agent_id)),
         _ => {}
     }
     Ok(events)

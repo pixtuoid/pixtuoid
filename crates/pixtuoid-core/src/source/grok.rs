@@ -111,6 +111,7 @@ const XAI_SUBAGENT_SPAWNED: &str = "subagent_spawned";
 const XAI_SUBAGENT_FINISHED: &str = "subagent_finished";
 const XAI_TURN_COMPLETED: &str = "turn_completed";
 const XAI_HOOK_EXECUTION: &str = "hook_execution";
+const SESSION_END: &str = "session_end";
 
 /// Decode one grok hook payload (already identified by
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
@@ -308,7 +309,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
             agent_id: subagent_child_id(obj, event)?,
             as_child: true,
         }]),
-        "session_end" => Ok(vec![AgentEvent::SessionEnd {
+        SESSION_END => Ok(vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
         }]),
@@ -466,7 +467,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
                 }
             }
             XAI_HOOK_EXECUTION => {
-                if str_field("event_name") == Some("session_end") {
+                if str_field("event_name") == Some(SESSION_END) {
                     vec![AgentEvent::SessionEnd {
                         agent_id,
                         as_child: false,
