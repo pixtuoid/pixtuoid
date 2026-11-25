@@ -1161,7 +1161,11 @@ mod run {
             let (name, value) = l.split_once(':')?;
             name.eq_ignore_ascii_case("location").then(|| value.trim())
         })?;
-        let tag = location.rsplit_once("/tag/")?.1;
+        release_tag(location.rsplit_once("/tag/")?.1)
+    }
+
+    /// The release a `v<version>` tag names.
+    fn release_tag(tag: &str) -> Option<Version> {
         Version::parse(tag.strip_prefix('v')?).ok()
     }
 
@@ -1219,9 +1223,7 @@ mod run {
             if self.draft || self.prerelease {
                 return None;
             }
-            Version::parse(self.tag_name.strip_prefix('v')?)
-                .ok()
-                .filter(|v| v.pre.is_empty() && v.build.is_empty())
+            release_tag(&self.tag_name).filter(|v| v.pre.is_empty() && v.build.is_empty())
         }
     }
 
@@ -3731,6 +3733,18 @@ mod run {
                 "location: https://github.com/o/r/releases/tag/nightly\r\n",
             ] {
                 assert_eq!(latest_tag(bad), None, "{bad:?}");
+            }
+        }
+
+        #[test]
+        fn a_release_tag_is_a_v_and_a_version() {
+            assert_eq!(release_tag("v1.0.3"), Some(Version::new(1, 0, 3)));
+            assert_eq!(
+                release_tag("v1.1.4-rc.1"),
+                Version::parse("1.1.4-rc.1").ok()
+            );
+            for bad in ["1.0.3", "readme-assets", "nightly", "v", "v1.0"] {
+                assert_eq!(release_tag(bad), None, "{bad:?}");
             }
         }
 
