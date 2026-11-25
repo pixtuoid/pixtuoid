@@ -644,9 +644,8 @@ async fn emit_registration(
     };
     // A first sight renames even a slot a hook created first. A claimed path
     // only hints: a `Rename` on every live read would clobber a name another
-    // producer gave the session since (a parent's `subagent_spawned`, a
-    // `subagent_start` hook), which `Registration.label` never holds
-    // (`SlotLabel::yields_to_hint`).
+    // producer gave the session since (a parent's `subagent_spawned`), which
+    // `Registration.label` never holds (`SlotLabel::yields_to_hint`).
     let named = if first_sight {
         AgentEvent::Rename {
             agent_id: id,

@@ -27,10 +27,9 @@ expression: events
     session_id: 84af80ac-9a10-49f2-9d35-6c44a765adb2
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
-- ModelInfo:
+- ModelHint:
     agent_id: 8280723079944740649
     model: claude-opus-5-5
-    effort: ~
 - Identity:
     agent_id: 8280723079944740649
     source: claude-code
