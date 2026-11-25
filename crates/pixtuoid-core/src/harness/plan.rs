@@ -46,8 +46,9 @@ pub const KEYCHAINS: &str = "Library/Keychains";
 pub enum Placeholder {
     /// A turn's prompt.
     Prompt,
-    /// What a turn's first model request carries in its last user message,
-    /// which binds a script's reply to that turn.
+    /// What the last user message of a scenario's first model request
+    /// carries, which binds a script's reply to its first turn alone, whatever
+    /// the CLI.
     Turn,
     /// The session a second turn resumes: known only once the first turn ran.
     Session,

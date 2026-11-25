@@ -16,7 +16,7 @@
       "response": { "content": "done", "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "userMessage": "{turn}", "hasToolResult": false },
       "response": {
         "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "cat NOTE.txt" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }

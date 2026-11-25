@@ -327,9 +327,6 @@ pub struct Turn {
     /// A directory beside its script copied into the workspace before the
     /// turn: project config this scenario alone runs under.
     pub(crate) seed: Option<&'static str>,
-    /// Text only the user message its CLI appends after the prompt carries,
-    /// which [`Placeholder::Turn`] then spells in place of the prompt.
-    pub(crate) appended: Option<&'static str>,
 }
 
 /// What a [`Turn::second`] asks of [`Profile::second_turn`]'s words.
@@ -348,7 +345,6 @@ impl Turn {
         prompt: None,
         second: None,
         seed: None,
-        appended: None,
     };
 }
 
@@ -436,6 +432,10 @@ pub struct Profile {
     pub scenarios: &'static [Scenario],
     /// Placeholders the scenario scripts spell, each the platform's value.
     pub(crate) script_vars: &'static [(&'static str, PerOs<&'static str>)],
+    /// Text only the user message the CLI appends after a session's first
+    /// prompt carries, which [`Placeholder::Turn`] then spells in place of
+    /// the prompt.
+    pub(crate) turn_appends: Option<&'static str>,
     /// Hooks its install forwards that no scenario expects yet. Shrink-only: a
     /// run that fires one is Stale (`verify::verify_source`).
     pub not_yet: &'static [&'static str],
@@ -524,11 +524,7 @@ impl Profile {
         [
             (
                 Placeholder::Turn.as_str(),
-                scenario
-                    .turn
-                    .appended
-                    .unwrap_or(scenario.prompt())
-                    .to_owned(),
+                self.turn_appends.unwrap_or(scenario.prompt()).to_owned(),
             ),
             (Placeholder::Workspace.as_str(), workspace.to_owned()),
             (
@@ -890,6 +886,7 @@ mod tests {
 
     use super::*;
     use crate::harness::provenance::Provenance;
+    use crate::harness::reads::string_leaves;
 
     #[test]
     fn hermetic_yml_reads_the_verdicts_and_names_the_upload_of_every_leg() {
@@ -1624,54 +1621,66 @@ mod tests {
         }
     }
 
-    /// A tool call keyed on less than its turn's own words answers a later
-    /// request too: a dispatch that takes the child's delivered result for its
+    /// A tool call keyed on less than its turn's own words answers a later user
+    /// message too: a dispatch that takes the child's delivered result for its
     /// turn dispatches again until the budget kills the run, Blocked, where an
     /// unscripted delivery is Script at once (opencode 2.3.0, #2331; 2.4.0,
-    /// #1934; codewhale 0.10.4, #2413). aimock matches `userMessage` in the
-    /// request's last user text (`@copilotkit/aimock` `dist/router.js:129-136`,
-    /// `:243-250` at 1.48.0), which a delivered user message replaces, so a
-    /// reply binds to its turn when that key is [`Placeholder::Turn`], or a
-    /// word of the task the parent's calls hand the child that the parent's
-    /// prompt lacks.
+    /// #1934; codewhale 0.10.4, #2413), and a first turn's call so keyed waits
+    /// on fixture order alone not to answer the second turn's prompt. aimock
+    /// matches `userMessage` in the request's last user text
+    /// (`@copilotkit/aimock` `dist/router.js:129-136`, `:243-250` at 1.48.0),
+    /// which each later user message replaces. So a reply binds to the first
+    /// turn when that key is [`Placeholder::Turn`], and else to a later one
+    /// when it is a word the first prompt lacks of the second prompt, or of the
+    /// arguments or input of a first-turn call, what the parent hands a child.
     #[test]
-    fn a_delegating_scripts_tool_calls_each_bind_to_their_turn() {
-        fn carries(v: &Value, key: &str) -> bool {
-            match v {
-                Value::String(s) => s.contains(key),
-                Value::Array(a) => a.iter().any(|x| carries(x, key)),
-                Value::Object(m) => m.values().any(|x| carries(x, key)),
-                _ => false,
-            }
-        }
-        let delegates = |shape| match shape {
-            Shape::Subagent | Shape::ChildError => true,
-            Shape::ToolRun
-            | Shape::Permission
-            | Shape::ModelError
-            | Shape::Succession
-            | Shape::Cancel => false,
-        };
-        let parent = Placeholder::Turn.as_str();
+    fn every_tool_call_a_later_user_message_reaches_binds_to_its_turn() {
+        let first = Placeholder::Turn.as_str();
         let mut unbound = Vec::new();
         for p in PROFILES {
-            for s in p.scenarios.iter().filter(|s| delegates(s.shape)) {
+            for s in p.scenarios {
+                let delegates = match s.shape {
+                    Shape::Subagent | Shape::ChildError => true,
+                    Shape::ToolRun
+                    | Shape::Permission
+                    | Shape::ModelError
+                    | Shape::Succession
+                    | Shape::Cancel => false,
+                };
+                let second = match s.turn.second {
+                    Some(Second::Prompt(prompt)) => Some(prompt),
+                    // Its words act on the session and ask the model nothing.
+                    Some(Second::Bare) | None => None,
+                };
+                if !delegates && second.is_none() {
+                    continue;
+                }
                 let script: Value = serde_json::from_str(
                     &std::fs::read_to_string(s.script(p.source)).expect("the script"),
                 )
                 .expect("json");
                 let replies = script["fixtures"].as_array().expect("fixtures");
-                let dispatches: Vec<&Value> = replies
+                let mut handed = BTreeSet::new();
+                for reply in replies
                     .iter()
-                    .filter(|f| calls_a_tool(f) && f["match"]["userMessage"] == parent)
-                    .map(|f| &f["response"])
-                    .collect();
+                    .filter(|f| delegates && calls_a_tool(f) && f["match"]["userMessage"] == first)
+                {
+                    let calls =
+                        |kind: &str| reply["response"][kind].as_array().into_iter().flatten();
+                    for call in calls("toolCalls") {
+                        string_leaves(&call["arguments"], "", &mut handed);
+                    }
+                    for call in calls("customToolCalls") {
+                        string_leaves(&call["input"], "", &mut handed);
+                    }
+                }
                 for (i, reply) in replies.iter().enumerate().filter(|(_, f)| calls_a_tool(f)) {
                     let binds = reply["match"]["userMessage"].as_str().is_some_and(|key| {
-                        key == parent
+                        key == first
                             || (!key.is_empty()
                                 && !s.prompt().contains(key)
-                                && dispatches.iter().any(|d| carries(d, key)))
+                                && (second.is_some_and(|prompt| prompt.contains(key))
+                                    || handed.iter().any(|(_, word)| word.contains(key))))
                     });
                     if !binds {
                         unbound.push(format!("{}/{} fixture {i}", p.source, s.name));
@@ -1681,7 +1690,8 @@ mod tests {
         }
         assert!(
             unbound.is_empty(),
-            "tool calls that answer more than their turn: {unbound:#?}"
+            "tool calls keyed on neither {first} nor a word the first prompt lacks of the \
+             second prompt or of what a first-turn call hands a child: {unbound:#?}"
         );
     }
 

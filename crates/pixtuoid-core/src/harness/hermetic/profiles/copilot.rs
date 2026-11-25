@@ -118,6 +118,7 @@ pub(crate) const PROFILE: Profile = Profile {
             windows: "powershell",
         },
     )],
+    turn_appends: None,
     not_yet: &[],
     event_name: |_| None,
     not_yet_fields: &[],

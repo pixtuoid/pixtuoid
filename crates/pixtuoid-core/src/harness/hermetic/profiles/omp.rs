@@ -216,7 +216,7 @@ startup:
             },
         },
         // Before a task's child runs, omp has the model judge how open-ended
-        // its solution space is, which the script answers `low`
+        // its solution space is, which its script answers
         // (`src/auto-thinking/classifier.ts:2-6`,
         // `src/prompts/judge/auto-thinking.json:20-21` at `v19.1.0`).
         Scenario {
@@ -242,6 +242,7 @@ startup:
         },
     ],
     script_vars: &[],
+    turn_appends: None,
     not_yet: &["session_branch"],
     event_name: type_field,
     not_yet_fields: &[],

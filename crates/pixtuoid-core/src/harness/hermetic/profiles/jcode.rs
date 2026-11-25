@@ -77,6 +77,7 @@ enabled = false
         turn: Turn::PROFILE,
     }],
     script_vars: &[],
+    turn_appends: None,
     not_yet: &[],
     event_name: event_field,
     not_yet_fields: &[],

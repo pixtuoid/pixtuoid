@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "omp",
   "version": "omp/19.1.0",
-  "captured": "2026-11-23",
+  "captured": "2026-11-25",
   "command": "just hermetic --record omp",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 157
+    "blanked": 149
   },
   "aimock": "1.48.0",
   "script": "tests/sources/omp/hermetic/subagent.json",
@@ -28,24 +28,22 @@
         "custom",
         "message",
         "model_change",
-        "model_usage",
         "session_init"
       ]
     }
   },
   "sentinel_reads": {
-    "2026-11-23T04-57-50-616Z_01a206c4-7f18-7691-942e-3d07b9c44933.jsonl": [
+    "2026-11-25T20-44-29-208Z_01a21473-e498-779c-ae1a-235d4dfa1e14.jsonl": [
       "11:/message/usage/cacheWrite",
       "14:/message/usage/cacheWrite",
       "1:/title",
       "8:/message/usage/cacheWrite"
     ],
-    "2026-11-23T04-57-50-616Z_01a206c4-7f18-7691-942e-3d07b9c44933/Reader.jsonl": [
-      "11:/message/usage/cacheWrite",
-      "14:/message/usage/cacheWrite",
+    "2026-11-25T20-44-29-208Z_01a21473-e498-779c-ae1a-235d4dfa1e14/Reader.jsonl": [
+      "10:/message/usage/cacheWrite",
+      "13:/message/usage/cacheWrite",
       "1:/title",
-      "5:/usage/cacheWrite",
-      "6:/usage/cacheWrite"
+      "5:/usage/cacheWrite"
     ]
   }
 }
