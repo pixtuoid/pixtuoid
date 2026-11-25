@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, EVENT_STAMP, extract_top_level_cwd, first_non_blank_str, generic_tool_display,
-    required, required_or_err,
+    non_empty, required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -204,23 +204,16 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
     let event = required_or_err(SOURCE_NAME, None, EVENT_STAMP, |k| obj.get(k)?.as_str())?;
     // The App and IDE fire the same global hooks file under app data dirs of
     // their own (hooks.md, `transcriptPath`).
-    if obj
-        .get("transcriptPath")
-        .and_then(Value::as_str)
-        .is_some_and(|p| {
-            !p.is_empty()
-                && !Path::new(p)
-                    .components()
-                    .any(|c| c.as_os_str() == CLI_APP_DATA_DIR)
-        })
-    {
+    if non_empty(obj, "transcriptPath").is_some_and(|p| {
+        !Path::new(p)
+            .components()
+            .any(|c| c.as_os_str() == CLI_APP_DATA_DIR)
+    }) {
         tracing::trace!(event, "dropping a hook another Antigravity app fired");
         return Ok(vec![]);
     }
     let key = required_or_err(SOURCE_NAME, Some(event), "conversationId", |k| {
-        required(SOURCE_NAME, event, k, |k| {
-            obj.get(k)?.as_str().filter(|s| !s.is_empty())
-        })
+        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
     })?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = required(SOURCE_NAME, event, "workspacePaths", |k| {

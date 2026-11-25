@@ -189,9 +189,9 @@ pub(crate) fn decode_copilot_line(
     let kind = obj.get("type").and_then(|s| s.as_str()).unwrap_or("");
     let data = obj.get(DATA);
 
-    let acting = match str_at(&v, "agentId") {
-        Some(aid) if !aid.is_empty() => AgentId::from_parts(source, aid),
-        _ => root,
+    let acting = match non_empty(obj, "agentId") {
+        Some(aid) => AgentId::from_parts(source, aid),
+        None => root,
     };
 
     match kind {

@@ -98,17 +98,13 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
     })?;
     // The top-level `cwd` is EMPTY/absent in CLI hook payloads —
     // `workspace_roots[0]` is the real one. Label/cwd only, NOT the AgentId key.
-    let workspace = obj
-        .get("cwd")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            obj.get("workspace_roots")
-                .and_then(|r| r.as_array())
-                .and_then(|a| a.first())
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty())
-        });
+    let workspace = non_empty(obj, "cwd").or_else(|| {
+        obj.get("workspace_roots")
+            .and_then(|r| r.as_array())
+            .and_then(|a| a.first())
+            .and_then(|s| s.as_str())
+            .filter(|s| !s.is_empty())
+    });
     // Key on `session_id` — present and CONSISTENT across every CLI hook event,
     // so it distinguishes concurrent sessions in one project AND coalesces all of
     // a session's events.

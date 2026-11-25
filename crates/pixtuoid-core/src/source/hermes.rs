@@ -19,12 +19,10 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use serde_json::Value;
-
 use crate::AgentId;
 use crate::source::decoder::{
     DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail,
-    required, required_or_err,
+    non_empty, required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
@@ -408,16 +406,14 @@ fn field<'o>(obj: &'o HookObject, name: &'static str) -> Option<&'o str> {
         DECODED_FIELDS.contains(&name),
         "{name} is not in DECODED_FIELDS"
     );
-    obj.get(name)
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
+    non_empty(obj, name)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::source::decoder::test_obj;
-    use serde_json::json;
+    use serde_json::{Value, json};
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
         decode_hermes_hook_payload(test_obj(&v)).expect("decodes")

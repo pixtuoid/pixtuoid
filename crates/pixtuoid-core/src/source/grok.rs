@@ -132,15 +132,7 @@ pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
 /// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
 pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
     let event = required_or_err(SOURCE_NAME, None, HOOK_EVENT_NAME, |k| obj.get(k)?.as_str())?;
-    let cwd = obj
-        .get("cwd")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            obj.get("workspaceRoot")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty())
-        });
+    let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
     let key = required_or_err(SOURCE_NAME, None, "sessionId", |k| {
         non_empty(obj, k).or(cwd)
     })?;
@@ -231,11 +223,7 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // hook (the tool proceeds → its post_tool_use End clears the
                 // gate); denial fires permission_denied (same End, above).
                 "permission_prompt" | "elicitation_dialog" => {
-                    let msg = obj
-                        .get("message")
-                        .and_then(|s| s.as_str())
-                        .filter(|s| !s.is_empty())
-                        .unwrap_or(kind);
+                    let msg = non_empty(obj, "message").unwrap_or(kind);
                     Ok(vec![
                         identity(),
                         AgentEvent::user_action_request(
@@ -277,12 +265,8 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 cwd: cwd.unwrap_or("").into(),
                 parent_id: Some(agent_id),
             }];
-            if let Some(label) = obj
-                .get("description")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty())
-                .or_else(|| obj.get("subagentType").and_then(|s| s.as_str()))
-                .filter(|s| !s.is_empty())
+            if let Some(label) =
+                non_empty(obj, "description").or_else(|| non_empty(obj, "subagentType"))
             {
                 evs.push(AgentEvent::Rename {
                     agent_id: child,

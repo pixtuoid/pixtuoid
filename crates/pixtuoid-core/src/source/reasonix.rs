@@ -217,10 +217,7 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         // RequiresAction is idempotent (the gated tool's PostToolUse/Stop resolves it).
         "PermissionRequest" => {
             let tool = required(SOURCE_NAME, event, "toolName", |k| non_empty(obj, k));
-            let subject = obj
-                .get("subject")
-                .and_then(|s| s.as_str())
-                .filter(|s| !s.is_empty());
+            let subject = non_empty(obj, "subject");
             // Pre-cap each component before concatenating so an oversized
             // `subject` can't force a large intermediate allocation; the outer
             // `ellipsize` stays the authoritative cap.

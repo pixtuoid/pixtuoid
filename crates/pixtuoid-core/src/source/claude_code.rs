@@ -125,10 +125,7 @@ pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<Agent
     } else {
         // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
         // authoritative key — exact parity with the watcher's own deriver.
-        let path_key = obj
-            .get("agent_transcript_path")
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
+        let path_key = non_empty(obj, "agent_transcript_path")
             .map(|p| cc_id_from_path(Path::new(&crate::id::normalize_path_key(p))))
             .filter(|s| !s.is_empty());
         if let Some(ref k) = path_key
@@ -217,10 +214,7 @@ fn is_turn_record(obj: &serde_json::Map<String, Value>) -> bool {
 /// until the next Rename. Capped at decode because transcript content persists
 /// in slot state.
 fn attribution_label(obj: &serde_json::Map<String, Value>) -> Option<String> {
-    let name = obj
-        .get("attributionAgent")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())?;
+    let name = non_empty(obj, "attributionAgent")?;
     let seg = name.rsplit_once(':').map_or(name, |(_, tail)| tail);
     (!seg.is_empty()).then(|| ellipsize(seg, MAX_DECODED_FIELD_CHARS))
 }

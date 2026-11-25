@@ -499,10 +499,7 @@ pub(crate) fn hook_identity(
         agent_id,
         source,
         session_id,
-        obj.get("cwd")
-            .and_then(|s| s.as_str())
-            .filter(|s| !s.is_empty())
-            .map(std::path::PathBuf::from),
+        non_empty(obj, "cwd").map(std::path::PathBuf::from),
     )
 }
 

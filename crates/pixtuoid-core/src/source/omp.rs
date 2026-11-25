@@ -777,8 +777,7 @@ pub(crate) fn omp_derive_label(path: &Path, source: &str, cwd: &Path) -> String 
 pub(crate) fn omp_head_title(v: &Value) -> Option<String> {
     let obj = v.as_object()?;
     matches!(obj.get("type").and_then(|t| t.as_str()), Some(TITLE)).then_some(())?;
-    let title = obj.get(TITLE_FIELD).and_then(|t| t.as_str())?;
-    (!title.is_empty()).then(|| omp_label(SOURCE_NAME, title))
+    non_empty(obj, TITLE_FIELD).map(|title| omp_label(SOURCE_NAME, title))
 }
 /// The entry's id and timestamp, then `tail`: unique across omp's
 /// transcripts, which an entry id alone is not (8 hex chars, checked against
@@ -929,12 +928,12 @@ pub fn decode_omp_line(transcript_path: &str, source: &str, v: Value) -> Vec<Age
         // The only human-readable name a ROOT transcript has. An unguarded Rename
         // would blank it and wipe every subagent's dispatch-name label — the empty
         // slot's WHY is on `omp_head_title`.
-        TITLE | TITLE_CHANGE => match obj.get(TITLE_FIELD).and_then(|t| t.as_str()) {
-            Some(title) if !title.is_empty() => vec![AgentEvent::Rename {
+        TITLE | TITLE_CHANGE => match non_empty(obj, TITLE_FIELD) {
+            Some(title) => vec![AgentEvent::Rename {
                 agent_id: acting,
                 label: omp_label(source, title),
             }],
-            _ => vec![],
+            None => vec![],
         },
         // Not sprite-visible (`model_change` among them — see `ROLE_ASSISTANT`).
         _ => vec![],
@@ -1121,11 +1120,7 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
         // pair there would walk the sprite out for its own rewrite.
         HOOK_SESSION_SWITCH | HOOK_SESSION_BRANCH => {
             let mut evs = Vec::new();
-            if let Some(prev) = obj
-                .get("previousSessionFile")
-                .and_then(|p| p.as_str())
-                .filter(|p| !p.is_empty())
-            {
+            if let Some(prev) = non_empty(obj, "previousSessionFile") {
                 let prev_key = omp_id_from_path(Path::new(&crate::id::normalize_path_key(prev)));
                 if prev_key != key {
                     evs.push(AgentEvent::SessionEnd {
@@ -1165,10 +1160,7 @@ fn omp_hook_session_key(
             omp_parent_key_from_path(Path::new(&folded)),
         ));
     }
-    obj.get("sessionId")
-        .and_then(|s| s.as_str())
-        .filter(|s| !s.is_empty())
-        .map(|s| (s.to_string(), None))
+    non_empty(obj, "sessionId").map(|s| (s.to_string(), None))
 }
 
 #[cfg(test)]
