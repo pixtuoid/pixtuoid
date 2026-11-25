@@ -1236,6 +1236,55 @@ fn a_cc_effort_level_and_ultracode_end_alike_in_either_order() {
 }
 
 #[test]
+fn a_model_hint_fills_only_an_unset_model() {
+    let id = AgentId::from_parts("claude-code", "ses_h");
+    let hint = (
+        AgentEvent::ModelHint {
+            agent_id: id,
+            model: "claude-opus-5-5".into(),
+        },
+        Transport::Hook,
+    );
+    let info = (
+        AgentEvent::ModelInfo {
+            agent_id: id,
+            model: Some("claude-fable-5".into()),
+            effort: None,
+        },
+        Transport::Jsonl,
+    );
+    let rows = [
+        (
+            "a hint fills an unset model",
+            vec![&hint],
+            "claude-opus-5-5",
+        ),
+        (
+            "a model replaces a hint",
+            vec![&hint, &info],
+            "claude-fable-5",
+        ),
+        (
+            "a hint never replaces a model",
+            vec![&info, &hint],
+            "claude-fable-5",
+        ),
+    ];
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for (row, events, model) in rows {
+        let (mut r, mut scene) = (Reducer::new(), SceneState::uniform(4));
+        start(&mut r, &mut scene, id);
+        for (event, from) in events {
+            r.apply(&mut scene, event.clone(), t0, *from);
+        }
+        assert_eq!(scene.agents[&id].model.as_deref(), Some(model), "{row}");
+    }
+    let mut scene = SceneState::uniform(4);
+    Reducer::new().apply(&mut scene, hint.0, t0, hint.1);
+    assert!(scene.agents.is_empty(), "an absent slot stays absent");
+}
+
+#[test]
 fn ultracode_holds_until_it_turns_off() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();

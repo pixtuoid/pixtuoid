@@ -276,6 +276,15 @@ pub enum AgentEvent {
         /// `Some` = an effort level observation (e.g. `"xhigh"`).
         effort: Option<String>,
     },
+    /// The model a hook offers for a session whose transcript owns its model:
+    /// the reducer sets an EXISTING slot's model from it only while none is
+    /// set, so a [`ModelInfo`](Self::ModelInfo)'s replaces it, in either order.
+    ModelHint {
+        /// The agent this observation is attributed to.
+        agent_id: AgentId,
+        /// The RAW model string.
+        model: String,
+    },
     /// Whether ultracode is on: "a Claude Code setting rather than a model
     /// effort level", so it never rides [`ModelInfo`](Self::ModelInfo)'s
     /// effort (code.claude.com/docs/en/model-config, Adjust effort level).
@@ -516,6 +525,7 @@ impl AgentEvent {
             AgentEvent::ProofOfLife { agent_id, .. } => *agent_id,
             AgentEvent::Identity { agent_id, .. } => *agent_id,
             AgentEvent::ModelInfo { agent_id, .. } => *agent_id,
+            AgentEvent::ModelHint { agent_id, .. } => *agent_id,
             AgentEvent::Ultracode { agent_id, .. } => *agent_id,
             AgentEvent::Usage { agent_id, .. } => *agent_id,
             AgentEvent::Backlog { agent_id, .. } => *agent_id,
@@ -542,6 +552,7 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
+            | AgentEvent::ModelHint { .. }
             | AgentEvent::Ultracode { .. }
             | AgentEvent::Usage { .. }
             | AgentEvent::Backlog { .. } => false,
@@ -603,6 +614,7 @@ impl AgentEvent {
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
             | AgentEvent::ModelInfo { .. }
+            | AgentEvent::ModelHint { .. }
             | AgentEvent::Ultracode { .. }
             | AgentEvent::Backlog { .. } => (None, None),
         };
