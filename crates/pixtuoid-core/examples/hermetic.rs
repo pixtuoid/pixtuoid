@@ -43,9 +43,10 @@ mod run {
     use pixtuoid_core::harness::hermetic::tui;
     use pixtuoid_core::harness::hermetic::verify::{self, Label, Verdict};
     use pixtuoid_core::harness::hermetic::{
-        self, DUMMY_KEY, Feed, HostConfig, LIFECYCLE, LIFECYCLE_RECORD, LIVE_PIXTUOID_ENV, Live,
-        MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs, Profile, SCENE_LOG, SHARDS,
-        STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG, installer_build,
+        self, DUMMY_KEY, Fallback, Feed, HostConfig, LIFECYCLE, LIFECYCLE_RECORD,
+        LIVE_PIXTUOID_ENV, Live, MANIFEST, Manifest, NOT_HERMETIC, PROFILES, Package, PerOs,
+        Profile, SCENE_LOG, SHARDS, STEPS, Scenario, Second, Step, StepRecord, Surface, TUI_LOG,
+        installer_build,
     };
     use pixtuoid_core::harness::host::{
         HeldDir, RunDir, SandboxEnv, built, connect, hold_lock, inherited, warmed_shim_dir,
@@ -370,6 +371,11 @@ mod run {
             ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
             _ => None,
         };
+        installs_everywhere(
+            p.package,
+            installed.as_ref().ok().filter(|_| repinned.is_some()),
+            |url| curl_get(url, Curl::Body),
+        )?;
         let (mut judged, mut banners) = (Vec::new(), Vec::new());
         let mut scenarios = selected;
         if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.name == s.name)) {
@@ -925,39 +931,92 @@ mod run {
     /// How many times curl retries a transient failure.
     const CURL_RETRIES: &str = "3";
 
-    /// What [`curl_get`] returns of a response.
+    /// Which part of a response curl fetches, and its flags: [`curl_get`]
+    /// reads any, and [`curl_download`] saves a `Body`.
     enum Curl {
         /// The headers, redirects unfollowed: a redirect's `location` is the answer.
         Headers,
+        /// Whether the file answers at the end of its redirects, as jcode's
+        /// installer probes an asset (`scripts/install.sh:250` at v1.1.2).
+        Probe,
         Body,
     }
 
+    impl Curl {
+        const fn flags(&self) -> &'static str {
+            match self {
+                Self::Headers => "-fsSI",
+                Self::Probe => "-fsSIL",
+                Self::Body => "-fsSL",
+            }
+        }
+    }
+
+    /// What curl writes to stdout after a transfer, "independently of if the
+    /// file transfer was successful or not": the last response's code
+    /// (curl.se/docs/manpage.html, `--write-out`).
+    const RESPONSE_CODE: &str = "%{response_code}";
+
+    /// The lowest HTTP status `--fail` takes as an error
+    /// (curl.se/docs/manpage.html, `--fail`).
+    const HTTP_ERROR: u16 = 400;
+
+    /// What [`RESPONSE_CODE`] reads when no response arrived: the code "is zero
+    /// if no server response code has been received"
+    /// (<https://curl.se/libcurl/c/CURLINFO_RESPONSE_CODE.html>).
+    const NO_RESPONSE: u16 = 0;
+
     /// `url`'s headers or body; a failure names curl's own reason.
     fn curl_get(url: &str, part: Curl) -> std::io::Result<Vec<u8>> {
-        let mode = match part {
-            Curl::Headers => "-fsSI",
-            Curl::Body => "-fsSL",
-        };
-        let out = tool(CURL)
-            .args([mode, "--retry", CURL_RETRIES, url])
-            .output()
-            .map_err(|e| std::io::Error::other(format!("curl {url}: {e}")))?;
-        if !out.status.success() {
-            return Err(std::io::Error::other(format!(
-                "curl {url} exited {}: {}",
-                out.status,
-                String::from_utf8_lossy(&out.stderr).trim()
-            )));
-        }
-        Ok(out.stdout)
+        let dir = tempfile::tempdir()?;
+        let answer = dir.path().join("answer");
+        curl(url, part, &answer)?;
+        std::fs::read(answer)
     }
 
     fn curl_download(url: &str, dest: &Path) -> std::io::Result<()> {
-        let mut c = tool(CURL);
-        c.args(["-fsSL", "--retry", CURL_RETRIES, "-o"])
-            .arg(dest)
-            .arg(url);
-        succeed(c)
+        curl(url, Curl::Body, dest)
+    }
+
+    /// `url`'s `part` written to the file `to`, never stdout: before it
+    /// retries, curl removes the body the failed attempt wrote to an output
+    /// file, and none it wrote to stdout (curl.se/docs/manpage.html,
+    /// `--retry`).
+    fn curl(url: &str, part: Curl, to: &Path) -> std::io::Result<()> {
+        let out = tool(CURL)
+            .arg(part.flags())
+            .arg("-o")
+            .arg(to)
+            .args(["--retry", CURL_RETRIES, "--write-out", RESPONSE_CODE, url])
+            .output()
+            .map_err(|e| std::io::Error::other(format!("curl {url}: {e}")))?;
+        curl_answer(url, out.status, &out.stdout, &out.stderr)
+    }
+
+    /// Why a curl run of `url` that wrote out `stdout` ([`RESPONSE_CODE`])
+    /// failed, if it did: an HTTP error or no response is a failure though
+    /// curl exited 0, as curl 8.14 does under `--retry` (curl/curl#17554).
+    fn curl_answer(
+        url: &str,
+        status: ExitStatus,
+        stdout: &[u8],
+        stderr: &[u8],
+    ) -> std::io::Result<()> {
+        let code = std::str::from_utf8(stdout)
+            .ok()
+            .and_then(|code| code.parse::<u16>().ok())
+            .filter(|code| *code != NO_RESPONSE);
+        match code {
+            Some(code) if status.success() && code < HTTP_ERROR => Ok(()),
+            _ => Err(std::io::Error::other(format!(
+                "curl {url} answered {} and exited {status}: {}",
+                code.map_or_else(
+                    || "no response code".to_owned(),
+                    |code| format!("HTTP {code}")
+                ),
+                String::from_utf8_lossy(stderr).trim()
+            ))),
+        }
     }
 
     /// Run `c` to success. Its error names the program and arguments alone: a
@@ -1012,14 +1071,22 @@ mod run {
                     .map_err(|e| format!("npm view {spec}: {e}"))?;
                 npm_release(&spec, out.status, &out.stdout, &out.stderr).map(|v| v.to_string())
             }
-            Feed::GithubLatest(repo) => {
-                // It redirects to the latest release
-                // (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
-                let url = format!("https://github.com/{repo}/releases/latest");
-                let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
-                latest_tag(&String::from_utf8_lossy(&headers))
-                    .map(|v| v.to_string())
-                    .ok_or_else(|| format!("{url} redirected to no release tag"))
+            Feed::GithubMarked(repo) => marked_latest(repo).map(|v| v.to_string()),
+            Feed::GithubCarrying {
+                repo,
+                assets,
+                sums,
+                fallback,
+            } => {
+                let asset = asset_here(assets).map_err(|e| e.to_string())?;
+                let fallback = *fallback.here();
+                let pages = (1..).map(|page| releases_page(repo, page));
+                carrying_release(fallback, &marked_latest(repo)?, pages, |v| {
+                    carries(fallback, asset, sums, |name, part| {
+                        curl_get(&release_file(repo, v, name), part)
+                    })
+                })
+                .map(|v| v.to_string())
             }
             Feed::UpdaterManifest {
                 manifest,
@@ -1115,6 +1182,43 @@ mod run {
         Ok(lock)
     }
 
+    /// Refuses a recording that moves a GitHub release's pin to `repin`
+    /// unless that release's sums file, as `fetch` reads it, lists every
+    /// platform's asset, so the pin installs on every leg: a
+    /// [`hermetic::Latest::Carrying`] release need carry only the recording
+    /// host's.
+    fn installs_everywhere(
+        package: Package,
+        repin: Option<&Version>,
+        fetch: impl FnOnce(&str) -> std::io::Result<Vec<u8>>,
+    ) -> std::io::Result<()> {
+        let (
+            Some(version),
+            Package::GithubRelease {
+                repo, assets, sums, ..
+            },
+        ) = (repin, package)
+        else {
+            return Ok(());
+        };
+        let listed = fetch(&release_file(repo, version, sums))?;
+        match unlisted(&String::from_utf8_lossy(&listed), assets)[..] {
+            [] => Ok(()),
+            ref missing => Err(std::io::Error::other(format!(
+                "v{version}'s {sums} lists no {}, so a pin there installs on no such platform",
+                missing.join(", ")
+            ))),
+        }
+    }
+
+    fn unlisted(sums: &str, assets: &[(&str, &str, &'static str)]) -> Vec<&'static str> {
+        assets
+            .iter()
+            .map(|(_, _, asset)| *asset)
+            .filter(|asset| !digest::lists(sums, asset))
+            .collect()
+    }
+
     /// `platform`'s build of `version`: the lock's when it pins that version,
     /// else the updater's when it serves it now.
     fn build_of(
@@ -1152,14 +1256,145 @@ mod run {
     const TARBALL_SUFFIX: &str = ".tar.gz";
     const UV: &str = "uv";
 
-    /// The release a `releases/latest` response's `location` names.
+    /// The release a `releases/latest` response's `location` names: the last
+    /// one, since a retried `-I` fetch leaves each attempt's headers in turn
+    /// (curl 8.14.1 `src/tool_cb_hdr.c:282-313` counts none toward what
+    /// `src/tool_operate.c:504` removes).
     fn latest_tag(headers: &str) -> Option<Version> {
-        let location = headers.lines().find_map(|l| {
+        let location = headers.lines().rev().find_map(|l| {
             let (name, value) = l.split_once(':')?;
             name.eq_ignore_ascii_case("location").then(|| value.trim())
         })?;
-        let tag = location.rsplit_once("/tag/")?.1;
+        release_tag(location.rsplit_once("/tag/")?.1)
+    }
+
+    /// The release a `v<version>` tag names.
+    fn release_tag(tag: &str) -> Option<Version> {
         Version::parse(tag.strip_prefix('v')?).ok()
+    }
+
+    /// The release GitHub marks `repo`'s latest, which `releases/latest`
+    /// redirects to
+    /// (docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
+    fn marked_latest(repo: &str) -> Result<Version, String> {
+        let url = format!("https://github.com/{repo}/releases/latest");
+        let headers = curl_get(&url, Curl::Headers).map_err(|e| e.to_string())?;
+        latest_tag(&String::from_utf8_lossy(&headers))
+            .ok_or_else(|| format!("{url} redirected to no release tag"))
+    }
+
+    /// `name` among the files of `repo`'s `v<version>` release.
+    fn release_file(repo: &str, version: &Version, name: &str) -> String {
+        format!("https://github.com/{repo}/releases/download/v{version}/{name}")
+    }
+
+    /// Whether a release whose files `fetch` reads by name carries `asset` as
+    /// `fallback`'s installer asks, which takes a file it can't read as one
+    /// the release lacks.
+    fn carries(
+        fallback: Fallback,
+        asset: &str,
+        sums: &str,
+        fetch: impl Fn(&str, Curl) -> std::io::Result<Vec<u8>>,
+    ) -> bool {
+        let Ok(listed) = fetch(sums, Curl::Body) else {
+            return false;
+        };
+        let listed = String::from_utf8_lossy(&listed);
+        match fallback {
+            // `scripts/install.sh:244-256` at v1.1.2.
+            Fallback::Newest => digest::lists(&listed, asset) && fetch(asset, Curl::Probe).is_ok(),
+            // `scripts/install.ps1:149-160` at v1.1.2.
+            Fallback::First => names_artifact(&listed, asset),
+        }
+    }
+
+    /// What install.ps1's sums check takes after an artifact's name
+    /// (`scripts/install.ps1:155` at v1.1.2).
+    const PS1_EXTENSION: &str = r"\.(zip|tar\.gz|exe)\b";
+
+    /// Whether `sums` names `asset`'s artifact, `asset` short of the
+    /// extension [`PS1_EXTENSION`] matches, as install.ps1's regex does.
+    fn names_artifact(sums: &str, asset: &str) -> bool {
+        regex::Regex::new(&format!("{PS1_EXTENSION}$"))
+            .map(|extension| extension.replace(asset, "").into_owned())
+            .and_then(|artifact| {
+                regex::Regex::new(&format!("{}{PS1_EXTENSION}", regex::escape(&artifact)))
+            })
+            .is_ok_and(|named| named.is_match(sums))
+    }
+
+    /// As many releases as a page of GitHub's listing holds
+    /// (docs.github.com/en/rest/releases/releases#list-releases), as both of
+    /// jcode's installers read a page (`scripts/install.sh:393`,
+    /// `scripts/install.ps1:173` at v1.1.2).
+    const RELEASES_PER_PAGE: usize = 100;
+
+    /// The most pages of releases both of jcode's installers read
+    /// (`scripts/install.sh:391`, `scripts/install.ps1:171` at v1.1.2).
+    const RELEASE_PAGES: usize = 5;
+
+    fn releases_page(repo: &str, page: u32) -> Result<Vec<ListedRelease>, String> {
+        let url = format!(
+            "https://api.github.com/repos/{repo}/releases?per_page={RELEASES_PER_PAGE}&page={page}"
+        );
+        let body = curl_get(&url, Curl::Body).map_err(|e| e.to_string())?;
+        serde_json::from_slice(&body).map_err(|e| format!("{url}: {e}"))
+    }
+
+    /// What both of jcode's installers read of a listed release
+    /// (`scripts/install.sh:394-398`, `scripts/install.ps1:181-184` at v1.1.2).
+    #[derive(serde::Deserialize)]
+    struct ListedRelease {
+        tag_name: String,
+        draft: bool,
+        prerelease: bool,
+    }
+
+    impl ListedRelease {
+        /// Its release, when it is a stable `v<major>.<minor>.<patch>` one.
+        fn stable(&self) -> Option<Version> {
+            if self.draft || self.prerelease {
+                return None;
+            }
+            release_tag(&self.tag_name).filter(|v| v.pre.is_empty() && v.build.is_empty())
+        }
+    }
+
+    /// The release [`hermetic::Latest::Carrying`] takes: `marked` when it
+    /// `carries`, else the other stable one `fallback` takes from at most
+    /// [`RELEASE_PAGES`], else `marked` again, as the installers
+    /// [`Fallback::Newest`] and [`Fallback::First`] mirror return it.
+    fn carrying_release<E>(
+        fallback: Fallback,
+        marked: &Version,
+        pages: impl IntoIterator<Item = Result<Vec<ListedRelease>, E>>,
+        mut carries: impl FnMut(&Version) -> bool,
+    ) -> Result<Version, E> {
+        if carries(marked) {
+            return Ok(marked.clone());
+        }
+        for page in pages.into_iter().take(RELEASE_PAGES) {
+            let page = page?;
+            let mut stable: Vec<Version> = page.iter().filter_map(ListedRelease::stable).collect();
+            let reads_on = match fallback {
+                // `scripts/install.sh:398-399`.
+                Fallback::Newest if stable.is_empty() => break,
+                Fallback::Newest => {
+                    stable.sort_unstable_by(|a, b| b.cmp(a));
+                    true
+                }
+                // `scripts/install.ps1:198`.
+                Fallback::First => page.len() == RELEASES_PER_PAGE,
+            };
+            if let Some(v) = stable.into_iter().find(|v| v != marked && carries(v)) {
+                return Ok(v);
+            }
+            if !reads_on {
+                break;
+            }
+        }
+        Ok(marked.clone())
     }
 
     /// This platform's binary among a release's `assets`.
@@ -1182,8 +1417,8 @@ mod run {
         sums: &str,
         to: &Path,
     ) -> std::io::Result<()> {
-        let base = format!("https://github.com/{repo}/releases/download/v{version}");
-        let fetch = |name: &str, dest: &Path| curl_download(&format!("{base}/{name}"), dest);
+        let fetch =
+            |name: &str, dest: &Path| curl_download(&release_file(repo, version, name), dest);
         let listed = to.with_file_name(sums);
         fetch(sums, &listed)?;
         let payload = to.with_file_name("payload");
@@ -1287,7 +1522,9 @@ mod run {
                     bin,
                 })
             }
-            Package::GithubRelease { repo, assets, sums } => {
+            Package::GithubRelease {
+                repo, assets, sums, ..
+            } => {
                 let program = prefix.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
                 install_once(&prefix, |_| {
                     fetch_release(repo, version, asset_here(assets)?, sums, &program)
@@ -3518,8 +3755,7 @@ mod run {
             assert!(!parse(&args(&["dsh"])).expect("parse").record);
         }
 
-        #[test]
-        fn npm_answers_a_release_or_says_why_not() {
+        fn ok_and_failed() -> (ExitStatus, ExitStatus) {
             #[cfg(unix)]
             use std::os::unix::process::ExitStatusExt;
             #[cfg(windows)]
@@ -3527,7 +3763,88 @@ mod run {
             // A Unix raw status is a wait(2) word, exit code in its high byte; a
             // Windows one is the exit code itself.
             let exit_1 = if cfg!(unix) { 1 << 8 } else { 1 };
-            let (ok, failed) = (ExitStatus::from_raw(0), ExitStatus::from_raw(exit_1));
+            (ExitStatus::from_raw(0), ExitStatus::from_raw(exit_1))
+        }
+
+        #[test]
+        fn a_curl_answer_is_held_to_its_http_status_as_well_as_its_exit() {
+            let (ok, failed) = ok_and_failed();
+            let url = "https://example.invalid/x";
+            let answer = |status, stdout: &str| curl_answer(url, status, stdout.as_bytes(), b"");
+            assert!(answer(ok, "200").is_ok(), "a success");
+            assert!(answer(ok, "302").is_ok(), "a redirect, unfollowed");
+            let why = answer(ok, "404").expect_err("an HTTP error");
+            assert!(why.to_string().contains("404"), "{why}");
+            assert!(answer(failed, "404").is_err(), "curl's own failure");
+            assert!(
+                answer(failed, "200").is_err(),
+                "curl's own failure, a success written out"
+            );
+            let last_success = (HTTP_ERROR - 1).to_string();
+            assert!(answer(ok, &last_success).is_ok(), "{last_success}");
+            let first_error = HTTP_ERROR.to_string();
+            assert!(answer(ok, &first_error).is_err(), "{first_error}");
+            assert!(answer(ok, "").is_err(), "nothing written out");
+            let why = answer(ok, "000").expect_err("no response");
+            assert!(why.to_string().contains("no response code"), "{why}");
+        }
+
+        #[test]
+        fn a_pin_installs_only_where_its_sums_file_lists_the_platforms_asset() {
+            let Some(Profile {
+                package:
+                    jcode @ Package::GithubRelease {
+                        repo, assets, sums, ..
+                    },
+                ..
+            }) = hermetic::profile("jcode")
+            else {
+                panic!("jcode installs a GitHub release's asset");
+            };
+            let (linux_alone, every) = (
+                sums_line("jcode-linux-x86_64.tar.gz"),
+                assets
+                    .iter()
+                    .map(|(_, _, a)| sums_line(a))
+                    .collect::<String>(),
+            );
+            let serves = |version: Version, text: String| {
+                move |url: &str| {
+                    assert_eq!(url, release_file(repo, &version, sums));
+                    Ok(text.into_bytes())
+                }
+            };
+            let v112 = Version::new(1, 1, 2);
+            let why = installs_everywhere(*jcode, Some(&v112), serves(v112.clone(), linux_alone))
+                .expect_err("v1.1.2 lists a Linux asset alone");
+            assert!(
+                why.to_string().contains(
+                    "jcode-macos-aarch64.tar.gz, jcode-macos-x86_64.tar.gz, \
+                     jcode-linux-aarch64.tar.gz, jcode-windows-aarch64.exe, \
+                     jcode-windows-x86_64.exe"
+                ),
+                "{why}"
+            );
+            let v103 = Version::new(1, 0, 3);
+            assert!(
+                installs_everywhere(*jcode, Some(&v103), serves(v103.clone(), every)).is_ok(),
+                "v1.0.3 lists every platform's"
+            );
+            let unread = |_: &str| Err(std::io::Error::other("fetched"));
+            for (why, package, repin) in [
+                ("a pin that stays", *jcode, None),
+                ("an npm package", Package::Npm("jcode"), Some(&v112)),
+            ] {
+                assert!(
+                    installs_everywhere(package, repin, unread).is_ok(),
+                    "{why}, its sums file unread"
+                );
+            }
+        }
+
+        #[test]
+        fn npm_answers_a_release_or_says_why_not() {
+            let (ok, failed) = ok_and_failed();
             let spec = "@openai/codex@latest";
             assert_eq!(
                 npm_release(spec, ok, b"0.162.1\n", b""),
@@ -3635,12 +3952,251 @@ mod run {
             let headers = "HTTP/2 302\r\ndate: x\r\n\
                            Location: https://github.com/o/r/releases/tag/v18.12.1\r\n\r\n";
             assert_eq!(latest_tag(headers), Some(Version::new(18, 12, 1)));
+            let retried = "HTTP/2 503\r\n\
+                           location: https://github.com/o/r/releases/tag/v1.0.0\r\n\r\n\
+                           HTTP/2 302\r\n\
+                           location: https://github.com/o/r/releases/tag/v18.12.1\r\n\r\n";
+            assert_eq!(
+                latest_tag(retried),
+                Some(Version::new(18, 12, 1)),
+                "the last attempt's"
+            );
             for bad in [
                 "HTTP/2 200\r\n\r\n",
                 "location: https://github.com/o/r/releases\r\n",
                 "location: https://github.com/o/r/releases/tag/nightly\r\n",
             ] {
                 assert_eq!(latest_tag(bad), None, "{bad:?}");
+            }
+        }
+
+        #[test]
+        fn a_release_tag_is_a_v_and_a_version() {
+            assert_eq!(release_tag("v1.0.3"), Some(Version::new(1, 0, 3)));
+            assert_eq!(
+                release_tag("v1.1.4-rc.1"),
+                Version::parse("1.1.4-rc.1").ok()
+            );
+            for bad in ["1.0.3", "readme-assets", "nightly", "v", "v1.0"] {
+                assert_eq!(release_tag(bad), None, "{bad:?}");
+            }
+        }
+
+        const MACOS: &str = "jcode-macos-aarch64.tar.gz";
+        const LINUX: &str = "jcode-linux-x86_64.tar.gz";
+        /// A listed release: its tag, whether a draft, whether a prerelease,
+        /// and its assets.
+        type Row = (&'static str, bool, bool, &'static [&'static str]);
+        /// Shaped like jcode's listing around v1.1.2, whose marked v1.1.2
+        /// carries a Linux asset alone: one row per filter, and v1.0.1 listed
+        /// above v1.0.3 so the two fallbacks part.
+        const ROWS: &[Row] = &[
+            ("v1.2.0", true, false, &[MACOS, LINUX]),
+            ("v1.1.4-rc.1", false, false, &[MACOS, LINUX]),
+            ("v1.1.5+linux", false, false, &[MACOS, LINUX]),
+            ("v1.1.3", false, true, &[MACOS, LINUX]),
+            ("v1.1.2", false, false, &[LINUX]),
+            ("v1.1.1", false, false, &[LINUX]),
+            ("readme-assets", false, false, &[MACOS]),
+            ("v1.0.1", false, false, &[MACOS, LINUX]),
+            ("v1.0.3", false, false, &[MACOS, LINUX]),
+        ];
+        /// How many of [`ROWS`] lead it with no stable release.
+        const NO_STABLE: usize = 4;
+        /// How many lead it with no stable release carrying [`MACOS`].
+        const NONE_CARRYING: usize = 7;
+        const LINUX_ONLY: Row = ("v1.1.1", false, false, &[LINUX]);
+        const SELFDEV: Row = ("selfdev-linux-a43cd3e1c", false, true, &[LINUX]);
+
+        fn page(rows: &[Row]) -> Result<Vec<ListedRelease>, String> {
+            Ok(rows
+                .iter()
+                .map(|(tag, draft, prerelease, _)| ListedRelease {
+                    tag_name: (*tag).to_owned(),
+                    draft: *draft,
+                    prerelease: *prerelease,
+                })
+                .collect())
+        }
+
+        fn full(row: Row) -> Result<Vec<ListedRelease>, String> {
+            page(&vec![row; RELEASES_PER_PAGE])
+        }
+
+        fn after(
+            pages: usize,
+            filler: impl Fn() -> Result<Vec<ListedRelease>, String>,
+        ) -> Vec<Result<Vec<ListedRelease>, String>> {
+            std::iter::repeat_with(filler)
+                .take(pages)
+                .chain([page(ROWS)])
+                .collect()
+        }
+
+        fn carries_macos(v: &Version) -> bool {
+            ROWS.iter().any(|(tag, _, _, assets)| {
+                tag.strip_prefix('v') == Some(v.to_string().as_str()) && assets.contains(&MACOS)
+            })
+        }
+
+        #[test]
+        fn the_newest_fallback_takes_each_pages_newest_stable_release_carrying_the_asset() {
+            let asked = std::cell::RefCell::new(Vec::new());
+            let carries = |v: &Version| {
+                asked.borrow_mut().push(v.clone());
+                carries_macos(v)
+            };
+            let (marked, newest) = (Version::new(1, 1, 2), Version::new(1, 0, 3));
+            let resolve = |pages: Vec<Result<Vec<ListedRelease>, String>>| {
+                carrying_release(Fallback::Newest, &marked, pages, carries)
+            };
+            assert_eq!(resolve(vec![page(ROWS)]), Ok(newest.clone()));
+            assert_eq!(
+                asked.take(),
+                [marked.clone(), Version::new(1, 1, 1), newest.clone()],
+                "the marked release once, then the others newest first"
+            );
+            assert_eq!(
+                resolve(vec![
+                    page(&ROWS[..NONE_CARRYING]),
+                    page(&ROWS[NONE_CARRYING..])
+                ]),
+                Ok(newest.clone()),
+                "a page with none reads on"
+            );
+            assert_eq!(
+                resolve(vec![page(&ROWS[..NO_STABLE]), page(ROWS)]),
+                Ok(marked.clone()),
+                "a page with no stable release ends the listing"
+            );
+            assert_eq!(
+                resolve(vec![full(SELFDEV), page(ROWS)]),
+                Ok(marked.clone()),
+                "a full page of prereleases ends it too"
+            );
+            let filler = || page(&ROWS[..NONE_CARRYING]);
+            assert_eq!(
+                resolve(after(RELEASE_PAGES - 1, filler)),
+                Ok(newest),
+                "the last page read"
+            );
+            assert_eq!(
+                resolve(after(RELEASE_PAGES, filler)),
+                Ok(marked.clone()),
+                "a page past the last one read"
+            );
+            assert_eq!(
+                resolve(vec![Err("listed".to_owned())]),
+                Err("listed".to_owned()),
+                "a listing error once the marked release lacks it"
+            );
+            let carried = Version::new(1, 0, 1);
+            assert_eq!(
+                carrying_release(
+                    Fallback::Newest,
+                    &carried,
+                    [Err("listed".to_owned())],
+                    carries
+                ),
+                Ok(carried),
+                "a marked release that carries it, the listing unread"
+            );
+        }
+
+        #[test]
+        fn the_first_fallback_takes_the_first_stable_release_listed_carrying_the_artifact() {
+            let asked = std::cell::RefCell::new(Vec::new());
+            let carries = |v: &Version| {
+                asked.borrow_mut().push(v.clone());
+                carries_macos(v)
+            };
+            let (marked, first) = (Version::new(1, 1, 2), Version::new(1, 0, 1));
+            let resolve = |pages: Vec<Result<Vec<ListedRelease>, String>>| {
+                carrying_release(Fallback::First, &marked, pages, carries)
+            };
+            assert_eq!(resolve(vec![page(ROWS)]), Ok(first.clone()));
+            assert_eq!(
+                asked.take(),
+                [marked.clone(), Version::new(1, 1, 1), first.clone()],
+                "the marked release once, then the others in listing order"
+            );
+            assert_eq!(
+                resolve(vec![full(SELFDEV), page(ROWS)]),
+                Ok(first.clone()),
+                "a full page of prereleases reads on"
+            );
+            assert_eq!(
+                resolve(vec![page(&ROWS[..NONE_CARRYING]), page(ROWS)]),
+                Ok(marked.clone()),
+                "a page short of full ends the listing"
+            );
+            let filler = || full(LINUX_ONLY);
+            assert_eq!(
+                resolve(after(RELEASE_PAGES - 1, filler)),
+                Ok(first),
+                "the last page read"
+            );
+            assert_eq!(
+                resolve(after(RELEASE_PAGES, filler)),
+                Ok(marked.clone()),
+                "a page past the last one read"
+            );
+            assert_eq!(
+                resolve(vec![Err("listed".to_owned())]),
+                Err("listed".to_owned()),
+                "a listing error once the marked release lacks it"
+            );
+        }
+
+        const SUMS: &str = "SHA256SUMS";
+
+        /// A release whose [`SUMS`] body reads `sums`, when it can be read,
+        /// and whose `asset` answers a probe when `answers` says so.
+        fn files<'a>(
+            sums: Option<&'a str>,
+            asset: &'a str,
+            answers: bool,
+        ) -> impl Fn(&str, Curl) -> std::io::Result<Vec<u8>> + 'a {
+            move |name, part| match (part, sums) {
+                (Curl::Body, Some(text)) if name == SUMS => Ok(text.as_bytes().to_vec()),
+                (Curl::Probe, _) if name == asset && answers => Ok(Vec::new()),
+                _ => Err(std::io::Error::other("HTTP 404")),
+            }
+        }
+
+        fn sums_line(name: &str) -> String {
+            format!("{}  {name}\n", "0".repeat(64))
+        }
+
+        #[test]
+        fn the_newest_fallback_takes_a_release_whose_sums_line_and_asset_both_answer() {
+            let takes = |sums: Option<&str>, answers| {
+                carries(Fallback::Newest, MACOS, SUMS, files(sums, MACOS, answers))
+            };
+            let (line, other) = (sums_line(MACOS), sums_line(LINUX));
+            assert!(!takes(None, true), "sums unreadable");
+            assert!(!takes(Some(&other), true), "sums without its line");
+            assert!(!takes(Some(&line), false), "its line, the asset erring");
+            assert!(takes(Some(&line), true), "both");
+        }
+
+        #[test]
+        fn the_first_fallback_takes_a_release_whose_sums_file_names_the_artifact() {
+            const WINDOWS: &str = "jcode-windows-x86_64.exe";
+            let takes = |sums: Option<&str>| {
+                carries(Fallback::First, WINDOWS, SUMS, files(sums, WINDOWS, false))
+            };
+            assert!(!takes(None), "sums unreadable");
+            for extension in ["zip", "tar.gz", "exe"] {
+                let line = sums_line(&format!("jcode-windows-x86_64.{extension}"));
+                assert!(takes(Some(&line)), "{line:?}, the asset unasked");
+            }
+            for other in [
+                "jcode-windows-x86_64.exe2",
+                "jcode-windows-x86_64-baseline.exe",
+                LINUX,
+            ] {
+                assert!(!takes(Some(&sums_line(other))), "{other}");
             }
         }
 

@@ -108,6 +108,8 @@ pub enum Package {
         /// The release's file that must vouch for the download
         /// ([`digest::vouches`]).
         sums: &'static str,
+        /// Which of its releases is its latest.
+        latest: Latest,
     },
     /// The `v<version>` tag of the repository it names (spelled as
     /// [`GithubRelease`](Self::GithubRelease)'s `repo`), synced from its
@@ -127,12 +129,56 @@ pub enum Package {
     },
 }
 
+/// Which of a GitHub repository's releases the tier takes as its latest: the
+/// one its installer picks, or GitHub's marked one for an installer that
+/// reads none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Latest {
+    /// The one GitHub marks latest.
+    Marked,
+    /// The marked one when it carries the platform's asset, else the release
+    /// that platform's installer falls back to, else the marked one again: a
+    /// release whose assets publish per platform can lack some.
+    Carrying(PerOs<Fallback>),
+}
+
+/// The release jcode's installers fall back to when GitHub's marked latest
+/// lacks their platform's asset: the first other stable `v<semver>` release
+/// that carries it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fallback {
+    /// `scripts/install.sh:381-421` at v1.1.2: each page newest first, a
+    /// release carrying the asset and its line in the sums file, until a page
+    /// holds no stable release.
+    Newest,
+    /// `scripts/install.ps1:162-201` at v1.1.2: each page in listing order, a
+    /// release whose sums file names the asset's artifact, while a page is
+    /// full.
+    First,
+}
+
 impl Package {
     /// Where its releases are published.
     pub const fn feed(&self) -> Feed {
         match *self {
             Self::Npm(package) => Feed::Npm(package),
-            Self::GithubRelease { repo, .. } | Self::UvLocked(repo) => Feed::GithubLatest(repo),
+            Self::GithubRelease {
+                repo,
+                latest: Latest::Marked,
+                ..
+            }
+            | Self::UvLocked(repo) => Feed::GithubMarked(repo),
+            Self::GithubRelease {
+                repo,
+                assets,
+                sums,
+                latest: Latest::Carrying(fallback),
+            } => Feed::GithubCarrying {
+                repo,
+                assets,
+                sums,
+                fallback,
+            },
             Self::UpdaterManifest {
                 manifest,
                 platforms,
@@ -150,8 +196,20 @@ impl Package {
 pub enum Feed {
     /// An npm package's `latest` dist-tag.
     Npm(&'static str),
-    /// A GitHub repository's latest release, spelled as [`Package::GithubRelease`]'s `repo`.
-    GithubLatest(&'static str),
+    /// The release GitHub marks a repository's latest ([`Latest::Marked`]).
+    GithubMarked(&'static str),
+    /// The release [`Latest::Carrying`] takes on the host, named as
+    /// [`Package::GithubRelease`]'s fields are.
+    GithubCarrying {
+        /// Its `repo`.
+        repo: &'static str,
+        /// Its `assets`.
+        assets: &'static [(&'static str, &'static str, &'static str)],
+        /// Its `sums`.
+        sums: &'static str,
+        /// Its `latest`'s, [`Latest::Carrying`]'s.
+        fallback: PerOs<Fallback>,
+    },
     /// The build an updater's manifest names now, as [`Package::UpdaterManifest`]
     /// spells it.
     UpdaterManifest {
@@ -931,6 +989,35 @@ mod tests {
             covered, registered,
             "the tier's population is the roster: profile each source or say why not"
         );
+    }
+
+    #[test]
+    fn a_github_release_feeds_the_latest_its_profile_declares() {
+        let jcode = profiles::jcode::PROFILE.package;
+        let Package::GithubRelease {
+            repo, assets, sums, ..
+        } = jcode
+        else {
+            panic!("jcode installs a GitHub release's asset");
+        };
+        assert_eq!(
+            jcode.feed(),
+            Feed::GithubCarrying {
+                repo,
+                assets,
+                sums,
+                fallback: PerOs {
+                    unix: Fallback::Newest,
+                    windows: Fallback::First,
+                },
+            }
+        );
+        for p in [profiles::codewhale::PROFILE, profiles::omp::PROFILE] {
+            let Package::GithubRelease { repo, .. } = p.package else {
+                panic!("{} installs a GitHub release's asset", p.source);
+            };
+            assert_eq!(p.package.feed(), Feed::GithubMarked(repo), "{}", p.source);
+        }
     }
 
     #[test]
