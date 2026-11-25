@@ -180,6 +180,21 @@ pub struct ToolUse {
     pub kind: ToolKind,
 }
 
+impl ToolUse {
+    /// What a start of `call` shows. Its kind is read off the typed `detail`
+    /// before that is erased to the HUD display string.
+    pub(crate) fn started(
+        call: Option<Arc<str>>,
+        detail: Option<&crate::source::ToolDetail>,
+    ) -> Self {
+        Self {
+            tool_use_id: call,
+            detail: detail.map(|d| Arc::<str>::from(d.display())),
+            kind: detail.map_or(ToolKind::Other, ToolKind::from_detail),
+        }
+    }
+}
+
 /// How an [`AgentSlot`]'s display label came to be — recorded at mint time so
 /// whether a later label replaces it ([`SlotLabel::yields_to`])
 /// doesn't rest on string-shape sniffing. One variant per REAL mint site.

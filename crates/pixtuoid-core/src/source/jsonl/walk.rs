@@ -721,7 +721,7 @@ pub(super) const SKIP_RESCAN_BYTES: u64 = 256 * 1024;
 /// IN-FLIGHT Task dispatches' `ToolUseStart`s (#222), and its last turn
 /// bracket, a start or a keyed end. Mid-attach to a delegating session whose
 /// backlog exceeds `MAX_PENDING_BYTES` never decodes the in-flight dispatch
-/// line, leaving the reducer's `tasks_in_flight` empty: the parent never shows
+/// line, leaving the reducer no Task in flight: the parent never shows
 /// Delegating and the b1 completion cascade never arms. A re-emitted start
 /// shows the turn the session is in; a re-emitted end closes its own turn, and
 /// on one ordered stream (the turn ledger's `Brackets::OneStream`) whatever turn

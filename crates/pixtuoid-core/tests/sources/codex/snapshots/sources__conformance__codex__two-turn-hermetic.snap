@@ -92,10 +92,9 @@ expression: events
     source: codex
     session_id: 01a1f9e1-edc9-7bb0-87b9-3cdca07b3248
     cwd: /private/tmp/pixtuoid-capture/proj
-- UserActionResolved:
+- ToolUseEnd:
     agent_id: 17702238142442808481
-    by:
-      Call: call_WQcgOZZ2Zb2Lk3OQ
+    tool_use_id: call_WQcgOZZ2Zb2Lk3OQ
 - UserActionResolved:
     agent_id: 17702238142442808481
     by:
@@ -123,10 +122,9 @@ expression: events
     source: codex
     session_id: 01a1f9e1-edc9-7bb0-87b9-3cdca07b3248
     cwd: /private/tmp/pixtuoid-capture/proj
-- UserActionResolved:
+- ToolUseEnd:
     agent_id: 17702238142442808481
-    by:
-      Call: call_aonCUzb31dQ0qN1s
+    tool_use_id: call_aonCUzb31dQ0qN1s
 - UserActionResolved:
     agent_id: 17702238142442808481
     by:

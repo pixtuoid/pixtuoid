@@ -365,7 +365,7 @@ fn subagent_child_id(obj: &serde_json::Map<String, Value>, event: &str) -> Resul
 /// **[`SPAWN_TOOL`] maps to `ToolDetail::Task` ONLY for an explicit
 /// `background: false` (blocking) dispatch.** grok's spawn defaults to background=TRUE, where
 /// `post_tool_use` fires at SPAWN time, not completion; a Task-detail Start
-/// whose End arrives immediately would drain `tasks_in_flight` while the child is
+/// whose End arrives immediately would drain its Task in flight while the child is
 /// alive, and the reducer's b1 drain-cascade would then `cascade_exit` the LIVE
 /// child subtree, unrecoverably. Blocking spawns are the one shape where
 /// End == completion. Skipping Task detail elsewhere loses nothing: grok
