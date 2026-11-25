@@ -932,32 +932,79 @@ mod run {
         Body,
     }
 
+    impl Curl {
+        /// Its curl flags.
+        const fn flags(&self) -> &'static str {
+            match self {
+                Self::Headers => "-fsSI",
+                Self::Body => "-fsSL",
+            }
+        }
+    }
+
+    /// What curl writes after a transfer, "independently of if the file
+    /// transfer was successful or not": the last response's status, on a line
+    /// of its own (curl.se/docs/manpage.html, `--write-out`).
+    const CURL_STATUS: &str = r"\n%{response_code}";
+
+    /// The lowest HTTP status `--fail` takes as an error
+    /// (curl.se/docs/manpage.html, `--fail`).
+    const HTTP_ERROR: u16 = 400;
+
     /// `url`'s headers or body; a failure names curl's own reason.
     fn curl_get(url: &str, part: Curl) -> std::io::Result<Vec<u8>> {
-        let mode = match part {
-            Curl::Headers => "-fsSI",
-            Curl::Body => "-fsSL",
-        };
-        let out = tool(CURL)
-            .args([mode, "--retry", CURL_RETRIES, url])
-            .output()
-            .map_err(|e| std::io::Error::other(format!("curl {url}: {e}")))?;
-        if !out.status.success() {
-            return Err(std::io::Error::other(format!(
-                "curl {url} exited {}: {}",
-                out.status,
-                String::from_utf8_lossy(&out.stderr).trim()
-            )));
-        }
-        Ok(out.stdout)
+        curl(url, &[OsStr::new(part.flags())])
     }
 
     fn curl_download(url: &str, dest: &Path) -> std::io::Result<()> {
-        let mut c = tool(CURL);
-        c.args(["-fsSL", "--retry", CURL_RETRIES, "-o"])
-            .arg(dest)
-            .arg(url);
-        succeed(c)
+        curl(
+            url,
+            &[
+                OsStr::new(Curl::Body.flags()),
+                OsStr::new("-o"),
+                dest.as_os_str(),
+            ],
+        )
+        .map(drop)
+    }
+
+    /// What curl run with `args` answered for `url` ([`curl_answer`]).
+    fn curl(url: &str, args: &[&OsStr]) -> std::io::Result<Vec<u8>> {
+        let out = tool(CURL)
+            .args(args)
+            .args(["--retry", CURL_RETRIES, "--write-out", CURL_STATUS, url])
+            .output()
+            .map_err(|e| std::io::Error::other(format!("curl {url}: {e}")))?;
+        curl_answer(url, out.status, out.stdout, &out.stderr)
+    }
+
+    /// A curl run's `stdout` without the [`CURL_STATUS`] it ends with, or why
+    /// there is none: an HTTP error is one though curl exited 0, as macOS's
+    /// `/usr/bin/curl` 8.14.1 does on a 404 under `--retry`.
+    fn curl_answer(
+        url: &str,
+        status: ExitStatus,
+        mut stdout: Vec<u8>,
+        stderr: &[u8],
+    ) -> std::io::Result<Vec<u8>> {
+        let answered = stdout.iter().rposition(|&b| b == b'\n').and_then(|at| {
+            let code: u16 = std::str::from_utf8(&stdout[at + 1..]).ok()?.parse().ok()?;
+            Some((at, code))
+        });
+        match answered {
+            Some((at, code)) if status.success() && code < HTTP_ERROR => {
+                stdout.truncate(at);
+                Ok(stdout)
+            }
+            _ => Err(std::io::Error::other(format!(
+                "curl {url} answered {} and exited {status}: {}",
+                answered.map_or_else(
+                    || "no status".to_owned(),
+                    |(_, code)| format!("HTTP {code}")
+                ),
+                String::from_utf8_lossy(stderr).trim()
+            ))),
+        }
     }
 
     /// Run `c` to success. Its error names the program and arguments alone: a
@@ -3615,8 +3662,8 @@ mod run {
             assert!(!parse(&args(&["dsh"])).expect("parse").record);
         }
 
-        #[test]
-        fn npm_answers_a_release_or_says_why_not() {
+        /// A process's exit 0, and its exit 1.
+        fn ok_and_failed() -> (ExitStatus, ExitStatus) {
             #[cfg(unix)]
             use std::os::unix::process::ExitStatusExt;
             #[cfg(windows)]
@@ -3624,7 +3671,35 @@ mod run {
             // A Unix raw status is a wait(2) word, exit code in its high byte; a
             // Windows one is the exit code itself.
             let exit_1 = if cfg!(unix) { 1 << 8 } else { 1 };
-            let (ok, failed) = (ExitStatus::from_raw(0), ExitStatus::from_raw(exit_1));
+            (ExitStatus::from_raw(0), ExitStatus::from_raw(exit_1))
+        }
+
+        #[test]
+        fn a_curl_answer_is_held_to_its_http_status_as_well_as_its_exit() {
+            let (ok, failed) = ok_and_failed();
+            let url = "https://example.invalid/x";
+            let answer = |status, stdout: &[u8]| curl_answer(url, status, stdout.to_vec(), b"");
+            assert_eq!(
+                answer(ok, b"a\nb\n\n200").ok(),
+                Some(b"a\nb\n".to_vec()),
+                "a body, its last newline its own"
+            );
+            let redirect = b"HTTP/2 302\r\nlocation: x\r\n\r\n";
+            assert_eq!(
+                answer(ok, &[&redirect[..], b"\n302"].concat()).ok(),
+                Some(redirect.to_vec()),
+                "a redirect, unfollowed"
+            );
+            // macOS's `/usr/bin/curl` 8.14.1 exits 0 on a 404 under `--retry`.
+            let why = answer(ok, b"\n404").expect_err("an HTTP error");
+            assert!(why.to_string().contains("404"), "{why}");
+            assert!(answer(failed, b"\n404").is_err(), "curl's own failure");
+            assert!(answer(ok, b"no status").is_err(), "nothing written out");
+        }
+
+        #[test]
+        fn npm_answers_a_release_or_says_why_not() {
+            let (ok, failed) = ok_and_failed();
             let spec = "@openai/codex@latest";
             assert_eq!(
                 npm_release(spec, ok, b"0.162.1\n", b""),
