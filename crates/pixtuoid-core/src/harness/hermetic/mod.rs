@@ -1435,13 +1435,43 @@ mod tests {
                     let after_a_result = reply["match"]["hasToolResult"] == true
                         || reply["match"]["toolResultContains"].is_string();
                     assert!(
-                        !(after_a_result && reply["response"]["toolCalls"].is_array()),
+                        !(after_a_result && calls_a_tool(reply)),
                         "{}: a reply to the gated call calls a tool again",
                         p.source
                     );
                 }
             }
         }
+    }
+
+    /// Whether a scripted reply calls a tool, through a function call or a
+    /// custom call (a code-mode cell's).
+    fn calls_a_tool(reply: &Value) -> bool {
+        ["toolCalls", "customToolCalls"].iter().any(|kind| {
+            reply["response"][kind]
+                .as_array()
+                .is_some_and(|calls| !calls.is_empty())
+        })
+    }
+
+    #[test]
+    fn a_reply_calls_a_tool_through_either_kind_of_call() {
+        let reply = |response: Value| serde_json::json!({ "response": response });
+        assert!(calls_a_tool(&reply(serde_json::json!({
+            "toolCalls": [{ "name": "read", "arguments": { "path": "NOTE.txt" } }]
+        }))));
+        assert!(
+            calls_a_tool(&reply(serde_json::json!({
+                "customToolCalls": [{ "name": "exec", "input": "text(1);" }]
+            }))),
+            "a code-mode cell is a call"
+        );
+        assert!(!calls_a_tool(&reply(
+            serde_json::json!({ "toolCalls": [] })
+        )));
+        assert!(!calls_a_tool(&reply(
+            serde_json::json!({ "content": "pong" })
+        )));
     }
 
     /// Whether a scripted reply calls a tool whose command is `rm` then the
@@ -1564,9 +1594,7 @@ mod tests {
                     p.source
                 );
                 assert!(
-                    !replies
-                        .iter()
-                        .any(|f| f["response"]["toolCalls"].is_array()),
+                    !replies.iter().any(calls_a_tool),
                     "{}: a reply calls a tool",
                     p.source
                 );
@@ -1616,11 +1644,6 @@ mod tests {
                 _ => false,
             }
         }
-        let calls = |f: &Value| {
-            ["toolCalls", "customToolCalls"]
-                .iter()
-                .any(|k| f["response"][k].as_array().is_some_and(|c| !c.is_empty()))
-        };
         let delegates = |shape| match shape {
             Shape::Subagent | Shape::ChildError => true,
             Shape::ToolRun
@@ -1640,10 +1663,10 @@ mod tests {
                 let replies = script["fixtures"].as_array().expect("fixtures");
                 let dispatches: Vec<&Value> = replies
                     .iter()
-                    .filter(|f| calls(f) && f["match"]["userMessage"] == parent)
+                    .filter(|f| calls_a_tool(f) && f["match"]["userMessage"] == parent)
                     .map(|f| &f["response"])
                     .collect();
-                for (i, reply) in replies.iter().enumerate().filter(|(_, f)| calls(f)) {
+                for (i, reply) in replies.iter().enumerate().filter(|(_, f)| calls_a_tool(f)) {
                     let binds = reply["match"]["userMessage"].as_str().is_some_and(|key| {
                         key == parent
                             || (!key.is_empty()
