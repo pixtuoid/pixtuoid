@@ -1441,14 +1441,17 @@ mod tests {
         }
     }
 
-    /// Whether a scripted reply calls a tool, through a function call or a
-    /// custom call (a code-mode cell's).
+    /// Every tool call a scripted reply serves, in aimock's order: its function
+    /// calls, then its custom ones (`servedToolCalls`, `@copilotkit/aimock`
+    /// `dist/helpers.js:1257-1263` at 1.48.0).
+    fn served_calls(reply: &Value) -> impl Iterator<Item = &Value> {
+        ["toolCalls", "customToolCalls"]
+            .into_iter()
+            .flat_map(|kind| reply["response"][kind].as_array().into_iter().flatten())
+    }
+
     fn calls_a_tool(reply: &Value) -> bool {
-        ["toolCalls", "customToolCalls"].iter().any(|kind| {
-            reply["response"][kind]
-                .as_array()
-                .is_some_and(|calls| !calls.is_empty())
-        })
+        served_calls(reply).next().is_some()
     }
 
     #[test]
@@ -1457,12 +1460,10 @@ mod tests {
         assert!(calls_a_tool(&reply(serde_json::json!({
             "toolCalls": [{ "name": "read", "arguments": { "path": "NOTE.txt" } }]
         }))));
-        assert!(
-            calls_a_tool(&reply(serde_json::json!({
-                "customToolCalls": [{ "name": "exec", "input": "text(1);" }]
-            }))),
-            "a code-mode cell is a call"
-        );
+        assert!(calls_a_tool(&reply(serde_json::json!({
+            "toolCalls": [],
+            "customToolCalls": [{ "name": "exec", "input": "text(1);" }]
+        }))));
         assert!(!calls_a_tool(&reply(
             serde_json::json!({ "toolCalls": [] })
         )));
@@ -1479,21 +1480,23 @@ mod tests {
             let words: Vec<&str> = command.split_whitespace().collect();
             words.first() == Some(&"rm") && words[1..].contains(&crate::harness::NOTE_FILE)
         };
-        let calls = |key: &'static str| {
-            script["fixtures"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .flat_map(move |reply| reply["response"][key].as_array().into_iter().flatten())
-        };
-        let arguments = calls("toolCalls")
-            .filter_map(|call| call["arguments"].as_object())
-            .flat_map(|arguments| arguments.values())
-            .filter_map(serde_json::Value::as_str);
-        let literals = calls("customToolCalls")
-            .filter_map(|call| call["input"].as_str())
-            .flat_map(|source| source.split('"').skip(1).step_by(2));
-        arguments.chain(literals).any(deletes)
+        script["fixtures"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(served_calls)
+            .any(|call| {
+                let arguments = call["arguments"]
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|arguments| arguments.values())
+                    .filter_map(Value::as_str);
+                let literals = call["input"]
+                    .as_str()
+                    .into_iter()
+                    .flat_map(|source| source.split('"').skip(1).step_by(2));
+                arguments.chain(literals).any(deletes)
+            })
     }
 
     /// Whether a scripted reply waits on the note's text, which only the
