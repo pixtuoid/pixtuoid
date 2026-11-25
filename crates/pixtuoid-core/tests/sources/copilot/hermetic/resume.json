@@ -6,7 +6,7 @@
       "latency": 300
     },
     {
-      "match": {"userMessage": "{turn}", "hasToolResult": false},
+      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
       "response": {"toolCalls": [{"name": "view", "arguments": {"path": "{workspace}/NOTE.txt"}}]},
       "latency": 300
     },

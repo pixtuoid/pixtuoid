@@ -9,7 +9,7 @@
       "response": { "content": "pong" }
     },
     {
-      "match": { "model": "grok-4.6", "hasToolResult": false },
+      "match": { "model": "grok-4.6", "userMessage": "{first_turn}", "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "ask_user_question", "arguments": { "questions": [ { "question": "Which color?", "options": [ { "label": "red", "description": "Red" }, { "label": "blue", "description": "Blue" } ] } ] } } ] }
     }
   ]

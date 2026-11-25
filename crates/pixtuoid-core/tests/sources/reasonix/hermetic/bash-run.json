@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": { "hasToolResult": false },
+      "match": { "userMessage": "{first_turn}", "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "bash", "arguments": { "command": "cat NOTE.txt" } } ] }
     },
     {

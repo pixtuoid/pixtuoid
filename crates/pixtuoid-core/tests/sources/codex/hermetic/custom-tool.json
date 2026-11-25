@@ -9,7 +9,7 @@
       }
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "userMessage": "{first_turn}", "hasToolResult": false },
       "response": {
         "toolCalls": [],
         "customToolCalls": [

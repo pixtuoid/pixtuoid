@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": { "hasToolResult": false },
+      "match": { "turnIndex": 0, "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "Bash", "arguments": { "command": "rm NOTE.txt" } } ] }
     },
     {

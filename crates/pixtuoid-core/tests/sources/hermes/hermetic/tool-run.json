@@ -6,7 +6,7 @@
       "latency": 300
     },
     {
-      "match": {"hasToolResult": false},
+      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
       "response": {"toolCalls": [{"name": "read_file", "arguments": {"path": "NOTE.txt"}}]},
       "latency": 300
     },

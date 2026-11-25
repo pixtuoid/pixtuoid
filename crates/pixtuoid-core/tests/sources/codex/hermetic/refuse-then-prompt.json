@@ -12,7 +12,7 @@
       }
     },
     {
-      "match": { "userMessage": "{turn}", "hasToolResult": false },
+      "match": { "userMessage": "{first_turn}", "hasToolResult": false },
       "response": {
         "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "rm NOTE.txt", "sandbox_permissions": "require_escalated", "justification": "Delete the note?" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }

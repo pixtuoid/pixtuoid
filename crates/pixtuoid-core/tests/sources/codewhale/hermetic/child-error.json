@@ -15,12 +15,12 @@
       "latency": 300
     },
     {
-      "match": {"userMessage": "{turn}", "toolResultContains": "\"status\":\"running\""},
+      "match": {"userMessage": "{first_turn}", "toolResultContains": "\"status\":\"running\""},
       "response": {"toolCalls": [{"name": "agent", "arguments": {"action": "wait", "until": "all"}}]},
       "latency": 1500
     },
     {
-      "match": {"userMessage": "{turn}", "hasToolResult": false},
+      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
       "response": {"toolCalls": [{"name": "agent", "arguments": {"action": "start", "type": "explore", "prompt": "CHILD-TASK: read NOTE.txt and report its text."}}]},
       "latency": 300
     }

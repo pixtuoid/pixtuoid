@@ -5,7 +5,7 @@
       "response": { "content": "Hermetic" }
     },
     {
-      "match": { "model": "grok-4.6", "hasToolResult": false },
+      "match": { "model": "grok-4.6", "userMessage": "{first_turn}", "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "use_tool", "arguments": { "tool_name": "hermetic__probe", "tool_input": {} } } ] }
     },
     {

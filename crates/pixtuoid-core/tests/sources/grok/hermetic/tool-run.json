@@ -5,7 +5,7 @@
       "response": { "content": "Hermetic" }
     },
     {
-      "match": { "model": "grok-4.6", "hasToolResult": false },
+      "match": { "model": "grok-4.6", "userMessage": "{first_turn}", "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "target_file": "NOTE.txt" } } ] }
     },
     {

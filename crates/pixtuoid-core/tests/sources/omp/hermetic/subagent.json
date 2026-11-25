@@ -20,12 +20,12 @@
       "response": {"content": "low"}
     },
     {
-      "match": {"userMessage": "{turn}", "toolResultContains": "NOTE.txt"},
+      "match": {"userMessage": "{first_turn}", "toolResultContains": "NOTE.txt"},
       "response": {"toolCalls": [{"name": "task", "arguments": {"i": "Delegating the read", "context": "Read the note.", "tasks": [{"name": "Reader", "task": "CHILD-TASK: read NOTE.txt and report its text.", "solutionSpace": "NOTE.txt"}]}}]},
       "latency": 300
     },
     {
-      "match": {"userMessage": "{turn}", "hasToolResult": false},
+      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
       "response": {"toolCalls": [{"name": "read", "arguments": {"i": "Listing the workspace", "path": "."}}]},
       "latency": 300
     }

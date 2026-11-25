@@ -9,7 +9,7 @@
       "response": { "content": "approved", "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "userMessage": "{first_turn}", "hasToolResult": false },
       "response": {
         "toolCalls": [],
         "customToolCalls": [

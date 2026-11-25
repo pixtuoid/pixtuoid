@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": { "model": "planner-model", "hasToolResult": false },
+      "match": { "model": "planner-model", "userMessage": "{first_turn}", "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "path": "NOTE.txt" } } ] }
     },
     {
