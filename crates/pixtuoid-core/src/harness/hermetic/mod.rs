@@ -992,6 +992,35 @@ mod tests {
     }
 
     #[test]
+    fn a_github_release_feeds_the_latest_its_profile_declares() {
+        let jcode = profiles::jcode::PROFILE.package;
+        let Package::GithubRelease {
+            repo, assets, sums, ..
+        } = jcode
+        else {
+            panic!("jcode installs a GitHub release's asset");
+        };
+        assert_eq!(
+            jcode.feed(),
+            Feed::GithubCarrying {
+                repo,
+                assets,
+                sums,
+                fallback: PerOs {
+                    unix: Fallback::Newest,
+                    windows: Fallback::First,
+                },
+            }
+        );
+        for p in [profiles::codewhale::PROFILE, profiles::omp::PROFILE] {
+            let Package::GithubRelease { repo, .. } = p.package else {
+                panic!("{} installs a GitHub release's asset", p.source);
+            };
+            assert_eq!(p.package.feed(), Feed::GithubMarked(repo), "{}", p.source);
+        }
+    }
+
+    #[test]
     fn an_installer_names_its_build_once_or_says_why_not() {
         // cursor's script as fetched at 2026.10.22-27dcf5f, its download line.
         let script = r#"DOWNLOAD_URL="https://downloads.cursor.com/lab/2026.10.22-27dcf5f/${OS}/${ARCH}/agent-cli-package.tar.gz""#;
