@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "claude",
   "version": "2.1.330 (Claude Code)",
-  "captured": "2026-11-23",
+  "captured": "2026-11-25",
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 310
+    "blanked": 311
   },
   "aimock": "1.48.0",
   "script": "tests/sources/claude_code/hermetic/ultra-effort.json",
@@ -22,7 +22,8 @@
         "prompt_snapshot",
         "remote_session_change",
         "session_context",
-        "skill_listing"
+        "skill_listing",
+        "ultrathink_effort"
       ],
       "/message/content/*/type": [
         "text"
@@ -43,7 +44,7 @@
     }
   },
   "sentinel_reads": {
-    "72512a64-e1f0-47c1-8b04-49f280676441.jsonl": [
+    "863813db-de7b-42fb-a327-56e8d27b3cb2.jsonl": [
       "23:/message/usage/cache_creation_input_tokens",
       "27:/message/usage/cache_creation_input_tokens",
       "38:/message/usage/cache_creation_input_tokens"

@@ -71,16 +71,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: native::NATIVE,
 };
 
-/// The label the attachment decoder synthesizes for the `ultra_effort_exit`
-/// marker — deliberately NOT a real effort word, so last-seen-wins ends the
-/// shown effort at once, and suppressed by the scene tooltip's fresh-effort
-/// rule so the sentinel never reaches the dossier. In-workspace decoder↔painter
-/// contract token, not a stable API.
-#[doc(hidden)]
-pub const ULTRA_EXIT_LABEL: &str = "ultra_exit";
-
 const ATTACHMENT_ULTRA_ENTER: &str = "ultra_effort_enter";
-const ATTACHMENT_ULTRATHINK: &str = "ultrathink_effort";
 const ATTACHMENT_ULTRA_EXIT: &str = "ultra_effort_exit";
 
 /// CC's session/agent id = the transcript filename stem, which is
@@ -237,23 +228,28 @@ fn attribution_label(obj: &serde_json::Map<String, Value>) -> Option<String> {
     (!seg.is_empty()).then(|| ellipsize(seg, MAX_DECODED_FIELD_CHARS))
 }
 
-/// The effort an `attachment` line implies. CC stamps a periodic reminder while
-/// ultra-class effort is active, plus an EXIT marker on leaving it, and the wire
-/// carries no effort VALUE — so each marker's label is synthesized here, the
-/// exit's as `ULTRA_EXIT_LABEL`. The `/effort` picker's chosen level is not
-/// derivable from the transcript (empty command args); the hook path reads it
-/// (`hook_effort`).
-fn attachment_effort(obj: &serde_json::Map<String, Value>) -> Option<&'static str> {
+/// Whether an `attachment` line turns ultracode on or off: CC stamps a
+/// reminder while it is on and a marker on leaving it. Its `ultrathink_effort`
+/// reminder says nothing of its own: the raise it asks for is the turn's level
+/// (code.claude.com/docs/en/model-config, "Use ultrathink for one-off deep
+/// reasoning"), which [`turn_effort`] reads.
+fn attachment_ultracode(obj: &serde_json::Map<String, Value>) -> Option<bool> {
     match obj
         .get("attachment")
         .and_then(|a| a.get("type"))
         .and_then(|t| t.as_str())?
     {
-        ATTACHMENT_ULTRA_ENTER => Some("ultra"),
-        ATTACHMENT_ULTRATHINK => Some("ultrathink"),
-        ATTACHMENT_ULTRA_EXIT => Some(ULTRA_EXIT_LABEL),
+        ATTACHMENT_ULTRA_ENTER => Some(true),
+        ATTACHMENT_ULTRA_EXIT => Some(false),
         _ => None,
     }
+}
+
+/// The effort level an assistant line's turn was sent at, read as CC reads it
+/// back: its per-turn level, else its request's (`perTurnEffort ?? effort`,
+/// the "sent" effort of `$.model.fork` in the 2.1.330 bundle).
+fn turn_effort(obj: &serde_json::Map<String, Value>) -> Option<&str> {
+    non_empty(obj, "perTurnEffort").or_else(|| non_empty(obj, "effort"))
 }
 
 /// FRESH spend from an assistant line's `usage` — new input + cache WRITES +
@@ -303,9 +299,9 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
     }
 
     if ty == ATTACHMENT
-        && let Some(effort) = attachment_effort(obj)
+        && let Some(on) = attachment_ultracode(obj)
     {
-        out.extend(AgentEvent::model_info(agent_id, None, Some(effort)));
+        out.push(AgentEvent::Ultracode { agent_id, on });
     }
 
     let Some(message) = message else {
@@ -317,7 +313,7 @@ pub fn decode_cc_line(transcript_path: &str, source: &str, v: Value) -> Vec<Agen
             .get("model")
             .and_then(|m| m.as_str())
             .filter(|m| *m != "<synthetic>");
-        out.extend(AgentEvent::model_info(agent_id, model, None));
+        out.extend(AgentEvent::model_info(agent_id, model, turn_effort(obj)));
         let fresh = fresh_spend(message);
         if fresh > 0 {
             let reading_id = non_empty(message, "id");
@@ -913,33 +909,61 @@ mod tests {
             assert!(
                 !evs.iter()
                     .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-                "{model:?} must not emit ModelInfo, got {evs:?}"
+                "{model:?} on a line with no level must not emit ModelInfo, got {evs:?}"
             );
         }
     }
 
     #[test]
-    fn ultra_effort_attachments_become_effort_observations() {
-        for (kind, label) in [
-            ("ultra_effort_enter", "ultra"),
-            ("ultrathink_effort", "ultrathink"),
-            ("ultra_effort_exit", "ultra_exit"),
-        ] {
-            let v = json!({
-                "type": "attachment",
-                "attachment": {"type": kind}
-            });
+    fn ultra_effort_markers_turn_ultracode_on_and_off() {
+        for (kind, want) in [("ultra_effort_enter", true), ("ultra_effort_exit", false)] {
+            let v = json!({"type": "attachment", "attachment": {"type": kind}});
             let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
             assert!(
-                evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: None, effort: Some(f), .. } if f == label)),
-                "{kind} must synthesize effort {label:?}, got {evs:?}"
+                matches!(evs[..], [AgentEvent::Ultracode { on, .. }] if on == want),
+                "{kind} must decode ultracode {want}, got {evs:?}"
             );
         }
-        let v = json!({"type": "attachment", "attachment": {"type": "task_reminder"}});
-        let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
-        assert!(
-            evs.is_empty(),
-            "unrelated attachments are inert, got {evs:?}"
+    }
+
+    #[test]
+    fn an_ultrathink_reminder_and_other_attachments_decode_nothing() {
+        for kind in ["ultrathink_effort", "task_reminder"] {
+            let v = json!({"type": "attachment", "attachment": {"type": kind}});
+            let evs = decode_cc_line("/p/ses-1.jsonl", "claude-code", v);
+            assert!(evs.is_empty(), "{kind} must decode nothing, got {evs:?}");
+        }
+    }
+
+    #[test]
+    fn an_assistant_line_carries_its_turns_effort_level() {
+        let info = |model: &str, per_turn: Value| {
+            let line = json!({
+                "type": "assistant",
+                "effort": "high",
+                "perTurnEffort": per_turn,
+                "message": {"model": model, "content": []}
+            });
+            decode_cc_line("/p/ses-1.jsonl", "claude-code", line)
+                .into_iter()
+                .find_map(|e| match e {
+                    AgentEvent::ModelInfo { model, effort, .. } => Some((model, effort)),
+                    _ => None,
+                })
+        };
+        let some = |s: &str| Some(s.to_owned());
+        let fable = some("claude-fable-5");
+        assert_eq!(
+            info("claude-fable-5", json!("xhigh")),
+            Some((fable.clone(), some("xhigh")))
+        );
+        assert_eq!(
+            info("claude-fable-5", Value::Null),
+            Some((fable, some("high")))
+        );
+        assert_eq!(
+            info("<synthetic>", json!("xhigh")),
+            Some((None, some("xhigh")))
         );
     }
 

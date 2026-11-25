@@ -36,6 +36,7 @@ fn mk_slot(
         pid: None,
         model: None,
         effort: None,
+        ultracode: false,
         tokens_used: 0,
         last_usage: None,
     }

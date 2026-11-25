@@ -507,6 +507,11 @@ impl Reducer {
                 },
                 now,
             ),
+            AgentEvent::Ultracode { agent_id, on } => {
+                if let Some(slot) = scene.agents.get_mut(&agent_id) {
+                    slot.ultracode = on;
+                }
+            }
             AgentEvent::Usage {
                 agent_id,
                 fresh_tokens,
@@ -1016,9 +1021,9 @@ impl Reducer {
 
     /// Updates an EXISTING slot only; a model line must never register a
     /// session. Legitimate on BOTH transports: model/effort are wire data, not
-    /// liveness. Known cosmetic residual: a first-sight replay stamps a
-    /// HISTORICAL effort marker with apply-time `now`, so a session that used
-    /// max effort earlier shows it until the scene's effort TTL expires.
+    /// liveness. Known cosmetic residual: a first-sight replay stamps the last
+    /// level it reads with apply-time `now`, so a session idle past the TTL
+    /// shows that level for one more TTL.
     fn apply_model_info(
         scene: &mut SceneState,
         agent_id: AgentId,
@@ -1329,6 +1334,7 @@ impl Reducer {
                 pid: None,
                 model: None,
                 effort: None,
+                ultracode: false,
                 tokens_used: 0,
                 last_usage: None,
             },

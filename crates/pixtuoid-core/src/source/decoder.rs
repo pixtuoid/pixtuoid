@@ -487,18 +487,6 @@ pub(crate) fn hook_identity(
     )
 }
 
-/// Effort observation (CC): tool-context hook payloads carry an
-/// `effort: {level}` object — hooks.md lists low/medium/high/xhigh/max and notes
-/// that ULTRACODE "is not a distinct level and reports as xhigh". Codex hook
-/// payloads carry no such field, and absent emits nothing.
-fn hook_effort(agent_id: AgentId, obj: &serde_json::Map<String, Value>) -> Option<AgentEvent> {
-    let level = obj
-        .get("effort")
-        .and_then(|e| e.get("level"))
-        .and_then(|l| l.as_str());
-    AgentEvent::model_info(agent_id, None, level)
-}
-
 /// Where the shim stamps an installed command's `--hook-event`, for a CLI whose
 /// payload names no event.
 pub const EVENT_STAMP: &str = "_pixtuoid_event";
@@ -609,7 +597,6 @@ pub(crate) fn shared_hook_arms(
                 )),
                 copy_id: None,
             });
-            evs.extend(hook_effort(agent_id, obj));
             Ok(evs)
         }
         // A failed call fires PostToolUseFailure in PostToolUse's place
@@ -618,15 +605,13 @@ pub(crate) fn shared_hook_arms(
         // at `@moonshot-ai/kimi-code@2.7.3`).
         "PostToolUse" | "PostToolUseFailure" => {
             let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
-            let mut evs = vec![
+            Ok(vec![
                 hook_identity(agent_id, source, &session_id, obj),
                 AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id,
                 },
-            ];
-            evs.extend(hook_effort(agent_id, obj));
-            Ok(evs)
+            ])
         }
         "Notification" => {
             let msg = obj.get("message").and_then(|s| s.as_str());
@@ -982,9 +967,11 @@ mod tests {
         );
     }
 
+    /// CC's tool hooks carry the level, which its transcript's assistant
+    /// lines own (`claude_code::turn_effort`), and so no hook decodes it.
     #[test]
-    fn tool_hooks_surface_the_effort_level() {
-        for event in ["PreToolUse", "PostToolUse"] {
+    fn a_tool_hooks_effort_level_decodes_nothing() {
+        for event in ["PreToolUse", "PostToolUse", "PostToolUseFailure"] {
             let v = serde_json::json!({
                 "_pixtuoid_source": "claude-code",
                 "hook_event_name": event,
@@ -997,23 +984,11 @@ mod tests {
             });
             let evs = decode_hook_payload(v).unwrap();
             assert!(
-                evs.iter().any(|e| matches!(e, AgentEvent::ModelInfo { model: None, effort: Some(f), .. } if f == "xhigh")),
-                "{event} must surface effort, got {evs:?}"
+                !evs.iter()
+                    .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
+                "{event} got {evs:?}"
             );
         }
-        let v = serde_json::json!({
-            "_pixtuoid_source": "claude-code",
-            "hook_event_name": "PreToolUse",
-            "session_id": "ses-e",
-            "transcript_path": "/p/ses-e.jsonl",
-            "tool_name": "Bash"
-        });
-        let evs = decode_hook_payload(v).unwrap();
-        assert!(
-            !evs.iter()
-                .any(|e| matches!(e, AgentEvent::ModelInfo { .. })),
-            "got {evs:?}"
-        );
     }
 
     #[test]

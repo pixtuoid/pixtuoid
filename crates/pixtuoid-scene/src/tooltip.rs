@@ -324,12 +324,11 @@ pub fn agent(office: &SceneState, id: AgentId, now: SystemTime) -> Option<Toolti
         rows.push(dim(format!("\u{21b3} under {lead}")));
     }
     rows.push(dim(format!("\u{25a4} {}", short_cwd(&agent.cwd))));
-    if let Some(model) = agent.model.as_deref() {
-        let mut row = format!("\u{2605} {model}");
-        if let Some(effort) = fresh_effort(agent, now) {
-            row.push_str(&format!(" \u{b7} {effort}"));
-        }
-        rows.push(dim(row));
+    let star: Vec<&str> = (agent.model.as_deref().into_iter())
+        .chain(shown_effort(agent, now))
+        .collect();
+    if !star.is_empty() {
+        rows.push(dim(format!("\u{2605} {}", star.join(" \u{b7} "))));
     }
     let session_secs = now
         .duration_since(agent.created_at)
@@ -363,18 +362,20 @@ pub fn agent(office: &SceneState, id: AgentId, now: SystemTime) -> Option<Toolti
 
 /// How long an effort observation stays fresh. The per-turn carriers (Codex,
 /// CC) re-stamp well inside it; omp's fires only on a change, so a pinned
-/// effort's suffix drops past it — cosmetic, accepted.
+/// effort drops off the ★ row past it — cosmetic, accepted.
 const EFFORT_TTL_SECS: u64 = 600;
 
-/// The agent's effort, IF still fresh: the ONE freshness rule the dossier's
-/// `· effort` suffix reads, so the tooltip never shows an effort gone stale.
-fn fresh_effort(slot: &pixtuoid_core::AgentSlot, now: SystemTime) -> Option<&str> {
+/// What the ★ row's effort shows while ultracode is on.
+const ULTRACODE_LABEL: &str = "ultra";
+
+/// The agent's effort: ultracode's label while it is on, else its level IF
+/// still fresh. The ONE rule the ★ row's effort reads, so the tooltip never
+/// shows an effort gone stale.
+fn shown_effort(slot: &pixtuoid_core::AgentSlot, now: SystemTime) -> Option<&str> {
+    if slot.ultracode {
+        return Some(ULTRACODE_LABEL);
+    }
     slot.effort.as_ref().and_then(|obs| {
-        // The CC decoder's exit sentinel ends the shown effort via last-seen-wins;
-        // it is not an effort, and the dossier never shows it.
-        if &*obs.value == pixtuoid_core::source::claude_code::ULTRA_EXIT_LABEL {
-            return None;
-        }
         let fresh = now
             .duration_since(obs.seen_at)
             .map(|d| d.as_secs() <= EFFORT_TTL_SECS)
@@ -465,16 +466,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_exit_sentinel_never_reaches_the_dossier() {
-        use pixtuoid_core::source::claude_code::ULTRA_EXIT_LABEL;
+    fn the_dossier_shows_ultra_while_ultracode_is_on_else_the_fresh_level() {
         use pixtuoid_core::state::{ActivityState, EffortObservation};
         let t0 = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
-        let id = AgentId::from_transcript_path("/tip/effort.jsonl");
+        let id = AgentId::from_transcript_path("/tip/ultracode.jsonl");
         let mut slot = crate::character::test_support::make_slot(id, ActivityState::Idle);
-        slot.effort = Some(EffortObservation::new(ULTRA_EXIT_LABEL.into(), t0));
-        assert_eq!(fresh_effort(&slot, t0), None);
-        slot.effort = Some(EffortObservation::new("ultra".into(), t0));
-        assert_eq!(fresh_effort(&slot, t0), Some("ultra"));
+        slot.effort = Some(EffortObservation::new("xhigh".into(), t0));
+        slot.ultracode = true;
+        let long_after = t0 + std::time::Duration::from_secs(EFFORT_TTL_SECS + 1);
+        assert_eq!(shown_effort(&slot, long_after), Some("ultra"));
+        slot.ultracode = false;
+        assert_eq!(shown_effort(&slot, t0), Some("xhigh"));
+    }
+
+    /// The card's `★` row shows the effort whether or not a model is known.
+    #[test]
+    fn the_cards_star_row_shows_the_effort_with_or_without_a_model() {
+        use pixtuoid_core::state::EffortObservation;
+        let now = SystemTime::UNIX_EPOCH;
+        let id = AgentId::from_transcript_path("/tip/star.jsonl");
+        let star_row = |model: Option<&str>, ultracode: bool| {
+            let mut office = SceneState::uniform(1);
+            let mut slot = crate::character::test_support::make_slot(id, ActivityState::Idle);
+            slot.model = model.map(std::sync::Arc::from);
+            slot.effort = Some(EffortObservation::new("xhigh".into(), now));
+            slot.ultracode = ultracode;
+            office.agents.insert(id, slot);
+            let tip = agent(&office, id, now).expect("the agent's card");
+            tip.rows.into_iter().find_map(|row| match row {
+                TipRow::Spans(spans) => (spans.first())
+                    .map(|span| span.text.clone())
+                    .filter(|text| text.starts_with('\u{2605}')),
+                _ => None,
+            })
+        };
+        let row = |model: Option<&str>, ultracode| star_row(model, ultracode).unwrap_or_default();
+        assert_eq!(
+            row(Some("claude-fable-5"), false),
+            "\u{2605} claude-fable-5 \u{b7} xhigh"
+        );
+        assert_eq!(row(None, false), "\u{2605} xhigh");
+        assert_eq!(row(None, true), "\u{2605} ultra");
     }
 
     #[test]
@@ -483,10 +515,10 @@ mod tests {
         let t0 = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
         let id = AgentId::from_transcript_path("/tip/ttl.jsonl");
         let mut slot = crate::character::test_support::make_slot(id, ActivityState::Idle);
-        slot.effort = Some(EffortObservation::new("ultra".into(), t0));
+        slot.effort = Some(EffortObservation::new("max".into(), t0));
         let at = |secs| t0 + std::time::Duration::from_secs(secs);
-        assert_eq!(fresh_effort(&slot, at(EFFORT_TTL_SECS)), Some("ultra"));
-        assert_eq!(fresh_effort(&slot, at(EFFORT_TTL_SECS + 1)), None);
+        assert_eq!(shown_effort(&slot, at(EFFORT_TTL_SECS)), Some("max"));
+        assert_eq!(shown_effort(&slot, at(EFFORT_TTL_SECS + 1)), None);
     }
 
     fn span(text: &str, tone: TipTone) -> TipSpan {
