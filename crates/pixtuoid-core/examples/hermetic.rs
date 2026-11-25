@@ -4059,16 +4059,16 @@ mod run {
 
         const SUMS: &str = "SHA256SUMS";
 
-        /// A release whose [`SUMS`] reads `sums`, when it can be read, and
-        /// whose `asset` answers when `answers` says so.
+        /// A release whose [`SUMS`] body reads `sums`, when it can be read,
+        /// and whose `asset` headers answer when `answers` says so.
         fn files<'a>(
             sums: Option<&'a str>,
             asset: &'a str,
             answers: bool,
         ) -> impl Fn(&str, Curl) -> std::io::Result<Vec<u8>> + 'a {
-            move |name, _| match sums {
-                Some(text) if name == SUMS => Ok(text.as_bytes().to_vec()),
-                _ if name == asset && answers => Ok(Vec::new()),
+            move |name, part| match (part, sums) {
+                (Curl::Body, Some(text)) if name == SUMS => Ok(text.as_bytes().to_vec()),
+                (Curl::Headers, _) if name == asset && answers => Ok(Vec::new()),
                 _ => Err(std::io::Error::other("HTTP 404")),
             }
         }
