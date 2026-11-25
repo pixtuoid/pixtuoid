@@ -361,8 +361,6 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
     let Some(tag) = update.get("sessionUpdate").and_then(|t| t.as_str()) else {
         return vec![];
     };
-    let str_field = |key: &str| update.get(key).and_then(|s| s.as_str());
-
     let mut evs = match method {
         crate::source::acp::SESSION_UPDATE_METHOD => {
             crate::source::acp::decode_session_update(agent_id, update, grok_transcript_tool_detail)
@@ -413,7 +411,7 @@ pub(crate) fn decode_grok_line(path: &str, source: &str, v: Value) -> Vec<AgentE
                 .into_iter()
                 .collect(),
             XAI_HOOK_EXECUTION => {
-                if str_field("event_name") == Some(SESSION_END) {
+                if non_empty(update, "event_name") == Some(SESSION_END) {
                     vec![AgentEvent::SessionEnd {
                         agent_id,
                         as_child: false,

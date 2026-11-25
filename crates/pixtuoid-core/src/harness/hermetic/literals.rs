@@ -244,7 +244,7 @@ pub(crate) fn collect(module: &str, file: &syn::File) -> BTreeSet<Literal> {
     c.resolve()
 }
 
-/// An accessor a decoder reads a required key through.
+/// What the census matches one accessor's calls by.
 struct KeyReader {
     name: &'static str,
     /// How many arguments it takes: a namesake of another arity is some other

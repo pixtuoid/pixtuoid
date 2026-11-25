@@ -398,8 +398,8 @@ pub(crate) fn non_empty<'a>(obj: &'a serde_json::Map<String, Value>, key: &str) 
 /// A required key `read` finds, breadcrumbed under `event` when it finds none.
 /// One spelling of the key serves the read and the report, so a renamed key
 /// can't leave the report naming the old one. Only for an event we've committed
-/// to decoding: on a type-discriminator read a missing value just means "a line
-/// we ignore", and breadcrumbing those would flood.
+/// to decoding: on a transcript line's type read a missing value just means "a
+/// line we ignore", and breadcrumbing those would flood.
 pub(crate) fn required<T>(
     source: &str,
     event: &str,
