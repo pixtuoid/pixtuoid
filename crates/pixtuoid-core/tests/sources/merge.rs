@@ -39,7 +39,6 @@ impl Run {
         let lines = fixture_lines(&transcript);
         let parsed = |raw: &[String]| -> Vec<Value> {
             raw.iter()
-                .filter(|l| !l.trim().is_empty())
                 .map(|l| serde_json::from_str(l).expect("a recorded line is JSON"))
                 .collect()
         };
