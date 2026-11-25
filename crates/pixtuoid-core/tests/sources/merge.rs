@@ -13,7 +13,7 @@ use pixtuoid_core::state::TurnKey;
 use pixtuoid_core::{ActivityState, AgentId, ToolUse, Transport};
 use serde_json::Value;
 
-use super::captures::{fixture_lines, sources_root, transcript_in, transcripts_in};
+use super::captures::{Capture, every_capture, fixture_lines, sources_root, transcript_in};
 
 /// One recorded run's two streams.
 struct Run {
@@ -30,12 +30,12 @@ impl Run {
     fn of(source: &str, scenario: &str) -> Self {
         let dir = pixtuoid_core::harness::fixtures_dir(&sources_root(), source).join(scenario);
         let transcript = transcript_in(&dir);
-        Self::of_transcript(source, &dir, transcript)
+        Self::of_transcript(source, &dir.join(HOOK_PAYLOADS), transcript)
     }
 
-    /// The run of `transcript` against every hook its capture `dir` recorded.
-    fn of_transcript(source: &str, dir: &Path, transcript: PathBuf) -> Self {
-        let hooks = fixture_lines(&dir.join(HOOK_PAYLOADS));
+    /// The run of `transcript` against its capture's hook payloads at `hooks`.
+    fn of_transcript(source: &str, hooks: &Path, transcript: PathBuf) -> Self {
+        let hooks = fixture_lines(hooks);
         let lines = fixture_lines(&transcript);
         let parsed = |raw: &[String]| -> Vec<Value> {
             raw.iter()
@@ -486,12 +486,11 @@ fn two_transport_sources() -> Vec<&'static str> {
         .collect()
 }
 
-/// `source`'s captures that recorded its hooks too.
-fn two_stream_captures(source: &str) -> Vec<PathBuf> {
-    let captures = pixtuoid_core::harness::captures(&sources_root()).into_iter();
-    captures
-        .filter(|c| c.source == source && c.dir.join(HOOK_PAYLOADS).is_file())
-        .map(|c| c.dir)
+/// `source`'s captures that recorded its hooks too, each with its hook payloads.
+fn two_stream_captures(source: &str) -> Vec<(Capture, PathBuf)> {
+    (every_capture().into_iter())
+        .filter(|c| c.source == source)
+        .filter_map(|c| c.hook_payloads().map(|hooks| (c, hooks)))
         .collect()
 }
 
@@ -499,9 +498,9 @@ fn two_stream_captures(source: &str) -> Vec<PathBuf> {
 /// hooks too.
 fn runs_of(source: &str) -> Vec<Run> {
     (two_stream_captures(source).into_iter())
-        .flat_map(|dir| {
-            let transcripts = transcripts_in(&dir).into_iter();
-            transcripts.map(move |t| Run::of_transcript(source, &dir, t))
+        .flat_map(|(c, hooks)| {
+            let transcripts = c.transcripts().into_iter();
+            transcripts.map(move |t| Run::of_transcript(source, &hooks, t))
         })
         .collect()
 }
@@ -599,12 +598,10 @@ fn every_two_transport_capture_decodes_each_unkeyed_fact_from_one_transport() {
             !captures.is_empty(),
             "{source}: no capture records both streams"
         );
-        for dir in captures {
-            let name = pixtuoid_core::harness::slashed_under(&sources_root(), &dir)
-                .expect("every capture is under tests/sources");
-            let hooks = Drive::hooks().lines(fixture_lines(&dir.join(HOOK_PAYLOADS)));
-            let hooks = unkeyed_facts(&hooks, &name);
-            let transcripts: BTreeSet<_> = (transcripts_in(&dir).iter())
+        for (c, hooks) in captures {
+            let name = c.label();
+            let hooks = unkeyed_facts(&Drive::hooks().lines(fixture_lines(&hooks)), &name);
+            let transcripts: BTreeSet<_> = (c.transcripts().iter())
                 .flat_map(|t| {
                     let drive = Drive::transcript_at(source, t).expect("a transcript source");
                     unkeyed_facts(&drive.lines(fixture_lines(t)), &name)
