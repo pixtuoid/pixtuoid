@@ -438,8 +438,8 @@ pub(super) async fn walk_jsonl(
             };
             emit_registration(path, source, decoders, seen, tx, head).await;
         }
-        // #222: the skipped span may bury an IN-FLIGHT Task dispatch, or its
-        // turn's end. Only when registered — JSONL events for an unknown id are
+        // #222: the skipped span may bury what `rescan_skipped_tail`
+        // re-emits. Only when registered — JSONL events for an unknown id are
         // reducer no-ops.
         if matches!(seen.lock().await.get(path), Some(Sight::Claimed(_))) {
             rescan_skipped_tail(path, decoders, ctx).await;
@@ -719,14 +719,14 @@ pub(super) const SKIP_RESCAN_BYTES: u64 = 256 * 1024;
 
 /// Tail-scan an oversized skipped span and re-emit what the skip buried: its
 /// IN-FLIGHT Task dispatches' `ToolUseStart`s (#222), its last turn bracket, a
-/// start or a keyed end, and its last ultracode setting. Mid-attach to a
-/// delegating session whose backlog exceeds `MAX_PENDING_BYTES` never decodes
-/// the in-flight dispatch
-/// line, leaving the reducer no Task in flight: the parent never shows
-/// Delegating and the b1 completion cascade never arms. A re-emitted start
-/// shows the turn the session is in; a re-emitted end closes its own turn, and
-/// on one ordered stream (the turn ledger's `Brackets::OneStream`) whatever turn
-/// the skip buried the end of.
+/// start or a keyed end, its last ultracode setting, and its last model and
+/// level. Mid-attach to a delegating session whose backlog exceeds
+/// `MAX_PENDING_BYTES` never decodes the in-flight dispatch line, leaving the
+/// reducer no Task in flight: the parent never shows Delegating and the b1
+/// completion cascade never arms. A re-emitted start shows the turn the session
+/// is in; a re-emitted end closes its own turn, and on one ordered stream (the
+/// turn ledger's `Brackets::OneStream`) whatever turn the skip buried the end
+/// of.
 ///
 /// Tail-window geometry guarantees no false leak: a completion is always LATER
 /// in the file than its start, so any windowed start's completion is also in
@@ -744,6 +744,7 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
     let mut pending: Vec<(String, AgentEvent)> = Vec::new();
     let mut last_bracket = None;
     let mut last_ultracode = None;
+    let mut last_info = None;
     let parsed = crate::source::admit::lines(&buf)
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line.ok()?).ok());
     for v in parsed {
@@ -769,6 +770,21 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
                 }
                 // No TTL ends ultracode, so a buried exit would leave it on.
                 AgentEvent::Ultracode { .. } => last_ultracode = Some(ev),
+                // Nothing else restores a buried model or level until the
+                // source names it again, and a line may name only one.
+                AgentEvent::ModelInfo {
+                    agent_id,
+                    model,
+                    effort,
+                } => {
+                    let (was_model, was_effort) =
+                        (last_info.take()).map_or((None, None), |(_, m, e)| (m, e));
+                    last_info = Some((
+                        *agent_id,
+                        model.clone().or(was_model),
+                        effort.clone().or(was_effort),
+                    ));
+                }
                 _ => {}
             }
         }
@@ -778,9 +794,15 @@ async fn rescan_skipped_tail(path: &Path, decoders: SourceDecoders, ctx: &WatchC
         Some(start @ AgentEvent::TurnStart { .. }) => (Some(start), None),
         end => (None, end),
     };
+    let info = last_info.map(|(agent_id, model, effort)| AgentEvent::ModelInfo {
+        agent_id,
+        model,
+        effort,
+    });
     let rest = (pending.into_iter().map(|(_, ev)| ev))
         .chain(end)
-        .chain(last_ultracode);
+        .chain(last_ultracode)
+        .chain(info);
     for ev in start.into_iter().chain(rest) {
         debug!(path = ?path, event = ?ev, "re-emitting from the oversized tail");
         if ctx.tx.send((Transport::Jsonl, ev)).await.is_err() {
