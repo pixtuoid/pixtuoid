@@ -87,6 +87,9 @@ pub(crate) const PROFILE: Profile = Profile {
             ("windows", "x86_64", "omp-windows-x64.exe"),
         ],
         sums: "SHA256SUMS.txt",
+        // Its installers ask build.stencil.so for each target's latest
+        // (`scripts/install.sh:296`, `scripts/install.ps1:301` at v19.2.0),
+        // never these releases.
         latest: Latest::Marked,
     },
     plugin_types: &["@oh-my-pi/pi-coding-agent"],

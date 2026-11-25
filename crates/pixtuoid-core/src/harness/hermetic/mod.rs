@@ -108,7 +108,8 @@ pub enum Package {
         /// The release's file that must vouch for the download
         /// ([`digest::vouches`]).
         sums: &'static str,
-        /// Which release its installer takes as the latest.
+        /// Which release is its latest: the one its installer takes from
+        /// them, or GitHub's marked one for an installer that reads none.
         latest: Latest,
     },
     /// The `v<version>` tag of the repository it names (spelled as

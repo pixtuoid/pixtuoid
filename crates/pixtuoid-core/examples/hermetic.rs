@@ -1199,6 +1199,10 @@ mod run {
     /// at v1.1.2).
     const RELEASES_PER_PAGE: u8 = 100;
 
+    /// The most pages of releases jcode's installer reads
+    /// (`scripts/install.sh:391` at v1.1.2).
+    const RELEASE_PAGES: usize = 5;
+
     /// The `page`th page of `repo`'s releases.
     fn releases_page(repo: &str, page: u32) -> Result<Vec<ListedRelease>, String> {
         let url = format!(
@@ -1228,9 +1232,10 @@ mod run {
     }
 
     /// The release [`hermetic::Latest::Carrying`] takes: `marked` when it
-    /// `carries`, else the newest stable one that does, read a page at a time
-    /// until one holds no stable release, as jcode's installer reads them
-    /// (`scripts/install.sh:381-420` at v1.1.2).
+    /// `carries`, else the newest other stable one that does, read a page at
+    /// a time until one holds no stable release or [`RELEASE_PAGES`] are read,
+    /// as jcode's installer reads them (`scripts/install.sh:381-420` at
+    /// v1.1.2).
     fn newest_carrying<E>(
         marked: &Version,
         pages: impl IntoIterator<Item = Result<Vec<ListedRelease>, E>>,
@@ -1239,13 +1244,13 @@ mod run {
         if carries(marked) {
             return Ok(Some(marked.clone()));
         }
-        for page in pages {
+        for page in pages.into_iter().take(RELEASE_PAGES) {
             let mut stable: Vec<Version> = page?.iter().filter_map(ListedRelease::stable).collect();
             if stable.is_empty() {
                 break;
             }
             stable.sort_unstable_by(|a, b| b.cmp(a));
-            if let Some(v) = stable.into_iter().find(|v| carries(v)) {
+            if let Some(v) = stable.into_iter().find(|v| v != marked && carries(v)) {
                 return Ok(Some(v));
             }
         }
@@ -3759,6 +3764,7 @@ mod run {
             const ROWS: &[Row] = &[
                 ("v1.2.0", true, false, &[MACOS, LINUX]),
                 ("v1.1.4-rc.1", false, false, &[MACOS, LINUX]),
+                ("v1.1.5+linux", false, false, &[MACOS, LINUX]),
                 ("v1.1.3", false, true, &[MACOS, LINUX]),
                 ("v1.1.2", false, false, &[LINUX]),
                 ("v1.1.1", false, false, &[LINUX]),
@@ -3766,6 +3772,8 @@ mod run {
                 ("v1.0.1", false, false, &[MACOS, LINUX]),
                 ("v1.0.3", false, false, &[MACOS, LINUX]),
             ];
+            const NO_STABLE: usize = 4;
+            const NONE_CARRYING: usize = 6;
             let page = |rows: &[Row]| -> Result<Vec<ListedRelease>, String> {
                 Ok(rows
                     .iter()
@@ -3776,7 +3784,9 @@ mod run {
                     })
                     .collect())
             };
+            let asked = std::cell::RefCell::new(Vec::new());
             let carries = |v: &Version| {
+                asked.borrow_mut().push(v.clone());
                 ROWS.iter().any(|(tag, _, _, assets)| {
                     tag.strip_prefix('v') == Some(v.to_string().as_str()) && assets.contains(&MACOS)
                 })
@@ -3785,14 +3795,36 @@ mod run {
             let newest = Ok(Some(Version::new(1, 0, 3)));
             assert_eq!(newest_carrying(&marked, [page(ROWS)], carries), newest);
             assert_eq!(
-                newest_carrying(&marked, [page(&ROWS[..5]), page(&ROWS[5..])], carries),
+                asked.take(),
+                [marked.clone(), Version::new(1, 1, 1), Version::new(1, 0, 3)],
+                "the marked release once, then the others newest first"
+            );
+            assert_eq!(
+                newest_carrying(
+                    &marked,
+                    [page(&ROWS[..NONE_CARRYING]), page(&ROWS[NONE_CARRYING..])],
+                    carries
+                ),
                 newest,
                 "a page with none reads on"
             );
             assert_eq!(
-                newest_carrying(&marked, [page(&ROWS[..3]), page(ROWS)], carries),
+                newest_carrying(&marked, [page(&ROWS[..NO_STABLE]), page(ROWS)], carries),
                 Ok(None),
                 "a page with no stable release ends the listing"
+            );
+            let past_the_last = std::iter::repeat_with(|| page(&ROWS[..NONE_CARRYING]))
+                .take(RELEASE_PAGES)
+                .chain([page(ROWS)]);
+            assert_eq!(
+                newest_carrying(&marked, past_the_last, carries),
+                Ok(None),
+                "a page past the last one read"
+            );
+            assert_eq!(
+                newest_carrying(&marked, [Err("listed".to_owned())], carries),
+                Err("listed".to_owned()),
+                "a listing unread once the marked release lacks it"
             );
             let carried = Version::new(1, 0, 1);
             assert_eq!(
