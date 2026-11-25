@@ -504,8 +504,8 @@ fn runs_of(source: &str) -> Vec<Run> {
         .collect()
 }
 
-/// A fact no key merges across transports, so with two producers their
-/// arrival order would decide the slot.
+/// A fact no key merges across transports, so two producers of it race for the
+/// slot or count it twice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Unkeyed {
     Model,
@@ -539,7 +539,7 @@ fn unkeyed(event: &AgentEvent) -> Vec<Unkeyed> {
         .collect(),
         AgentEvent::ModelHint { .. } => vec![Unkeyed::ModelHint],
         AgentEvent::Ultracode { .. } => vec![Unkeyed::Ultracode],
-        AgentEvent::Rename { .. } | AgentEvent::LabelHint { .. } => vec![Unkeyed::Label],
+        AgentEvent::Rename { .. } => vec![Unkeyed::Label],
         AgentEvent::TurnStart { .. } => vec![Unkeyed::TurnStart],
         AgentEvent::TurnEnd { turn: None, .. } => vec![Unkeyed::TurnEnd],
         AgentEvent::UserActionRequest {
@@ -570,6 +570,7 @@ fn unkeyed(event: &AgentEvent) -> Vec<Unkeyed> {
         | AgentEvent::SessionEnd { .. }
         | AgentEvent::Identity { .. }
         // The watcher's own: no decoder emits them.
+        | AgentEvent::LabelHint { .. }
         | AgentEvent::ProofOfLife { .. }
         | AgentEvent::Backlog { .. } => vec![],
         _ => vec![Unkeyed::Unsorted],

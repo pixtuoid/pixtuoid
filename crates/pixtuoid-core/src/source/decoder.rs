@@ -564,8 +564,8 @@ pub(crate) fn shared_hook_arms(
     match event {
         "SessionStart" => {
             let mut evs = vec![root_start()];
-            // Only SessionStart hooks get `model`, "and Claude Code doesn't
-            // always include it" (hooks.md, Common input fields).
+            // CC sends `model` on SessionStart alone, "and Claude Code doesn't always
+            // include it" (hooks.md, Common input fields); codex's later hints add nothing.
             let model = non_empty(obj, "model").map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS));
             evs.extend(model.map(|model| {
                 // Beside a transcript, the hook's stands in until it names one.
