@@ -125,7 +125,15 @@ model = "hermetic"
                 "session_idle",
                 "session_end",
             ],
-            turn: Turn::PROFILE,
+            turn: Turn {
+                // A turn's preparation appends the workspace's instructions as
+                // a runtime event after the prompt, once they differ from the
+                // session's last (`crates/engine/src/core/engine/turn_loop/preparation.rs:41`,
+                // `crates/engine/src/core/engine.rs:10507-10541`,
+                // `crates/engine/src/runtime_handoff.rs:506-507`).
+                appended: Some("kind=\"project_instructions\""),
+                ..Turn::PROFILE
+            },
         },
     ],
     script_vars: &[],

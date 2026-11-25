@@ -21,7 +21,7 @@
       "latency": 300
     },
     {
-      "match": {"userMessage": "{prompt}", "hasToolResult": false},
+      "match": {"userMessage": "{turn}", "hasToolResult": false},
       "response": {"toolCalls": [{"name": "task", "arguments": {"name": "reader", "description": "Read the note", "agent_type": "explore", "prompt": "CHILD-TASK: read NOTE.txt and report its text."}}]},
       "latency": 300
     }

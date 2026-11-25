@@ -20,7 +20,7 @@
       "response": { "content": "Waiting for the child.", "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
-      "match": { "userMessage": "{prompt}", "hasToolResult": false },
+      "match": { "userMessage": "{turn}", "hasToolResult": false },
       "response": {
         "toolCalls": [ { "name": "Agent", "arguments": { "description": "Read the note", "prompt": "CHILD-TASK: read NOTE.txt and report its text.", "subagent_type": "general-purpose" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }

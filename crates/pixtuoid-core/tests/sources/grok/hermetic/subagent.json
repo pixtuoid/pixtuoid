@@ -9,7 +9,7 @@
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "target_file": "NOTE.txt" } } ] }
     },
     {
-      "match": { "model": "grok-4.6", "userMessage": "{prompt}", "hasToolResult": false },
+      "match": { "model": "grok-4.6", "userMessage": "{turn}", "hasToolResult": false },
       "response": { "toolCalls": [ { "name": "spawn_subagent", "arguments": { "description": "Read the note", "prompt": "CHILD-TASK: read NOTE.txt and report its text.", "background": false } } ] }
     },
     {

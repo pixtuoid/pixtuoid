@@ -327,6 +327,9 @@ pub struct Turn {
     /// A directory beside its script copied into the workspace before the
     /// turn: project config this scenario alone runs under.
     pub(crate) seed: Option<&'static str>,
+    /// Text only the user message its CLI appends after the prompt carries,
+    /// which [`Placeholder::Turn`] then spells in place of the prompt.
+    pub(crate) appended: Option<&'static str>,
 }
 
 /// What a [`Turn::second`] asks of [`Profile::second_turn`]'s words.
@@ -345,6 +348,7 @@ impl Turn {
         prompt: None,
         second: None,
         seed: None,
+        appended: None,
     };
 }
 
@@ -518,7 +522,14 @@ impl Profile {
         workspace: &str,
     ) -> Vec<(&'static str, String)> {
         [
-            (Placeholder::Prompt.as_str(), scenario.prompt().to_owned()),
+            (
+                Placeholder::Turn.as_str(),
+                scenario
+                    .turn
+                    .appended
+                    .unwrap_or(scenario.prompt())
+                    .to_owned(),
+            ),
             (Placeholder::Workspace.as_str(), workspace.to_owned()),
             (
                 Placeholder::Note.as_str(),
@@ -1589,13 +1600,14 @@ mod tests {
     /// request too: a dispatch that takes the child's delivered result for its
     /// turn dispatches again until the budget kills the run, Blocked, where an
     /// unscripted delivery is Script at once (opencode 2.3.0, #2331; 2.4.0,
-    /// #1934). aimock matches `userMessage` in the request's last user text
-    /// (`@copilotkit/aimock` `dist/router.js:129-136`, `:243-250` at 1.48.0),
-    /// which a delivered user message replaces, so a reply binds to its turn
-    /// when that key is the parent's prompt, or a word of the task the
-    /// parent's calls hand the child that the parent's prompt lacks.
+    /// #1934; codewhale 0.10.4, #2413). aimock matches `userMessage` in the
+    /// request's last user text (`@copilotkit/aimock` `dist/router.js:129-136`,
+    /// `:243-250` at 1.48.0), which a delivered user message replaces, so a
+    /// reply binds to its turn when that key is [`Placeholder::Turn`], or a
+    /// word of the task the parent's calls hand the child that the parent's
+    /// prompt lacks.
     #[test]
-    fn a_subagent_scripts_tool_calls_each_bind_to_their_turn() {
+    fn a_delegating_scripts_tool_calls_each_bind_to_their_turn() {
         fn carries(v: &Value, key: &str) -> bool {
             match v {
                 Value::String(s) => s.contains(key),
@@ -1609,10 +1621,18 @@ mod tests {
                 .iter()
                 .any(|k| f["response"][k].as_array().is_some_and(|c| !c.is_empty()))
         };
-        let parent = Placeholder::Prompt.as_str();
+        let delegates = |shape| match shape {
+            Shape::Subagent | Shape::ChildError => true,
+            Shape::ToolRun
+            | Shape::Permission
+            | Shape::ModelError
+            | Shape::Succession
+            | Shape::Cancel => false,
+        };
+        let parent = Placeholder::Turn.as_str();
         let mut unbound = Vec::new();
         for p in PROFILES {
-            for s in p.scenarios.iter().filter(|s| s.shape == Shape::Subagent) {
+            for s in p.scenarios.iter().filter(|s| delegates(s.shape)) {
                 let script: Value = serde_json::from_str(
                     &std::fs::read_to_string(s.script(p.source)).expect("the script"),
                 )
