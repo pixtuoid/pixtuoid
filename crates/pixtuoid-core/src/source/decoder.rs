@@ -73,7 +73,7 @@ impl DecodeError {
         }
     }
 
-    pub(crate) fn missing(cli: &str, context: Option<&str>, field: &'static str) -> Self {
+    fn missing(cli: &str, context: Option<&str>, field: &'static str) -> Self {
         Self::Missing {
             cli: display_safe(cli),
             context: context.map(display_safe),
@@ -397,7 +397,9 @@ pub(crate) fn non_empty<'a>(obj: &'a serde_json::Map<String, Value>, key: &str) 
 
 /// A required key `read` finds, breadcrumbed under `event` when it finds none.
 /// One spelling of the key serves the read and the report, so a renamed key
-/// can't leave the report naming the old one.
+/// can't leave the report naming the old one. Only for an event we've committed
+/// to decoding: on a type-discriminator read a missing value just means "a line
+/// we ignore", and breadcrumbing those would flood.
 pub(crate) fn required<T>(
     source: &str,
     event: &str,
