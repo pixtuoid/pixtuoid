@@ -947,10 +947,10 @@ mod run {
         }
     }
 
-    /// What curl writes after a transfer, "independently of if the file
-    /// transfer was successful or not": the last response's code, on a line
-    /// of its own (curl.se/docs/manpage.html, `--write-out`).
-    const RESPONSE_CODE: &str = r"\n%{response_code}";
+    /// What curl writes to stdout after a transfer, "independently of if the
+    /// file transfer was successful or not": the last response's code
+    /// (curl.se/docs/manpage.html, `--write-out`).
+    const RESPONSE_CODE: &str = "%{response_code}";
 
     /// The lowest HTTP status `--fail` takes as an error
     /// (curl.se/docs/manpage.html, `--fail`).
@@ -963,54 +963,51 @@ mod run {
 
     /// `url`'s headers or body; a failure names curl's own reason.
     fn curl_get(url: &str, part: Curl) -> std::io::Result<Vec<u8>> {
-        curl(url, &[OsStr::new(part.flags())])
+        let dir = tempfile::tempdir()?;
+        let answer = dir.path().join("answer");
+        curl(url, part, &answer)?;
+        std::fs::read(answer)
     }
 
     fn curl_download(url: &str, dest: &Path) -> std::io::Result<()> {
-        curl(
-            url,
-            &[
-                OsStr::new(Curl::Body.flags()),
-                OsStr::new("-o"),
-                dest.as_os_str(),
-            ],
-        )
-        .map(drop)
+        curl(url, Curl::Body, dest)
     }
 
-    /// What curl run with `args` answered for `url` ([`curl_answer`]).
-    fn curl(url: &str, args: &[&OsStr]) -> std::io::Result<Vec<u8>> {
+    /// `url`'s `part` written to the file `to`, never stdout: before it
+    /// retries, curl "removes data that the failed attempt wrote to an output
+    /// file", and none it wrote to stdout (curl.se/docs/manpage.html,
+    /// `--retry`).
+    fn curl(url: &str, part: Curl, to: &Path) -> std::io::Result<()> {
         let out = tool(CURL)
-            .args(args)
+            .arg(part.flags())
+            .arg("-o")
+            .arg(to)
             .args(["--retry", CURL_RETRIES, "--write-out", RESPONSE_CODE, url])
             .output()
             .map_err(|e| std::io::Error::other(format!("curl {url}: {e}")))?;
-        curl_answer(url, out.status, out.stdout, &out.stderr)
+        curl_answer(url, out.status, &out.stdout, &out.stderr)
     }
 
-    /// A curl run's `stdout` without the [`RESPONSE_CODE`] it ends with, or why
-    /// there is none: an HTTP error or no response is one though curl exited
-    /// 0, as curl 8.14 does under `--retry` (curl/curl#17554).
+    /// Why a curl run of `url` that wrote out `stdout` ([`RESPONSE_CODE`])
+    /// failed, if it did: an HTTP error or no response is a failure though
+    /// curl exited 0, as curl 8.14 does under `--retry` (curl/curl#17554).
     fn curl_answer(
         url: &str,
         status: ExitStatus,
-        mut stdout: Vec<u8>,
+        stdout: &[u8],
         stderr: &[u8],
-    ) -> std::io::Result<Vec<u8>> {
-        let answered = stdout.iter().rposition(|&b| b == b'\n').and_then(|at| {
-            let code: u16 = std::str::from_utf8(&stdout[at + 1..]).ok()?.parse().ok()?;
-            (code != NO_RESPONSE).then_some((at, code))
-        });
-        match answered {
-            Some((at, code)) if status.success() && code < HTTP_ERROR => {
-                stdout.truncate(at);
-                Ok(stdout)
-            }
+    ) -> std::io::Result<()> {
+        let code = std::str::from_utf8(stdout)
+            .ok()
+            .and_then(|code| code.parse::<u16>().ok())
+            .filter(|code| *code != NO_RESPONSE);
+        match code {
+            Some(code) if status.success() && code < HTTP_ERROR => Ok(()),
             _ => Err(std::io::Error::other(format!(
                 "curl {url} answered {} and exited {status}: {}",
-                answered.map_or_else(
+                code.map_or_else(
                     || "no response code".to_owned(),
-                    |(_, code)| format!("HTTP {code}")
+                    |code| format!("HTTP {code}")
                 ),
                 String::from_utf8_lossy(stderr).trim()
             ))),
@@ -3729,37 +3726,22 @@ mod run {
         fn a_curl_answer_is_held_to_its_http_status_as_well_as_its_exit() {
             let (ok, failed) = ok_and_failed();
             let url = "https://example.invalid/x";
-            let answer = |status, stdout: &[u8]| curl_answer(url, status, stdout.to_vec(), b"");
-            assert_eq!(
-                answer(ok, b"a\nb\n\n200").ok(),
-                Some(b"a\nb\n".to_vec()),
-                "a body, its last newline its own"
-            );
-            let redirect = b"HTTP/2 302\r\nlocation: x\r\n\r\n";
-            assert_eq!(
-                answer(ok, &[&redirect[..], b"\n302"].concat()).ok(),
-                Some(redirect.to_vec()),
-                "a redirect, unfollowed"
-            );
-            let why = answer(ok, b"\n404").expect_err("an HTTP error");
+            let answer = |status, stdout: &str| curl_answer(url, status, stdout.as_bytes(), b"");
+            assert!(answer(ok, "200").is_ok(), "a success");
+            assert!(answer(ok, "302").is_ok(), "a redirect, unfollowed");
+            let why = answer(ok, "404").expect_err("an HTTP error");
             assert!(why.to_string().contains("404"), "{why}");
-            assert!(answer(failed, b"\n404").is_err(), "curl's own failure");
+            assert!(answer(failed, "404").is_err(), "curl's own failure");
             assert!(
-                answer(failed, b"body\n200").is_err(),
+                answer(failed, "200").is_err(),
                 "curl's own failure, a success written out"
             );
-            let last_success = format!("\n{}", HTTP_ERROR - 1);
-            assert!(
-                answer(ok, last_success.as_bytes()).is_ok(),
-                "{last_success:?}"
-            );
-            let first_error = format!("\n{HTTP_ERROR}");
-            assert!(
-                answer(ok, first_error.as_bytes()).is_err(),
-                "{first_error:?}"
-            );
-            assert!(answer(ok, b"no status").is_err(), "nothing written out");
-            let why = answer(ok, b"\n000").expect_err("no response");
+            let last_success = (HTTP_ERROR - 1).to_string();
+            assert!(answer(ok, &last_success).is_ok(), "{last_success}");
+            let first_error = HTTP_ERROR.to_string();
+            assert!(answer(ok, &first_error).is_err(), "{first_error}");
+            assert!(answer(ok, "").is_err(), "nothing written out");
+            let why = answer(ok, "000").expect_err("no response");
             assert!(why.to_string().contains("no response code"), "{why}");
         }
 
