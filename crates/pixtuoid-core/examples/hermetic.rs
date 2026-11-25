@@ -371,16 +371,9 @@ mod run {
             ) => Some(lock_of(committed_lock(p)?, manifest, platforms, v)?),
             _ => None,
         };
-        if let (
-            Some(_),
-            Ok(v),
-            Package::GithubRelease {
-                repo, assets, sums, ..
-            },
-        ) = (&repinned, &installed, p.package)
-        {
-            installs_everywhere(repo, v, assets, sums)?;
-        }
+        installs_everywhere(p.package, &installed, repinned.as_ref(), |url| {
+            curl_get(url, Curl::Body)
+        })?;
         let (mut judged, mut banners) = (Vec::new(), Vec::new());
         let mut scenarios = selected;
         if let Some(s) = lifecycle.filter(|s| !scenarios.iter().any(|x| x.name == s.name)) {
@@ -1187,17 +1180,28 @@ mod run {
         Ok(lock)
     }
 
-    /// Refuses a pin at `repo`'s `v<version>` unless its `sums` file lists
-    /// every platform's asset, so the pin installs on every leg: a
+    /// Refuses a recording that moves a GitHub release's pin, `repinned`, to
+    /// `installed` unless that release's sums file, as `fetch` reads it,
+    /// lists every platform's asset, so the pin installs on every leg: a
     /// [`hermetic::Latest::Carrying`] release need carry only the recording
     /// host's.
     fn installs_everywhere(
-        repo: &str,
-        version: &Version,
-        assets: &[(&str, &str, &'static str)],
-        sums: &str,
+        package: Package,
+        installed: &Result<Version, String>,
+        repinned: Option<&String>,
+        fetch: impl FnOnce(&str) -> std::io::Result<Vec<u8>>,
     ) -> std::io::Result<()> {
-        let listed = curl_get(&release_file(repo, version, sums), Curl::Body)?;
+        let (
+            Ok(version),
+            Some(_),
+            Package::GithubRelease {
+                repo, assets, sums, ..
+            },
+        ) = (installed, repinned, package)
+        else {
+            return Ok(());
+        };
+        let listed = fetch(&release_file(repo, version, sums))?;
         match unlisted(&String::from_utf8_lossy(&listed), assets)[..] {
             [] => Ok(()),
             ref missing => Err(std::io::Error::other(format!(
@@ -3788,29 +3792,78 @@ mod run {
         #[test]
         fn a_pin_installs_only_where_its_sums_file_lists_the_platforms_asset() {
             let Some(Profile {
-                package: Package::GithubRelease { assets, .. },
+                package:
+                    jcode @ Package::GithubRelease {
+                        repo, assets, sums, ..
+                    },
                 ..
             }) = hermetic::profile("jcode")
             else {
                 panic!("jcode installs a GitHub release's asset");
             };
-            let linux_alone = sums_line("jcode-linux-x86_64.tar.gz");
-            assert_eq!(
-                unlisted(&linux_alone, assets),
-                [
-                    "jcode-macos-aarch64.tar.gz",
-                    "jcode-macos-x86_64.tar.gz",
-                    "jcode-linux-aarch64.tar.gz",
-                    "jcode-windows-aarch64.exe",
-                    "jcode-windows-x86_64.exe",
-                ],
-                "v1.1.2's"
+            let moved = Some("the module, repinned".to_owned());
+            let (linux_alone, every) = (
+                sums_line("jcode-linux-x86_64.tar.gz"),
+                assets
+                    .iter()
+                    .map(|(_, _, a)| sums_line(a))
+                    .collect::<String>(),
             );
-            let every: String = assets
-                .iter()
-                .map(|(_, _, asset)| sums_line(asset))
-                .collect();
-            assert_eq!(unlisted(&every, assets), Vec::<&str>::new(), "v1.0.3's");
+            let serves = |version: Version, text: String| {
+                move |url: &str| {
+                    assert_eq!(url, release_file(repo, &version, sums));
+                    Ok(text.into_bytes())
+                }
+            };
+            let v112 = Version::new(1, 1, 2);
+            let why = installs_everywhere(
+                *jcode,
+                &Ok(v112.clone()),
+                moved.as_ref(),
+                serves(v112.clone(), linux_alone),
+            )
+            .expect_err("v1.1.2 lists a Linux asset alone");
+            assert!(
+                why.to_string().contains(
+                    "jcode-macos-aarch64.tar.gz, jcode-macos-x86_64.tar.gz, \
+                     jcode-linux-aarch64.tar.gz, jcode-windows-aarch64.exe, \
+                     jcode-windows-x86_64.exe"
+                ),
+                "{why}"
+            );
+            let v103 = Version::new(1, 0, 3);
+            assert!(
+                installs_everywhere(
+                    *jcode,
+                    &Ok(v103.clone()),
+                    moved.as_ref(),
+                    serves(v103, every)
+                )
+                .is_ok(),
+                "v1.0.3 lists every platform's"
+            );
+            let unread = |_: &str| Err(std::io::Error::other("fetched"));
+            let installed = Ok(v112);
+            for (why, package, installed, repinned) in [
+                ("a pin that stays", *jcode, &installed, None),
+                (
+                    "no release installed",
+                    *jcode,
+                    &Err("none".to_owned()),
+                    moved.as_ref(),
+                ),
+                (
+                    "an npm package",
+                    Package::Npm("jcode"),
+                    &installed,
+                    moved.as_ref(),
+                ),
+            ] {
+                assert!(
+                    installs_everywhere(package, installed, repinned, unread).is_ok(),
+                    "{why}, its sums file unread"
+                );
+            }
         }
 
         #[test]
