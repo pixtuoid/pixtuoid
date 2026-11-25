@@ -1004,7 +1004,7 @@ mod run {
             _ => Err(std::io::Error::other(format!(
                 "curl {url} answered {} and exited {status}: {}",
                 answered.map_or_else(
-                    || "no status".to_owned(),
+                    || "no response code".to_owned(),
                     |(_, code)| format!("HTTP {code}")
                 ),
                 String::from_utf8_lossy(stderr).trim()
@@ -3757,7 +3757,7 @@ mod run {
             );
             assert!(answer(ok, b"no status").is_err(), "nothing written out");
             let why = answer(ok, b"\n000").expect_err("no response");
-            assert!(why.to_string().contains("no status"), "{why}");
+            assert!(why.to_string().contains("no response code"), "{why}");
         }
 
         #[test]

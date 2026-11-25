@@ -143,7 +143,7 @@ pub enum Latest {
 
 /// The release jcode's installers fall back to when GitHub's marked latest
 /// lacks their platform's asset: the first other stable `v<semver>` release
-/// that carries it, within five pages of the listing.
+/// that carries it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Fallback {
     /// `scripts/install.sh:377-421` at v1.1.2: each page newest first, a
