@@ -3,55 +3,55 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
     source: kimi
-    session_id: session_2564c0b7-b506-4370-9c18-532480ae602f
+    session_id: session_f07c3ff5-68e6-4a80-a20c-6481820d4c37
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
     model: __kimi_env_model__
     effort: ~
 - Identity:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
     source: kimi
-    session_id: session_2564c0b7-b506-4370-9c18-532480ae602f
+    session_id: session_f07c3ff5-68e6-4a80-a20c-6481820d4c37
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 3587902516626475156
-    tool_use_id: call_nS0Y5FdyTy-lUhEW
+    agent_id: 710390903709441947
+    tool_use_id: call_L9KXETBzxbToKQpb
     tool_name: Bash
 - ToolUseStart:
-    agent_id: 3587902516626475156
-    tool_use_id: call_nS0Y5FdyTy-lUhEW
+    agent_id: 710390903709441947
+    tool_use_id: call_L9KXETBzxbToKQpb
     detail:
       Generic:
         display: "Bash: rm NOTE.txt"
 - Identity:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
     source: kimi
-    session_id: session_2564c0b7-b506-4370-9c18-532480ae602f
+    session_id: session_f07c3ff5-68e6-4a80-a20c-6481820d4c37
     cwd: /private/tmp/pixtuoid-capture/proj
 - UserActionRequest:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
     reason: permission
-    tool_use_id: call_nS0Y5FdyTy-lUhEW
+    tool_use_id: call_L9KXETBzxbToKQpb
     tool_name: Bash
 - Identity:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
     source: kimi
-    session_id: session_2564c0b7-b506-4370-9c18-532480ae602f
+    session_id: session_f07c3ff5-68e6-4a80-a20c-6481820d4c37
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 3587902516626475156
-    tool_use_id: call_nS0Y5FdyTy-lUhEW
+    agent_id: 710390903709441947
+    tool_use_id: call_L9KXETBzxbToKQpb
 - Identity:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
     source: kimi
-    session_id: session_2564c0b7-b506-4370-9c18-532480ae602f
+    session_id: session_f07c3ff5-68e6-4a80-a20c-6481820d4c37
     cwd: /private/tmp/pixtuoid-capture/proj
 - TurnEnd:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
 - SessionEnd:
-    agent_id: 3587902516626475156
+    agent_id: 710390903709441947
     as_child: false
