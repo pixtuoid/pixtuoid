@@ -1,32 +1,35 @@
 //! Grok Build source (`grok`, xai-org/grok-build) — TRANSCRIPT-BEARING with a
-//! hook install target (the CC/Codex class: both transports).
+//! hook install target (the CC/Codex class: both transports). Upstream cites
+//! are `xai-org/grok-build` at `2bdd1d6a63`.
 //!
 //! - **Transcript**: `{grok_home}/sessions/<enc-cwd>/<session-id>/updates.jsonl`
-//!   is append-ONLY for the session's whole life (even `/rewind` appends a
-//!   `rewind_marker` instead of truncating). The SIBLING `chat_history.jsonl`
-//!   is REWRITTEN via temp+rename on resume/compaction/rewind — never tail it.
+//!   is append-ONLY (`crates/codegen/xai-grok-shell/src/session/storage/jsonl/mod.rs:678`),
+//!   even `/rewind` appending a `rewind_marker` (`storage/mod.rs:2060-2079`). Its
+//!   SIBLINGS `chat_history.jsonl` and `rewind_points.jsonl` are REWRITTEN whole
+//!   via temp+rename (`jsonl/mod.rs:610-614`, `:1742-1749`, `:1808`) — never tail them.
 //! - **Hooks**: JSON envelope on stdin with **camelCase field names and
-//!   snake_case event values** (`hookEventName`, `sessionId`, `toolUseId`, …)
-//!   — the only spelling pre-1.0 sent, hence the claims-all custom decoder
-//!   below; 1.0.x mirrors every key in CC's snake_case too
-//!   (`grok/fixtures/tool-run-hermetic`), which this decoder still does not read. Hooks
-//!   dispatch SEQUENTIALLY inline on the session actor, so the shim's
-//!   `WRITE_TIMEOUT` bound matters here.
-//! - **Keying**: `sessionId` is consistent across every event of a session, ==
-//!   the transcript's parent-DIR name (upstream joins the id into
-//!   `session_dir`; `grok_id_from_path` mirrors it), == a subagent's `subagentId`. Hook and
-//!   watcher keys therefore coalesce, and a child's tool hooks carry the
-//!   CHILD's `sessionId`.
-//! - **Subagents**: in-process children persisted as FLAT siblings in the
-//!   normal sessions tree. Children fire NO `session_start` hook of their own
+//!   snake_case event values** (`crates/codegen/xai-grok-hooks/src/event.rs:78-180`,
+//!   `:357-375`), hence the claims-all custom decoder below. The snake_case
+//!   copies of ten of those keys are additive, the camelCase ones authoritative
+//!   (`SNAKE_CASE_ALIASES`, `:377-389`). A long-running hook blocks the UI
+//!   (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:678`), so the
+//!   shim's `WRITE_TIMEOUT` bound matters here.
+//! - **Keying**: `sessionId` is the transcript's parent-DIR name (upstream joins
+//!   the id into `session_dir`, `jsonl/mod.rs:185-190`; `grok_id_from_path`
+//!   mirrors it), and a subagent's `subagentId` is the `sessionId` its own tool
+//!   hooks carry (`grok/fixtures/subagent-hermetic`). Hook and watcher keys
+//!   therefore coalesce.
+//! - **Subagents**: children persist as FLAT siblings in the sessions tree and
+//!   fire NO `session_start` hook of their own (`grok/fixtures/subagent-hermetic`)
 //!   — the `subagent_start` hook (or the parent transcript's
 //!   `subagent_spawned` line) is the child's registration carrier.
-//! - **Exit profile**: `session_end` fires on shutdown and channel-closed
-//!   teardown but NOT on a plain TUI quit, and not on kill. The reliable exit
-//!   signal is the liveness ladder over grok's own crash-recovery registry
-//!   `{grok_home}/active_sessions.json` (removed on clean quit, left on crash).
-//!   No open-FD probe is possible: every append opens and drops the file
-//!   handle, unlike Codex's for-lifetime rollout fd.
+//! - **Exit profile**: a TUI `/exit` fires `session_end`
+//!   (`grok/fixtures/two-turn-hermetic`, `permission-hermetic`); a kill or a
+//!   crash fires none and leaves the session in grok's crash-recovery registry
+//!   `{grok_home}/active_sessions.json`, which a clean exit clears
+//!   (`crates/codegen/xai-grok-active-sessions/src/lib.rs:1-2`). The liveness
+//!   ladder over that registry is the exit authority. No open-FD probe is
+//!   possible: each append opens and drops its handle (`jsonl/mod.rs:418-433`).
 
 use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
@@ -64,12 +67,12 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         transcript: Some(Transcript {
             line_decoder: decode_grok_line,
             id_from_path: grok_id_from_path,
-            // Session dirs carry rewrite-on-resume siblings (chat_history /
-            // rewind_points / events.jsonl) that must never be tailed.
+            // Session dirs carry siblings rewritten whole (the module doc's
+            // transcript) that must never be tailed.
             path_filter: is_updates_jsonl,
             head_filter: None,
-            // Always-None: grok lines carry no cwd — the URL-encoded group dir
-            // does, applied via the watcher's cwd deriver.
+            // Always-None: grok lines carry no cwd (`grok/fixtures/subagent-hermetic`)
+            // — the URL-encoded group dir does, applied via the watcher's cwd deriver.
             cwd_extractor: extract_grok_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]
@@ -80,9 +83,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_grok_hook_payload,
         }),
         caps: SourceCaps {
-            // `session_end` does NOT fire on a plain TUI quit (the loop breaks without
-            // draining the session actor), so the DOMINANT exit is signal-less; the
-            // authority is the liveness probe over grok's `active_sessions.json`.
+            // A TUI `/exit` fires `session_end`, a kill or a crash none: the
+            // liveness probe over `active_sessions.json` is the exit authority
+            // (the module doc's exit profile).
             has_exit_signal: false,
             // Every prompt fires `user_prompt_submit` (→ SessionStart) but a
             // message relayed to a running subagent from its parent: upstream
@@ -96,14 +99,16 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // safe for grok's untracked headless one-shots.
             resurrects_on_prompt: true,
             // A BLOCKING spawn's Task detail gets its post_tool_use at
-            // completion, and a background spawn never mints a Task at all.
+            // completion (`grok/fixtures/subagent-hermetic`), and a background
+            // spawn never mints a Task at all.
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
             brackets_turns: false,
         },
         // `active_sessions.json` maps session_id → pid with an `opened_at` recycle
-        // guard; a shim stamp would shadow it with a walk carrying no guard (#527).
+        // guard (`crates/codegen/xai-grok-active-sessions/src/lib.rs:15-21`); a
+        // shim stamp would shadow it with a walk carrying no guard (#527).
         focus: FocusChannel::TranscriptProbe,
     },
     #[cfg(feature = "native")]
@@ -141,7 +146,8 @@ const ENVELOPE: Envelope = Envelope {
 ///
 /// # Errors
 ///
-/// If an event keyed on its session lacks `sessionId`, or a subagent event lacks `subagentId`.
+/// If an event keyed on or parented by its session lacks `sessionId`, or a
+/// subagent event lacks `subagentId`.
 pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
     let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
@@ -208,10 +214,12 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
             ]
         }
         // A FAILED tool fires `post_tool_use_failure` INSTEAD OF
-        // `post_tool_use`; a DENIED one fires `permission_denied` and never
-        // runs at all. All three close the activity, which also resolves a
-        // permission `UserActionRequest` gated on this tool — right for the denied case:
-        // the prompt is answered, so the sprite must not stay RequiresAction.
+        // `post_tool_use` (`grok/fixtures/tool-error-hermetic`); a DENIED one
+        // fires `permission_denied` and never runs at all
+        // (`grok/fixtures/permission-hermetic`). All three close the activity,
+        // which also resolves a permission `UserActionRequest` gated on this tool —
+        // right for the denied case: the prompt is answered, so the sprite must
+        // not stay RequiresAction.
         "post_tool_use" | "post_tool_use_failure" | "permission_denied" => {
             let (agent_id, key) = session()?;
             vec![
@@ -228,9 +236,10 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
             })
             .unwrap_or("?");
             match kind {
-                // Fires BEFORE the prompt shows. Resolution: approval fires NO
-                // hook (the tool proceeds → its post_tool_use End clears the
-                // gate); denial fires permission_denied (same End, above).
+                // Fires BEFORE the prompt shows. No event reports an approval
+                // (`HookEventName`, `crates/codegen/xai-grok-hooks/src/event.rs:78-180`):
+                // the tool proceeds, and its post_tool_use End clears the gate; a
+                // denial fires permission_denied (same End, above).
                 "permission_prompt" | "elicitation_dialog" => {
                     let (agent_id, key) = session()?;
                     let msg = non_empty(obj, "message").unwrap_or(kind);
@@ -243,14 +252,18 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
                         ),
                     ]
                 }
-                // `idle_prompt` is the 60s-idle nudge — idle, not blocked; a
-                // RequiresAction would misrender every lunch break as a permission
-                // prompt. `agent_error` is the retry-exhausted toast, an
-                // errored TURN, which its transcript's `turn_completed` ends.
-                // `task_complete` announces a BACKGROUNDED shell/monitor task
-                // finishing — no `toolUseId`, and its spawning tool call
-                // already Ended at backgrounding time, so nothing to close.
-                // All matched explicitly so none spams the breadcrumb.
+                // `idle_prompt` fires about a minute after the session settles
+                // (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:381`)
+                // — idle, not blocked; a RequiresAction would misrender every lunch
+                // break as a permission prompt. `agent_error` reports a turn's
+                // failed or exhausted retries
+                // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/hook_dispatch.rs:61-78`),
+                // an errored TURN its transcript's `turn_completed` ends
+                // (`grok/fixtures/model-error-hermetic`). `task_complete` announces
+                // a background task finishing and names no call
+                // (`crates/codegen/xai-grok-shell/src/tools/notification_bridge.rs:608-614`),
+                // so nothing to close. All matched explicitly so none spams the
+                // breadcrumb.
                 "idle_prompt" | "agent_error" | "task_complete" => vec![],
                 other => {
                     crate::source::drift::unknown_event(SOURCE_NAME, &format!("{event}:{other}"));
@@ -265,7 +278,9 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child_session_id),
                 source: SOURCE_NAME.to_string(),
                 session_id: child_session_id,
-                // The envelope cwd is the PARENT's — correct for the default
+                // The parent's session fires it
+                // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/updates.rs:726-733`),
+                // so its cwd is the PARENT's — correct for the default
                 // inherited-cwd child. A worktree-ISOLATED child runs
                 // elsewhere, leaving only its outfit-palette cwd key
                 // parent-tinted: accepted residual.
@@ -285,9 +300,9 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
     }))
 }
 
-/// The child's `subagentId` — upstream sets `child_session_id = subagent_id`,
-/// so this key coalesces with the child's own tool hooks AND its flat
-/// transcript dir name.
+/// The child's `subagentId`, the `sessionId` its own tool hooks carry and its
+/// flat transcript dir's name (`grok/fixtures/subagent-hermetic`), so the keys
+/// coalesce.
 fn subagent_child_key(obj: &serde_json::Map<String, Value>, event: &str) -> Result<String> {
     required_or_err(SOURCE_NAME, Some(event), "subagentId", |k| {
         non_empty(obj, k)

@@ -43,7 +43,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // (`crates/jcode-base/src/hooks.rs:346-376`), so no ordered stream.
             brackets_turns: false,
         },
-        // A shared server owns many sessions, so its pid names none of them.
+        // A shared server owns many sessions (`crates/jcode-base/src/hooks.rs:94-97`),
+        // so its pid names none of them.
         focus: FocusChannel::Unsupported,
     },
     #[cfg(feature = "native")]
@@ -83,7 +84,8 @@ pub(crate) fn decode_jcode_hook_payload(hook: &Hook<'_>) -> DecodeResult<Option<
             identity(),
             Some(AgentEvent::ToolUseStart {
                 agent_id,
-                // pre_tool has no call ID; post_tool's ID cannot pair with it.
+                // pre_tool names no call (`crates/jcode-base/src/hooks.rs:397-403`),
+                // so no post_tool can pair with it.
                 tool_use_id: None,
                 detail: Some(ToolDetail::Generic {
                     display: display_safe(required_or_err(

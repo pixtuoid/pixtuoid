@@ -350,9 +350,11 @@ pub(crate) fn test_decode(source: &str, v: &Value) -> DecodeResult<Vec<AgentEven
 
 /// Envelopes that decode to NOTHING, quietly. A DAEMON source's payloads ride the
 /// sibling presence channel and carry no `hook_event_name` at all. grok scans
-/// `~/.claude/settings.json` AND `~/.cursor/hooks.json` BY DEFAULT and fires the
-/// shim installed there with its OWN camelCase envelope, so a duplicate arrives
-/// tagged `claude-code`/`cursor` beside the grok-tagged one.
+/// `~/.claude/settings.json` AND `~/.cursor/hooks.json` BY DEFAULT
+/// (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:67-77` at
+/// `xai-org/grok-build` `2bdd1d6a63`) and fires the shim installed there with
+/// its OWN camelCase envelope, so a duplicate arrives tagged
+/// `claude-code`/`cursor` beside the grok-tagged one.
 fn decodes_to_nothing(
     source: &str,
     obj: &serde_json::Map<String, Value>,
@@ -532,7 +534,7 @@ impl<'a> Hook<'a> {
 
     /// The session the envelope names, refused when missing or EMPTY: an empty
     /// id keys no session. An arm reads it only where it uses it, as its key or
-    /// a child's parent: a subagent's end names the child alone, so a wire that
+    /// a child's parent: a subagent's end keys on the child alone, so a wire that
     /// leaves it off there costs nothing.
     pub(crate) fn session(&self) -> DecodeResult<&'a str> {
         let SessionField { within, field } = self.session_field;
@@ -644,7 +646,8 @@ pub(crate) fn shared_hook_arms(
             let tool_name = hook_tool_name(obj, source, event);
             let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
             // Named ahead of its item: a permission prompt names only the
-            // tool, so the request binds the calls pending under that name.
+            // tool (`claude_code/fixtures/permission-hermetic`), so the request
+            // binds the calls pending under that name.
             let pending = tool_use_id.clone().map(|call| AgentEvent::ToolUsePending {
                 agent_id,
                 tool_use_id: call,
@@ -690,8 +693,8 @@ pub(crate) fn shared_hook_arms(
                 ),
             ]
         }
-        // The prompt names its tool, and kimi's its call too; an empty name
-        // binds nothing.
+        // The prompt names its tool, and kimi's its call too
+        // (`kimi/fixtures/permission-hermetic`); an empty name binds nothing.
         "PermissionRequest" => vec![
             hook_identity(agent_id, source, session_id, obj),
             AgentEvent::user_action_request(
@@ -723,7 +726,8 @@ pub(crate) const HOOK_EVENT_NAME: &str = "hook_event_name";
 pub(crate) const SUBAGENT_ID: &str = "agent_id";
 
 /// An event a subagent fired, which names it in `agent_id` beside its root's
-/// `session_id`, decoded as the subagent's own session: `session` maps the
+/// `session_id` (`claude_code/fixtures/subagent-hermetic`,
+/// `codex/fixtures/subagent-hermetic`), decoded as the subagent's own session: `session` maps the
 /// wire's `agent_id` to that session's id, and a start it decodes to is
 /// parented on the root. An event naming no subagent declines (`Ok(None)`).
 pub(crate) fn subagent_fired(
@@ -750,8 +754,9 @@ pub(crate) fn subagent_fired(
     Ok(Some(evs))
 }
 
-/// The subagent a CC-shaped SubagentStart/Stop names in `agent_id`, refused when
-/// missing or empty: declined, the entry would refuse the event as unknown.
+/// The subagent a CC-shaped SubagentStart/Stop names in `agent_id` (the
+/// recordings [`subagent_fired`] cites), refused when missing or empty:
+/// declined, the entry would refuse the event as unknown.
 pub(crate) fn subagent_id<'a>(hook: &Hook<'a>) -> DecodeResult<&'a str> {
     required_or_err(hook.source, Some(hook.event), SUBAGENT_ID, |k| {
         non_empty(hook.obj, k)

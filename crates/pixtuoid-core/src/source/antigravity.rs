@@ -36,8 +36,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             id_from_path: ag_id_from_path,
             path_filter: admits_transcript,
             head_filter: None,
-            // AG step lines carry no cwd field at all; the cwd rides the
-            // `SessionStart` hook.
+            // AG step lines carry no cwd field at all
+            // (`antigravity/fixtures/tool-run-hermetic`); the cwd rides the hooks'
+            // `workspacePaths`.
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]
@@ -47,10 +48,11 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             envelope: ENVELOPE,
             decode: decode_ag_hook_payload,
         }),
-        // Both false is VERIFIED: no end marker (`status` is per-step, always DONE)
-        // and no end hook, and no prompt-time hook re-registers a swept session.
-        // Flipping `resurrects_on_prompt` for the 5-min reaper strands a live idle
-        // session. An exit rides the shim-stamped pid.
+        // Both false: agy has no session-end hook (hooks.md lists none), the
+        // recordings' transcripts no end line (`antigravity/fixtures/tool-run-hermetic`),
+        // and no `AG_EVENTS` hook fires at a prompt. Flipping `resurrects_on_prompt`
+        // for the 5-min reaper strands a live idle session. An exit rides the
+        // shim-stamped pid.
         caps: SourceCaps {
             has_exit_signal: false,
             resurrects_on_prompt: false,
@@ -197,8 +199,9 @@ fn decode_ag_tool_call(
     }
 }
 
-/// agy's envelope: agy names no event in its payload, so the shim stamps the
-/// one the installer registered the command for.
+/// agy's envelope: agy's documented input names no event (hooks.md, "common
+/// input fields"), so the shim stamps the one the installer registered the
+/// command for.
 const ENVELOPE: Envelope = Envelope {
     event_field: EVENT_STAMP,
     session_field: SessionField {
@@ -272,7 +275,8 @@ pub(crate) fn decode_ag_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
                 tool_use_id: call_id(),
             },
         ],
-        // Turn end: the session lives on to the next prompt.
+        // Turn end, as the execution loop terminates (hooks.md, `Stop`): the
+        // session lives on to the next prompt.
         "Stop" => vec![AgentEvent::turn_end(agent_id)],
         _ => return Ok(None),
     }))

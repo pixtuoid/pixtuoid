@@ -1,7 +1,8 @@
 //! CodeWhale source — HOOK-ONLY. There is no tailable per-session transcript
-//! to watch: `rollout_path` is never written in production, saved sessions are
-//! full-snapshot `{id}.json` rewrites, and headless `codewhale exec` fires no
-//! session lifecycle. Cites are `codewhale-hq/Codewhale` at `v0.10.4`.
+//! to watch: a saved session is its `{id}.json`, rewritten whole
+//! (`crates/engine/src/session_manager.rs:2583-2586`, `:4112-4114`), and headless
+//! `codewhale exec` fires no session lifecycle (`docs/HOOKS.md:42-48`). Cites are
+//! `codewhale-hq/Codewhale` at `v0.10.4`.
 //!
 //! CodeWhale's hooks DON'T hand the command a CC-shaped JSON payload on stdin —
 //! identity travels as ENV VARS (`docs/HOOKS.md:298-322`). So the shim runs in
@@ -24,10 +25,11 @@
 //!   (`crates/tui/src/tui/ui/observer_hooks.rs:178-196`): the end of a wait no
 //!   tool end resolves.
 //!
-//! - **Exit profile.** `session_end` fires on a clean quit, so
-//!   `has_exit_signal: true`. An ABRUPT exit fires none — the shim resolves
-//!   CodeWhale's pid by walking past the runner's shell (on Windows too, #528)
-//!   and `hook::HookPidWatch` ends the sprite when that pid dies.
+//! - **Exit profile.** `session_end` fires on a graceful shutdown
+//!   (`docs/HOOKS.md:243`), so `has_exit_signal: true`. An ABRUPT exit fires
+//!   none — the shim resolves CodeWhale's pid by walking past the runner's shell
+//!   (on Windows too, #528) and `hook::HookPidWatch` ends the sprite when that
+//!   pid dies.
 
 use crate::source::decoder::{DecodeResult as Result, non_empty, required, required_or_err};
 use serde_json::Value;
@@ -58,16 +60,18 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_cw_hook_payload,
         }),
         caps: SourceCaps {
-            // session_end fires on a clean TUI quit — best-effort counts.
+            // session_end fires on a clean TUI quit (`docs/HOOKS.md:243`) —
+            // best-effort counts.
             has_exit_signal: true,
             // message_submit re-emits SessionStart, so a swept-but-live session
             // walks back in on the next prompt.
             resurrects_on_prompt: true,
-            // The recorded dispatch fires nothing of the child's own between
-            // `subagent_spawn` and `subagent_complete`.
+            // The recorded dispatch (`codewhale/fixtures/child-error-hermetic`)
+            // fires nothing of the child's own between `subagent_spawn` and
+            // `subagent_complete`.
             delegations_are_hook_silent: true,
             // `agent start` returns at dispatch, its child running on until its
-            // own `subagent_complete`.
+            // own `subagent_complete` (the same recording).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
             brackets_turns: false,
@@ -131,8 +135,9 @@ pub(crate) fn decode_cw_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
     let (obj, event) = (hook.obj, hook.event);
 
     // Subagent observer hooks are forwarded RAW from CodeWhale's stdin, so they
-    // carry CodeWhale's OWN field names and no `cwd` at all — they must be
-    // handled before the requirements below.
+    // carry CodeWhale's OWN field names and no `cwd` at all
+    // (`codewhale/fixtures/child-error-hermetic`) — they must be handled before
+    // the requirements below.
     if let Some(events) = decode_cw_subagent(hook)? {
         return Ok(Some(events));
     }

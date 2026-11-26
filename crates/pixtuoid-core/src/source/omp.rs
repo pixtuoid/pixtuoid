@@ -67,10 +67,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_omp_hook_payload,
         }),
         caps: SourceCaps {
-            // The `session_exit` entry is appended + flushed on every clean
-            // teardown incl. SIGINT/SIGTERM (and the bridge fires
-            // `session_shutdown` even for empty sessions the entry skips).
-            // SIGKILL: with the bridge, `HookPidWatch` ends the stamped pid's
+            // The `session_exit` entry and the bridge's `session_shutdown` ride
+            // every clean teardown, a SIGINT/SIGTERM/SIGHUP's included
+            // (`packages/coding-agent/src/modes/session-teardown.ts:1-7`, `:55-60`
+            // at `v19.2.1`). SIGKILL: with the bridge, `HookPidWatch` ends the stamped pid's
             // sessions promptly; without it, the stale-sweep.
             has_exit_signal: true,
             // The header `SessionStart` decodes once per transcript life. A
@@ -81,14 +81,15 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // flag.
             resurrects_on_prompt: false,
             // The `task` dispatch emits a toolCall/toolResult pair on the parent
-            // AND the child persists its own parent-linked transcript.
+            // AND the child persists its own parent-linked transcript
+            // (`omp/fixtures/subagent-hermetic`).
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
             brackets_turns: false,
         },
-        // The bridge extension runs IN-PROCESS (upstream: extensions share
-        // the runtime), so its stamped `process.pid` IS omp's own —
+        // The bridge extension runs IN-PROCESS (`docs/extension-loading.md:356`
+        // at `v19.2.1`), so its stamped `process.pid` IS omp's own —
         // PluginStamp trust. The router stamps the kernel start marker; the
         // click-time compare refuses a recycled pid (#527). The flip also
         // puts omp on `HookPidWatch` (prompt exits) and makes a bridge-only,
@@ -1083,7 +1084,7 @@ const SESSION_FILE: &str = "sessionFile";
 /// extension's, the drift `verify_schema` reports.
 ///
 /// Identity: `sessionFile` (the ALLOCATED path — omp exposes it before the
-/// lazy persist materializes the JSONL) through the watcher's own
+/// lazy persist materializes the JSONL, `session-manager.ts:1075`) through the watcher's own
 /// `normalize_path_key` fold then [`omp_id_from_path`], so both transports
 /// mint ONE AgentId per session, nested task children included. `sessionId`
 /// (the bare header UUID, a keyspace no stem can collide with — stems carry
@@ -1092,9 +1093,10 @@ const SESSION_FILE: &str = "sessionFile";
 ///
 /// A switch/branch means this omp process now drives the CURRENT file: the
 /// previous one gets its End without waiting for the stale sweep, and the
-/// upstream `reason` (`"new" | "resume" | "fork"`) is deliberately dropped —
-/// the End+Start pair keys on `previousSessionFile` alone, identically for
-/// all three.
+/// upstream `reason` (`"new" | "resume" | "fork"`,
+/// `packages/coding-agent/src/extensibility/shared-events.ts:38`, `:47` at
+/// `v19.2.1`) is deliberately dropped — the End+Start pair keys on
+/// `previousSessionFile` alone, identically for all three.
 ///
 /// The start/switch/branch arms trail an [`AgentEvent::Identity`]: the router
 /// stamps pids onto Identity events only, and the focus stamp must arm from

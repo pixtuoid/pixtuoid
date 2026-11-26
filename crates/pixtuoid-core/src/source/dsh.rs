@@ -44,13 +44,15 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         }),
         caps: SourceCaps {
             // `agent/disposed` + the plugin's own effect-disposer sweep fire
-            // on clean quit AND signal shutdown (dsh runs disposers there
-            // too); SIGKILL and an uncaught crash (upstream installs no
-            // `uncaughtException` handler, so no disposer runs) fall to
-            // `HookPidWatch` via the stamped pid.
+            // on a clean quit (`dsh/fixtures/tool-run-hermetic`). SIGKILL fires
+            // nothing, and an uncaught crash exits through `installFailLoud`,
+            // whose only teardown is the terminal owner's `release`
+            // (`packages/boot/app-boot/src/index.ts:845-884` at `dsh-v0.2.1-rc.2`):
+            // both fall to `HookPidWatch` via the stamped pid.
             has_exit_signal: true,
             // Sessions are persistent; a `--resume` boots a NEW dsh whose
-            // plugin emits a fresh `session_start` on the same id — the
+            // plugin emits a fresh `session_start` for the session's header id
+            // on its `agent/created` (`install/dsh_plugin.mjs`) — the
             // SessionStart arm's ordinary re-registration, not this flag.
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
@@ -67,9 +69,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // same tag), so the plugin never sees that end.
             brackets_turns: false,
         },
-        // The plugin runs in-process (a cordis plugin in the launcher's one
-        // root context; no worker mode exists for plugins), so its stamped
-        // `process.pid` is dsh's own.
+        // The plugin is a cordis plugin dsh applies to its own context
+        // (`install/dsh_plugin.mjs`), so its stamped `process.pid` is dsh's own.
         focus: FocusChannel::PluginStamp,
     },
     #[cfg(feature = "native")]
@@ -232,8 +233,8 @@ pub(crate) fn decode_dsh_payload(
             });
             let event = match (outcome == Some(OUTCOME_ALLOWED), call_id()) {
                 // The resume: the gated call now runs; its `tool_call` was
-                // already streamed before the gate, so only this lifts the
-                // wait.
+                // already streamed before the gate (`dsh/fixtures/permission-hermetic`),
+                // so only this lifts the wait.
                 (true, Some(call)) => AgentEvent::UserActionResolved {
                     agent_id,
                     by: Resolution::Approved(call),
@@ -248,7 +249,9 @@ pub(crate) fn decode_dsh_payload(
                     }),
                     copy_id: None,
                 },
-                // rejected | cancelled | unavailable: the call never runs.
+                // rejected | cancelled | unavailable
+                // (`packages/interaction/user-approval/src/types.ts:29-32` at
+                // `dsh-v0.2.1-rc.2`): the call never runs.
                 (false, tool_use_id) => AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id,

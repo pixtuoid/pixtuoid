@@ -66,14 +66,15 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_cursor_hook_payload,
         }),
         caps: SourceCaps {
-            // `sessionEnd` fires on clean completion. An abrupt exit rides the
+            // `sessionEnd` fires on clean completion (`cursor/fixtures/tool-run`).
+            // An abrupt exit rides the
             // shim-stamped pid, which reaches the CLI only because the ancestor walk
             // skips Cursor's wrapper shell (#896).
             has_exit_signal: true,
             // No prompt hook is registered (`CURSOR_EVENTS`).
             resurrects_on_prompt: false,
-            // A child's events ride its own session, so the parent's goes quiet
-            // until its `Task` post.
+            // A child's events ride its own session (`cursor/fixtures/delegation`),
+            // so the parent's goes quiet until its `Task` post.
             delegations_are_hook_silent: true,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
@@ -88,8 +89,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// Cursor's hook envelope, per `cursor.com/docs/hooks`.
 const ENVELOPE: Envelope = Envelope {
     event_field: "hook_event_name",
-    // Present and CONSISTENT across every CLI hook event, so it distinguishes
-    // concurrent sessions in one project AND coalesces all of a session's events.
+    // Present and CONSISTENT across every CLI hook event (`cursor/fixtures/tool-run`),
+    // so it distinguishes concurrent sessions in one project AND coalesces all of
+    // a session's events.
     session_field: SessionField {
         within: None,
         field: "session_id",
@@ -108,8 +110,9 @@ const ENVELOPE: Envelope = Envelope {
 /// If the payload lacks `session_id`.
 pub(crate) fn decode_cursor_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
-    // The top-level `cwd` is EMPTY/absent in CLI hook payloads —
-    // `workspace_roots[0]` is the real one. Label/cwd only, NOT the AgentId key.
+    // The top-level `cwd` is EMPTY/absent in CLI hook payloads
+    // (`cursor/fixtures/tool-run`) — `workspace_roots[0]` is the real one.
+    // Label/cwd only, NOT the AgentId key.
     let workspace = non_empty(obj, "cwd").or_else(|| {
         obj.get("workspace_roots")
             .and_then(|r| r.as_array())
@@ -151,9 +154,10 @@ pub(crate) fn decode_cursor_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
                 },
             ]
         }
-        // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`.
-        // Without this arm a failed tool's ToolUseStart never ends under `-p`
-        // (where `stop` doesn't fire) and the sprite lingers Running.
+        // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`, and
+        // `stop` doesn't fire under `-p` (`cursor/fixtures/tool-failure`), so
+        // without this arm a failed tool's ToolUseStart never ends and the
+        // sprite lingers Running.
         "postToolUse" | "postToolUseFailure" => nested_parent(obj)
             .map(|parent| AgentEvent::SessionStart {
                 agent_id,

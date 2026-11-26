@@ -96,7 +96,8 @@ pub(crate) fn decode_kimi_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Agen
     match hook.event {
         // A cancelled turn fires `Interrupt` in place of `Stop`
         // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:422-424`
-        // at `@moonshot-ai/kimi-code@2.5.3`).
+        // at `@moonshot-ai/kimi-code@2.5.3`), a failed one `StopFailure`
+        // (`kimi/fixtures/model-error-hermetic`).
         "Stop" | "StopFailure" | "Interrupt" => {}
         _ => return Ok(None),
     }

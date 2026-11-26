@@ -94,15 +94,16 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// names it in `agent_id` beside the ROOT's `session_id` (hooks.md: the
 /// `agent_id` and `agent_type` "that identify the subagent"). A main-thread event
 /// falls through (`Ok(None)`). Needed despite JSONL registration: a
-/// Workflow-tool fleet's subagents carry no `Agent` tool_use and no end marker,
-/// so without `SubagentStop` they hold desks until the stale sweep.
+/// Workflow-tool fleet's subagents carry no `Agent` tool_use and no end marker
+/// (#241), so without `SubagentStop` they hold desks until the stale sweep.
 pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     use crate::source::decoder::{subagent_fired, subagent_id, subagent_start};
     match hook.event {
         "SubagentStart" => subagent_start(hook, subagent_session).map(Some),
         "SubagentStop" => {
             let prefixed = subagent_session(subagent_id(hook)?);
-            // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
+            // `SubagentStop` also carries `agent_transcript_path`
+            // (`claude_code/fixtures/subagent-hermetic`), whose stem is the
             // authoritative key — exact parity with the watcher's own deriver.
             let path_key = non_empty(hook.obj, "agent_transcript_path")
                 .map(|p| cc_id_from_path(Path::new(&crate::id::normalize_path_key(p))))
@@ -960,7 +961,7 @@ mod tests {
                     ..
                 }) if context == event
             ),
-            "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
+            "{event} without session_id must Err naming it in {event}, got {err:?}"
         );
         let fields = [("event", event), ("field", "session_id")];
         assert!(

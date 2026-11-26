@@ -57,7 +57,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_oc_hook_payload,
         }),
         caps: SourceCaps {
-            // A TUI quit ends nothing: the session lives on in the server.
+            // A TUI quit ends nothing (`opencode/fixtures/tool-run-hermetic`): the
+            // session lives on in the server.
             has_exit_signal: false,
             // The next prompt's `session.execution.started` decodes to
             // `SessionStart`.
@@ -165,8 +166,9 @@ pub(crate) fn decode_oc_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
     let turn = read_turn(TURN);
     Ok(Some(match event {
         // A new prompt re-emits SessionStart, the event that walks a swept
-        // session back in, mid-walkout too. Its own `data` is only `sessionID`,
-        // so the plugin adds the session's record (`ctx.session.get`).
+        // session back in, mid-walkout too. Its own `data` is only `sessionID`
+        // (`packages/schema/src/session-event.ts:240` at v2.0.32), so the plugin
+        // adds the session's record (`ctx.session.get`).
         EXECUTION_STARTED => {
             let mut out = session_start(hook, data, at)?;
             if let Some(turn) = required(SOURCE_NAME, event, TURN, read_turn) {
@@ -230,7 +232,7 @@ fn identity(agent_id: AgentId, session_id: &str, at: Option<&str>) -> AgentEvent
 }
 
 /// `location.directory` is the cwd, `parentID` the parent session, and
-/// `model.id` the raw model slug.
+/// `model.id` the raw model slug (`opencode/fixtures/subagent-hermetic`).
 fn session_start(
     hook: &Hook<'_>,
     data: &Map<String, Value>,
@@ -271,8 +273,9 @@ fn ended(
     Ok(vec![identity(agent_id, session_id, at), end(agent_id)])
 }
 
-/// The tool's `id` is the call id its `success`/`failed` pair on. The input
-/// rides a later event, so the detail is the tool's name alone, or a Task.
+/// The tool's `id` is the call id its `success`/`failed` pair on, and its input
+/// rides the later `session.tool.called` (`packages/schema/src/session-event.ts:469-482`,
+/// `:507-515` at v2.0.32), so the detail is the tool's name alone, or a Task.
 fn tool_started(
     hook: &Hook<'_>,
     data: &Map<String, Value>,
@@ -296,7 +299,7 @@ fn tool_started(
 }
 
 /// [`AgentEvent::UserActionRequest`], labelled by the request's `action` and keyed on its tool call
-/// (`source.id`) when it has one.
+/// (`source.id`) when it has one (`opencode/fixtures/permission-hermetic`).
 fn permission_asked(
     hook: &Hook<'_>,
     data: &Map<String, Value>,

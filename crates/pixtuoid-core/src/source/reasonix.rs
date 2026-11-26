@@ -55,7 +55,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_rx_hook_payload,
         }),
         caps: SourceCaps {
-            // SessionEnd fires on clean exit — best-effort counts.
+            // SessionEnd fires on clean exit (`reasonix/fixtures/tool-run-hermetic`)
+            // — best-effort counts.
             has_exit_signal: true,
             // UserPromptSubmit re-emits SessionStart, so a swept-but-live
             // session walks back in on the next prompt.
@@ -123,7 +124,7 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
     (own, own.split_once(SUBAGENT_ROLE).map(|(root, _)| root))
 }
 
-/// Reasonix's envelope, verified against `internal/ext/hook/hook.go`.
+/// Reasonix's envelope, `internal/ext/hook/hook.go:828-834`'s `Payload` @ v2.60.0.
 const ENVELOPE: Envelope = Envelope {
     event_field: "event",
     session_field: SessionField {
@@ -158,8 +159,8 @@ pub(crate) fn decode_rx_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
         cwd: cwd.into(),
         parent_id,
     };
-    // A subagent fires no start of its own, so each of its events carries the
-    // link to its parent.
+    // A subagent fires no start of its own (`reasonix/fixtures/subagent-hermetic`),
+    // so each of its events carries the link to its parent.
     let register = || match parent_id {
         Some(_) => start(),
         None => AgentEvent::identity(agent_id, SOURCE_NAME, key, Some(cwd.into())),
@@ -221,8 +222,9 @@ pub(crate) fn decode_rx_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
                 ),
             ]
         }
-        // The STRUCTURED approval gate: fires BEFORE the prompt with the tool +
-        // subject, and ALONGSIDE `Notification` for the same approval — both →
+        // The STRUCTURED approval gate: it names the tool + subject and precedes
+        // the `Notification` for the same approval
+        // (`reasonix/fixtures/permission-hermetic`) — both →
         // RequiresAction is idempotent (the gated tool's PostToolUse/Stop resolves it).
         "PermissionRequest" => {
             let tool = required(SOURCE_NAME, event, "toolName", |k| non_empty(obj, k));

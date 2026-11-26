@@ -631,7 +631,7 @@ mod tests {
                     ..
                 }) if context == event
             ),
-            "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
+            "{event} without session_id must Err naming it in {event}, got {err:?}"
         );
         let fields = [("event", event), ("field", "session_id")];
         assert!(

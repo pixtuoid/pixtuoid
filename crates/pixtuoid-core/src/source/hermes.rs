@@ -51,10 +51,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         caps: SourceCaps {
             // `on_session_finalize` when the gateway finalizes a session, else the
             // gateway's death. NOT `on_session_end`, which despite the name is a
-            // TURN boundary.
+            // TURN boundary (`website/docs/user-guide/features/hooks.md:471-472`
+            // at v0.22.5).
             has_exit_signal: true,
             resurrects_on_prompt: false,
-            // No subagent nesting on the wire — sessions render flat.
+            // The plugin forwards neither `subagent_start` nor `subagent_stop`,
+            // the hooks naming a child's parent (`hooks.md:478-479`), so
+            // sessions render flat.
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
