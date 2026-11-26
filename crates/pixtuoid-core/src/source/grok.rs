@@ -290,7 +290,7 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
 /// transcript dir name.
 fn subagent_child_key(obj: &serde_json::Map<String, Value>, event: &str) -> Result<String> {
     required_or_err(SOURCE_NAME, Some(event), "subagentId", |k| {
-        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
+        non_empty(obj, k)
     })
     .map(String::from)
 }

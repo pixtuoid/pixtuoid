@@ -34,7 +34,7 @@ pub enum DecodeError {
     },
     /// A field the input needs is absent or empty.
     #[non_exhaustive]
-    #[error("{cli} {} has no {field}", .context.as_deref().unwrap_or("payload"))]
+    #[error("{cli} {} has no {field}", .context.as_deref().unwrap_or(PAYLOAD))]
     Missing {
         /// The wire's source name.
         cli: String,
@@ -404,17 +404,21 @@ pub(crate) fn required<T>(
     found
 }
 
-/// [`required`]'s twin for a key whose absence fails the decode, from the same
-/// one spelling: the error names `context`, the event the key belongs to,
-/// unless it is the payload's own.
+/// [`required`] for a key whose absence fails the decode, from the same one
+/// spelling: the breadcrumb and the error name `context`, the event the key
+/// belongs to, unless it is the payload's own.
 pub(crate) fn required_or_err<T>(
     source: &str,
     context: Option<&str>,
     key: &'static str,
     read: impl FnOnce(&'static str) -> Option<T>,
 ) -> DecodeResult<T> {
-    read(key).ok_or_else(|| DecodeError::missing(source, context, key))
+    required(source, context.unwrap_or(PAYLOAD), key, read)
+        .ok_or_else(|| DecodeError::missing(source, context, key))
 }
+
+/// What a decode error or breadcrumb names a field of the payload itself by.
+const PAYLOAD: &str = "payload";
 
 /// The hook field naming the root session.
 const SESSION_ID: &str = "session_id";
@@ -517,9 +521,7 @@ impl<'a> Hook<'a> {
         source: &'a str,
         envelope: Envelope,
     ) -> DecodeResult<Self> {
-        let event = required_or_err(source, None, envelope.event_field, |k| {
-            required(source, "hook", k, |k| non_empty(obj, k))
-        })?;
+        let event = required_or_err(source, None, envelope.event_field, |k| non_empty(obj, k))?;
         Ok(Self {
             obj,
             source,
@@ -534,11 +536,9 @@ impl<'a> Hook<'a> {
     /// costs nothing.
     pub(crate) fn session(&self) -> DecodeResult<&'a str> {
         let SessionField { within, field } = self.session_field;
-        required_or_err(self.source, Some(self.event), field, |k| {
-            required(self.source, self.event, k, |k| match within {
-                Some(holder) => non_empty(self.obj.get(holder)?.as_object()?, k),
-                None => non_empty(self.obj, k),
-            })
+        required_or_err(self.source, Some(self.event), field, |k| match within {
+            Some(holder) => non_empty(self.obj.get(holder)?.as_object()?, k),
+            None => non_empty(self.obj, k),
         })
     }
 }
@@ -2293,6 +2293,99 @@ mod tests {
         assert!(failed.is_empty(), "{failed:#?}");
         let covered = rows.iter().map(|(s, ..)| *s).collect();
         assert_eq!(hook_sources(), covered, "a row per hook-decoding source");
+    }
+
+    /// A field whose absence refuses the payload breadcrumbs that absence too,
+    /// whichever arm reads it.
+    #[test]
+    fn every_refused_field_leaves_a_breadcrumb() {
+        use crate::source::drift::DriftKind;
+        use crate::source::{claude_code, codewhale, codex, openclaw, reasonix};
+        let hook = |source, v: Value| move || stamped_decode(source, &v);
+        let presence = |v: Value| {
+            move || {
+                let mut out = None;
+                let logs = crate::test_capture::capture_logs(|| {
+                    out =
+                        Some(openclaw::decode_openclaw_hook_payload(test_obj(&v)).map(|_| vec![]));
+                });
+                (out.expect("ran"), logs)
+            }
+        };
+        type Decode = Box<dyn Fn() -> (DecodeResult<Vec<AgentEvent>>, String)>;
+        let rows: [(&str, &str, Decode); 8] = [
+            (
+                codewhale::SOURCE_NAME,
+                "cwd",
+                Box::new(hook(
+                    codewhale::SOURCE_NAME,
+                    json!({"event": "tool_call_before", "session_id": "s"}),
+                )),
+            ),
+            (
+                codewhale::SOURCE_NAME,
+                "agent_id",
+                Box::new(hook(
+                    codewhale::SOURCE_NAME,
+                    json!({"event": "subagent_complete", "session_id": "s"}),
+                )),
+            ),
+            (
+                codewhale::SOURCE_NAME,
+                "workspace",
+                Box::new(hook(
+                    codewhale::SOURCE_NAME,
+                    json!({"event": "subagent_spawn", "agent_id": "a", "session_id": "s"}),
+                )),
+            ),
+            (
+                reasonix::SOURCE_NAME,
+                "cwd",
+                Box::new(hook(
+                    reasonix::SOURCE_NAME,
+                    json!({"event": "PreToolUse", "sessionId": "s"}),
+                )),
+            ),
+            (
+                claude_code::SOURCE_NAME,
+                SUBAGENT_ID,
+                Box::new(hook(
+                    claude_code::SOURCE_NAME,
+                    json!({"hook_event_name": "SubagentStart", "session_id": "s"}),
+                )),
+            ),
+            (
+                codex::SOURCE_NAME,
+                SUBAGENT_ID,
+                Box::new(hook(
+                    codex::SOURCE_NAME,
+                    json!({"hook_event_name": "SubagentStart", "session_id": "s"}),
+                )),
+            ),
+            (
+                openclaw::SOURCE_NAME,
+                "type",
+                Box::new(presence(json!({"gatewayPort": 1}))),
+            ),
+            (
+                openclaw::SOURCE_NAME,
+                openclaw::GATEWAY_PORT_FIELD,
+                Box::new(presence(json!({"type": "gateway_start"}))),
+            ),
+        ];
+        let failed: Vec<_> = rows
+            .iter()
+            .filter_map(|(source, key, decode)| {
+                let (decoded, logs) = decode();
+                let refused =
+                    matches!(decoded, Err(DecodeError::Missing { field, .. }) if field == *key);
+                let noted =
+                    breadcrumbed(&logs, source, DriftKind::MissingField, Some(("field", key)));
+                (!(refused && noted))
+                    .then(|| format!("{source} {key}: {decoded:?}, breadcrumbed: {noted}"))
+            })
+            .collect();
+        assert!(failed.is_empty(), "{failed:#?}");
     }
 
     /// An envelope naming no event breadcrumbs that, whichever field the

@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use crate::AgentId;
 use crate::source::decoder::Hook;
 use crate::source::decoder::{
-    DecodeResult, display_safe, label_prefix_for, non_empty, required, required_or_err,
+    DecodeResult, display_safe, label_prefix_for, non_empty, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
@@ -90,7 +90,7 @@ pub(crate) fn decode_jcode_hook_payload(hook: &Hook<'_>) -> DecodeResult<Option<
                         SOURCE_NAME,
                         Some(event),
                         "tool_name",
-                        |k| required(SOURCE_NAME, event, k, |k| non_empty(obj, k)),
+                        |k| non_empty(obj, k),
                     )?),
                 }),
                 copy_id: None,
