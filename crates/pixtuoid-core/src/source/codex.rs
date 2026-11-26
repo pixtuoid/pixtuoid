@@ -669,6 +669,32 @@ mod tests {
         }
     }
 
+    /// A start a child fires itself names its root only to parent it, so one
+    /// without its root still registers the child, unparented and
+    /// breadcrumbed.
+    #[test]
+    fn a_child_fired_start_without_its_root_registers_and_breadcrumbs() {
+        let v = json!({"hook_event_name": "UserPromptSubmit", "agent_id": "c"});
+        let mut evs = None;
+        let logs = crate::test_capture::capture_logs(|| {
+            evs = Some(test_decode(SOURCE_NAME, &v).expect("decodes"));
+        });
+        let evs = evs.expect("ran");
+        assert!(
+            evs.iter().any(|e| matches!(e,
+                AgentEvent::SessionStart { agent_id, parent_id: None, .. }
+                    if *agent_id == AgentId::from_parts(SOURCE_NAME, "c"))),
+            "{evs:?}"
+        );
+        let line = format!(
+            "{}={SOURCE_NAME} {}=\"{}\" event=UserPromptSubmit field=session_id",
+            crate::source::drift::SOURCE_FIELD,
+            crate::source::drift::KIND_FIELD,
+            <&str>::from(crate::source::drift::DriftKind::MissingField),
+        );
+        assert!(logs.contains(&line), "{line:?} in\n{logs}");
+    }
+
     #[test]
     fn a_roots_session_events_fall_through_to_shared_arms() {
         for event in ["SessionStart", "UserPromptSubmit", "SessionEnd"] {

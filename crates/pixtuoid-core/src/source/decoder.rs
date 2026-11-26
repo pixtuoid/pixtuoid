@@ -2189,7 +2189,7 @@ mod tests {
         (out.expect("ran"), logs)
     }
 
-    /// The hook-decoding rows, which each test below covers exactly.
+    /// The hook-decoding rows, which each `every_hook_source_*` test covers exactly.
     fn hook_sources() -> std::collections::BTreeSet<&'static str> {
         crate::source::registry::REGISTRY
             .iter()
@@ -2295,97 +2295,39 @@ mod tests {
         assert_eq!(hook_sources(), covered, "a row per hook-decoding source");
     }
 
-    /// A field whose absence refuses the payload breadcrumbs that absence too,
-    /// whichever arm reads it.
+    /// A key whose absence refuses the decode breadcrumbs that absence, under the
+    /// event the key belongs to or the payload's own; a key it finds leaves none.
     #[test]
-    fn every_refused_field_leaves_a_breadcrumb() {
+    fn a_refused_key_breadcrumbs_under_its_event_or_the_payload() {
         use crate::source::drift::DriftKind;
-        use crate::source::{claude_code, codewhale, codex, openclaw, reasonix};
-        let hook = |source, v: Value| move || stamped_decode(source, &v);
-        let presence = |v: Value| {
-            move || {
-                let mut out = None;
-                let logs = crate::test_capture::capture_logs(|| {
-                    out =
-                        Some(openclaw::decode_openclaw_hook_payload(test_obj(&v)).map(|_| vec![]));
-                });
-                (out.expect("ran"), logs)
+        let obj = json!({"found": "v"});
+        let read = |k: &'static str| obj.get(k).and_then(Value::as_str);
+        for (context, event) in [(Some("ev"), "ev"), (None, PAYLOAD)] {
+            let mut out = None;
+            let logs = crate::test_capture::capture_logs(|| {
+                out = Some(required_or_err("src", context, "gone", read));
+            });
+            assert!(
+                matches!(out, Some(Err(DecodeError::Missing { field: "gone", .. }))),
+                "{out:?}"
+            );
+            for field in [("event", event), ("field", "gone")] {
+                assert!(
+                    breadcrumbed(&logs, "src", DriftKind::MissingField, Some(field)),
+                    "{context:?}, no {field:?}:\n{logs}"
+                );
             }
-        };
-        type Decode = Box<dyn Fn() -> (DecodeResult<Vec<AgentEvent>>, String)>;
-        let rows: [(&str, &str, Decode); 8] = [
-            (
-                codewhale::SOURCE_NAME,
-                "cwd",
-                Box::new(hook(
-                    codewhale::SOURCE_NAME,
-                    json!({"event": "tool_call_before", "session_id": "s"}),
-                )),
-            ),
-            (
-                codewhale::SOURCE_NAME,
-                "agent_id",
-                Box::new(hook(
-                    codewhale::SOURCE_NAME,
-                    json!({"event": "subagent_complete", "session_id": "s"}),
-                )),
-            ),
-            (
-                codewhale::SOURCE_NAME,
-                "workspace",
-                Box::new(hook(
-                    codewhale::SOURCE_NAME,
-                    json!({"event": "subagent_spawn", "agent_id": "a", "session_id": "s"}),
-                )),
-            ),
-            (
-                reasonix::SOURCE_NAME,
-                "cwd",
-                Box::new(hook(
-                    reasonix::SOURCE_NAME,
-                    json!({"event": "PreToolUse", "sessionId": "s"}),
-                )),
-            ),
-            (
-                claude_code::SOURCE_NAME,
-                SUBAGENT_ID,
-                Box::new(hook(
-                    claude_code::SOURCE_NAME,
-                    json!({"hook_event_name": "SubagentStart", "session_id": "s"}),
-                )),
-            ),
-            (
-                codex::SOURCE_NAME,
-                SUBAGENT_ID,
-                Box::new(hook(
-                    codex::SOURCE_NAME,
-                    json!({"hook_event_name": "SubagentStart", "session_id": "s"}),
-                )),
-            ),
-            (
-                openclaw::SOURCE_NAME,
-                "type",
-                Box::new(presence(json!({"gatewayPort": 1}))),
-            ),
-            (
-                openclaw::SOURCE_NAME,
-                openclaw::GATEWAY_PORT_FIELD,
-                Box::new(presence(json!({"type": "gateway_start"}))),
-            ),
-        ];
-        let failed: Vec<_> = rows
-            .iter()
-            .filter_map(|(source, key, decode)| {
-                let (decoded, logs) = decode();
-                let refused =
-                    matches!(decoded, Err(DecodeError::Missing { field, .. }) if field == *key);
-                let noted =
-                    breadcrumbed(&logs, source, DriftKind::MissingField, Some(("field", key)));
-                (!(refused && noted))
-                    .then(|| format!("{source} {key}: {decoded:?}, breadcrumbed: {noted}"))
-            })
-            .collect();
-        assert!(failed.is_empty(), "{failed:#?}");
+        }
+        let logs = crate::test_capture::capture_logs(|| {
+            assert_eq!(
+                required_or_err("src", Some("ev"), "found", read).ok(),
+                Some("v")
+            );
+        });
+        assert!(
+            !breadcrumbed(&logs, "src", DriftKind::MissingField, None),
+            "{logs}"
+        );
     }
 
     /// An envelope naming no event breadcrumbs that, whichever field the
