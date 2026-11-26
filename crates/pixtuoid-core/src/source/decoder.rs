@@ -746,10 +746,10 @@ pub(crate) fn subagent_fired(
     for e in &mut evs {
         if let AgentEvent::SessionStart { parent_id, .. } = e {
             // Read for a start alone: no other arm names the root.
-            *parent_id = parent_id.or_else(|| {
-                let root = hook.session().ok()?;
-                Some(AgentId::from_parts(hook.source, root))
-            });
+            *parent_id = hook
+                .session()
+                .ok()
+                .map(|root| AgentId::from_parts(hook.source, root));
         }
     }
     Ok(Some(evs))
