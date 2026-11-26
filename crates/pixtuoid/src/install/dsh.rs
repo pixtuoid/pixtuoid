@@ -466,11 +466,9 @@ mod tests {
                 "outcome": "allowed-once", "model": "m",
                 "inputTokens": 1, "outputTokens": 1,
             });
-            let evs = decode_hook_payload(payload).expect("decodes");
-            assert!(
-                !evs.is_empty(),
-                "{ty} decodes to nothing — a dead wire name"
-            );
+            let evs = decode_hook_payload(payload)
+                .unwrap_or_else(|e| panic!("{ty}: a dead wire name: {e}"));
+            assert!(!evs.is_empty(), "{ty} decodes to nothing");
         }
     }
 

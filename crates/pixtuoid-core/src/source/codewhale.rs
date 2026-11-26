@@ -1,10 +1,10 @@
 //! CodeWhale source — HOOK-ONLY. There is no tailable per-session transcript
 //! to watch: `rollout_path` is never written in production, saved sessions are
 //! full-snapshot `{id}.json` rewrites, and headless `codewhale exec` fires no
-//! session lifecycle. Cites are `codewhale-hq/Codewhale` at `v0.10.2`.
+//! session lifecycle. Cites are `codewhale-hq/Codewhale` at `v0.10.4`.
 //!
 //! CodeWhale's hooks DON'T hand the command a CC-shaped JSON payload on stdin —
-//! identity travels as ENV VARS (`docs/HOOKS.md:291-315`). So the shim runs in
+//! identity travels as ENV VARS (`docs/HOOKS.md:298-322`). So the shim runs in
 //! **env-mode** (`pixtuoid-hook --event <name>`): it reads the env vars and
 //! synthesizes this envelope, stamped `_pixtuoid_source: "codewhale"`:
 //!
@@ -13,13 +13,13 @@
 //! ```
 //!
 //! - **Key on `session_id`.** Every event of one TUI session carries the same
-//!   `CODEWHALE_SESSION_ID` (`crates/tui/src/hooks/executor.rs:416-419`), so two
+//!   `CODEWHALE_SESSION_ID` (`crates/engine/src/hooks/executor.rs:416-419`), so two
 //!   sessions in one workspace are two sprites. A tool call's before and after
-//!   share `CODEWHALE_TOOL_CALL_ID` (`:371-374`).
+//!   share `CODEWHALE_TOOL_CALL_ID` (`:372-375`).
 //!
 //! - **[`AgentEvent::UserActionRequest`].** `waiting_for_user` fires as an approval prompt opens, a
-//!   question is asked or a goal continuation parks (`docs/HOOKS.md:248`); its
-//!   `reason` rides stdin (`:251-252`), which env-mode never reads, so every wait
+//!   question is asked or a goal continuation parks (`docs/HOOKS.md:255`); its
+//!   `reason` rides stdin (`:258-259`), which env-mode never reads, so every wait
 //!   reads alike. `session_idle` fires as a turn or a wait settles to idle
 //!   (`crates/tui/src/tui/ui/observer_hooks.rs:178-196`): the end of a wait no
 //!   tool end resolves.
@@ -80,7 +80,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 
 /// CodeWhale's one sub-agent tool; its `action` picks the verb
 /// (`parse_agent_tool_action`, `codewhale-hq/Codewhale`
-/// `crates/tui/src/tools/subagent/mod.rs`). The CHILD gets its own sprite from the
+/// `crates/engine/src/tools/subagent/mod.rs`). The CHILD gets its own sprite from the
 /// `subagent_spawn`/`subagent_complete` observer hooks.
 pub(crate) const SUBAGENT_TOOL: &str = "agent";
 
@@ -108,10 +108,9 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
 }
 
 /// The envelope env-mode synthesizes, whose names the raw subagent hooks share
-/// (`docs/HOOKS.md:658-665` at `v0.10.4`).
+/// (`docs/HOOKS.md:658-665`).
 const ENVELOPE: Envelope = Envelope {
     event_field: "event",
-    // "Every event in one TUI session carries the same" one (`docs/HOOKS.md:287`).
     session_field: SessionField {
         within: None,
         field: "session_id",
@@ -180,7 +179,7 @@ pub(crate) fn decode_cw_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
             },
         ],
         // Its exit hook is submitted at least one loop pass later, and both drain one FIFO across
-        // `OBSERVER_DISPATCH_WORKERS` threads (`event_loop.rs:2087`, `observer_hooks.rs:178-196`,
+        // `OBSERVER_DISPATCH_WORKERS` threads (`event_loop.rs:2384`, `observer_hooks.rs:178-196`,
         // `hooks/executor.rs:1189-1250`), so only a cancel pending as the dialog opens can land
         // this after its exit; the next tool start, `session_idle` or end clears that RequiresAction.
         "waiting_for_user" => vec![
@@ -199,7 +198,7 @@ pub(crate) fn decode_cw_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
 /// CodeWhale's `subagent_spawn` / `subagent_complete` observer hooks, forwarded
 /// RAW from stdin so the payload is CodeWhale's own shape: `agent_id` = the
 /// CHILD, `session_id` = its parent's session, `workspace` = the parent's cwd
-/// (`docs/HOOKS.md:648-665`). `Ok(None)` for any other event.
+/// (`docs/HOOKS.md:658-675`). `Ok(None)` for any other event.
 fn decode_cw_subagent(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
     let is_spawn = match event {

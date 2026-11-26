@@ -39,8 +39,8 @@ const SETTLED = [
 ] as const satisfies readonly Event["type"][]
 const SETTLES = new Set<string>(SETTLED)
 
-// Only forward what pixtuoid maps; the decoder (`source/opencode.rs`) ignores
-// anything else anyway.
+// Only forward what pixtuoid maps: the decoder (`source/opencode.rs`) refuses
+// anything else as drift.
 const FORWARDED = [
   "session.deleted",
   "session.execution.started",

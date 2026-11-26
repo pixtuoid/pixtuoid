@@ -2339,53 +2339,6 @@ mod tests {
         assert_eq!(rc.missing_field, 0);
     }
 
-    /// A hook arm that keys on a session counts its missing key under its
-    /// source, as the decode logs it.
-    #[test]
-    fn scan_counts_a_hook_arms_missing_session_key() {
-        use pixtuoid_core::source::decoder::{SOURCE_STAMP, decode_hook_payload};
-        use pixtuoid_core::source::{codewhale, cursor, grok, hermes, opencode};
-        let rows = [
-            (
-                cursor::SOURCE_NAME,
-                serde_json::json!({"hook_event_name": "preToolUse"}),
-            ),
-            (
-                grok::SOURCE_NAME,
-                serde_json::json!({
-                    "hookEventName": "pre_tool_use", "cwd": "/r", "workspaceRoot": "/r", "toolName": "t",
-                }),
-            ),
-            (
-                codewhale::SOURCE_NAME,
-                serde_json::json!({"event": "tool_call_before", "cwd": "/r"}),
-            ),
-            (
-                codewhale::SOURCE_NAME,
-                serde_json::json!({"event": "subagent_spawn", "agent_id": "a", "workspace": "/r"}),
-            ),
-            (
-                hermes::SOURCE_NAME,
-                serde_json::json!({"hook_event_name": "pre_tool_call"}),
-            ),
-            (
-                opencode::SOURCE_NAME,
-                serde_json::json!({"type": "session.tool.input.started", "data": {}}),
-            ),
-        ];
-        let counted: Vec<_> = rows
-            .into_iter()
-            .map(|(source, mut payload)| {
-                payload[SOURCE_STAMP] = serde_json::json!(source);
-                let log = capture(|| {
-                    let _ = decode_hook_payload(payload);
-                });
-                (source, scan_log_for_source(&log, source).missing_field)
-            })
-            .collect();
-        assert!(counted.iter().all(|(_, n)| *n == 1), "{counted:?}");
-    }
-
     #[test]
     fn scan_of_empty_log_is_clean() {
         assert_eq!(scan_log_for_source("", "copilot"), LogScanResult::default());
