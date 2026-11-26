@@ -85,8 +85,9 @@ pub enum HookDecoding {
         tool_id_key: ToolIdKey,
         extend: HookArms,
     },
-    /// CLAIMS every event: a source whose events the shared arms don't name,
-    /// whose arms handle EVERYTHING and construct their own AgentIds; their
+    /// CLAIMS every event: a source whose envelope or event names the shared
+    /// arms can't read, whose arms handle EVERYTHING and construct their own
+    /// AgentIds; their
     /// `Ok(None)` is an unknown event, never a fall-through to the shared arms.
     ClaimsAll {
         envelope: Envelope,

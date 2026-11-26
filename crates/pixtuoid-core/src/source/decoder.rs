@@ -566,7 +566,7 @@ pub(crate) fn decode_hook_object(
         },
         None => shared_hook_arms(&hook, desc)?,
     };
-    decoded.ok_or_else(|| unknown_event(&hook))
+    decoded.ok_or_else(|| refuse_unknown_event(&hook))
 }
 
 /// Where `decoding`'s payloads name their event and session: an unregistered
@@ -582,8 +582,8 @@ pub(crate) fn test_hook<'a>(source: &'a str, v: &'a Value) -> Hook<'a> {
     Hook::read(test_obj(v), source, envelope_of(decoding)).expect("a test payload names its event")
 }
 
-/// The one report of an event no arm lists, so no arm refuses one unseen.
-pub(crate) fn unknown_event(hook: &Hook<'_>) -> DecodeError {
+/// The refusal of an event no arm lists.
+pub(crate) fn refuse_unknown_event(hook: &Hook<'_>) -> DecodeError {
     super::drift::unknown_event(hook.source, hook.event);
     DecodeError::unsupported(hook.source, hook.event)
 }
@@ -736,8 +736,8 @@ pub(crate) fn subagent_fired(
     let desc = crate::source::registry::descriptor_for(hook.source);
     let mut own = hook.obj.clone();
     own.insert(SESSION_ID.into(), Value::from(session(agent)));
-    let mut evs =
-        shared_hook_arms(&Hook { obj: &own, ..*hook }, desc)?.ok_or_else(|| unknown_event(hook))?;
+    let mut evs = shared_hook_arms(&Hook { obj: &own, ..*hook }, desc)?
+        .ok_or_else(|| refuse_unknown_event(hook))?;
     for e in &mut evs {
         if let AgentEvent::SessionStart { parent_id, .. } = e {
             // Read for a start alone: no other arm names the root.

@@ -340,8 +340,8 @@ mod tests {
         json!({"type": EXECUTION_STARTED, "data": data, "_pid": 13358})
     }
 
-    /// [`field`]'s assertion holds every other read to the list; this holds
-    /// every listed path to a read, by blanking it.
+    /// [`field`]'s assertion holds every read but the session's to the list;
+    /// this holds every listed path to a read, by blanking it.
     #[test]
     fn every_decoded_data_field_is_read() {
         let full = json!({"sessionID": "s", "parentID": "p", "location": {"directory": "/r"},

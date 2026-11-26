@@ -25,7 +25,7 @@
 //! FLAT until a byte-real capture can add nesting.
 
 use crate::source::decoder::{
-    DecodeResult as Result, hook_identity, shared_hook_arms, unknown_event,
+    DecodeResult as Result, hook_identity, refuse_unknown_event, shared_hook_arms,
 };
 
 use crate::AgentId;
@@ -109,7 +109,7 @@ pub(crate) fn decode_kimi_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Agen
         ..*hook
     };
     let desc = registry::descriptor_for(SOURCE_NAME);
-    evs.extend(shared_hook_arms(&stop, desc)?.ok_or_else(|| unknown_event(&stop))?);
+    evs.extend(shared_hook_arms(&stop, desc)?.ok_or_else(|| refuse_unknown_event(&stop))?);
     Ok(Some(evs))
 }
 

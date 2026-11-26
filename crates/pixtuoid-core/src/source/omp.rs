@@ -1079,8 +1079,8 @@ const ENVELOPE: Envelope = Envelope {
 const SESSION_FILE: &str = "sessionFile";
 
 /// Decode one bridge-extension payload (already routed here by
-/// `_pixtuoid_source == "omp"`). A stale installed extension's `type` the
-/// decoder dropped is the drift `verify_schema` reports.
+/// `_pixtuoid_source == "omp"`). An unknown `type` is a stale installed
+/// extension's, the drift `verify_schema` reports.
 ///
 /// Identity: `sessionFile` (the ALLOCATED path — omp exposes it before the
 /// lazy persist materializes the JSONL) through the watcher's own

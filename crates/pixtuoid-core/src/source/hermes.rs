@@ -279,7 +279,8 @@ pub const DECODED_EVENTS: &[&str] = &[
 #[doc(hidden)]
 pub const OUTSIDE_A_TURN: &[&str] = &[ON_SESSION_FINALIZE];
 
-/// Every envelope field the decoder reads, pinned by `every_decoded_field_is_read`.
+/// Every envelope field the decoder reads but the event's name, pinned by
+/// `every_decoded_field_is_read`.
 /// The plugin sends these and `args` cut to [`DETAIL_KEYS`], nothing more of
 /// hermes's kwargs, which its selftest holds it to through
 /// `the_plugin_contract_is_the_committed_file`.
@@ -583,8 +584,8 @@ mod tests {
         }
     }
 
-    /// [`field`]'s assertion holds every other read to the list; this holds
-    /// every listed field to a read, by blanking it.
+    /// [`field`]'s assertion holds every read but the session's to the list;
+    /// this holds every listed field to a read, by blanking it.
     #[test]
     fn every_decoded_field_is_read() {
         let full = json!({"session_id": "s", "cwd": "/r", "tool_name": "terminal",
