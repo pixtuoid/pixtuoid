@@ -1562,7 +1562,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reply_calls_a_tool_through_either_kind_of_call() {
+    fn a_reply_calls_a_tool_only_through_a_call_aimock_serves() {
         let reply = |response: Value| serde_json::json!({ "response": response });
         assert!(calls_a_tool(&reply(serde_json::json!({
             "toolCalls": [{ "name": "read", "arguments": { "path": "NOTE.txt" } }]
