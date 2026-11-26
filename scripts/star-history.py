@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""Render the README's star-history chart from GitHub's own stargazers data.
+"""Render the README's star-history chart from GitHub's own star history.
 
 GitHub announced on 2026-06-30 that `stargazers` (the who-starred-when list)
 would be limited to a repository's admins and collaborators —
 https://github.blog/changelog/2026-06-30-upcoming-access-restrictions-to-public-api-endpoints-and-ui-views/
 — and the cut-over blanked every hosted chart service (star-history.com
-included) for every repo it does not own. The repo's own Actions token is
-assumed to be a collaborator — the changelog names neither GraphQL nor Actions
-tokens, so the first live run is the proof — and the chart is drawn here and
-published to the `star-history` branch by `.github/workflows/star-history.yml`;
-nothing leaves the repo.
+included) for every repo it does not own. The chart is drawn here from the
+star history, which a public repo serves to any caller, and published to the
+`star-history` branch by `.github/workflows/star-history.yml`; nothing leaves
+the repo.
 
 The chart is the office's night window: one tower per month of the last
 year, a floor per `stars_per_floor` stars, and this month's tower still going
@@ -33,7 +32,7 @@ import sys
 import unittest
 import xml.etree.ElementTree as ET
 from collections.abc import Callable, Iterable
-from typing import NamedTuple
+from typing import Any, NamedTuple
 from unittest import mock
 from urllib import request
 
@@ -54,20 +53,14 @@ from readme_pixels import (
     text_width,
 )
 
-GRAPHQL_URL = "https://api.github.com/graphql"
-# The API's hard page ceiling for `stargazers(first:)`.
-PAGE_SIZE = 100
-STARGAZERS_QUERY = """
-query($owner: String!, $name: String!, $first: Int!, $after: String) {
-  repository(owner: $owner, name: $name) {
-    stargazerCount
-    stargazers(first: $first, after: $after, orderBy: {field: STARRED_AT, direction: ASC}) {
-      edges { starredAt }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-}
-"""
+API_URL = "https://api.github.com"
+# Pinned: an unversioned call drifts as GitHub retires its default, a retired pin answers 410 —
+# https://docs.github.com/en/rest/about-the-rest-api/api-versions
+API_VERSION = "2026-03-10"
+# The star history's documented `per_page` ceiling.
+HISTORY_PAGE = 30
+FETCH_TIMEOUT_S = 30
+NEXT_LINK = re.compile(r'<([^>]+)>;\s*rel="next"')
 
 Point = tuple[dt.date, int]
 
@@ -494,58 +487,78 @@ def write_charts(
     return paths
 
 
-def _graphql_post(query: str, variables: dict, token: str) -> dict:
-    body = json.dumps({"query": query, "variables": variables}).encode()
+Get = Callable[[str, str], tuple[Any, str | None]]
+
+
+def _next_link(header: str | None) -> str | None:
+    """The `rel="next"` URL of a `link` header; None on the last page."""
+    m = NEXT_LINK.search(header or "")
+    return m.group(1) if m else None
+
+
+def _rest_get(url: str, token: str) -> tuple[Any, str | None]:
+    """The reply's JSON and its next page's URL."""
     req = request.Request(
-        GRAPHQL_URL,
-        data=body,
+        url,
         headers={
-            "Authorization": f"bearer {token}",
-            "Content-Type": "application/json",
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
             "User-Agent": "pixtuoid-star-history",
+            "X-GitHub-Api-Version": API_VERSION,
         },
     )
-    with request.urlopen(req, timeout=30) as resp:
-        return json.load(resp)
+    with request.urlopen(req, timeout=FETCH_TIMEOUT_S) as resp:
+        return json.load(resp), _next_link(resp.headers.get("link"))
 
 
-def fetch_star_dates(
-    repo: str, token: str, post: Callable[[str, dict, str], dict] = _graphql_post
-) -> list[dt.date]:
-    owner, name = repo.split("/", 1)
+def fetch_star_dates(repo: str, token: str, get: Get = _rest_get) -> list[dt.date]:
+    """One date per star, from GitHub's star history:
+    https://docs.github.com/en/rest/activity/starring#get-repository-star-history
+    """
+    count = get(f"{API_URL}/repos/{repo}/stargazers/count", token)[0]["count"]
     dates: list[dt.date] = []
-    after: str | None = None
-    while True:
-        reply = post(
-            STARGAZERS_QUERY,
-            {"owner": owner, "name": name, "first": PAGE_SIZE, "after": after},
-            token,
+    url = f"{API_URL}/repos/{repo}/stargazers/history?per_page={HISTORY_PAGE}"
+    while url:
+        weeks, url = get(url, token)
+        for week in weeks:
+            # `week` is its Sunday at 00:00 UTC (observed), but the days come bucketed in GitHub's
+            # own day, "not guaranteed to align with UTC": a star near midnight lands in the
+            # neighbouring day, and month, moving that month's tower by it, never the total.
+            sunday = dt.datetime.fromtimestamp(week["week"], dt.UTC).date()
+            for offset, stars in enumerate(week["days"]):
+                dates += [sunday + dt.timedelta(days=offset)] * stars
+    # No star under a non-zero count is the shape the changelog above announced for the list
+    # ("empty responses"), and would blank the README's chart. Any smaller shortfall is not
+    # that: the count also holds stars the history never returns (observed).
+    if not dates and count:
+        raise RuntimeError(
+            f"{repo}: the star history returned no stars for stargazer count {count}"
         )
-        if reply.get("errors"):
-            raise RuntimeError(
-                f"GraphQL errors for {repo}: {json.dumps(reply['errors'])}"
-            )
-        repository = reply["data"]["repository"]
-        page = repository["stargazers"]
-        dates.extend(
-            dt.datetime.fromisoformat(e["starredAt"]).date() for e in page["edges"]
-        )
-        if page["pageInfo"]["hasNextPage"]:
-            after = page["pageInfo"]["endCursor"]
-            continue
-        # The announced deprecation shape is an EMPTY list, not an error; a blank
-        # chart would replace the README's, so no rows under a non-zero count reds the run.
-        # A partial list is not that shape: the count, and the connection's `totalCount`
-        # that equals it, also hold stars the list never returns (observed; GitHub documents no cause).
-        if not dates and repository["stargazerCount"]:
-            raise RuntimeError(
-                f"{repo}: stargazers returned {len(dates)} rows for stargazerCount {repository['stargazerCount']}"
-            )
-        return dates
+    return dates
 
 
 def _d(s: str) -> dt.date:
     return dt.date.fromisoformat(s)
+
+
+def _week(sunday: str, days: list[int]) -> dict:
+    """One week of star history as the endpoint serves it."""
+    start = dt.datetime.fromisoformat(sunday).replace(tzinfo=dt.UTC)
+    return {"week": int(start.timestamp()), "total": sum(days), "days": days}
+
+
+def _fake_api(count: int, *pages: list[dict]) -> tuple[Get, list[str]]:
+    """A `get` serving `count`, then `pages` of history each linking the next; and the URLs it was asked for."""
+    seen: list[str] = []
+
+    def get(url: str, token: str) -> tuple[Any, str | None]:
+        seen.append(url)
+        if url.endswith("/stargazers/count"):
+            return {"count": count}, None
+        page = sum("/stargazers/count" not in u for u in seen) - 1
+        return pages[page], f"next-{page + 1}" if page + 1 < len(pages) else None
+
+    return get, seen
 
 
 class SelfTest(unittest.TestCase):
@@ -895,120 +908,73 @@ class SelfTest(unittest.TestCase):
             "empty series must still state a zero count",
         )
 
-    def test_fetch_follows_cursors_until_the_last_page(self) -> None:
-        pages = [
-            {
-                "data": {
-                    "repository": {
-                        "stargazerCount": 3,
-                        "stargazers": {
-                            "edges": [
-                                {"starredAt": "2026-05-24T04:01:48Z"},
-                                {"starredAt": "2026-05-24T07:07:52Z"},
-                            ],
-                            "pageInfo": {"hasNextPage": True, "endCursor": "c1"},
-                        },
-                    }
-                }
-            },
-            {
-                "data": {
-                    "repository": {
-                        "stargazerCount": 3,
-                        "stargazers": {
-                            "edges": [{"starredAt": "2026-05-25T00:00:00Z"}],
-                            "pageInfo": {"hasNextPage": False, "endCursor": "c2"},
-                        },
-                    }
-                }
-            },
-        ]
-        seen: list[dict] = []
-
-        def post(query: str, variables: dict, token: str) -> dict:
-            seen.append(variables)
-            return pages[len(seen) - 1]
-
-        got = fetch_star_dates("o/r", "t", post=post)
+    def test_fetch_follows_next_links_until_the_last_page(self) -> None:
+        get, seen = _fake_api(
+            6,
+            [_week("2026-11-22", [3, 1, 0, 0, 0, 0, 0])],
+            [_week("2026-11-15", [0, 0, 0, 0, 0, 0, 2])],
+        )
+        got = fetch_star_dates("o/r", "t", get=get)
         self.assertTrue(
-            got == [_d("2026-05-24"), _d("2026-05-24"), _d("2026-05-25")],
-            f"fetch must flatten pages to dates, got {got}",
+            sorted(got)
+            == [_d("2026-11-21")] * 2 + [_d("2026-11-22")] * 3 + [_d("2026-11-23")],
+            f"each week's days run from its Sunday, one date per star, got {sorted(got)}",
         )
         self.assertTrue(
-            [v.get("after") for v in seen] == [None, "c1"],
-            f"fetch must thread the cursor, sent {seen}",
+            seen
+            == [
+                f"{API_URL}/repos/o/r/stargazers/count",
+                f"{API_URL}/repos/o/r/stargazers/history?per_page={HISTORY_PAGE}",
+                "next-1",
+            ],
+            f"fetch must read the count, then follow each page's next link to the last, sent {seen}",
+        )
+
+    def test_next_link_reads_only_rel_next(self) -> None:
+        # https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api's own example.
+        header = (
+            '<https://api.github.com/repositories/1300192/issues?page=2>; rel="prev", '
+            '<https://api.github.com/repositories/1300192/issues?page=4>; rel="next", '
+            '<https://api.github.com/repositories/1300192/issues?page=515>; rel="last", '
+            '<https://api.github.com/repositories/1300192/issues?page=1>; rel="first"'
         )
         self.assertTrue(
-            seen[0]["owner"] == "o" and seen[0]["name"] == "r",
-            "fetch must split owner/name",
+            _next_link(header)
+            == "https://api.github.com/repositories/1300192/issues?page=4",
+            f"got {_next_link(header)}",
         )
-
-    def test_fetch_refuses_a_withheld_list(self) -> None:
-        def post(query: str, variables: dict, token: str) -> dict:
-            return {
-                "data": {
-                    "repository": {
-                        "stargazerCount": 452,
-                        "stargazers": {
-                            "edges": [],
-                            "pageInfo": {"hasNextPage": False, "endCursor": None},
-                        },
-                    }
-                }
-            }
-
-        with self.assertRaises(
-            RuntimeError,
-            msg="an empty list under a non-zero stargazerCount is the deprecation shape — it must raise, not publish a blank chart",
-        ) as raised:
-            fetch_star_dates("o/r", "t", post=post)
+        last = '<https://api.github.com/x?page=2>; rel="prev", <https://api.github.com/x?page=1>; rel="first"'
         self.assertTrue(
-            "452" in str(raised.exception) and "0" in str(raised.exception),
-            f"the message must show count vs rows: {raised.exception}",
+            _next_link(last) is None and _next_link(None) is None,
+            "the last page, and a reply with no link header, end the paging",
         )
 
-    def test_fetch_keeps_a_list_one_short_of_the_count(self) -> None:
-        def post(query: str, variables: dict, token: str) -> dict:
-            return {
-                "data": {
-                    "repository": {
-                        "stargazerCount": 3,
-                        "stargazers": {
-                            "edges": [
-                                {"starredAt": "2026-11-19T07:49:42Z"},
-                                {"starredAt": "2026-11-19T20:11:27Z"},
-                            ],
-                            "pageInfo": {"hasNextPage": False, "endCursor": "c1"},
-                        },
-                    }
-                }
-            }
+    def test_fetch_refuses_a_withheld_history(self) -> None:
+        for page in ([], [_week("2026-11-22", [0] * 7)]):
+            get, _ = _fake_api(452, page)
+            with self.assertRaises(
+                RuntimeError,
+                msg=f"no star under a non-zero count is the withdrawal shape; it must raise, not publish a blank chart: {page}",
+            ) as raised:
+                fetch_star_dates("o/r", "t", get=get)
+            self.assertTrue(
+                "no stars" in str(raised.exception) and "452" in str(raised.exception),
+                f"the message must name what it refuses and the count: {raised.exception}",
+            )
 
+    def test_fetch_charts_any_star_the_history_holds(self) -> None:
+        for count, stars in ((452, 1), (452, 451), (10**6, 1)):
+            get, _ = _fake_api(count, [_week("2026-11-22", [stars, 0, 0, 0, 0, 0, 0])])
+            self.assertTrue(
+                fetch_star_dates("o/r", "t", get=get) == [_d("2026-11-22")] * stars,
+                f"{stars} of {count} stars must chart: the count also holds stars the history never returns",
+            )
+
+    def test_fetch_charts_a_repo_with_no_stars(self) -> None:
+        get, _ = _fake_api(0, [_week("2026-11-22", [0] * 7)])
         self.assertTrue(
-            fetch_star_dates("o/r", "t", post=post)
-            == [_d("2026-11-19"), _d("2026-11-19")],
-            "the count also holds a star the list never returns; the rows it does return must chart",
-        )
-
-    def test_fetch_raises_on_graphql_errors(self) -> None:
-        def post(query: str, variables: dict, token: str) -> dict:
-            return {
-                "errors": [
-                    {
-                        "type": "NOT_FOUND",
-                        "message": "Could not resolve to a Repository",
-                    }
-                ]
-            }
-
-        with self.assertRaises(
-            RuntimeError, msg="fetch must raise on a GraphQL errors array"
-        ) as raised:
-            fetch_star_dates("o/r", "t", post=post)
-        self.assertIn(
-            "NOT_FOUND",
-            str(raised.exception),
-            "the GraphQL error type must reach the message",
+            fetch_star_dates("o/r", "t", get=get) == [],
+            "no star under a zero count is a starless repo, not a withheld history",
         )
 
     def test_write_charts_emits_one_file_per_theme(self) -> None:
@@ -1047,6 +1013,8 @@ def main(argv: list[str]) -> int:
         return 2
     repo, out_dir = argv
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+    # Not for access: a token lifts the per-IP unauthenticated rate limit —
+    # https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
     if not token:
         print("star-history: GH_TOKEN (or GITHUB_TOKEN) is unset", file=sys.stderr)
         return 2
