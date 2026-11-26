@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": {"hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "view", "arguments": {"path": "{workspace}/NOTE.txt"}}]},
       "latency": 300
     },

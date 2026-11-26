@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": { "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": {
         "reasoning": "Read the note.",
         "toolCalls": [ { "name": "Read", "arguments": { "file_path": "{workspace}/NOTE.txt" } } ],

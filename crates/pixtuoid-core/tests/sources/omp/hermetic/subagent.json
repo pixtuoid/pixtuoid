@@ -6,7 +6,7 @@
       "latency": 300
     },
     {
-      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "read", "arguments": {"i": "Reading the note", "path": "NOTE.txt"}}]},
       "latency": 300
     },
@@ -16,12 +16,16 @@
       "latency": 300
     },
     {
+      "match": {"systemMessage": "how open-ended a coding subagent's problem is"},
+      "response": {"content": "low"}
+    },
+    {
       "match": {"toolResultContains": "NOTE.txt"},
       "response": {"toolCalls": [{"name": "task", "arguments": {"i": "Delegating the read", "context": "Read the note.", "tasks": [{"name": "Reader", "task": "CHILD-TASK: read NOTE.txt and report its text.", "solutionSpace": "NOTE.txt"}]}}]},
       "latency": 300
     },
     {
-      "match": {"hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "read", "arguments": {"i": "Listing the workspace", "path": "."}}]},
       "latency": 300
     }

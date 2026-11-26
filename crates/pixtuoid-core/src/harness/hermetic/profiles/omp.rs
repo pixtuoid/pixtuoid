@@ -167,6 +167,17 @@ startup:
             expects: &["session_start", "session_shutdown"],
             turn: Turn::PROFILE,
         },
+        // A TUI session's first prompt asks the model for a carded title, and
+        // its turn's end for the user's next message; the TUI scripts decline
+        // each at `v19.2.1`. The title's `<title/>` parses as none
+        // (`src/utils/title-card.ts:113`, at `src/session/agent-session.ts:12381`),
+        // so omp falls back to its title model, which the scripts'
+        // `You name coding-agent sessions` reply answers (`:12389-12391`),
+        // and asks for that title's card, declined as
+        // `<title>none</title>` (`src/prompts/system/title-marker-instruction.md:1`,
+        // which `src/utils/title-generator.ts:394` appends to the card's prompt);
+        // the prediction as `NO_PREDICTION`
+        // (`src/modes/controllers/composer-prediction-controller.ts:19-20`).
         Scenario {
             name: "approve",
             shape: Shape::Permission,
@@ -219,6 +230,10 @@ startup:
                 ..Turn::PROFILE
             },
         },
+        // Before a task's child runs, omp has the model judge how open-ended
+        // its solution space is, which its script answers
+        // (`src/auto-thinking/classifier.ts:2-6`,
+        // `src/prompts/judge/auto-thinking.json:20-21` at `v19.1.0`).
         Scenario {
             name: "subagent",
             shape: Shape::Subagent,

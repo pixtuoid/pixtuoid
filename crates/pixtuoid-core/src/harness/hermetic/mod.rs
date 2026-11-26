@@ -506,9 +506,9 @@ pub struct Profile {
     /// Whether a child may name no cwd of its own, running where its parent
     /// does.
     pub(crate) children_inherit_cwd: bool,
-    /// Whether aimock never sees this CLI's tool results, so its tool-run reply
-    /// waits on the turn rather than the note. Shrink-only: a run in which
-    /// aimock saw one is Stale.
+    /// Whether aimock never sees this CLI's tool results, so no tool-run reply
+    /// can wait on the note. Shrink-only: a run in which aimock saw one is
+    /// Stale.
     pub(crate) result_unseen: bool,
     /// Its live tier, run beside `scenarios`.
     pub live: Option<Live>,
@@ -861,6 +861,13 @@ impl Scenario {
     /// `source`'s seed for this scenario, if its turn names one.
     pub fn seed(&self, source: &str) -> Option<PathBuf> {
         self.turn.seed.map(|dir| scripts_dir(source).join(dir))
+    }
+
+    /// Its first turn's prompt.
+    pub fn prompt(&self) -> &'static str {
+        self.turn
+            .prompt
+            .unwrap_or(crate::harness::plan::DEFAULT_PROMPT)
     }
 
     /// Why a leg on `windows` doesn't run it, if it doesn't.
@@ -1496,16 +1503,116 @@ mod tests {
                 )
                 .expect("json");
                 for reply in script["fixtures"].as_array().expect("fixtures") {
-                    let after_a_result = reply["match"]["hasToolResult"] == true
-                        || reply["match"]["toolResultContains"].is_string();
                     assert!(
-                        !(after_a_result && reply["response"]["toolCalls"].is_array()),
+                        !(waits_on_a_result(&reply["match"]) && calls_a_tool(reply)),
                         "{}: a reply to the gated call calls a tool again",
                         p.source
                     );
                 }
             }
         }
+    }
+
+    /// Every tool call aimock serves for a scripted reply
+    /// (`resolveServedBlockOutcome`, `servedToolCalls`, `@copilotkit/aimock`
+    /// `dist/helpers.js:1166-1171`, `:1257-1295` at 1.48.0).
+    fn served_calls(reply: &Value) -> Vec<&Value> {
+        let response = &reply["response"];
+        let blocks = |kind: &str| response[kind].as_array().filter(|b| !b.is_empty());
+        if let Some(blocks) = blocks("responsesBlocks").or_else(|| blocks("blocks")) {
+            return blocks.iter().filter(|b| b["type"] != "text").collect();
+        }
+        if !response["toolCalls"].is_array() {
+            return Vec::new();
+        }
+        ["toolCalls", "customToolCalls"]
+            .into_iter()
+            .flat_map(|kind| response[kind].as_array().into_iter().flatten())
+            .collect()
+    }
+
+    fn calls_a_tool(reply: &Value) -> bool {
+        !served_calls(reply).is_empty()
+    }
+
+    /// Whether a scripted reply's match waits on a tool result: aimock reads one
+    /// for `toolCallId` and `toolResultContains` (`@copilotkit/aimock`
+    /// `dist/router.js:271-280` at 1.48.0) and for `hasToolResult` (`:309-311`).
+    fn waits_on_a_result(m: &Value) -> bool {
+        m["toolCallId"].is_string()
+            || m["toolResultContains"].is_string()
+            || m["hasToolResult"] == true
+    }
+
+    #[test]
+    fn a_match_waits_on_a_result_through_any_key_aimock_reads_one_for() {
+        for m in [
+            serde_json::json!({ "toolCallId": "call_1" }),
+            serde_json::json!({ "toolResultContains": "pong" }),
+            serde_json::json!({ "hasToolResult": true }),
+        ] {
+            assert!(waits_on_a_result(&m), "{m}");
+        }
+        for m in [
+            serde_json::json!({ "hasToolResult": false }),
+            serde_json::json!({}),
+        ] {
+            assert!(!waits_on_a_result(&m), "{m}");
+        }
+    }
+
+    #[test]
+    fn a_reply_calls_a_tool_only_through_a_call_aimock_serves() {
+        let reply = |response: Value| serde_json::json!({ "response": response });
+        assert!(calls_a_tool(&reply(serde_json::json!({
+            "toolCalls": [{ "name": "read", "arguments": { "path": "NOTE.txt" } }]
+        }))));
+        assert!(calls_a_tool(&reply(serde_json::json!({
+            "toolCalls": [],
+            "customToolCalls": [{ "name": "exec", "input": "text(1);" }]
+        }))));
+        assert!(
+            !calls_a_tool(&reply(serde_json::json!({
+                "customToolCalls": [{ "name": "exec", "input": "text(1);" }]
+            }))),
+            "custom calls with no toolCalls array"
+        );
+        assert!(
+            calls_a_tool(&reply(serde_json::json!({
+                "blocks": [
+                    { "type": "text", "text": "Reading." },
+                    { "type": "toolCall", "name": "read", "arguments": "{}" }
+                ]
+            }))),
+            "a block's call"
+        );
+        assert!(
+            !calls_a_tool(&reply(serde_json::json!({
+                "blocks": [{ "type": "text", "text": "Reading." }],
+                "toolCalls": [{ "name": "read", "arguments": "{}" }]
+            }))),
+            "blocks are served in place of toolCalls"
+        );
+        assert!(
+            calls_a_tool(&reply(serde_json::json!({
+                "blocks": [],
+                "toolCalls": [{ "name": "read", "arguments": "{}" }]
+            }))),
+            "an empty blocks array is not served"
+        );
+        assert!(
+            !calls_a_tool(&reply(serde_json::json!({
+                "responsesBlocks": [{ "type": "text", "text": "Reading." }],
+                "blocks": [{ "type": "toolCall", "name": "read", "arguments": "{}" }]
+            }))),
+            "responsesBlocks are served in place of blocks"
+        );
+        assert!(!calls_a_tool(&reply(
+            serde_json::json!({ "toolCalls": [] })
+        )));
+        assert!(!calls_a_tool(&reply(
+            serde_json::json!({ "content": "pong" })
+        )));
     }
 
     /// Whether a scripted reply calls a tool whose command is `rm` then the
@@ -1516,21 +1623,23 @@ mod tests {
             let words: Vec<&str> = command.split_whitespace().collect();
             words.first() == Some(&"rm") && words[1..].contains(&crate::harness::NOTE_FILE)
         };
-        let calls = |key: &'static str| {
-            script["fixtures"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .flat_map(move |reply| reply["response"][key].as_array().into_iter().flatten())
-        };
-        let arguments = calls("toolCalls")
-            .filter_map(|call| call["arguments"].as_object())
-            .flat_map(|arguments| arguments.values())
-            .filter_map(serde_json::Value::as_str);
-        let literals = calls("customToolCalls")
-            .filter_map(|call| call["input"].as_str())
-            .flat_map(|source| source.split('"').skip(1).step_by(2));
-        arguments.chain(literals).any(deletes)
+        script["fixtures"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(served_calls)
+            .any(|call| {
+                let arguments = call["arguments"]
+                    .as_object()
+                    .into_iter()
+                    .flat_map(|arguments| arguments.values())
+                    .filter_map(Value::as_str);
+                let literals = call["input"]
+                    .as_str()
+                    .into_iter()
+                    .flat_map(|source| source.split('"').skip(1).step_by(2));
+                arguments.chain(literals).any(deletes)
+            })
     }
 
     /// Whether a scripted reply waits on the note's text, which only the
@@ -1596,9 +1705,11 @@ mod tests {
             "a reply's prose is not a call"
         );
         let cell = |source: &str| {
-            script(serde_json::json!({ "response": { "customToolCalls": [
+            script(
+                serde_json::json!({ "response": { "toolCalls": [], "customToolCalls": [
                 { "name": "exec", "input": source }
-            ] } }))
+            ] } }),
+            )
         };
         assert!(script_deletes_the_note(&cell(
             r#"await tools.exec_command({ cmd: "rm NOTE.txt" });"#
@@ -1628,9 +1739,7 @@ mod tests {
                     p.source
                 );
                 assert!(
-                    !replies
-                        .iter()
-                        .any(|f| f["response"]["toolCalls"].is_array()),
+                    !replies.iter().any(calls_a_tool),
                     "{}: a reply calls a tool",
                     p.source
                 );
@@ -1658,6 +1767,43 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A tool call a turn's opening request can match answers any later user
+    /// message it matches too: a child's delivered result, a second prompt, a
+    /// hook's continuation. A dispatch that so took a delivery dispatched until
+    /// the budget killed the run, Blocked, where an unscripted delivery is
+    /// Script at once (opencode 2.3.0, #2331; 2.4.0, #1934; codewhale 0.10.4,
+    /// #2413). `sequenceIndex: 0` serves a fixture once (`@copilotkit/aimock`
+    /// `dist/router.js:319-324`, counted as it is served, `dist/journal.js:305-313`,
+    /// at 1.48.0), and the tier starts an aimock for each run (`turn` in
+    /// `examples/hermetic.rs`), so each such call answers its own turn alone.
+    #[test]
+    fn every_tool_call_a_turns_opening_request_can_match_is_served_once() {
+        let mut unbound = Vec::new();
+        for p in PROFILES {
+            for s in p.scenarios {
+                let script: Value = serde_json::from_str(
+                    &std::fs::read_to_string(s.script(p.source)).expect("the script"),
+                )
+                .expect("json");
+                for (i, reply) in script["fixtures"]
+                    .as_array()
+                    .expect("fixtures")
+                    .iter()
+                    .enumerate()
+                {
+                    let m = &reply["match"];
+                    if calls_a_tool(reply) && !waits_on_a_result(m) && m["sequenceIndex"] != 0 {
+                        unbound.push(format!("{}/{} fixture {i}", p.source, s.name));
+                    }
+                }
+            }
+        }
+        assert!(
+            unbound.is_empty(),
+            "tool calls a turn's opening request can match, lacking `sequenceIndex: 0`: {unbound:#?}"
+        );
     }
 
     #[test]

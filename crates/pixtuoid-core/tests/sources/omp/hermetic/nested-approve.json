@@ -5,7 +5,19 @@
       "response": {"content": "<title>Hermetic</title>"}
     },
     {
-      "match": {"hasToolResult": false},
+      "match": {"userMessage": "<title-request>"},
+      "response": {"content": "<title/>"}
+    },
+    {
+      "match": {"systemMessage": "You head coding-agent session titles with a small card"},
+      "response": {"content": "<title>none</title>"}
+    },
+    {
+      "match": {"userMessage": "<composer-prediction>"},
+      "response": {"content": "NO_PREDICTION"}
+    },
+    {
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "eval", "arguments": {"i": "Reading the note from a cell", "language": "js", "code": "const read = await tool.bash({ command: \"cat NOTE.txt\" });\nprint(read);"}}]},
       "latency": 300
     },
