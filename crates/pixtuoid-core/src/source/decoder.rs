@@ -727,19 +727,20 @@ pub(crate) const SUBAGENT_ID: &str = "agent_id";
 
 /// An event a subagent fired, which names it in `agent_id` beside its root's
 /// `session_id` (`claude_code/fixtures/subagent-hermetic`,
-/// `codex/fixtures/subagent-hermetic`), decoded as the subagent's own session: `session` maps the
-/// wire's `agent_id` to that session's id, and a start it decodes to is
-/// parented on the root. An event naming no subagent declines (`Ok(None)`).
+/// `codex/fixtures/subagent-hermetic`), decoded as the subagent's own session:
+/// `child_session` maps the wire's `agent_id` to that session's id, and a start
+/// it decodes to is parented on the root. An event naming no subagent declines
+/// (`Ok(None)`).
 pub(crate) fn subagent_fired(
     hook: &Hook<'_>,
-    session: fn(&str) -> String,
+    child_session: fn(&str) -> String,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
     let Some(agent) = non_empty(hook.obj, SUBAGENT_ID) else {
         return Ok(None);
     };
     let desc = crate::source::registry::descriptor_for(hook.source);
     let mut own = hook.obj.clone();
-    own.insert(SESSION_ID.into(), Value::from(session(agent)));
+    own.insert(SESSION_ID.into(), Value::from(child_session(agent)));
     let mut evs = shared_hook_arms(&Hook { obj: &own, ..*hook }, desc)?
         .ok_or_else(|| refuse_unknown_event(hook))?;
     for e in &mut evs {
@@ -763,13 +764,13 @@ pub(crate) fn subagent_id<'a>(hook: &Hook<'a>) -> DecodeResult<&'a str> {
     })
 }
 
-/// A CC-shaped SubagentStart: the subagent's own session, which `session` maps
-/// the wire's `agent_id` to, started parented on the root.
+/// A CC-shaped SubagentStart: the subagent's own session, which `child_session`
+/// maps the wire's `agent_id` to, started parented on the root.
 pub(crate) fn subagent_start(
     hook: &Hook<'_>,
-    session: fn(&str) -> String,
+    child_session: fn(&str) -> String,
 ) -> DecodeResult<Vec<AgentEvent>> {
-    let child = session(subagent_id(hook)?);
+    let child = child_session(subagent_id(hook)?);
     let parent = hook.session()?;
     Ok(vec![AgentEvent::SessionStart {
         agent_id: AgentId::from_parts(hook.source, &child),
