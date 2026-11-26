@@ -9,7 +9,7 @@
       "response": { "content": "approved", "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
-      "match": { "userMessage": "{first_turn}", "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": {
         "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "cat NOTE.txt", "sandbox_permissions": "require_escalated", "justification": "Read the note?" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }

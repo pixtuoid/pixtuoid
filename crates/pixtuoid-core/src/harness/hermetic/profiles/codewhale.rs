@@ -132,14 +132,6 @@ model = "hermetic"
         },
     ],
     script_vars: &[],
-    // A turn's preparation appends the workspace's instructions, or an overview
-    // generated in their place, as a runtime event after the prompt, once they
-    // differ from the session's last: on its first turn
-    // (`crates/engine/src/core/engine/turn_loop/preparation.rs:41`,
-    // `crates/engine/src/core/engine.rs:10507-10541`,
-    // `crates/engine/src/project_context.rs:1263-1277`,
-    // `crates/engine/src/runtime_handoff.rs:506-507`).
-    turn_appends: Some("kind=\"project_instructions\""),
     not_yet: &[],
     event_name: event_field,
     not_yet_fields: &[],

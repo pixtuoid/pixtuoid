@@ -228,7 +228,6 @@ pub(crate) const PROFILE: Profile = Profile {
         },
     ],
     script_vars: &[],
-    turn_appends: None,
     not_yet: &[],
     event_name: event,
     not_yet_fields: &[],

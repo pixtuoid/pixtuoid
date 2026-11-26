@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "bash", "arguments": {"i": "Removing the note", "command": "rm NOTE.txt"}}]},
       "latency": 300
     },

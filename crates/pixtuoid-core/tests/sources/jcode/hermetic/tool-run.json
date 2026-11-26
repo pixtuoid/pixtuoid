@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": { "userMessage": "{first_turn}", "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": {
         "toolCalls": [ { "name": "read", "arguments": { "file_path": "NOTE.txt" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }

@@ -5,7 +5,7 @@
       "response": {"error": {"message": "hermetic model error", "type": "invalid_request_error"}, "status": 400}
     },
     {
-      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "read", "arguments": {"path": "NOTE.txt"}}]},
       "latency": 1500
     },
@@ -15,12 +15,12 @@
       "latency": 300
     },
     {
-      "match": {"userMessage": "{first_turn}", "toolResultContains": "\"status\":\"running\""},
+      "match": {"toolResultContains": "\"status\":\"running\""},
       "response": {"toolCalls": [{"name": "agent", "arguments": {"action": "wait", "until": "all"}}]},
       "latency": 1500
     },
     {
-      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "agent", "arguments": {"action": "start", "type": "explore", "prompt": "CHILD-TASK: read NOTE.txt and report its text."}}]},
       "latency": 300
     }

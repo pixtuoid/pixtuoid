@@ -17,7 +17,7 @@
       "response": {"content": "NO_PREDICTION"}
     },
     {
-      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "ask", "arguments": {"i": "Asking which file to read", "html": "<form><p>Which file should I read?</p><label><input type=\"radio\" name=\"file\" value=\"NOTE.txt\" checked> NOTE.txt</label><label><input type=\"radio\" name=\"file\" value=\"README.md\"> README.md</label></form>"}}]},
       "latency": 300
     },

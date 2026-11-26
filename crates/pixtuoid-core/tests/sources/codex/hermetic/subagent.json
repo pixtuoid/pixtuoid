@@ -6,7 +6,7 @@
       "latency": 300
     },
     {
-      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false },
+      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false, "sequenceIndex": 0 },
       "response": {
         "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "cat NOTE.txt" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }
@@ -24,7 +24,7 @@
       "latency": 3000
     },
     {
-      "match": { "userMessage": "{first_turn}", "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": {
         "toolCalls": [
           {

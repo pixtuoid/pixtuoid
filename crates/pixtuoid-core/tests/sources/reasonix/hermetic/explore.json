@@ -1,11 +1,11 @@
 {
   "fixtures": [
     {
-      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false },
+      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "path": "NOTE.txt" } } ] }
     },
     {
-      "match": { "userMessage": "{first_turn}", "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "explore", "arguments": { "task": "CHILD-TASK: read NOTE.txt and report its text." } } ] }
     },
     {

@@ -490,10 +490,6 @@ pub struct Profile {
     pub scenarios: &'static [Scenario],
     /// Placeholders the scenario scripts spell, each the platform's value.
     pub(crate) script_vars: &'static [(&'static str, PerOs<&'static str>)],
-    /// Text only the user message the CLI appends after a session's first
-    /// prompt carries, which [`Placeholder::FirstTurn`] expands to in place of
-    /// the prompt.
-    pub(crate) turn_appends: Option<&'static str>,
     /// Hooks its install forwards that no scenario expects yet. Shrink-only: a
     /// run that fires one is Stale (`verify::verify_source`).
     pub not_yet: &'static [&'static str],
@@ -572,18 +568,10 @@ impl Profile {
             .chain(self.homes.iter().copied())
     }
 
-    /// Every placeholder `scenario`'s script may spell, with its value on
+    /// Every placeholder this profile's scripts may spell, with its value on
     /// this platform: `workspace` as the CLI reports its cwd.
-    pub fn script_values(
-        &self,
-        scenario: &Scenario,
-        workspace: &str,
-    ) -> Vec<(&'static str, String)> {
+    pub fn script_values(&self, workspace: &str) -> Vec<(&'static str, String)> {
         [
-            (
-                Placeholder::FirstTurn.as_str(),
-                self.turn_appends.unwrap_or(scenario.prompt()).to_owned(),
-            ),
             (Placeholder::Workspace.as_str(), workspace.to_owned()),
             (
                 Placeholder::Note.as_str(),
@@ -1442,7 +1430,7 @@ mod tests {
                 }
             }
             let declared: BTreeSet<String> = p
-                .script_values(&p.scenarios[0], "")
+                .script_values("")
                 .into_iter()
                 .map(|(k, _)| k.to_owned())
                 .collect();
@@ -1515,10 +1503,8 @@ mod tests {
                 )
                 .expect("json");
                 for reply in script["fixtures"].as_array().expect("fixtures") {
-                    let after_a_result = reply["match"]["hasToolResult"] == true
-                        || reply["match"]["toolResultContains"].is_string();
                     assert!(
-                        !(after_a_result && calls_a_tool(reply)),
+                        !(waits_on_a_result(&reply["match"]) && calls_a_tool(reply)),
                         "{}: a reply to the gated call calls a tool again",
                         p.source
                     );
@@ -1538,6 +1524,15 @@ mod tests {
 
     fn calls_a_tool(reply: &Value) -> bool {
         served_calls(reply).next().is_some()
+    }
+
+    /// Whether a scripted reply's match waits on a tool result: aimock reads one
+    /// for `toolCallId` and `toolResultContains` (`@copilotkit/aimock`
+    /// `dist/router.js:271-280` at 1.48.0) and for `hasToolResult` (`:309-311`).
+    fn waits_on_a_result(m: &Value) -> bool {
+        m["toolCallId"].is_string()
+            || m["toolResultContains"].is_string()
+            || m["hasToolResult"] == true
     }
 
     #[test]
@@ -1710,23 +1705,17 @@ mod tests {
         }
     }
 
-    /// A tool call that can answer a turn's opening request answers any later
-    /// user message keyed on no more: a child's delivered result, a second
-    /// prompt, a hook's continuation. A dispatch that so took a delivery
-    /// dispatched until the budget killed the run, Blocked, where an unscripted
-    /// delivery is Script at once (opencode 2.3.0, #2331; 2.4.0, #1934;
-    /// codewhale 0.10.4, #2413). aimock matches `userMessage` in the request's
-    /// last user text (`@copilotkit/aimock` `dist/router.js:129-136`,
-    /// `:243-250` at 1.48.0), which each later user message replaces, so such a
-    /// reply keys on its turn there: [`Placeholder::FirstTurn`], a word the first
-    /// prompt lacks of the second, or the child's task marker. Under the tier's
-    /// strict `turnIndex` (`dist/router.js:325-330`), `turnIndex: 0` takes a
-    /// conversation's first request alone, which binds the first turn of a CLI
-    /// that resends its history, but for a child, whose own conversation opens
-    /// at 0 too.
+    /// A tool call a turn's opening request can match answers any later user
+    /// message it matches too: a child's delivered result, a second prompt, a
+    /// hook's continuation. A dispatch that so took a delivery dispatched until
+    /// the budget killed the run, Blocked, where an unscripted delivery is
+    /// Script at once (opencode 2.3.0, #2331; 2.4.0, #1934; codewhale 0.10.4,
+    /// #2413). `sequenceIndex: 0` serves a fixture once (`@copilotkit/aimock`
+    /// `dist/router.js:319-324`, counted as it is served, `dist/journal.js:305-313`,
+    /// at 1.48.0), and the tier starts an aimock for each run (`turn` in
+    /// `examples/hermetic.rs`), so each such call answers its own turn alone.
     #[test]
-    fn a_reply_a_turns_opening_request_can_match_keys_on_its_turn() {
-        const CHILD_TASK: &str = "CHILD-TASK";
+    fn every_tool_call_a_turns_opening_request_can_match_is_served_once() {
         let mut unbound = Vec::new();
         for p in PROFILES {
             for s in p.scenarios {
@@ -1734,28 +1723,14 @@ mod tests {
                     &std::fs::read_to_string(s.script(p.source)).expect("the script"),
                 )
                 .expect("json");
-                let replies = script["fixtures"].as_array().expect("fixtures");
-                let delegates = replies
+                for (i, reply) in script["fixtures"]
+                    .as_array()
+                    .expect("fixtures")
                     .iter()
-                    .flat_map(served_calls)
-                    .any(|call| call.to_string().contains(CHILD_TASK));
-                for (i, reply) in replies.iter().enumerate() {
+                    .enumerate()
+                {
                     let m = &reply["match"];
-                    let opening = m["toolResultContains"].is_null()
-                        && m["hasToolResult"] != true
-                        && m["toolCallId"].is_null();
-                    if !(opening && calls_a_tool(reply)) {
-                        continue;
-                    }
-                    let keyed = m["userMessage"].as_str().is_some_and(|key| {
-                        key == Placeholder::FirstTurn.as_str()
-                            || key == CHILD_TASK
-                            || (!key.is_empty()
-                                && !s.prompt().contains(key)
-                                && matches!(s.turn.second,
-                                    Some(Second::Prompt(next)) if next.contains(key)))
-                    }) || (m["turnIndex"] == 0 && !delegates);
-                    if !keyed {
+                    if calls_a_tool(reply) && !waits_on_a_result(m) && m["sequenceIndex"] != 0 {
                         unbound.push(format!("{}/{} fixture {i}", p.source, s.name));
                     }
                 }
@@ -1763,7 +1738,7 @@ mod tests {
         }
         assert!(
             unbound.is_empty(),
-            "tool calls a turn's opening request can match, keyed on no turn: {unbound:#?}"
+            "tool calls a turn's opening request can match, served more than once: {unbound:#?}"
         );
     }
 

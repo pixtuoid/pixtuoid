@@ -246,7 +246,6 @@ startup:
         },
     ],
     script_vars: &[],
-    turn_appends: None,
     not_yet: &["session_branch"],
     event_name: type_field,
     not_yet_fields: &[],

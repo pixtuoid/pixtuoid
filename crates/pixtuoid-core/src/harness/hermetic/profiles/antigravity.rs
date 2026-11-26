@@ -78,7 +78,6 @@ pub(crate) const PROFILE: Profile = Profile {
         },
     ],
     script_vars: &[],
-    turn_appends: None,
     not_yet: &[],
     event_name: shim_stamped_event,
     not_yet_fields: &[],

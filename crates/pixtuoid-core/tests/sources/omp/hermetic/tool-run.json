@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "read", "arguments": {"i": "Reading the note", "path": "NOTE.txt"}}]},
       "latency": 300
     },

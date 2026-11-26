@@ -2361,10 +2361,7 @@ mod run {
     ) -> std::io::Result<PathBuf> {
         let mut script: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(scenario.script(p.source))?)?;
-        expand_strings(
-            &mut script,
-            &p.script_values(scenario, &reported_cwd(workspace)),
-        );
+        expand_strings(&mut script, &p.script_values(&reported_cwd(workspace)));
         let out = into.join("script.json");
         std::fs::write(&out, serde_json::to_string_pretty(&script)?)?;
         Ok(out)

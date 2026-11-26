@@ -1,15 +1,11 @@
 {
   "fixtures": [
     {
-      "match": { "turnIndex": 0, "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "read", "arguments": { "path": "NOTE.txt" } } ] }
     },
     {
       "match": { "toolResultContains": "{note}" },
-      "response": { "content": "pong" }
-    },
-    {
-      "match": { "hasToolResult": false },
       "response": { "content": "pong" }
     }
   ]

@@ -17,7 +17,7 @@
       "response": {"content": "NO_PREDICTION"}
     },
     {
-      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "eval", "arguments": {"i": "Reading the note from a cell", "language": "js", "code": "const read = await tool.bash({ command: \"cat NOTE.txt\" });\nprint(read);"}}]},
       "latency": 300
     },

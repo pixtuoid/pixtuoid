@@ -46,9 +46,6 @@ pub const KEYCHAINS: &str = "Library/Keychains";
 pub enum Placeholder {
     /// A turn's prompt.
     Prompt,
-    /// What the last user message of a scenario's first model request
-    /// carries, whatever the CLI, which binds a script's reply to that turn.
-    FirstTurn,
     /// The session a second turn resumes: known only once the first turn ran.
     Session,
     /// The scripted model's port.
@@ -77,7 +74,6 @@ impl Placeholder {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Prompt => "{prompt}",
-            Self::FirstTurn => "{first_turn}",
             Self::Session => "{session}",
             Self::Port => "{port}",
             Self::Key => "{key}",

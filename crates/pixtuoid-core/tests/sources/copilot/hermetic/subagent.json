@@ -11,7 +11,7 @@
       "latency": 300
     },
     {
-      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false},
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "glob", "arguments": {"pattern": "NOTE.txt"}}]},
       "latency": 300
     },
@@ -21,7 +21,7 @@
       "latency": 300
     },
     {
-      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "task", "arguments": {"name": "reader", "description": "Read the note", "agent_type": "explore", "prompt": "CHILD-TASK: read NOTE.txt and report its text."}}]},
       "latency": 300
     }

@@ -377,7 +377,6 @@ trust_level = "trusted"
         },
     ],
     script_vars: &[],
-    turn_appends: None,
     not_yet: &[],
     event_name: hook_event_name,
     not_yet_fields: &[],

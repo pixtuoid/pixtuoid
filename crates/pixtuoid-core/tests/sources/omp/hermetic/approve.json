@@ -17,7 +17,7 @@
       "response": {"content": "NO_PREDICTION"}
     },
     {
-      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "bash", "arguments": {"i": "Reading the note", "command": "cat NOTE.txt"}}]},
       "latency": 300
     },

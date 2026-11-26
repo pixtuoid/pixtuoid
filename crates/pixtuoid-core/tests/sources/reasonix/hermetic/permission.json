@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": { "model": "guardian-model", "turnIndex": 0, "hasToolResult": false },
+      "match": { "model": "guardian-model", "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "path": "NOTE.txt" } } ] }
     },
     {
@@ -9,7 +9,7 @@
       "response": { "content": "{\"risk_level\":\"high\",\"user_authorization\":\"low\",\"outcome\":\"deny\",\"rationale\":\"deletes the note\"}" }
     },
     {
-      "match": { "model": "deepseek-v4-flash", "userMessage": "{first_turn}", "hasToolResult": false },
+      "match": { "model": "deepseek-v4-flash", "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "bash", "arguments": { "command": "rm NOTE.txt" } } ] }
     },
     {

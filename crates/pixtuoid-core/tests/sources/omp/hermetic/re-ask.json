@@ -17,7 +17,7 @@
       "response": {"content": "NO_PREDICTION"}
     },
     {
-      "match": {"userMessage": "{first_turn}", "hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "bash", "arguments": {"i": "Copying the note by patch", "command": "apply_patch <<'EOF'\n*** Begin Patch\n*** Add File: COPY.txt\n+{note}\n*** End Patch\nEOF"}}]},
       "latency": 300
     },

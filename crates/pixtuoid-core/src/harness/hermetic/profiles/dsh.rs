@@ -122,7 +122,6 @@ pub(crate) const PROFILE: Profile = Profile {
             windows: "pwsh",
         },
     )],
-    turn_appends: None,
     not_yet: &[],
     event_name: event,
     not_yet_fields: &[],
