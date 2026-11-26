@@ -664,7 +664,15 @@ pub(crate) fn shared_hook_arms(
             ),
         ]),
         // The JSONL rollout stays the system of record for Codex tool activity.
-        "UserPromptSubmit" => Ok(vec![start()]),
+        // Its `model` is the turn's (`codex-rs/core/src/hook_runtime.rs:723`),
+        // which an `ephemeral` thread, with no rollout, follows a switch by
+        // (`codex-rs/app-server-protocol/schema/typescript/v2/ThreadStartParams.ts:19`,
+        // both at rust-v0.172.0).
+        "UserPromptSubmit" => {
+            let mut evs = vec![start()];
+            evs.extend(hook_model(non_empty(obj, "model")));
+            Ok(evs)
+        }
         // Stop must NOT end the session: turns end many times per session.
         "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
@@ -1018,7 +1026,11 @@ mod tests {
     fn a_hook_s_model_is_a_hint_beside_a_transcript() {
         let long = "m".repeat(MAX_DECODED_FIELD_CHARS + 1);
         let capped = ellipsize(&long, MAX_DECODED_FIELD_CHARS);
-        for (event, key) in [("SessionStart", "model"), ("PostModelSwitch", "to_model")] {
+        for (event, key) in [
+            ("SessionStart", "model"),
+            ("PostModelSwitch", "to_model"),
+            ("UserPromptSubmit", "model"),
+        ] {
             for (source, hint) in [("claude-code", true), ("codex", true), ("kimi", false)] {
                 let models = |model: Option<&str>| {
                     let mut v = serde_json::json!({

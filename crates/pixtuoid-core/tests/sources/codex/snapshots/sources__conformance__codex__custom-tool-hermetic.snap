@@ -3,65 +3,68 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - TurnStart:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     turn:
-      Id: 01a21405-e239-79a3-be9a-b80b2c29f32c
+      Id: 01a215c6-e84a-7033-8518-08cf432a470a
 - ModelInfo:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     model: gpt-5.5
     effort: high
 - ToolUseStart:
-    agent_id: 14096337060267132696
-    tool_use_id: call_96zJ3HHVZovEFvRF
+    agent_id: 2997864650877903143
+    tool_use_id: call_6ZSIWd4_y5-A6Nfp
     detail:
       Generic:
         display: apply_patch
 - ToolUseEnd:
-    agent_id: 14096337060267132696
-    tool_use_id: call_96zJ3HHVZovEFvRF
+    agent_id: 2997864650877903143
+    tool_use_id: call_6ZSIWd4_y5-A6Nfp
 - Usage:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     fresh_tokens: 19
     reading_id: "19"
 - Usage:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     fresh_tokens: 19
     reading_id: "38"
 - TurnEnd:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     turn:
-      Id: 01a21405-e239-79a3-be9a-b80b2c29f32c
+      Id: 01a215c6-e84a-7033-8518-08cf432a470a
 - SessionStart:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     source: codex
-    session_id: 01a21405-e1ef-7e83-b04f-fb64ab35124a
+    session_id: 01a215c6-e818-7722-bfcc-0b584f2d97f0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelHint:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     model: gpt-5.5
 - SessionStart:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     source: codex
-    session_id: 01a21405-e1ef-7e83-b04f-fb64ab35124a
+    session_id: 01a215c6-e818-7722-bfcc-0b584f2d97f0
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
+- ModelHint:
+    agent_id: 2997864650877903143
+    model: gpt-5.5
 - Identity:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     source: codex
-    session_id: 01a21405-e1ef-7e83-b04f-fb64ab35124a
+    session_id: 01a215c6-e818-7722-bfcc-0b584f2d97f0
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUsePending:
-    agent_id: 14096337060267132696
-    tool_use_id: call_96zJ3HHVZovEFvRF
+    agent_id: 2997864650877903143
+    tool_use_id: call_6ZSIWd4_y5-A6Nfp
     tool_name: apply_patch
     turn:
-      Id: 01a21405-e239-79a3-be9a-b80b2c29f32c
+      Id: 01a215c6-e84a-7033-8518-08cf432a470a
 - UserActionResolved:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     by:
       Turn:
-        Id: 01a21405-e239-79a3-be9a-b80b2c29f32c
+        Id: 01a215c6-e84a-7033-8518-08cf432a470a
 - SessionEnd:
-    agent_id: 14096337060267132696
+    agent_id: 2997864650877903143
     as_child: false
