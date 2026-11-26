@@ -33,11 +33,12 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, Hyphen, SessionKey, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
@@ -125,8 +126,8 @@ pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
 /// (`crates/codegen/xai-grok-hooks/src/event.rs:358-361` at `xai-org/grok-build`
 /// `2bdd1d6a63`), whose `sessionId` is no `Option`.
 const ENVELOPE: Envelope = Envelope {
-    event: HOOK_EVENT_NAME,
-    session: SessionKey {
+    event_field: HOOK_EVENT_NAME,
+    session_field: SessionField {
         within: None,
         field: "sessionId",
     },

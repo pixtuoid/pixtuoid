@@ -5,11 +5,12 @@
 use std::path::PathBuf;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     DecodeResult, display_safe, label_prefix_for, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, Hyphen, SessionKey, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
     SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, ToolDetail};
@@ -51,8 +52,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 
 /// The envelope the shim builds from jcode's hook environment.
 const ENVELOPE: Envelope = Envelope {
-    event: "event",
-    session: SessionKey {
+    event_field: "event",
+    session_field: SessionField {
         within: None,
         field: "session_id",
     },

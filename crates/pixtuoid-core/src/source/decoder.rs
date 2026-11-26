@@ -8,7 +8,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::id::normalize_path_key;
-use crate::source::registry::{Envelope, Hook, HookDecoding, SessionKey};
+use crate::source::registry::{Envelope, HookDecoding, SessionField};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The JSONL line-decoder fn pointer: `(transcript_path, source, raw_line) ->
@@ -421,8 +421,8 @@ const SESSION_ID: &str = "session_id";
 
 /// The CC-shaped envelope the shared arms key on.
 pub(crate) const SHARED_ENVELOPE: Envelope = Envelope {
-    event: HOOK_EVENT_NAME,
-    session: SessionKey {
+    event_field: HOOK_EVENT_NAME,
+    session_field: SessionField {
         within: None,
         field: SESSION_ID,
     },
@@ -499,6 +499,50 @@ pub(crate) fn hook_object(v: &Value) -> DecodeResult<&crate::source::registry::H
         .ok_or_else(|| DecodeError::not_an_object("hook"))
 }
 
+/// A hook payload as a source's arms get it, its event already read.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy)]
+pub struct Hook<'a> {
+    pub(crate) obj: &'a crate::source::registry::HookObject,
+    /// The source its stamp names, which need not be a registry row's.
+    pub(crate) source: &'a str,
+    pub(crate) event: &'a str,
+    pub(crate) session_field: SessionField,
+}
+
+impl<'a> Hook<'a> {
+    /// `obj` as `source`'s payload, refused when `envelope` finds no event.
+    fn read(
+        obj: &'a crate::source::registry::HookObject,
+        source: &'a str,
+        envelope: Envelope,
+    ) -> DecodeResult<Self> {
+        let event = required_or_err(source, None, envelope.event_field, |k| {
+            required(source, "hook", k, |k| non_empty(obj, k))
+        })?;
+        Ok(Self {
+            obj,
+            source,
+            event,
+            session_field: envelope.session_field,
+        })
+    }
+
+    /// The session the event keys on, refused when missing or EMPTY: an empty
+    /// id keys no session. An arm whose subject is another session's (a
+    /// subagent's own) never reads it, so a wire that leaves it off there
+    /// costs nothing.
+    pub(crate) fn session(&self) -> DecodeResult<&'a str> {
+        let SessionField { within, field } = self.session_field;
+        required_or_err(self.source, Some(self.event), field, |k| {
+            required(self.source, self.event, k, |k| match within {
+                Some(holder) => non_empty(self.obj.get(holder)?.as_object()?, k),
+                None => non_empty(self.obj, k),
+            })
+        })
+    }
+}
+
 /// [`decode_hook_payload`] past its object gate.
 pub(crate) fn decode_hook_object(
     obj: &crate::source::registry::HookObject,
@@ -522,7 +566,7 @@ pub(crate) fn decode_hook_object(
         },
         None => shared_hook_arms(&hook, desc)?,
     };
-    decoded.ok_or_else(|| unlisted(&hook))
+    decoded.ok_or_else(|| unknown_event(&hook))
 }
 
 /// Where `decoding`'s payloads name their event and session: an unregistered
@@ -539,7 +583,7 @@ pub(crate) fn test_hook<'a>(source: &'a str, v: &'a Value) -> Hook<'a> {
 }
 
 /// The one report of an event no arm lists, so no arm refuses one unseen.
-fn unlisted(hook: &Hook<'_>) -> DecodeError {
+pub(crate) fn unknown_event(hook: &Hook<'_>) -> DecodeError {
     super::drift::unknown_event(hook.source, hook.event);
     DecodeError::unsupported(hook.source, hook.event)
 }
@@ -693,7 +737,7 @@ pub(crate) fn subagent_fired(
     let mut own = hook.obj.clone();
     own.insert(SESSION_ID.into(), Value::from(session(agent)));
     let mut evs =
-        shared_hook_arms(&Hook { obj: &own, ..*hook }, desc)?.ok_or_else(|| unlisted(hook))?;
+        shared_hook_arms(&Hook { obj: &own, ..*hook }, desc)?.ok_or_else(|| unknown_event(hook))?;
     for e in &mut evs {
         if let AgentEvent::SessionStart { parent_id, .. } = e {
             // Read for a start alone: no other arm names the root.
@@ -1278,16 +1322,17 @@ mod tests {
     /// that stamps `""` mints no slot whose source the gate cannot resolve.
     #[test]
     fn an_unstamped_hook_payload_decodes_to_nothing() {
+        let v = json!({
+            "hook_event_name": "SessionStart",
+            "session_id": "ses-abc",
+            "cwd": "/repo",
+        });
         for stamp in [None, Some("")] {
-            let mut v = json!({
-                "hook_event_name": "SessionStart",
-                "session_id": "ses-abc",
-                "cwd": "/repo",
-            });
-            if let Some(stamp) = stamp {
-                v[SOURCE_STAMP] = json!(stamp);
+            let evs = match stamp {
+                Some(stamp) => test_decode(stamp, &v),
+                None => decode_hook_payload(v.clone()),
             }
-            let evs = decode_hook_payload(v).expect("no decode error");
+            .expect("no decode error");
             assert!(evs.is_empty(), "{stamp:?}: {evs:?}");
         }
     }
@@ -2062,17 +2107,16 @@ mod tests {
     /// arms and bail.
     #[test]
     fn a_cursor_envelope_on_the_claude_code_channel_is_dropped_quietly() {
-        let mut envelope = json!({
+        let envelope = json!({
             "hook_event_name": "preToolUse",
             "session_id": "s1",
             "cursor_version": "2026.10.22-27dcf5f",
             "workspace_roots": ["/w"],
             "tool_name": "Read",
             "tool_use_id": "t1",
-            SOURCE_STAMP: crate::source::claude_code::SOURCE_NAME,
         });
         assert!(
-            decode_hook_payload(envelope.clone())
+            test_decode(crate::source::claude_code::SOURCE_NAME, &envelope)
                 .expect("must not error")
                 .is_empty(),
             "a claude-code-stamped cursor envelope is a duplicate of the cursor-stamped one"
@@ -2080,9 +2124,10 @@ mod tests {
 
         // The cursor-stamped copy is the one that must survive — dropping both
         // would erase cursor from the office entirely.
-        envelope[SOURCE_STAMP] = json!("cursor");
         assert!(
-            !decode_hook_payload(envelope).expect("Ok").is_empty(),
+            !test_decode(crate::source::cursor::SOURCE_NAME, &envelope)
+                .expect("Ok")
+                .is_empty(),
             "the stamped copy carries the arc"
         );
     }
@@ -2138,14 +2183,13 @@ mod tests {
     }
 
     /// `v` stamped as `source`'s, decoded, with what it logged.
-    fn stamped_decode(source: &str, mut v: Value) -> (DecodeResult<Vec<AgentEvent>>, String) {
-        v[SOURCE_STAMP] = json!(source);
+    fn stamped_decode(source: &str, v: &Value) -> (DecodeResult<Vec<AgentEvent>>, String) {
         let mut out = None;
-        let logs = crate::test_capture::capture_logs(|| out = Some(decode_hook_payload(v)));
+        let logs = crate::test_capture::capture_logs(|| out = Some(test_decode(source, v)));
         (out.expect("ran"), logs)
     }
 
-    /// The hook-decoding rows, which each table below must cover exactly.
+    /// The hook-decoding rows, which each test below covers exactly.
     fn hook_sources() -> std::collections::BTreeSet<&'static str> {
         crate::source::registry::REGISTRY
             .iter()
@@ -2237,7 +2281,7 @@ mod tests {
         let failed: Vec<_> = rows
             .iter()
             .filter_map(|(source, v, key)| {
-                let (decoded, logs) = stamped_decode(source, v.clone());
+                let (decoded, logs) = stamped_decode(source, v);
                 let refused =
                     matches!(decoded, Err(DecodeError::Missing { field, .. }) if field == *key);
                 let noted =
@@ -2258,7 +2302,7 @@ mod tests {
         let failed: Vec<_> = hook_sources()
             .into_iter()
             .filter_map(|source| {
-                let (decoded, logs) = stamped_decode(source, json!({}));
+                let (decoded, logs) = stamped_decode(source, &json!({}));
                 let refused = matches!(decoded, Err(DecodeError::Missing { context: None, .. }));
                 let noted = breadcrumbed(
                     &logs,
@@ -2276,77 +2320,71 @@ mod tests {
     /// An event no arm lists is refused and breadcrumbed, never decoded as
     /// a listed one's events.
     #[test]
-    fn every_hook_source_breadcrumbs_an_unlisted_event() {
+    fn every_hook_source_breadcrumbs_an_unknown_event() {
         use crate::source::drift::DriftKind;
         use crate::source::{
             antigravity, claude_code, codewhale, codex, cursor, dsh, grok, hermes, jcode, kimi,
             omp, opencode, reasonix,
         };
-        const UNLISTED: &str = "NoSuchEvent";
+        const UNKNOWN: &str = "NoSuchEvent";
         let rows = [
             (
                 claude_code::SOURCE_NAME,
-                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+                json!({"hook_event_name": UNKNOWN, "session_id": "s"}),
             ),
             (
                 codex::SOURCE_NAME,
-                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+                json!({"hook_event_name": UNKNOWN, "session_id": "s"}),
             ),
             (
                 codex::SOURCE_NAME,
-                json!({"hook_event_name": UNLISTED, "session_id": "s", "agent_id": "c", "turn_id": "t"}),
+                json!({"hook_event_name": UNKNOWN, "session_id": "s", "agent_id": "c", "turn_id": "t"}),
             ),
             (
                 kimi::SOURCE_NAME,
-                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+                json!({"hook_event_name": UNKNOWN, "session_id": "s"}),
             ),
             (
                 cursor::SOURCE_NAME,
-                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+                json!({"hook_event_name": UNKNOWN, "session_id": "s"}),
             ),
             (
                 grok::SOURCE_NAME,
-                json!({"hookEventName": UNLISTED, "sessionId": "s"}),
+                json!({"hookEventName": UNKNOWN, "sessionId": "s"}),
             ),
             (
                 codewhale::SOURCE_NAME,
-                json!({"event": UNLISTED, "session_id": "s", "cwd": "/r"}),
+                json!({"event": UNKNOWN, "session_id": "s", "cwd": "/r"}),
             ),
             (
                 hermes::SOURCE_NAME,
-                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+                json!({"hook_event_name": UNKNOWN, "session_id": "s"}),
             ),
             (
                 jcode::SOURCE_NAME,
-                json!({"event": UNLISTED, "session_id": "s"}),
+                json!({"event": UNKNOWN, "session_id": "s"}),
             ),
             (
                 reasonix::SOURCE_NAME,
-                json!({"event": UNLISTED, "sessionId": "s", "cwd": "/r"}),
+                json!({"event": UNKNOWN, "sessionId": "s", "cwd": "/r"}),
             ),
             (
                 antigravity::SOURCE_NAME,
-                json!({EVENT_STAMP: UNLISTED, "conversationId": "s"}),
+                json!({EVENT_STAMP: UNKNOWN, "conversationId": "s"}),
             ),
-            (
-                dsh::SOURCE_NAME,
-                json!({"type": UNLISTED, "sessionId": "s"}),
-            ),
-            (
-                omp::SOURCE_NAME,
-                json!({"type": UNLISTED, "sessionId": "s"}),
-            ),
+            (dsh::SOURCE_NAME, json!({"type": UNKNOWN, "sessionId": "s"})),
+            (omp::SOURCE_NAME, json!({"type": UNKNOWN, "sessionId": "s"})),
             (
                 opencode::SOURCE_NAME,
-                json!({"type": UNLISTED, "data": {"sessionID": "s"}}),
+                json!({"type": UNKNOWN, "data": {"sessionID": "s"}}),
             ),
         ];
         let failed: Vec<_> = rows
             .iter()
             .filter_map(|(source, v)| {
-                let (decoded, logs) = stamped_decode(source, v.clone());
-                let refused = matches!(&decoded, Err(DecodeError::Unsupported { event, .. }) if event == UNLISTED);
-                let noted = breadcrumbed(&logs, source, DriftKind::UnknownEvent, Some(("name", UNLISTED)));
+                let (decoded, logs) = stamped_decode(source, v);
+                let refused = matches!(&decoded, Err(DecodeError::Unsupported { event, .. }) if event == UNKNOWN);
+                let noted = breadcrumbed(&logs, source, DriftKind::UnknownEvent, Some(("name", UNKNOWN)));
                 (!(refused && noted)).then(|| format!("{source}: {decoded:?}, breadcrumbed: {noted}"))
             })
             .collect();

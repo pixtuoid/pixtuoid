@@ -3,13 +3,14 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     EVENT_STAMP, extract_top_level_cwd, first_non_blank_str, generic_tool_display, non_empty,
     required,
 };
 use crate::source::registry::{
-    ChildEndInference, Corroboration, Envelope, FocusChannel, Hook, HookDecoding, Hyphen,
-    SessionKey, SourceCaps, SourceDescriptor, SourceKind, Transcript,
+    ChildEndInference, Corroboration, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField,
+    SourceCaps, SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys};
 
@@ -199,8 +200,8 @@ fn decode_ag_tool_call(
 /// agy's envelope: agy names no event in its payload, so the shim stamps the
 /// one the installer registered the command for.
 const ENVELOPE: Envelope = Envelope {
-    event: EVENT_STAMP,
-    session: SessionKey {
+    event_field: EVENT_STAMP,
+    session_field: SessionField {
         within: None,
         field: "conversationId",
     },

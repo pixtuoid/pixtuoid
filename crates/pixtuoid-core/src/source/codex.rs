@@ -13,12 +13,13 @@ use crate::source::decoder::DecodeResult as Result;
 use serde_json::{Map, Value};
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     accept_all_paths, generic_tool_display, hook_identity, hook_tool_id_key, hook_tool_name,
     make_tool_detail, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, Hook, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
+    ChildEndInference, FocusChannel, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
     SourceKind, ToolIdKey, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};

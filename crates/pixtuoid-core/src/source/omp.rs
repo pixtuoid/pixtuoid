@@ -22,12 +22,13 @@ use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     HeadVerdict, MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
     generic_tool_display, non_empty, required,
 };
 use crate::source::registry::{
-    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, Hyphen, SessionKey, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, CopyId, RequestKeys, Resolution, ToolDetail};
@@ -1066,8 +1067,8 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
 /// a `sessionFile`, when there is one, keys it instead
 /// ([`decode_omp_hook_payload`]).
 const ENVELOPE: Envelope = Envelope {
-    event: "type",
-    session: SessionKey {
+    event_field: "type",
+    session_field: SessionField {
         within: None,
         field: "sessionId",
     },

@@ -51,68 +51,27 @@ impl ToolIdKey {
 pub type HookObject = Map<String, Value>;
 
 /// Where a source's hook payloads name their event and session, the two fields
-/// the hook plane keys on. `decoder::decode_hook_object` reads the event, and
-/// `Hook::session` the session, each breadcrumbing its absence, so no arm
-/// spells either and none can leave one unreported.
+/// the hook plane keys on. `decoder::Hook::read` reads the event, and
+/// `decoder::Hook::session` the session, each breadcrumbing its absence, so no
+/// arm spells either and none can leave one unreported.
 #[derive(Debug, Clone, Copy)]
 pub struct Envelope {
     /// The top-level field naming the event.
-    pub(crate) event: &'static str,
-    pub(crate) session: SessionKey,
+    pub(crate) event_field: &'static str,
+    pub(crate) session_field: SessionField,
 }
 
 /// Where an envelope's session id sits.
 #[derive(Debug, Clone, Copy)]
-pub struct SessionKey {
+pub(crate) struct SessionField {
     /// The top-level object holding it, `None` for the envelope itself.
     pub(crate) within: Option<&'static str>,
-    /// The field, as a missing-field breadcrumb names it.
+    /// Its name, as a missing-field breadcrumb names it.
     pub(crate) field: &'static str,
 }
 
-/// A hook payload as a source's arms get it, its event already read.
-#[derive(Debug, Clone, Copy)]
-pub struct Hook<'a> {
-    pub(crate) obj: &'a HookObject,
-    /// The source its stamp names, which need not be a registry row's.
-    pub(crate) source: &'a str,
-    pub(crate) event: &'a str,
-    pub(crate) session_key: SessionKey,
-}
-
-impl<'a> Hook<'a> {
-    /// `obj` as `source`'s payload, refused when `envelope` finds no event.
-    pub(crate) fn read(obj: &'a HookObject, source: &'a str, envelope: Envelope) -> Result<Self> {
-        use crate::source::decoder::{non_empty, required, required_or_err};
-        let event = required_or_err(source, None, envelope.event, |k| {
-            required(source, "hook", k, |k| non_empty(obj, k))
-        })?;
-        Ok(Self {
-            obj,
-            source,
-            event,
-            session_key: envelope.session,
-        })
-    }
-
-    /// The session the event keys on, refused when missing or EMPTY: an empty
-    /// id would mint a phantom agent that never coalesces with its transcript.
-    /// An arm whose subject is another session's (a subagent's own) never
-    /// reads it, so a wire that leaves it off there costs nothing.
-    pub(crate) fn session(&self) -> Result<&'a str> {
-        use crate::source::decoder::{non_empty, required, required_or_err};
-        let SessionKey { within, field } = self.session_key;
-        required_or_err(self.source, Some(self.event), field, |k| {
-            required(self.source, self.event, k, |k| match within {
-                Some(holder) => non_empty(self.obj.get(holder)?.as_object()?, k),
-                None => non_empty(self.obj, k),
-            })
-        })
-    }
-}
-
 /// A source's own hook arms: `Ok(None)` for an event they have no arm for.
-pub type HookArms = fn(&Hook<'_>) -> Result<Option<Vec<AgentEvent>>>;
+pub type HookArms = fn(&crate::source::decoder::Hook<'_>) -> Result<Option<Vec<AgentEvent>>>;
 
 /// How a source's hook payloads decode, TYPED by what its arms' `Ok(None)`
 /// means, so a [`Self::ClaimsAll`] row has no shared-arm setting it would never
@@ -126,9 +85,9 @@ pub enum HookDecoding {
         tool_id_key: ToolIdKey,
         extend: HookArms,
     },
-    /// CLAIMS every event: an alien-envelope source whose arms handle
-    /// EVERYTHING and construct their own AgentIds; their `Ok(None)` is an
-    /// unknown event, never a fall-through to the shared arms.
+    /// CLAIMS every event: a source whose events the shared arms don't name,
+    /// whose arms handle EVERYTHING and construct their own AgentIds; their
+    /// `Ok(None)` is an unknown event, never a fall-through to the shared arms.
     ClaimsAll {
         envelope: Envelope,
         decode: HookArms,
@@ -1128,10 +1087,8 @@ mod tests {
         #[test]
         fn every_hook_and_presence_decoder_never_panics(v in arb_json()) {
             for d in REGISTRY {
-                if let (Some(_), Some(obj)) = (d.hook(), v.as_object()) {
-                    let mut stamped = obj.clone();
-                    stamped.insert(crate::source::decoder::SOURCE_STAMP.into(), d.name.into());
-                    let _ = crate::source::decoder::decode_hook_object(&stamped);
+                if d.hook().is_some() && v.is_object() {
+                    let _ = crate::source::decoder::test_decode(d.name, &v);
                 }
                 if let (Some(presence), Some(obj)) = (d.presence_decoder(), v.as_object()) {
                     let _ = presence(obj);

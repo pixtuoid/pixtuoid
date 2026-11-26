@@ -33,9 +33,10 @@ use crate::source::decoder::{DecodeResult as Result, non_empty, required, requir
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::registry::{
-    ChildEndInference, Corroboration, Envelope, FocusChannel, Hook, HookDecoding, Hyphen,
-    SessionKey, SourceCaps, SourceDescriptor, SourceKind,
+    ChildEndInference, Corroboration, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField,
+    SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
@@ -109,9 +110,9 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
 /// The envelope env-mode synthesizes, whose names the raw subagent hooks share
 /// (`docs/HOOKS.md:658-665` at `v0.10.4`).
 const ENVELOPE: Envelope = Envelope {
-    event: "event",
+    event_field: "event",
     // "Every event in one TUI session carries the same" one (`docs/HOOKS.md:287`).
-    session: SessionKey {
+    session_field: SessionField {
         within: None,
         field: "session_id",
     },

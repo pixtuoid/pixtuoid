@@ -11,8 +11,9 @@ use crate::source::decoder::{
 };
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, Hook, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
+    ChildEndInference, FocusChannel, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
     SourceKind, ToolIdKey, Transcript,
 };
 use crate::source::{AgentEvent, CopyId};

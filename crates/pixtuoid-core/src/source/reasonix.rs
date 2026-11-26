@@ -27,12 +27,13 @@ use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, Corroboration, Envelope, FocusChannel, Hook, HookDecoding, Hyphen,
-    SessionKey, SourceCaps, SourceDescriptor, SourceKind,
+    ChildEndInference, Corroboration, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField,
+    SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
@@ -124,8 +125,8 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
 
 /// Reasonix's envelope, verified against `internal/ext/hook/hook.go`.
 const ENVELOPE: Envelope = Envelope {
-    event: "event",
-    session: SessionKey {
+    event_field: "event",
+    session_field: SessionField {
         within: None,
         field: "sessionId",
     },

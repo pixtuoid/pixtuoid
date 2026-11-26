@@ -40,10 +40,11 @@ use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{SUBAGENTS_DIR, non_empty, required};
 use crate::source::registry::{
-    ChildEndInference, Corroboration, Envelope, FocusChannel, Hook, HookDecoding, HookObject,
-    Hyphen, SessionKey, SourceCaps, SourceDescriptor, SourceKind,
+    ChildEndInference, Corroboration, Envelope, FocusChannel, HookDecoding, HookObject, Hyphen,
+    SessionField, SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, ToolDetail};
 
@@ -86,10 +87,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 
 /// Cursor's hook envelope, per `cursor.com/docs/hooks`.
 const ENVELOPE: Envelope = Envelope {
-    event: "hook_event_name",
+    event_field: "hook_event_name",
     // Present and CONSISTENT across every CLI hook event, so it distinguishes
     // concurrent sessions in one project AND coalesces all of a session's events.
-    session: SessionKey {
+    session_field: SessionField {
         within: None,
         field: "session_id",
     },

@@ -28,11 +28,12 @@ use std::path::PathBuf;
 use serde_json::{Map, Value};
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, required,
 };
 use crate::source::registry::{
-    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, Hyphen, SessionKey, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
     SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
@@ -136,8 +137,8 @@ pub const DECODED_DATA_FIELDS: &[&str] = &[
 
 /// The plugin's envelope: an event's `type`, and its `data` copied field by field.
 const ENVELOPE: Envelope = Envelope {
-    event: "type",
-    session: SessionKey {
+    event_field: "type",
+    session_field: SessionField {
         within: Some("data"),
         field: "sessionID",
     },

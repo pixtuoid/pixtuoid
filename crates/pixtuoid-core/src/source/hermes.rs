@@ -20,12 +20,13 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail, non_empty,
     required,
 };
 use crate::source::registry::{
-    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, HookObject, Hyphen, SessionKey,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, HookObject, Hyphen, SessionField,
     SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys};
@@ -303,8 +304,8 @@ pub const DETAIL_KEYS: &[&str] = KEYS;
 
 /// The envelope the plugin writes.
 const ENVELOPE: Envelope = Envelope {
-    event: "hook_event_name",
-    session: SessionKey {
+    event_field: "hook_event_name",
+    session_field: SessionField {
         within: None,
         field: "session_id",
     },
