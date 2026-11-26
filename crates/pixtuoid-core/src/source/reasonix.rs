@@ -63,13 +63,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             resurrects_on_prompt: true,
             // A subagent's hooks carry its own session id, the parent's
             // suffixed with its role (`internal/ext/hook/runner.go:57-66` at
-            // v2.39.0), so the parent's slot emits NOTHING until the dispatch
+            // v2.61.0), so the parent's slot emits NOTHING until the dispatch
             // tool's PostToolUse.
             delegations_are_hook_silent: true,
             // A child's session fires no end, and is keyed by a call id its
             // parent's tool hooks don't carry
             // (`internal/assembly/boot/delegation.go:96-108`,
-            // `internal/ext/hook/hook.go:828-834` @ v2.60.0).
+            // `internal/ext/hook/hook.go:828-834` @ v2.61.0).
             child_end_inference: ChildEndInference::AnyTaskEnd,
             child_hooks_unnamed: false,
             brackets_turns: false,
@@ -124,7 +124,7 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
     (own, own.split_once(SUBAGENT_ROLE).map(|(root, _)| root))
 }
 
-/// Reasonix's envelope, `internal/ext/hook/hook.go:828-834`'s `Payload` @ v2.60.0.
+/// Reasonix's envelope, the module doc's `Payload`.
 const ENVELOPE: Envelope = Envelope {
     event_field: "event",
     session_field: SessionField {
@@ -187,7 +187,7 @@ pub(crate) fn decode_rx_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
         "PostToolUse" => {
             let mut events = vec![register()];
             // It names its call's tool, on a failure too
-            // (`internal/ext/hook/runner.go:175-205` @ v2.60.0), and a
+            // (`internal/ext/hook/runner.go:175-205` @ v2.61.0), and a
             // dispatch's return is its child's end: re-stating the Task makes
             // this End close one, whatever the parent started since.
             let tool = required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str());
@@ -210,8 +210,8 @@ pub(crate) fn decode_rx_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
         "Stop" => vec![AgentEvent::turn_end(agent_id)],
         "Notification" => {
             // Every producer waits on the user: the approval gate, a question,
-            // Auto Guard (`internal/session/control/approval_orchestration.go:311`,
-            // `:621`, `recovery.go:341`).
+            // Auto Guard (`internal/session/control/approval_orchestration.go:328`,
+            // `:640`, `recovery.go:355` @ v2.61.0).
             let msg = obj.get("message").and_then(|s| s.as_str());
             vec![
                 register(),

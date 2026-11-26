@@ -47,7 +47,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // on a clean quit (`dsh/fixtures/tool-run-hermetic`). SIGKILL fires
             // nothing, and an uncaught crash exits through `installFailLoud`,
             // whose only teardown is the terminal owner's `release`
-            // (`packages/boot/app-boot/src/index.ts:845-884` at `dsh-v0.2.1-rc.2`):
+            // (`packages/boot/app-boot/src/index.ts:860-899` at `dsh-v0.2.2-rc.5`):
             // both fall to `HookPidWatch` via the stamped pid.
             has_exit_signal: true,
             // Sessions are persistent; a `--resume` boots a NEW dsh whose
@@ -56,16 +56,16 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // SessionStart arm's ordinary re-registration, not this flag.
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
-            // The dispatch returns the child's id at launch, and the child's
-            // own `session_end` ends it (`packages/subagent/tool-subagent/src/index.ts:215`
-            // at `dsh-v0.2.1-rc.2`; the delegation capture).
+            // The dispatch returns at launch (`packages/subagent/tool-subagent/src/index.ts:210`
+            // at `dsh-v0.2.2-rc.5`), and the child's own `session_end` ends it
+            // (`dsh/fixtures/subagent-hermetic`).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
             // A Ctrl-C'd turn's `turn/end` is written only as the `agents`
-            // service unloads (`packages/core/agent-loop/src/index.ts:544-580`
-            // at `dsh-v0.2.1-rc.2`). Our plugin consumes that service, and a
+            // service unloads (`packages/core/agent-loop/src/index.ts:494-538`
+            // at `dsh-v0.2.2-rc.5`). Our plugin consumes that service, and a
             // consumer unloads before its provider
-            // (`packages/session/session-persistence-jsonl/src/index.ts:1814-1817`,
+            // (`packages/session/session-persistence-jsonl/src/index.ts:1817-1819`,
             // same tag), so the plugin never sees that end.
             brackets_turns: false,
         },
@@ -251,7 +251,7 @@ pub(crate) fn decode_dsh_payload(
                 },
                 // rejected | cancelled | unavailable
                 // (`packages/interaction/user-approval/src/types.ts:29-32` at
-                // `dsh-v0.2.1-rc.2`): the call never runs.
+                // `dsh-v0.2.2-rc.5`): the call never runs.
                 (false, tool_use_id) => AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id,

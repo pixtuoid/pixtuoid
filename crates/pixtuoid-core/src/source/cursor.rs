@@ -89,9 +89,6 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// Cursor's hook envelope, per `cursor.com/docs/hooks`.
 const ENVELOPE: Envelope = Envelope {
     event_field: "hook_event_name",
-    // Present and CONSISTENT across every CLI hook event (`cursor/fixtures/tool-run`),
-    // so it distinguishes concurrent sessions in one project AND coalesces all of
-    // a session's events.
     session_field: SessionField {
         within: None,
         field: "session_id",
@@ -177,8 +174,8 @@ pub(crate) fn decode_cursor_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
             .collect(),
         // Claims, unlike the shared `Stop`: a child's loop ends on `subagentStop`, and
         // `stop` blocks its loop for a follow-up reply, so none lands past a `Task` post
-        // (cursor-agent 2026.11.11-043ef28: `index.js` `case"stop"` replies `followupMessage`;
-        // `9448.index.js` `shouldSkipHookDueToLoopLimit` pairs `stop` with `subagentStop`).
+        // (cursor-agent 2026.11.22-e9042b2's `9622.index.js`: `case"stop"` replies
+        // `followupMessage`, and `shouldSkipHookDueToLoopLimit` pairs `stop` with `subagentStop`).
         "stop" => vec![identity(), AgentEvent::turn_end(agent_id)],
         "sessionEnd" => vec![AgentEvent::SessionEnd {
             agent_id,

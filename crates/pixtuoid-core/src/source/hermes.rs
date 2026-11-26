@@ -51,12 +51,12 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         caps: SourceCaps {
             // `on_session_finalize` when the gateway finalizes a session, else the
             // gateway's death. NOT `on_session_end`, which despite the name is a
-            // TURN boundary (`website/docs/user-guide/features/hooks.md:471-472`
-            // at v0.22.5).
+            // TURN boundary (`website/docs/user-guide/features/hooks.md:476-477`
+            // at v0.23.3).
             has_exit_signal: true,
             resurrects_on_prompt: false,
             // The plugin forwards neither `subagent_start` nor `subagent_stop`,
-            // the hooks naming a child's parent (`hooks.md:478-479`), so
+            // the hooks naming a child's parent (`hooks.md:484-485` at v0.23.3), so
             // sessions render flat.
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
@@ -333,7 +333,7 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
     let identity =
         || AgentEvent::identity(agent_id, SOURCE_NAME, session_id, cwd.map(PathBuf::from));
     // A call's start, its approval wait and its end each carry it
-    // (`_CallIds` at `model_tools.py:643`, `tools/approval_context.py:67` at v0.22.5),
+    // (`_CallIds` at `model_tools.py:668`, `tools/approval_context.py:67` at v0.23.3),
     // so a wait names the call whose end clears it.
     let tool_use_id = || field(obj, "tool_call_id").map(String::from);
 
@@ -364,7 +364,8 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
                 tool_use_id: tool_use_id(),
             },
         ],
-        // The gate's WHY rides `description` (`website/docs/user-guide/features/hooks.md:484`).
+        // The gate's WHY rides `description` (`website/docs/user-guide/features/hooks.md:490`
+        // at v0.23.3).
         PRE_APPROVAL_REQUEST => {
             let reason = field(obj, "description")
                 .map(|d| ellipsize(d, MAX_DECODED_FIELD_CHARS))
@@ -382,17 +383,17 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
             ]
         }
         // THE session end, as `on_session_end` is not: `finalize_session` closes the
-        // Relay conversation under the same `session_id` (`hermes_cli/lifecycle.py:81-93`).
-        // The gateway fires it when a session's last viewer closes it
+        // Relay conversation under the same `session_id` (`hermes_cli/lifecycle.py:99-111`
+        // at v0.23.3). The gateway fires it when a session's last viewer closes it
         // (`gateway/session_viewer_close.py:1-7`) or it stops mid-turn
-        // (`gateway/run_shutdown.py:1173-1180`); a one-shot session idle at the stop
-        // gets none, and ends with the gateway's pid.
+        // (`gateway/run_shutdown.py:1166-1173`, both at v0.23.3); a one-shot
+        // session idle at the stop gets none, and ends with the gateway's pid.
         ON_SESSION_FINALIZE => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
         }],
         // A TURN boundary, not the session's end: it fires "at each turn
-        // finalization" (`website/docs/user-guide/features/hooks.md:471`). Mapping it
+        // finalization" (`website/docs/user-guide/features/hooks.md:476` at v0.23.3). Mapping it
         // to SessionEnd walked the agent out of the office at every turn.
         //
         // An ACTIVITY arm, so it takes that class's Identity with it: for a
@@ -402,8 +403,8 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
         ON_SESSION_END => vec![identity(), AgentEvent::turn_end(agent_id)],
         _ => return Ok(None),
     };
-    // Only the session events carry it (`website/docs/user-guide/features/hooks.md:470-471`),
-    // so an event without one must not clear it.
+    // Only the session events carry it (`website/docs/user-guide/features/hooks.md:474`,
+    // `:476` at v0.23.3), so an event without one must not clear it.
     evs.extend(AgentEvent::model_info(agent_id, field(obj, "model"), None));
     Ok(Some(evs))
 }

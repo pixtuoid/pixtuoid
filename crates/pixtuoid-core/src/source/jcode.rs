@@ -1,6 +1,6 @@
 //! Jcode hook-only source. The shim forwards selected environment fields, never tool inputs.
 //!
-//! Cites are `1jehuang/jcode` at `v0.99.1`.
+//! Cites are `1jehuang/jcode` at `v1.0.3`.
 
 use std::path::PathBuf;
 
@@ -40,10 +40,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
             // Its hooks name no turn, and each observer is a detached process
-            // (`crates/jcode-base/src/hooks.rs:346-376`), so no ordered stream.
+            // (`crates/jcode-base/src/hooks.rs:520-554`), so no ordered stream.
             brackets_turns: false,
         },
-        // A shared server owns many sessions (`crates/jcode-base/src/hooks.rs:94-97`),
+        // A shared server owns many sessions (`crates/jcode-base/src/hooks.rs:214-217`),
         // so its pid names none of them.
         focus: FocusChannel::Unsupported,
     },
@@ -84,7 +84,7 @@ pub(crate) fn decode_jcode_hook_payload(hook: &Hook<'_>) -> DecodeResult<Option<
             identity(),
             Some(AgentEvent::ToolUseStart {
                 agent_id,
-                // pre_tool names no call (`crates/jcode-base/src/hooks.rs:397-403`),
+                // pre_tool names no call (`crates/jcode-base/src/hooks.rs:579-585`),
                 // so no post_tool can pair with it.
                 tool_use_id: None,
                 detail: Some(ToolDetail::Generic {

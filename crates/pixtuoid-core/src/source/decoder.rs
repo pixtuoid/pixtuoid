@@ -352,9 +352,9 @@ pub(crate) fn test_decode(source: &str, v: &Value) -> DecodeResult<Vec<AgentEven
 /// sibling presence channel and carry no `hook_event_name` at all. grok scans
 /// `~/.claude/settings.json` AND `~/.cursor/hooks.json` BY DEFAULT
 /// (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:67-77` at
-/// `xai-org/grok-build` `2bdd1d6a63`) and fires the shim installed there with
-/// its OWN camelCase envelope, so a duplicate arrives tagged
-/// `claude-code`/`cursor` beside the grok-tagged one.
+/// `xai-org/grok-build` `2bdd1d6a63`, which `source/grok.rs` maps to its pin)
+/// and fires the shim installed there with its OWN camelCase envelope, so a
+/// duplicate arrives tagged `claude-code`/`cursor` beside the grok-tagged one.
 fn decodes_to_nothing(
     source: &str,
     obj: &serde_json::Map<String, Value>,
@@ -671,7 +671,7 @@ pub(crate) fn shared_hook_arms(
         // A failed call fires PostToolUseFailure in PostToolUse's place
         // (<https://code.claude.com/docs/en/hooks#posttoolusefailure>;
         // `packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:347-361`
-        // at `@moonshot-ai/kimi-code@2.7.3`).
+        // at `@moonshot-ai/kimi-code@2.8.0`).
         "PostToolUse" | "PostToolUseFailure" => {
             let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
             vec![

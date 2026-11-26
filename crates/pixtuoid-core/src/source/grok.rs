@@ -1,6 +1,10 @@
 //! Grok Build source (`grok`, xai-org/grok-build) — TRANSCRIPT-BEARING with a
 //! hook install target (the CC/Codex class: both transports). Upstream cites
-//! are `xai-org/grok-build` at `2bdd1d6a63`.
+//! are `xai-org/grok-build` at `2bdd1d6a63`, its last public sync, whose
+//! `xai-grok-shell` is 1.0.45 (`crates/codegen/xai-grok-shell/Cargo.toml:4`).
+//! No public commit maps to the 1.0.92 pin, whose `--version` names the
+//! unpublished `b06756fd6256` (`grok/fixtures/two-turn-hermetic/provenance.json`):
+//! where a 1.0.92 recording reaches a claim, it is the authority.
 //!
 //! - **Transcript**: `{grok_home}/sessions/<enc-cwd>/<session-id>/updates.jsonl`
 //!   is append-ONLY (`crates/codegen/xai-grok-shell/src/session/storage/jsonl/mod.rs:678`),
@@ -9,9 +13,10 @@
 //!   via temp+rename (`jsonl/mod.rs:610-614`, `:1742-1749`, `:1808`) — never tail them.
 //! - **Hooks**: JSON envelope on stdin with **camelCase field names and
 //!   snake_case event values** (`crates/codegen/xai-grok-hooks/src/event.rs:78-180`,
-//!   `:357-375`), hence the claims-all custom decoder below. The snake_case
-//!   copies of ten of those keys are additive, the camelCase ones authoritative
-//!   (`SNAKE_CASE_ALIASES`, `:377-389`). A long-running hook blocks the UI
+//!   `:357-375`), hence the claims-all custom decoder below. Nine of those keys
+//!   are also copied in snake_case, and `hook_event_name` carries CC's
+//!   PascalCase name; the camelCase keys stay authoritative (`:377-404`). A
+//!   long-running hook blocks the UI
 //!   (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:678`), so the
 //!   shim's `WRITE_TIMEOUT` bound matters here.
 //! - **Keying**: `sessionId` is the transcript's parent-DIR name (upstream joins
@@ -790,9 +795,9 @@ mod tests {
 
     /// Zero events is the SAME observable for a knowingly-ignored type and an
     /// unrecognized one, so the test above cannot tell them apart — this one
-    /// does, on the drift breadcrumb. `task_complete` is dispatched by upstream
-    /// on every background-task completion (`tools/notification_bridge.rs`),
-    /// and `drift::unknown_event` is undeduped on the hook plane, so leaving it
+    /// does, on the drift breadcrumb. `task_complete` fires on every
+    /// background-task completion (the notification arm's cite), and
+    /// `drift::unknown_event` is undeduped on the hook plane, so leaving it
     /// unmatched turns routine background work into a recurring "the wire
     /// changed" warning that `pixtuoid doctor` surfaces.
     #[test]

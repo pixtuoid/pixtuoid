@@ -57,7 +57,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_oc_hook_payload,
         }),
         caps: SourceCaps {
-            // A TUI quit ends nothing (`opencode/fixtures/tool-run-hermetic`): the
+            // A TUI quit ends nothing (`opencode/fixtures/cancel-hermetic`): the
             // session lives on in the server.
             has_exit_signal: false,
             // The next prompt's `session.execution.started` decodes to
@@ -66,15 +66,15 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A `subagent` child is parented by its first start's `parentID`, so
             // its events keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,
-            // A `subagent` call can return while its child runs on
-            // (`packages/core/src/tool/plugin/subagent.ts:229-243` at v2.0.32),
+            // A `subagent` call returns at launch, its child running on
+            // (`packages/core/src/tool/plugin/subagent.ts:216-217` at v2.4.1),
             // and a session ends only by `session.deleted`.
             child_end_inference: ChildEndInference::Durable,
             child_hooks_unnamed: false,
             brackets_turns: true,
         },
         // The plugin runs in the background server every TUI attaches to
-        // (`packages/client/src/service-contender.ts:19-20`), not in a TUI.
+        // (`packages/client/src/service-contender.ts:19-20` at v2.4.1), not in a TUI.
         focus: FocusChannel::ServerStamp,
     },
     #[cfg(feature = "native")]
@@ -167,7 +167,7 @@ pub(crate) fn decode_oc_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
     Ok(Some(match event {
         // A new prompt re-emits SessionStart, the event that walks a swept
         // session back in, mid-walkout too. Its own `data` is only `sessionID`
-        // (`packages/schema/src/session-event.ts:240` at v2.0.32), so the plugin
+        // (`packages/schema/src/session-event.ts:245` at v2.4.1), so the plugin
         // adds the session's record (`ctx.session.get`).
         EXECUTION_STARTED => {
             let mut out = session_start(hook, data, at)?;
@@ -179,8 +179,8 @@ pub(crate) fn decode_oc_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
             }
             out
         }
-        // `data` is only `sessionID` (`packages/schema/src/session-event.ts:178`,
-        // `Base`), so a child's end cannot be told from a root's here.
+        // `data` is only `sessionID` (`packages/schema/src/session-event.ts:182-188`
+        // at v2.4.1), so a child's end cannot be told from a root's here.
         SESSION_DELETED => vec![AgentEvent::SessionEnd {
             agent_id: session(hook)?.0,
             as_child: false,
@@ -274,8 +274,8 @@ fn ended(
 }
 
 /// The tool's `id` is the call id its `success`/`failed` pair on, and its input
-/// rides the later `session.tool.called` (`packages/schema/src/session-event.ts:469-482`,
-/// `:507-515` at v2.0.32), so the detail is the tool's name alone, or a Task.
+/// rides the later `session.tool.called` (`packages/schema/src/session-event.ts:485-498`,
+/// `:523-531` at v2.4.1), so the detail is the tool's name alone, or a Task.
 fn tool_started(
     hook: &Hook<'_>,
     data: &Map<String, Value>,

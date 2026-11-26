@@ -60,8 +60,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_cw_hook_payload,
         }),
         caps: SourceCaps {
-            // session_end fires on a clean TUI quit (`docs/HOOKS.md:243`) —
-            // best-effort counts.
+            // The module doc's exit profile — best-effort counts.
             has_exit_signal: true,
             // message_submit re-emits SessionStart, so a swept-but-live session
             // walks back in on the next prompt.

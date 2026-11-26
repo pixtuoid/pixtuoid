@@ -94,10 +94,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// their cascade.
 pub(crate) fn decode_kimi_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     match hook.event {
-        // A cancelled turn fires `Interrupt` in place of `Stop`
-        // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:422-424`
-        // at `@moonshot-ai/kimi-code@2.5.3`), a failed one `StopFailure`
-        // (`kimi/fixtures/model-error-hermetic`).
+        // A cancelled turn fires `Interrupt` and a failed one `StopFailure` in place
+        // of `Stop`
+        // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:423-429`
+        // at `@moonshot-ai/kimi-code@2.8.0`; `kimi/fixtures/model-error-hermetic`).
         "Stop" | "StopFailure" | "Interrupt" => {}
         _ => return Ok(None),
     }

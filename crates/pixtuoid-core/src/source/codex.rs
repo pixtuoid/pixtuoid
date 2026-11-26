@@ -135,8 +135,8 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
         "PermissionRequest" => call(CallHook::PermissionRequest),
         "Stop" => call(CallHook::Stop),
         // A child's other events name it in `agent_id` beside the root's
-        // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:282-285`,
-        // `core/src/hook_runtime.rs:1042-1061` at rust-v0.163.0).
+        // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:280-286`,
+        // `core/src/hook_runtime.rs:1089-1108` at rust-v0.172.0).
         _ => subagent_fired(hook, str::to_owned),
     }
 }
@@ -154,8 +154,8 @@ enum CallHook {
 /// The hooks around a call and `Stop`, on the subagent that fired one, else
 /// the root session. `PreToolUse`
 /// fires only for a tool with a pre-use payload, and `PostToolUse` only on a
-/// success whose tool has a post-use payload (`codex-rs/core/src/tools/registry.rs:1173`,
-/// `:141-148`, `:1025-1032` at rust-v0.171.0), so the rollout's call is the
+/// success whose tool has a post-use payload (`codex-rs/core/src/tools/registry.rs:1178`,
+/// `:142-149`, `:1030-1037` at rust-v0.172.0), so the rollout's call is the
 /// item, and its output the one end of a call no `PostToolUse` reports.
 fn decode_call_hook(hook: &Hook<'_>, kind: CallHook) -> Result<Vec<AgentEvent>> {
     let (obj, event) = (hook.obj, hook.event);
@@ -188,9 +188,9 @@ fn decode_call_hook(hook: &Hook<'_>, kind: CallHook) -> Result<Vec<AgentEvent>> 
             });
             [identity()].into_iter().chain(ran).collect()
         }
-        // The rollout never persists an approval (`codex-rs/rollout/src/policy.rs:195-200`
-        // at rust-v0.164.0), so this is its only signal. A `write_stdin`
-        // prompt names its own call (`core/src/tools/approvals.rs:156-187`),
+        // The rollout never persists an approval (`codex-rs/rollout/src/policy.rs:198-204`
+        // at rust-v0.172.0), so this is its only signal. A `write_stdin`
+        // prompt names its own call (`core/src/tools/approvals.rs:200-226`),
         // which no `PreToolUse` announces.
         CallHook::PermissionRequest => vec![
             identity(),
@@ -210,8 +210,8 @@ fn decode_call_hook(hook: &Hook<'_>, kind: CallHook) -> Result<Vec<AgentEvent>> 
             ),
         ],
         // Stop runs only with no follow-up pending, yet a blocking Stop hook
-        // continues the turn (`core/src/session/turn.rs:722-759` at
-        // rust-v0.164.0): it answers the turn's requests, and ends nothing.
+        // continues the turn (`core/src/session/turn.rs:852-894` at
+        // rust-v0.172.0): it answers the turn's requests, and ends nothing.
         CallHook::Stop => turn
             .map(|turn| AgentEvent::UserActionResolved {
                 agent_id,
