@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, make_tool_detail, non_empty,
-    required, required_or_err,
+    required,
 };
 
 use crate::AgentId;
@@ -97,51 +97,34 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// Workflow-tool fleet's subagents carry no `Agent` tool_use and no end marker,
 /// so without `SubagentStop` they hold desks until the stale sweep.
 pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
-    let (obj, event) = (hook.obj, hook.event);
-    if event != "SubagentStart" && event != "SubagentStop" {
-        return crate::source::decoder::subagent_fired(hook, subagent_session);
-    }
-    // A malformed SubagentStart/Stop errs naming its missing id: declined, the
-    // entry would refuse it as an unknown event.
-    let wire_agent_id = required_or_err(
-        SOURCE_NAME,
-        Some(event),
-        crate::source::decoder::SUBAGENT_ID,
-        |k| non_empty(obj, k),
-    )?;
-    let prefixed = subagent_session(wire_agent_id);
-    if event == "SubagentStart" {
-        let parent = hook.session()?;
-        let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-        Ok(Some(vec![AgentEvent::SessionStart {
-            agent_id: AgentId::from_parts(SOURCE_NAME, &prefixed),
-            source: SOURCE_NAME.to_string(),
-            session_id: prefixed,
-            cwd,
-            parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
-        }]))
-    } else {
-        // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
-        // authoritative key — exact parity with the watcher's own deriver.
-        let path_key = non_empty(obj, "agent_transcript_path")
-            .map(|p| cc_id_from_path(Path::new(&crate::id::normalize_path_key(p))))
-            .filter(|s| !s.is_empty());
-        if let Some(ref k) = path_key
-            && *k != prefixed
-        {
-            // Upstream scheme change: hook-FIRST Start registrations go phantom.
-            crate::source::drift::shape_drift(
-                SOURCE_NAME,
-                crate::source::drift::ShapeDrift::SubagentStem {
-                    stem: k,
-                    agent_id: &prefixed,
-                },
-            );
+    use crate::source::decoder::{subagent_fired, subagent_id, subagent_start};
+    match hook.event {
+        "SubagentStart" => subagent_start(hook, subagent_session).map(Some),
+        "SubagentStop" => {
+            let prefixed = subagent_session(subagent_id(hook)?);
+            // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
+            // authoritative key — exact parity with the watcher's own deriver.
+            let path_key = non_empty(hook.obj, "agent_transcript_path")
+                .map(|p| cc_id_from_path(Path::new(&crate::id::normalize_path_key(p))))
+                .filter(|s| !s.is_empty());
+            if let Some(ref k) = path_key
+                && *k != prefixed
+            {
+                // Upstream scheme change: hook-FIRST Start registrations go phantom.
+                crate::source::drift::shape_drift(
+                    SOURCE_NAME,
+                    crate::source::drift::ShapeDrift::SubagentStem {
+                        stem: k,
+                        agent_id: &prefixed,
+                    },
+                );
+            }
+            Ok(Some(vec![AgentEvent::SessionEnd {
+                agent_id: AgentId::from_parts(SOURCE_NAME, &path_key.unwrap_or(prefixed)),
+                as_child: true,
+            }]))
         }
-        Ok(Some(vec![AgentEvent::SessionEnd {
-            agent_id: AgentId::from_parts(SOURCE_NAME, &path_key.unwrap_or(prefixed)),
-            as_child: true,
-        }]))
+        _ => subagent_fired(hook, subagent_session),
     }
 }
 

@@ -750,6 +750,36 @@ pub(crate) fn subagent_fired(
     Ok(Some(evs))
 }
 
+/// The subagent a CC-shaped SubagentStart/Stop names in `agent_id`, refused when
+/// missing or empty: declined, the entry would refuse the event as unknown.
+pub(crate) fn subagent_id<'a>(hook: &Hook<'a>) -> DecodeResult<&'a str> {
+    required_or_err(hook.source, Some(hook.event), SUBAGENT_ID, |k| {
+        non_empty(hook.obj, k)
+    })
+}
+
+/// A CC-shaped SubagentStart: the subagent's own session, which `session` maps
+/// the wire's `agent_id` to, started parented on the root.
+pub(crate) fn subagent_start(
+    hook: &Hook<'_>,
+    session: fn(&str) -> String,
+) -> DecodeResult<Vec<AgentEvent>> {
+    let child = session(subagent_id(hook)?);
+    let parent = hook.session()?;
+    Ok(vec![AgentEvent::SessionStart {
+        agent_id: AgentId::from_parts(hook.source, &child),
+        source: hook.source.to_string(),
+        session_id: child,
+        cwd: hook
+            .obj
+            .get("cwd")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .into(),
+        parent_id: Some(AgentId::from_parts(hook.source, parent)),
+    }])
+}
+
 /// The dispatch tool's current NAME, renamed from `Task` in CC v2.1.63 with no
 /// announcement. `Workflow` (CC's fleet dispatcher) is DELIBERATELY not a second
 /// entry: its children fire no per-agent tool_use, so one months-long Task in

@@ -16,7 +16,7 @@ use crate::AgentId;
 use crate::source::decoder::Hook;
 use crate::source::decoder::{
     accept_all_paths, generic_tool_display, hook_identity, hook_tool_id_key, hook_tool_name,
-    make_tool_detail, non_empty, required, required_or_err,
+    make_tool_detail, non_empty, required,
 };
 use crate::source::registry::{
     ChildEndInference, FocusChannel, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
@@ -114,46 +114,22 @@ const TURN_ID: &str = "turn_id";
 /// SUBJECT to a child's AgentId; every other session event falls through to
 /// the shared arms, a child's under its own id.
 pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
-    let (obj, event) = (hook.obj, hook.event);
-    // A malformed SubagentStart/Stop errs naming its missing id: declined, the
-    // entry would refuse it as an unknown event.
-    let child = || {
-        required_or_err(
-            SOURCE_NAME,
-            Some(event),
-            crate::source::decoder::SUBAGENT_ID,
-            |k| non_empty(obj, k),
-        )
-        .map(str::to_owned)
-    };
+    use crate::source::decoder::{subagent_fired, subagent_id, subagent_start};
     let call = |kind| decode_call_hook(hook, kind).map(Some);
-    match event {
+    match hook.event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
         // `agent_id`, as `tests/sources/codex/fixtures/subagent-hermetic`
         // records). Keying the child on `agent_id` coalesces with that
         // rollout and joins the parent's scope tree (cascade / liveness /
         // readiness).
-        "SubagentStart" => {
-            let (parent, child) = (hook.session()?, child()?);
-            let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-            Ok(Some(vec![AgentEvent::SessionStart {
-                agent_id: AgentId::from_parts(SOURCE_NAME, &child),
-                source: SOURCE_NAME.to_string(),
-                session_id: child,
-                cwd,
-                parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
-            }]))
-        }
+        "SubagentStart" => subagent_start(hook, str::to_owned).map(Some),
         // End the CHILD promptly, else its rollout lingers to the 30-min
         // stale-sweep. Losing the race against the child's slot creation
         // leaves a harmless no-op plus that same fallback.
-        "SubagentStop" => {
-            let child = child()?;
-            Ok(Some(vec![AgentEvent::SessionEnd {
-                agent_id: AgentId::from_parts(SOURCE_NAME, &child),
-                as_child: true,
-            }]))
-        }
+        "SubagentStop" => Ok(Some(vec![AgentEvent::SessionEnd {
+            agent_id: AgentId::from_parts(SOURCE_NAME, subagent_id(hook)?),
+            as_child: true,
+        }])),
         "PreToolUse" => call(CallHook::PreToolUse),
         "PostToolUse" => call(CallHook::PostToolUse),
         "PermissionRequest" => call(CallHook::PermissionRequest),
@@ -161,7 +137,7 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
         // A child's other events name it in `agent_id` beside the root's
         // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:282-285`,
         // `core/src/hook_runtime.rs:1042-1061` at rust-v0.163.0).
-        _ => crate::source::decoder::subagent_fired(hook, str::to_owned),
+        _ => subagent_fired(hook, str::to_owned),
     }
 }
 
