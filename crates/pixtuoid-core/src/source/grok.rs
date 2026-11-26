@@ -136,10 +136,8 @@ const ENVELOPE: Envelope = Envelope {
 /// Decode one grok hook payload (already identified by
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
 ///
-/// `user_prompt_submit` maps to `SessionStart` too, beside its turn's start —
-/// it is the resurrect carrier, because grok's `session_end` is unreliable (a
-/// TUI quit fires none) so a stale-swept LIVE session must walk back in on its
-/// next prompt.
+/// `user_prompt_submit` maps to `SessionStart` too, beside its turn's start:
+/// it is the resurrect carrier `DESCRIPTOR`'s `resurrects_on_prompt` names.
 ///
 /// # Errors
 ///
@@ -171,8 +169,10 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
 
     Ok(Some(match event {
         "session_start" => {
-            // grok's payload ALSO carries a public `source` field ("new"/"load"
-            // — the start REASON, exactly CC's overload). Never read it:
+            // grok's payload ALSO carries a public `source` field, "new" or
+            // "load" (`crates/codegen/xai-grok-hooks/src/event.rs:413-414`,
+            // `crates/codegen/xai-grok-shell/src/agent/mvp_agent/agent_ops.rs:5075`
+            // at `2bdd1d6a63`): the start REASON, exactly CC's overload. Never read it:
             // attribution comes ONLY from `_pixtuoid_source`, else agents split
             // into un-reapable ghosts.
             let (agent_id, key) = session()?;

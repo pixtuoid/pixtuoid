@@ -530,10 +530,10 @@ impl<'a> Hook<'a> {
         })
     }
 
-    /// The root session the envelope names, refused when missing or EMPTY: an
-    /// empty id keys no session. An arm reads it only where it uses it, as its
-    /// key or a child's parent: a subagent's end names the child alone, so a
-    /// wire that leaves the root off there costs nothing.
+    /// The session the envelope names, refused when missing or EMPTY: an empty
+    /// id keys no session. An arm reads it only where it uses it, as its key or
+    /// a child's parent: a subagent's end names the child alone, so a wire that
+    /// leaves it off there costs nothing.
     pub(crate) fn session(&self) -> DecodeResult<&'a str> {
         let SessionField { within, field } = self.session_field;
         required_or_err(self.source, Some(self.event), field, |k| match within {
@@ -2210,7 +2210,9 @@ mod tests {
                 json!({"hook_event_name": "preToolUse"}),
                 "session_id",
             ),
-            // A real envelope always carries its cwd and workspace root.
+            // A real envelope always carries its cwd and workspace root:
+            // neither is an `Option` (`crates/codegen/xai-grok-hooks/src/event.rs:362-363`
+            // at `xai-org/grok-build` `2bdd1d6a63`).
             (
                 grok::SOURCE_NAME,
                 json!({

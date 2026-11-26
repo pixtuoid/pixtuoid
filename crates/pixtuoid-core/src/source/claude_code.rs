@@ -101,8 +101,8 @@ pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentE
     if event != "SubagentStart" && event != "SubagentStop" {
         return crate::source::decoder::subagent_fired(hook, subagent_session);
     }
-    // Registry contract: claim our two events FULLY (Err on malformed), never
-    // fall through — an empty id mints a phantom that never coalesces.
+    // A malformed SubagentStart/Stop errs naming its missing id: declined, the
+    // entry would refuse it as an unknown event.
     let wire_agent_id = required_or_err(
         SOURCE_NAME,
         Some(event),

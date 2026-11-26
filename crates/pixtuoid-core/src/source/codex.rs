@@ -115,9 +115,8 @@ const TURN_ID: &str = "turn_id";
 /// the shared arms, a child's under its own id.
 pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
-    // A malformed SubagentStart/Stop is an Err, not Ok(None): an empty
-    // `agent_id`, or a start's empty `session_id`, would mint a phantom that
-    // never coalesces with the real rollout.
+    // A malformed SubagentStart/Stop errs naming its missing id: declined, the
+    // entry would refuse it as an unknown event.
     let child = || {
         required_or_err(
             SOURCE_NAME,
@@ -130,7 +129,8 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
     let call = |kind| decode_call_hook(hook, kind).map(Some);
     match event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
-        // `agent_id`). Keying the child on `agent_id` coalesces with that
+        // `agent_id`, as `tests/sources/codex/fixtures/subagent-hermetic`
+        // records). Keying the child on `agent_id` coalesces with that
         // rollout and joins the parent's scope tree (cascade / liveness /
         // readiness).
         "SubagentStart" => {

@@ -3004,8 +3004,8 @@ mod tests {
     #[test]
     fn a_stamped_omp_payload_routes_to_this_decoder_through_the_registry() {
         // Red until the registry row carries `HookDecoding::ClaimsAll`: without
-        // it the payload falls through to the CC-shaped shared arms, which
-        // find no `hook_event_name` and refuse it.
+        // it the entry reads the payload on the shared CC envelope, finds no
+        // `hook_event_name` and refuses it.
         let evs = crate::source::decoder::decode_hook_payload(serde_json::json!({
             "_pixtuoid_source": "omp",
             "type": "session_start", "sessionFile": HOOK_ROOT,
