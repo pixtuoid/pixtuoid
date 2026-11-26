@@ -9,12 +9,12 @@
 //! {"type":"session.execution.started","data":{"sessionID":"ses_…","location":{"directory":"/repo"},"parentID":"ses_…","model":{"id":"…"}},"_pid":12345}
 //! ```
 //!
-//! The upstream facts the decode rests on, at opencode v2:
+//! The upstream facts the decode rests on, at opencode v2.4.1:
 //!
 //! - `sessionID` is on every session event and is the session's durable key,
 //!   so slots key on it.
 //! - A subagent is a child SESSION: the `subagent` tool creates it with
-//!   `parentID` (`packages/core/src/tool/plugin/subagent.ts:188-189`), so the
+//!   `parentID` (`packages/core/src/tool/plugin/subagent.ts:175-176`), so the
 //!   record its first start carries links it.
 //! - A session registers at its first turn's start, the one signal for it: the
 //!   plugin's subscription may not be live yet when opencode publishes the

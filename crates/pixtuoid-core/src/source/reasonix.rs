@@ -12,7 +12,7 @@
 //!
 //! camelCase fields, `event` discriminator (not `hook_event_name`), no
 //! transcript path, and no tool-call id on any event we register
-//! (`internal/ext/hook/hook.go:828-834` Payload @ v2.60.0).
+//! (`internal/ext/hook/hook.go:828-834` Payload @ v2.61.0).
 //! It DOES carry `sessionId` — every recorded payload does — so that is the
 //! AgentId key. Keying on the workspace instead would merge two sessions in ONE
 //! project into a single sprite (the Cursor lesson; `hermes.rs` states it too).

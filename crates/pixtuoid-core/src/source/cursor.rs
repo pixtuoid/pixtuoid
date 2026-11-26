@@ -10,8 +10,8 @@
 //! The envelope reuses CC's `hook_event_name` field NAME with **camelCase
 //! values**; `tool_name` is PascalCase and the TOP-LEVEL `cwd` is empty —
 //! `workspace_roots[0]` is the real workspace. Keyed on `session_id`, present
-//! and CONSISTENT across every CLI event, so concurrent sessions in one project
-//! stay distinct.
+//! and CONSISTENT across every CLI event (`cursor/fixtures/tool-run`), so
+//! concurrent sessions in one project stay distinct.
 //!
 //! - **cursor also runs Claude Code's hooks** (`~/.claude/settings.json` and the
 //!   project's, on by default: cursor.com/docs/reference/third-party-hooks), so a
