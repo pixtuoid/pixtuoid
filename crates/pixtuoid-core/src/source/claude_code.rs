@@ -978,9 +978,16 @@ mod tests {
         }
         for event in ["SubagentStart", "SubagentStop"] {
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
+            let decoded = test_decode(SOURCE_NAME, &empty_child);
             assert!(
-                test_decode(SOURCE_NAME, &empty_child).is_err(),
-                "{event} with empty agent_id must Err — a phantom child never coalesces"
+                matches!(
+                    decoded,
+                    Err(crate::source::decoder::DecodeError::Missing {
+                        field: crate::source::decoder::SUBAGENT_ID,
+                        ..
+                    })
+                ),
+                "{event} with empty agent_id must err naming it, got {decoded:?}"
             );
         }
     }
