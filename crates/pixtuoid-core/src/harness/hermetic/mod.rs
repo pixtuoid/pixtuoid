@@ -1545,6 +1545,23 @@ mod tests {
     }
 
     #[test]
+    fn a_match_waits_on_a_result_through_any_key_aimock_reads_one_for() {
+        for m in [
+            serde_json::json!({ "toolCallId": "call_1" }),
+            serde_json::json!({ "toolResultContains": "pong" }),
+            serde_json::json!({ "hasToolResult": true }),
+        ] {
+            assert!(waits_on_a_result(&m), "{m}");
+        }
+        for m in [
+            serde_json::json!({ "hasToolResult": false }),
+            serde_json::json!({}),
+        ] {
+            assert!(!waits_on_a_result(&m), "{m}");
+        }
+    }
+
+    #[test]
     fn a_reply_calls_a_tool_through_either_kind_of_call() {
         let reply = |response: Value| serde_json::json!({ "response": response });
         assert!(calls_a_tool(&reply(serde_json::json!({
@@ -1771,7 +1788,7 @@ mod tests {
         }
         assert!(
             unbound.is_empty(),
-            "tool calls a turn's opening request can match, served more than once: {unbound:#?}"
+            "tool calls a turn's opening request can match, lacking `sequenceIndex: 0`: {unbound:#?}"
         );
     }
 
