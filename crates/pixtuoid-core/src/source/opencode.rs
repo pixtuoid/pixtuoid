@@ -512,7 +512,12 @@ mod tests {
             );
         });
         assert!(
-            logs.contains("missing_field") && logs.contains(TURN),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("field", TURN)]
+            ),
             "{logs}"
         );
     }
@@ -549,7 +554,7 @@ mod tests {
                     "{ev}: {got:?}"
                 );
             });
-            assert!(!logs.contains("missing_field"), "{ev}: {logs}");
+            assert!(!logs.contains(crate::source::drift::TARGET), "{ev}: {logs}");
         }
     }
 

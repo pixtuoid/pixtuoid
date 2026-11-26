@@ -1472,7 +1472,12 @@ mod tests {
             assert!(d.is_task());
         });
         assert!(
-            renamed.contains("unknown_dispatch") && renamed.contains("DelegateZ"),
+            crate::source::drift::breadcrumbed(
+                &renamed,
+                "claude-code",
+                crate::source::drift::DriftKind::UnknownDispatch,
+                &[("tool", "DelegateZ")]
+            ),
             "a dispatch under an unrecognised name must leave the drift breadcrumb, got:\n{renamed}"
         );
         let known = capture_logs(|| {
@@ -1484,7 +1489,7 @@ mod tests {
             assert!(d.is_task());
         });
         assert!(
-            !known.contains("unknown_dispatch"),
+            !known.contains(crate::source::drift::TARGET),
             "the known dispatch name must stay breadcrumb-silent, got:\n{known}"
         );
     }
@@ -1502,14 +1507,14 @@ mod tests {
             );
         });
         assert!(
-            !cross_fire.contains("missing_field"),
+            !cross_fire.contains(crate::source::drift::TARGET),
             "the grok cross-fire drop must stay breadcrumb-silent, got:\n{cross_fire}"
         );
     }
 
     #[test]
     fn a_permission_request_naming_no_tool_leaves_a_drift_breadcrumb() {
-        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
+        use crate::source::drift::{DriftKind, TARGET, breadcrumbed};
         for (source, extra) in [
             ("claude-code", json!({})),
             ("codex", json!({"turn_id": "t"})),
@@ -1531,13 +1536,10 @@ mod tests {
                     assert!(!logs.contains(TARGET), "{source}: {logs}");
                     continue;
                 }
-                let line = format!(
-                    "{SOURCE_FIELD}={source} {KIND_FIELD}=\"{}\" event=PermissionRequest field=tool_name",
-                    <&str>::from(DriftKind::MissingField),
-                );
+                let fields = [("event", "PermissionRequest"), ("field", "tool_name")];
                 assert!(
-                    logs.contains(TARGET) && logs.contains(&line),
-                    "{line:?} in\n{logs}"
+                    breadcrumbed(&logs, source, DriftKind::MissingField, &fields),
+                    "{fields:?} in\n{logs}"
                 );
             }
         }

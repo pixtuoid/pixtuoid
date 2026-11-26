@@ -578,7 +578,12 @@ mod tests {
             let _ = decode_cc_line("/p/s.jsonl", SOURCE_NAME, line);
         });
         assert!(
-            out.contains(crate::source::drift::TARGET) && out.contains("assistant-v2"),
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::UnknownEvent,
+                &[("name", "assistant-v2")]
+            ),
             "a renamed turn type went unreported:\n{out}"
         );
     }
@@ -627,13 +632,14 @@ mod tests {
                 let _ = decode_cc_line("/p/s.jsonl", SOURCE_NAME, line);
             }
         });
-        assert!(
-            out.contains(crate::source::drift::TARGET) && out.contains("message"),
-            "a decoded type losing `message` must name the field it lost:\n{out}"
-        );
         for ty in DECODED_TYPES {
             assert!(
-                out.contains(ty),
+                crate::source::drift::breadcrumbed(
+                    &out,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::MissingField,
+                    &[("event", ty), ("field", MESSAGE)]
+                ),
                 "{ty} lost `message` and decoded to nothing, silently:\n{out}"
             );
         }
@@ -1013,7 +1019,7 @@ mod tests {
             "agent_transcript_path": "/p/parent/subagents/agent-abc123.jsonl"
         }));
         assert!(
-            !matched.contains("shape_drift"),
+            !matched.contains(crate::source::drift::TARGET),
             "an agreeing stem must stay silent, got:\n{matched}"
         );
         let drifted = capture(json!({
@@ -1023,7 +1029,12 @@ mod tests {
             "agent_transcript_path": "/p/parent/subagents/agent-zzz999.jsonl"
         }));
         assert!(
-            drifted.contains("shape_drift") && drifted.contains("agent-zzz999"),
+            crate::source::drift::breadcrumbed(
+                &drifted,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::ShapeDrift,
+                &[("stem", "\"agent-zzz999\"")]
+            ),
             "a disagreeing stem must fire the drift alarm, got:\n{drifted}"
         );
     }

@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn unknown_and_missing_contract_fields_fail_closed() {
-        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
+        use crate::source::drift::{DriftKind, breadcrumbed};
         for value in [json!({}), payload("unregistered", "session_fox_123_a")] {
             assert!(decode(&value).is_err(), "{value}");
         }
@@ -269,13 +269,10 @@ mod tests {
                 ),
                 "{value}: {err:?}"
             );
-            let line = format!(
-                "{SOURCE_FIELD}={SOURCE_NAME} {KIND_FIELD}=\"{}\" event={event} field={missing}",
-                <&str>::from(DriftKind::MissingField),
-            );
+            let fields = [("event", event), ("field", missing)];
             assert!(
-                logs.contains(TARGET) && logs.contains(&line),
-                "{line:?} in\n{logs}"
+                breadcrumbed(&logs, SOURCE_NAME, DriftKind::MissingField, &fields),
+                "{fields:?} in\n{logs}"
             );
         }
     }

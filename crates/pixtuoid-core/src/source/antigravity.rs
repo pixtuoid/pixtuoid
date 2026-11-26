@@ -430,7 +430,12 @@ mod tests {
             }
         });
         assert!(
-            logs.contains("unknown_event") && logs.contains("PLANNER_REPLY"),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::UnknownEvent,
+                &[("name", "PLANNER_REPLY")]
+            ),
             "a tool-call step under a renamed type must fire the drift breadcrumb, got:\n{logs}"
         );
 
@@ -439,7 +444,7 @@ mod tests {
             decode_ag_line("/x/t.jsonl", SOURCE_NAME, result_step);
         });
         assert!(
-            !quiet.contains("unknown_event"),
+            !quiet.contains(crate::source::drift::TARGET),
             "a tool_calls-less result step must NOT breadcrumb, got:\n{quiet}"
         );
     }
@@ -593,7 +598,12 @@ mod tests {
             );
         });
         assert!(
-            logs.contains("unknown_event") && logs.contains("PreInvocation"),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::UnknownEvent,
+                &[("name", "PreInvocation")]
+            ),
             "{logs}"
         );
     }

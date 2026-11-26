@@ -992,7 +992,7 @@ mod tests {
             assert!(unpaired.is_empty(), "{unpaired:?}");
         });
         assert!(
-            !logs.contains("missing_field"),
+            !logs.contains(crate::source::drift::TARGET),
             "an output that answers no call is codex's own shape, got:\n{logs}"
         );
         for call in [json!(null), json!("")] {
@@ -1004,7 +1004,12 @@ mod tests {
                 assert!(ev(line).is_empty());
             });
             assert!(
-                logs.contains("missing_field") && logs.contains("call_id"),
+                crate::source::drift::breadcrumbed(
+                    &logs,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::MissingField,
+                    &[("field", CALL_ID)]
+                ),
                 "a custom output owes its call, {call}: {logs}"
             );
         }
@@ -1016,7 +1021,7 @@ mod tests {
             ] if c == "call_x"));
         });
         assert!(
-            !logs.contains("missing_field"),
+            !logs.contains(crate::source::drift::TARGET),
             "a keyed custom output owes nothing: {logs}"
         );
     }

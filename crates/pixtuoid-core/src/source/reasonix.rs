@@ -292,7 +292,12 @@ mod tests {
             assert!(test_decode(SOURCE_NAME, &payload).is_err());
         });
         assert!(
-            logs.contains(crate::source::drift::TARGET),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("field", "sessionId")]
+            ),
             "an absent sessionId must breadcrumb; got {logs:?}"
         );
 
@@ -401,7 +406,15 @@ mod tests {
     fn a_post_tool_use_without_its_tool_name_breadcrumbs() {
         let post = |v: Value| crate::test_capture::capture_logs(|| drop(decode_all(v)));
         let bare = post(json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/r"}));
-        assert!(bare.contains(crate::source::drift::TARGET), "{bare:?}");
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &bare,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("field", "toolName")]
+            ),
+            "{bare:?}"
+        );
         let named = post(
             json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/r", "toolName": "bash"}),
         );

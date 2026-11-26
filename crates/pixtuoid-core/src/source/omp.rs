@@ -1900,12 +1900,16 @@ mod tests {
         let out = crate::test_capture::capture_logs(|| {
             assert!(decode(no_id).is_empty(), "un-keyable toolCall → no event");
         });
-        for needle in [crate::source::drift::TARGET, "missing_field", "toolCall"] {
-            assert!(
-                out.contains(needle),
-                "no id breadcrumb: missing {needle:?}\n{out}"
-            );
-        }
+        let fields = [("event", BLOCK_TOOL_CALL), ("field", "id")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "no id breadcrumb: {fields:?}\n{out}"
+        );
         let no_name = r#"{"type":"message","id":"m6","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t6","arguments":{}}],"timestamp":1}}"#;
         let out = crate::test_capture::capture_logs(|| match &decode(no_name)[..] {
             [
@@ -1920,12 +1924,16 @@ mod tests {
             }
             other => panic!("expected one ToolUseStart, got {other:?}"),
         });
-        for needle in [crate::source::drift::TARGET, "missing_field", "toolCall"] {
-            assert!(
-                out.contains(needle),
-                "no name breadcrumb: missing {needle:?}\n{out}"
-            );
-        }
+        let fields = [("event", BLOCK_TOOL_CALL), ("field", "name")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "no name breadcrumb: {fields:?}\n{out}"
+        );
     }
 
     #[test]
@@ -1934,12 +1942,16 @@ mod tests {
         let out = crate::test_capture::capture_logs(|| {
             assert!(decode(no_id).is_empty(), "un-keyable toolResult → no event");
         });
-        for needle in [crate::source::drift::TARGET, "missing_field", "toolResult"] {
-            assert!(
-                out.contains(needle),
-                "no toolResult breadcrumb: missing {needle:?}\n{out}"
-            );
-        }
+        let fields = [("event", ROLE_TOOL_RESULT), ("field", "toolCallId")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "no toolResult breadcrumb: {fields:?}\n{out}"
+        );
     }
 
     #[test]
@@ -2041,9 +2053,15 @@ mod tests {
             }
             other => panic!("expected one UserActionRequest, got {other:?}"),
         });
-        for needle in [crate::source::drift::TARGET, "missing_field", "toolName"] {
-            assert!(out.contains(needle), "missing {needle:?}\n{out}");
-        }
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("field", "toolName")]
+            ),
+            "{out}"
+        );
     }
 
     #[test]
@@ -2136,9 +2154,15 @@ mod tests {
             let out = crate::test_capture::capture_logs(|| {
                 assert!(decode(&callless).is_empty());
             });
-            for needle in [crate::source::drift::TARGET, "missing_field", "toolCallId"] {
-                assert!(out.contains(needle), "missing {needle:?}\n{out}");
-            }
+            assert!(
+                crate::source::drift::breadcrumbed(
+                    &out,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::MissingField,
+                    &[("field", "toolCallId")]
+                ),
+                "{out}"
+            );
         }
     }
 

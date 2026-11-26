@@ -177,13 +177,7 @@ mod tests {
             );
         });
         for &kind in <DriftKind as strum::VariantArray>::VARIANTS {
-            assert!(
-                out.contains(&format!(
-                    "{SOURCE_FIELD}=codex {KIND_FIELD}=\"{}\"",
-                    <&str>::from(kind)
-                )),
-                "{kind:?}:\n{out}"
-            );
+            assert!(breadcrumbed(&out, "codex", kind, &[]), "{kind:?}:\n{out}");
             assert_eq!(<&str>::from(kind).parse(), Ok(kind));
         }
         assert_eq!(

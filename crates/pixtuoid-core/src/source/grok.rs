@@ -789,7 +789,7 @@ mod tests {
                 assert!(decode_all(v).is_empty());
             });
             assert!(
-                !logs.contains("unknown_event"),
+                !logs.contains(crate::source::drift::TARGET),
                 "{known} is a KNOWN non-requires-action type — it must not breadcrumb, got:\n{logs}"
             );
         }
@@ -801,7 +801,12 @@ mod tests {
             assert!(decode_all(novel).is_empty());
         });
         assert!(
-            logs.contains("unknown_event") && logs.contains("notification:some_future_nudge"),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::UnknownEvent,
+                &[("name", "notification:some_future_nudge")]
+            ),
             "an unrecognized notificationType must still breadcrumb, got:\n{logs}"
         );
     }
@@ -874,8 +879,12 @@ mod tests {
     }
 
     fn missing(field: &str, logs: &str) -> bool {
-        logs.contains(<&str>::from(crate::source::drift::DriftKind::MissingField))
-            && logs.contains(field)
+        crate::source::drift::breadcrumbed(
+            logs,
+            SOURCE_NAME,
+            crate::source::drift::DriftKind::MissingField,
+            &[("field", field)],
+        )
     }
 
     #[test]
