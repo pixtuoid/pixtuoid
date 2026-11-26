@@ -630,7 +630,7 @@ pub(crate) fn shared_hook_arms(
             Ok(evs)
         }
         // A failed call fires PostToolUseFailure in PostToolUse's place
-        // (hooks.md, PostToolUseFailure;
+        // (<https://code.claude.com/docs/en/hooks#posttoolusefailure>;
         // `packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:347-361`
         // at `@moonshot-ai/kimi-code@2.7.3`).
         "PostToolUse" | "PostToolUseFailure" => {

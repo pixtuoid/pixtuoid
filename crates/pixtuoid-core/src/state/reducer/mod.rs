@@ -509,7 +509,7 @@ impl Reducer {
             ),
             AgentEvent::ModelHint { agent_id, model } => {
                 if let Some(slot) = scene.agents.get_mut(&agent_id)
-                    && !self.corr.model_info_seen.contains(&agent_id)
+                    && !self.corr.model_set_by_info.contains(&agent_id)
                 {
                     slot.model = Some(Arc::from(model));
                 }
@@ -1041,7 +1041,7 @@ impl Reducer {
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             if let Some(m) = obs.model {
                 // Even when it equals the hint it confirms.
-                self.corr.model_info_seen.insert(agent_id);
+                self.corr.model_set_by_info.insert(agent_id);
                 if slot.model.as_deref() != Some(m) {
                     slot.model = Some(Arc::from(m));
                 }
@@ -1618,7 +1618,7 @@ impl Reducer {
             // it keeps the records behind them.
             self.corr.counted_readings.forget(&id);
             self.corr.calls.forget(&id);
-            self.corr.model_info_seen.remove(&id);
+            self.corr.model_set_by_info.remove(&id);
             self.corr.reading_holders.release(id, now);
             self.corr.call_holders.release(id, now);
             self.corr.note_removed(id, now);

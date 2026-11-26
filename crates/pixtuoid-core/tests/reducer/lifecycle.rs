@@ -1264,7 +1264,20 @@ fn a_model_hint_yields_only_to_a_model_info() {
     let (opus, sonnet) = (hint("claude-opus-5-5"), hint("claude-sonnet-5"));
     let (fable, haiku) = (info("claude-fable-5"), info("claude-haiku-5"));
     let confirmed = info("claude-opus-5-5");
+    let effort_only = (
+        AgentEvent::ModelInfo {
+            agent_id: id,
+            model: None,
+            effort: Some("high".into()),
+        },
+        Transport::Jsonl,
+    );
     let rows = [
+        (
+            "a hint replaces a hint past an effort that names no model",
+            vec![&opus, &effort_only, &sonnet],
+            "claude-sonnet-5",
+        ),
         (
             "a hint fills an unset model",
             vec![&opus],
