@@ -126,7 +126,8 @@ pub(crate) const PROFILE: Profile = Profile {
         // `CLAUDE_CODE_SKIP_PROMPT_HISTORY` does in any mode what `-p`'s
         // `--no-session-persistence` does
         // (<https://code.claude.com/docs/en/cli-reference>), and the TUI's
-        // `SessionStart` names its model where a `-p` one names none.
+        // `SessionStart` names its model where a `-p` one names none
+        // (`permission-hermetic`'s `SessionStart` against `tool-run-hermetic`'s).
         Scenario {
             name: "model-switch",
             shape: Shape::ModelSwitch,

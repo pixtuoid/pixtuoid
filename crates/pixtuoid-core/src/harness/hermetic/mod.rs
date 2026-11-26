@@ -352,7 +352,7 @@ impl Shape {
 pub enum Surface {
     /// The profile's headless invocation, with the prompt in its argv.
     Headless,
-    /// Its interactive TUI under a pty, for a turn only the TUI asks.
+    /// Its interactive TUI under a pty, for a run only the TUI records.
     Tui {
         /// The CLI's interactive facts.
         row: &'static tui::Tui,
@@ -391,7 +391,8 @@ pub struct Turn {
     /// turn: project config this scenario alone runs under.
     pub(crate) seed: Option<&'static str>,
     /// Whether its CLI saves the transcript its source reads: `false` where
-    /// its args turn that off, so its capture holds hook payloads alone.
+    /// its args or its seed turn that off, so its capture holds hook payloads
+    /// alone.
     pub saves_transcript: bool,
 }
 
