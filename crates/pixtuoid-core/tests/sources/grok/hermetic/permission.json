@@ -5,7 +5,7 @@
       "response": { "content": "Hermetic" }
     },
     {
-      "match": { "model": "grok-4.6", "hasToolResult": false },
+      "match": { "model": "grok-4.6", "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "run_terminal_command", "arguments": { "command": "rm NOTE.txt", "description": "Delete the note" } } ] }
     }
   ]

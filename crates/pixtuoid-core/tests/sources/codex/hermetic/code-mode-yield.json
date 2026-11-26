@@ -12,7 +12,7 @@
       }
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": {
         "toolCalls": [],
         "customToolCalls": [

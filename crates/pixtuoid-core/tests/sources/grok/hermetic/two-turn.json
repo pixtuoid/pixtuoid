@@ -5,7 +5,7 @@
       "response": { "content": "Hermetic" }
     },
     {
-      "match": { "model": "grok-4.6", "userMessage": "Second turn", "hasToolResult": false },
+      "match": { "model": "grok-4.6", "userMessage": "Second turn", "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "target_file": "NOTE.txt" } } ] }
     },
     {
@@ -13,7 +13,7 @@
       "response": { "content": "done" }
     },
     {
-      "match": { "model": "grok-4.6", "hasToolResult": false },
+      "match": { "model": "grok-4.6", "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "target_file": "NOTE.txt" } } ] }
     },
     {

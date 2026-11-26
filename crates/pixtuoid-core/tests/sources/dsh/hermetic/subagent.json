@@ -5,7 +5,7 @@
       "response": { "content": "Hermetic" }
     },
     {
-      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false },
+      "match": { "userMessage": "CHILD-TASK", "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "reasoning": "Read the note.", "toolCalls": [ { "name": "read", "arguments": { "file_path": "NOTE.txt" } } ], "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
@@ -13,7 +13,7 @@
       "response": { "content": "The child read pong.", "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "reasoning": "Hand it to a child.", "toolCalls": [ { "name": "subagent", "arguments": { "description": "Read the note", "prompt": "CHILD-TASK: read NOTE.txt and report its text." } } ], "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {

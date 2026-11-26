@@ -1,7 +1,7 @@
 {
   "fixtures": [
     {
-      "match": { "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": { "toolCalls": [ { "name": "read_file", "arguments": { "path": "NOTE.txt" } } ] }
     },
     {

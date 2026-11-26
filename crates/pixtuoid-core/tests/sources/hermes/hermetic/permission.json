@@ -6,7 +6,7 @@
       "latency": 300
     },
     {
-      "match": {"hasToolResult": false},
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
       "response": {"toolCalls": [{"name": "terminal", "arguments": {"command": "rm -rf NOTE.txt"}}]},
       "latency": 300
     },

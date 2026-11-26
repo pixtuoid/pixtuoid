@@ -5,7 +5,7 @@
       "response": { "content": "Hermetic", "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
-      "match": { "userMessage": "Second turn", "hasToolResult": false },
+      "match": { "userMessage": "Second turn", "hasToolResult": false, "sequenceIndex": 0 },
       "response": {
         "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "cat NOTE.txt" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }
@@ -16,7 +16,7 @@
       "response": { "content": "done", "usage": { "input_tokens": 12, "output_tokens": 7 } }
     },
     {
-      "match": { "hasToolResult": false },
+      "match": { "hasToolResult": false, "sequenceIndex": 0 },
       "response": {
         "toolCalls": [ { "name": "exec_command", "arguments": { "cmd": "cat NOTE.txt" } } ],
         "usage": { "input_tokens": 12, "output_tokens": 7 }
