@@ -3,71 +3,71 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - ToolUseStart:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     tool_use_id: ag-2
     detail:
       Generic:
         display: "read_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseStart:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     tool_use_id: ag-3
     detail:
       Generic:
         display: "read_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     tool_use_id: ag-2
 - ToolUseEnd:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     tool_use_id: ag-3
 - SessionStart:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     source: antigravity
-    session_id: 911c4b20-a6e7-4f01-ac36-9b7133fb9bd2
+    session_id: 55f93362-bf45-4d0d-a0b9-a4583279a46b
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - Identity:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     source: antigravity
-    session_id: 911c4b20-a6e7-4f01-ac36-9b7133fb9bd2
+    session_id: 55f93362-bf45-4d0d-a0b9-a4583279a46b
     cwd: /private/tmp/pixtuoid-capture/proj
 - Identity:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     source: antigravity
-    session_id: 911c4b20-a6e7-4f01-ac36-9b7133fb9bd2
+    session_id: 55f93362-bf45-4d0d-a0b9-a4583279a46b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     tool_use_id: ag-2
     detail:
       Generic:
         display: "read_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - Identity:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     source: antigravity
-    session_id: 911c4b20-a6e7-4f01-ac36-9b7133fb9bd2
+    session_id: 55f93362-bf45-4d0d-a0b9-a4583279a46b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     tool_use_id: ag-2
 - Identity:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     source: antigravity
-    session_id: 911c4b20-a6e7-4f01-ac36-9b7133fb9bd2
+    session_id: 55f93362-bf45-4d0d-a0b9-a4583279a46b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseStart:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     tool_use_id: ag-3
     detail:
       Generic:
         display: "read_file: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - Identity:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     source: antigravity
-    session_id: 911c4b20-a6e7-4f01-ac36-9b7133fb9bd2
+    session_id: 55f93362-bf45-4d0d-a0b9-a4583279a46b
     cwd: /private/tmp/pixtuoid-capture/proj
 - ToolUseEnd:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
     tool_use_id: ag-3
 - TurnEnd:
-    agent_id: 2750967430734935483
+    agent_id: 10500134404111127446
