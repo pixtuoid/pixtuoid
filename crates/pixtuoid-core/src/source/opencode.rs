@@ -118,14 +118,14 @@ pub const DECODED_EVENTS: &[&str] = &[
     PERMISSION_ASKED,
 ];
 
-/// Every `data` path `field` reads, dotted, pinned by
+/// Every `data` path the decoder reads, dotted, pinned by
 /// `every_decoded_data_field_is_read`. The plugin's `allowlisted` copies these
 /// and nothing more, which its selftest holds it to through
 /// `the_plugin_contract_is_the_committed_file`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_DATA_FIELDS: &[&str] = &[
-    "sessionID",
+    ENVELOPE.session_field.field,
     "parentID",
     "location.directory",
     "model.id",
@@ -340,8 +340,8 @@ mod tests {
         json!({"type": EXECUTION_STARTED, "data": data, "_pid": 13358})
     }
 
-    /// [`field`]'s assertion holds every read to the list; this holds every
-    /// listed path to a read, by blanking it.
+    /// [`field`]'s assertion holds every other read to the list; this holds
+    /// every listed path to a read, by blanking it.
     #[test]
     fn every_decoded_data_field_is_read() {
         let full = json!({"sessionID": "s", "parentID": "p", "location": {"directory": "/r"},
