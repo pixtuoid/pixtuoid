@@ -280,6 +280,9 @@ pub enum Shape {
     /// A turn the user cancels while its reply streams: the session
     /// registers, and its turn ends.
     Cancel,
+    /// A command that switches the session's model: the session registers,
+    /// names the model it switched to, and ends.
+    ModelSwitch,
 }
 
 impl Shape {
@@ -296,14 +299,15 @@ impl Shape {
                 | Self::Subagent
                 | Self::ChildError
                 | Self::Succession
-                | Self::Cancel => false,
+                | Self::Cancel
+                | Self::ModelSwitch => false,
             },
             ProcessExit::Signalled | ProcessExit::OutOfTime => false,
         }
     }
 
-    /// Whether its turn asks the scripted model anything: a succession's
-    /// command runs in the CLI alone.
+    /// Whether its turn asks the scripted model anything: a succession's or a
+    /// model switch's command runs in the CLI alone.
     pub(crate) const fn asks_the_model(self) -> bool {
         match self {
             Self::ToolRun
@@ -312,7 +316,7 @@ impl Shape {
             | Self::ModelError
             | Self::ChildError
             | Self::Cancel => true,
-            Self::Succession => false,
+            Self::Succession | Self::ModelSwitch => false,
         }
     }
 
@@ -322,7 +326,7 @@ impl Shape {
             // An item, not a bare open turn: the live pipeline delivered its start.
             Self::ToolRun | Self::Subagent | Self::ChildError => "running(",
             Self::Permission => "requires_action",
-            Self::ModelError | Self::Succession | Self::Cancel => "idle",
+            Self::ModelError | Self::Succession | Self::Cancel | Self::ModelSwitch => "idle",
         }
     }
 
@@ -337,7 +341,8 @@ impl Shape {
             | Self::Subagent
             | Self::ModelError
             | Self::ChildError
-            | Self::Succession => tui::Answer::Nothing,
+            | Self::Succession
+            | Self::ModelSwitch => tui::Answer::Nothing,
         }
     }
 }
@@ -385,6 +390,9 @@ pub struct Turn {
     /// A directory beside its script copied into the workspace before the
     /// turn: project config this scenario alone runs under.
     pub(crate) seed: Option<&'static str>,
+    /// Whether its CLI saves the transcript its source reads: `false` where
+    /// its args turn that off, so its capture holds hook payloads alone.
+    pub saves_transcript: bool,
 }
 
 /// What a [`Turn::second`] asks of [`Profile::second_turn`]'s words.
@@ -403,6 +411,7 @@ impl Turn {
         prompt: None,
         second: None,
         seed: None,
+        saves_transcript: true,
     };
 }
 

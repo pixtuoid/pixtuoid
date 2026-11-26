@@ -88,6 +88,18 @@ pub(crate) fn transcripts_in(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// Whether the capture at `dir` holds a transcript: one whose hermetic turn
+/// saves none holds hook payloads alone.
+pub(crate) fn saves_transcript(source: &str, dir: &Path) -> bool {
+    pixtuoid_core::harness::hermetic::profile(source)
+        .and_then(|p| {
+            p.scenarios
+                .iter()
+                .find(|s| dir.ends_with(s.fixture(source)))
+        })
+        .is_none_or(|s| s.turn.saves_transcript)
+}
+
 pub(crate) fn transcript_in(dir: &Path) -> PathBuf {
     let mut t = transcripts_in(dir);
     assert_eq!(t.len(), 1, "{} must ship one transcript", dir.display());

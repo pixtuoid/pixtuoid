@@ -121,22 +121,19 @@ pub(crate) const PROFILE: Profile = Profile {
                 ..Turn::PROFILE
             },
         },
-        // The resumed turn, started on the default model, restores the
-        // session's (<https://code.claude.com/docs/en/hooks#postmodelswitch>).
+        // A session that saves no transcript (`--no-session-persistence`,
+        // <https://code.claude.com/docs/en/cli-reference>) switching by `-p`'s
+        // `/model <model>` (<https://code.claude.com/docs/en/commands>, `/model`):
+        // its hooks alone name the model it switched to.
         Scenario {
-            name: "model-resume",
-            shape: Shape::ToolRun,
+            name: "model-switch",
+            shape: Shape::ModelSwitch,
             surface: Surface::Headless,
-            expects: &[
-                "SessionStart",
-                "PreToolUse",
-                "PostToolUse",
-                "PostModelSwitch",
-                "SessionEnd",
-            ],
+            expects: &["SessionStart", "PostModelSwitch", "SessionEnd"],
             turn: Turn {
-                args: &["--model", "sonnet"],
-                second: Some(Second::Prompt("Say done.")),
+                args: &["--no-session-persistence", "--model", "sonnet"],
+                prompt: Some("/model haiku"),
+                saves_transcript: false,
                 ..Turn::PROFILE
             },
         },

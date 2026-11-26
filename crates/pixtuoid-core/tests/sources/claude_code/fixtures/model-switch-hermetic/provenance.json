@@ -1,0 +1,17 @@
+{
+  "origin": "recorded",
+  "cli": "claude",
+  "version": "2.1.332 (Claude Code)",
+  "captured": "2026-11-26",
+  "command": "just hermetic --record claude-code",
+  "deidentified": {
+    "method": "decoder-allowlist",
+    "blanked": 14
+  },
+  "aimock": "1.48.0",
+  "script": "tests/sources/claude_code/hermetic/model-switch.json",
+  "dropped": {
+    "os": "macos",
+    "at": {}
+  }
+}
