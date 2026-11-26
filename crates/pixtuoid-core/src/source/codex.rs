@@ -116,8 +116,8 @@ const TURN_ID: &str = "turn_id";
 pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
     // A malformed SubagentStart/Stop is an Err, not Ok(None): an empty
-    // `session_id`/`agent_id` would mint a phantom that never coalesces with
-    // the real rollout.
+    // `agent_id`, or a start's empty `session_id`, would mint a phantom that
+    // never coalesces with the real rollout.
     let child = || {
         required_or_err(
             SOURCE_NAME,
@@ -134,14 +134,14 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
         // rollout and joins the parent's scope tree (cascade / liveness /
         // readiness).
         "SubagentStart" => {
-            let (session_id, child) = (hook.session()?, child()?);
+            let (parent, child) = (hook.session()?, child()?);
             let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
             Ok(Some(vec![AgentEvent::SessionStart {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child),
                 source: SOURCE_NAME.to_string(),
                 session_id: child,
                 cwd,
-                parent_id: Some(AgentId::from_parts(SOURCE_NAME, session_id)),
+                parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
             }]))
         }
         // End the CHILD promptly, else its rollout lingers to the 30-min

@@ -530,10 +530,10 @@ impl<'a> Hook<'a> {
         })
     }
 
-    /// The session the event keys on, refused when missing or EMPTY: an empty
-    /// id keys no session. Only an arm that keys on it reads it: a subagent's
-    /// end keys on the child alone, so a wire that leaves the root off there
-    /// costs nothing.
+    /// The root session the envelope names, refused when missing or EMPTY: an
+    /// empty id keys no session. An arm reads it only where it uses it, as its
+    /// key or a child's parent: a subagent's end names the child alone, so a
+    /// wire that leaves the root off there costs nothing.
     pub(crate) fn session(&self) -> DecodeResult<&'a str> {
         let SessionField { within, field } = self.session_field;
         required_or_err(self.source, Some(self.event), field, |k| match within {

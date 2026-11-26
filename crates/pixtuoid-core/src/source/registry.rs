@@ -53,7 +53,7 @@ pub type HookObject = Map<String, Value>;
 /// Where a source's hook payloads name their event and session, the two fields
 /// the hook plane keys on. `decoder::Hook::read` reads the event, and
 /// `decoder::Hook::session` the session, each breadcrumbing its absence, so no
-/// arm spells either and none can leave one unreported.
+/// arm need spell either.
 #[derive(Debug, Clone, Copy)]
 pub struct Envelope {
     /// The top-level field naming the event.

@@ -147,8 +147,8 @@ const ENVELOPE: Envelope = Envelope {
 pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
     let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
-    // Read only by the arms that key on it: a subagent's end keys on the
-    // child, an ignored notice on nothing.
+    // Read only by the arms that use it, as a key or a child's parent: a
+    // subagent's end keys on the child, an ignored notice on nothing.
     let session = || -> Result<(AgentId, &str)> {
         let key = hook.session()?;
         Ok((AgentId::from_parts(SOURCE_NAME, key), key))
