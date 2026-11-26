@@ -2018,10 +2018,6 @@ mod run {
                 // at rust-v0.163.0), which only this mode lets a script call
                 // (`CopilotKit/aimock` `CHANGELOG.md`, 1.45.0).
                 .args(["--responses-tools", "extended"])
-                // A script's `turnIndex` is a rule, not a tiebreak (aimock
-                // `README.md`, "Replay matching"): for a `result_unseen` CLI only
-                // the assistant count tells its turns apart.
-                .env("AIMOCK_STRICT_TURN_INDEX", "1")
                 .args(["-p", &port.to_string(), "-f"])
                 .arg(&script)
                 .stdout(log(dir, AIMOCK_LOG)?)

@@ -506,9 +506,9 @@ pub struct Profile {
     /// Whether a child may name no cwd of its own, running where its parent
     /// does.
     pub(crate) children_inherit_cwd: bool,
-    /// Whether aimock never sees this CLI's tool results, so its tool-run reply
-    /// waits on the turn rather than the note. Shrink-only: a run in which
-    /// aimock saw one is Stale.
+    /// Whether aimock never sees this CLI's tool results, so no tool-run reply
+    /// can wait on the note. Shrink-only: a run in which aimock saw one is
+    /// Stale.
     pub(crate) result_unseen: bool,
     /// Its live tier, run beside `scenarios`.
     pub live: Option<Live>,
