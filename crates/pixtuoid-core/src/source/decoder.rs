@@ -2163,25 +2163,7 @@ mod tests {
         assert!(!evs.is_empty());
     }
 
-    /// Whether `logs` hold a `kind` breadcrumb from `source` carrying the
-    /// `(key, value)` field, any such breadcrumb for `None`.
-    fn breadcrumbed(
-        logs: &str,
-        source: &str,
-        kind: crate::source::drift::DriftKind,
-        field: Option<(&str, &str)>,
-    ) -> bool {
-        use crate::source::drift::{KIND_FIELD, SOURCE_FIELD};
-        let head = format!(
-            "{SOURCE_FIELD}={source} {KIND_FIELD}=\"{}\"",
-            <&str>::from(kind)
-        );
-        logs.lines().any(|l| {
-            l.contains(&head)
-                && field.is_none_or(|(k, v)| l.split_whitespace().any(|f| f == format!("{k}={v}")))
-        })
-    }
-
+    use crate::source::drift::breadcrumbed;
     /// `v` stamped as `source`'s, decoded, with what it logged.
     fn stamped_decode(source: &str, v: &Value) -> (DecodeResult<Vec<AgentEvent>>, String) {
         let mut out = None;
@@ -2284,8 +2266,7 @@ mod tests {
                 let (decoded, logs) = stamped_decode(source, v);
                 let refused =
                     matches!(decoded, Err(DecodeError::Missing { field, .. }) if field == *key);
-                let noted =
-                    breadcrumbed(&logs, source, DriftKind::MissingField, Some(("field", key)));
+                let noted = breadcrumbed(&logs, source, DriftKind::MissingField, &[("field", key)]);
                 (!(refused && noted))
                     .then(|| format!("{source}: {decoded:?}, breadcrumbed: {noted}"))
             })
@@ -2311,12 +2292,15 @@ mod tests {
                 matches!(out, Some(Err(DecodeError::Missing { field: "gone", .. }))),
                 "{out:?}"
             );
-            for field in [("event", event), ("field", "gone")] {
-                assert!(
-                    breadcrumbed(&logs, "src", DriftKind::MissingField, Some(field)),
-                    "{context:?}, no {field:?}:\n{logs}"
-                );
-            }
+            assert!(
+                breadcrumbed(
+                    &logs,
+                    "src",
+                    DriftKind::MissingField,
+                    &[("event", event), ("field", "gone")]
+                ),
+                "{context:?}:\n{logs}"
+            );
         }
         let logs = crate::test_capture::capture_logs(|| {
             assert_eq!(
@@ -2325,7 +2309,7 @@ mod tests {
             );
         });
         assert!(
-            !breadcrumbed(&logs, "src", DriftKind::MissingField, None),
+            !breadcrumbed(&logs, "src", DriftKind::MissingField, &[]),
             "{logs}"
         );
     }
@@ -2343,7 +2327,7 @@ mod tests {
                     &logs,
                     source,
                     crate::source::drift::DriftKind::MissingField,
-                    None,
+                    &[("event", PAYLOAD)],
                 );
                 (!(refused && noted))
                     .then(|| format!("{source}: {decoded:?}, breadcrumbed: {noted}"))
@@ -2419,7 +2403,7 @@ mod tests {
             .filter_map(|(source, v)| {
                 let (decoded, logs) = stamped_decode(source, v);
                 let refused = matches!(&decoded, Err(DecodeError::Unsupported { event, .. }) if event == UNKNOWN);
-                let noted = breadcrumbed(&logs, source, DriftKind::UnknownEvent, Some(("name", UNKNOWN)));
+                let noted = breadcrumbed(&logs, source, DriftKind::UnknownEvent, &[("name", UNKNOWN)]);
                 (!(refused && noted)).then(|| format!("{source}: {decoded:?}, breadcrumbed: {noted}"))
             })
             .collect();

@@ -657,9 +657,16 @@ mod tests {
             ),
             "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
         );
-        for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
-            assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
-        }
+        let fields = [("event", event), ("field", "session_id")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "{fields:?} in\n{logs}"
+        );
         for event in ["SubagentStart", "SubagentStop"] {
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             let decoded = test_decode(SOURCE_NAME, &empty_child);
@@ -693,13 +700,16 @@ mod tests {
                     if *agent_id == AgentId::from_parts(SOURCE_NAME, "c"))),
             "{evs:?}"
         );
-        let line = format!(
-            "{}={SOURCE_NAME} {}=\"{}\" event=UserPromptSubmit field=session_id",
-            crate::source::drift::SOURCE_FIELD,
-            crate::source::drift::KIND_FIELD,
-            <&str>::from(crate::source::drift::DriftKind::MissingField),
+        let fields = [("event", "UserPromptSubmit"), ("field", "session_id")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "{fields:?} in\n{logs}"
         );
-        assert!(logs.contains(&line), "{line:?} in\n{logs}");
     }
 
     #[test]

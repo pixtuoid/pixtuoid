@@ -162,7 +162,7 @@ mod tests {
     /// The hook plane's `session_id` chokepoint: its drift breadcrumb too.
     #[test]
     fn a_claimed_event_without_session_id_errs_and_breadcrumbs() {
-        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
+        use crate::source::drift::{DriftKind, breadcrumbed};
         for ev in ["Stop", "StopFailure", "Interrupt"] {
             for payload in [
                 json!({ "hook_event_name": ev, "cwd": "/repo" }),
@@ -171,13 +171,10 @@ mod tests {
                 let logs = crate::test_capture::capture_logs(|| {
                     assert!(test_decode(SOURCE_NAME, &payload).is_err(), "{payload}");
                 });
-                let line = format!(
-                    "{SOURCE_FIELD}={SOURCE_NAME} {KIND_FIELD}=\"{}\" event={ev} field=session_id",
-                    <&str>::from(DriftKind::MissingField),
-                );
+                let fields = [("event", ev), ("field", "session_id")];
                 assert!(
-                    logs.contains(TARGET) && logs.contains(&line),
-                    "{line:?} in\n{logs}"
+                    breadcrumbed(&logs, SOURCE_NAME, DriftKind::MissingField, &fields),
+                    "{fields:?} in\n{logs}"
                 );
             }
         }

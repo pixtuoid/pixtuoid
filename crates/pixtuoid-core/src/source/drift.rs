@@ -35,6 +35,28 @@ pub const SOURCE_FIELD: &str = "source";
 /// The field a breadcrumb names its [`DriftKind`] in.
 pub const KIND_FIELD: &str = "kind";
 
+/// Whether `logs` hold one `kind` breadcrumb from `source` carrying every
+/// `(key, value)` of `fields`.
+#[cfg(test)]
+pub(crate) fn breadcrumbed(
+    logs: &str,
+    source: &str,
+    kind: DriftKind,
+    fields: &[(&str, &str)],
+) -> bool {
+    let head = format!(
+        "{SOURCE_FIELD}={source} {KIND_FIELD}=\"{}\"",
+        <&str>::from(kind)
+    );
+    logs.lines().any(|l| {
+        l.contains(TARGET)
+            && l.contains(&head)
+            && fields
+                .iter()
+                .all(|(k, v)| l.split_whitespace().any(|f| f == format!("{k}={v}")))
+    })
+}
+
 /// What a breadcrumb reports, as its [`KIND_FIELD`] names it: `&'static
 /// str::from` writes the name, `FromStr` reads it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, strum::IntoStaticStr, strum::EnumString)]

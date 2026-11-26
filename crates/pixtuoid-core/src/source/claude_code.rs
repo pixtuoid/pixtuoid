@@ -973,9 +973,16 @@ mod tests {
             ),
             "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
         );
-        for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
-            assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
-        }
+        let fields = [("event", event), ("field", "session_id")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "{fields:?} in\n{logs}"
+        );
         for event in ["SubagentStart", "SubagentStop"] {
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             let decoded = test_decode(SOURCE_NAME, &empty_child);
