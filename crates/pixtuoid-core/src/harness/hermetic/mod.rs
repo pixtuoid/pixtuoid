@@ -1513,17 +1513,26 @@ mod tests {
         }
     }
 
-    /// Every tool call a scripted reply serves, in aimock's order: its function
-    /// calls, then its custom ones (`servedToolCalls`, `@copilotkit/aimock`
-    /// `dist/helpers.js:1257-1263` at 1.48.0).
-    fn served_calls(reply: &Value) -> impl Iterator<Item = &Value> {
+    /// Every tool call aimock serves for a scripted reply
+    /// (`resolveServedBlockOutcome`, `servedToolCalls`, `@copilotkit/aimock`
+    /// `dist/helpers.js:1166-1171`, `:1257-1295` at 1.48.0).
+    fn served_calls(reply: &Value) -> Vec<&Value> {
+        let response = &reply["response"];
+        let blocks = |kind: &str| response[kind].as_array().filter(|b| !b.is_empty());
+        if let Some(blocks) = blocks("responsesBlocks").or_else(|| blocks("blocks")) {
+            return blocks.iter().filter(|b| b["type"] != "text").collect();
+        }
+        if !response["toolCalls"].is_array() {
+            return Vec::new();
+        }
         ["toolCalls", "customToolCalls"]
             .into_iter()
-            .flat_map(|kind| reply["response"][kind].as_array().into_iter().flatten())
+            .flat_map(|kind| response[kind].as_array().into_iter().flatten())
+            .collect()
     }
 
     fn calls_a_tool(reply: &Value) -> bool {
-        served_calls(reply).next().is_some()
+        !served_calls(reply).is_empty()
     }
 
     /// Whether a scripted reply's match waits on a tool result: aimock reads one
@@ -1545,6 +1554,28 @@ mod tests {
             "toolCalls": [],
             "customToolCalls": [{ "name": "exec", "input": "text(1);" }]
         }))));
+        assert!(
+            !calls_a_tool(&reply(serde_json::json!({
+                "customToolCalls": [{ "name": "exec", "input": "text(1);" }]
+            }))),
+            "custom calls with no toolCalls array"
+        );
+        assert!(
+            calls_a_tool(&reply(serde_json::json!({
+                "blocks": [
+                    { "type": "text", "text": "Reading." },
+                    { "type": "toolCall", "name": "read", "arguments": "{}" }
+                ]
+            }))),
+            "a block's call"
+        );
+        assert!(
+            !calls_a_tool(&reply(serde_json::json!({
+                "responsesBlocks": [{ "type": "text", "text": "Reading." }],
+                "toolCalls": [{ "name": "read", "arguments": "{}" }]
+            }))),
+            "blocks are served in place of toolCalls"
+        );
         assert!(!calls_a_tool(&reply(
             serde_json::json!({ "toolCalls": [] })
         )));
@@ -1643,9 +1674,11 @@ mod tests {
             "a reply's prose is not a call"
         );
         let cell = |source: &str| {
-            script(serde_json::json!({ "response": { "customToolCalls": [
+            script(
+                serde_json::json!({ "response": { "toolCalls": [], "customToolCalls": [
                 { "name": "exec", "input": source }
-            ] } }))
+            ] } }),
+            )
         };
         assert!(script_deletes_the_note(&cell(
             r#"await tools.exec_command({ cmd: "rm NOTE.txt" });"#
