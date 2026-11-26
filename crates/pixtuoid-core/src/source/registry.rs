@@ -1047,7 +1047,8 @@ mod tests {
 
     /// A depth-capped arbitrary `serde_json::Value` (leaf | array | object) plus
     /// a "JSON re-encoded as a string" arm, so a string can itself carry nested
-    /// JSON — the shape codex's `function_call.arguments` reparse consumes. The
+    /// JSON — the shape codex's `function_call.arguments` reparse consumes
+    /// (`codex/fixtures/tool-run-hermetic`). The
     /// bounds stay shallow because the decoders do flat `.get("a").get("b")`
     /// chains, never deep recursion.
     fn arb_json() -> impl Strategy<Value = serde_json::Value> {

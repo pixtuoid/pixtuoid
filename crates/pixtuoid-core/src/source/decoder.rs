@@ -352,7 +352,7 @@ pub(crate) fn test_decode(source: &str, v: &Value) -> DecodeResult<Vec<AgentEven
 /// sibling presence channel and carry no `hook_event_name` at all. grok scans
 /// `~/.claude/settings.json` AND `~/.cursor/hooks.json` BY DEFAULT
 /// (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:67-77` at
-/// `xai-org/grok-build` `2bdd1d6a63`, which `source/grok.rs` maps to its pin)
+/// `xai-org/grok-build` `2bdd1d6a63`, grok's cite base: `source/grok.rs`'s module doc)
 /// and fires the shim installed there with its OWN camelCase envelope, so a
 /// duplicate arrives tagged `claude-code`/`cursor` beside the grok-tagged one.
 fn decodes_to_nothing(
@@ -592,9 +592,8 @@ pub(crate) fn refuse_unknown_event(hook: &Hook<'_>) -> DecodeError {
 
 /// The shared CC-shaped arms, for every source whose row has no claiming decoder.
 /// `UserPromptSubmit` ALSO emits `SessionStart` (idempotent in the reducer) because
-/// Codex's tool hooks fire for only some handlers — ~25 others fire nothing
-/// (openai/codex#20204) — and hook firing is version-unstable: a
-/// `matcher="*"` group is silently dropped, some builds emit none (openai/codex#21639).
+/// Codex's tool hooks fire only for a tool with a pre-use payload
+/// (`codex-rs/core/src/tools/registry.rs:1178` at rust-v0.172.0).
 pub(crate) fn shared_hook_arms(
     hook: &Hook<'_>,
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
@@ -707,7 +706,9 @@ pub(crate) fn shared_hook_arms(
                 },
             ),
         ],
-        // Stop must NOT end the session: turns end many times per session.
+        // Stop ends a turn, not the session: it fires per turn
+        // (<https://code.claude.com/docs/en/hooks>'s lifecycle;
+        // `codex/fixtures/two-turn-hermetic` fires two).
         "Stop" => vec![AgentEvent::turn_end(agent_id)],
         "SessionEnd" => vec![AgentEvent::SessionEnd {
             agent_id,
@@ -1640,7 +1641,8 @@ mod tests {
 
         let name_s = "N".repeat(MAX_DECODED_FIELD_CHARS * 2);
         let tgt_s = "T".repeat(MAX_TOOL_TARGET_CHARS * 5);
-        // codewhale's `tool_args` is a JSON STRING, not an object — embed the
+        // codewhale's `tool_args` is a JSON STRING, not an object
+        // (`codewhale/fixtures/tool-run-hermetic`) — embed the
         // over-cap target inside it so its target chokepoint is exercised too.
         let cw_args_s = format!("{{\"command\":\"{tgt_s}\"}}");
         // Borrow as &str (Copy) so each row's closure captures by copy — a String
@@ -2024,7 +2026,8 @@ mod tests {
             ),
             (
                 // The recorded gate carries its WHY on `description` ("recursive
-                // delete"), so the reason must route through `ellipsize` too.
+                // delete": `hermes/fixtures/permission-hermetic`), so the reason must
+                // route through `ellipsize` too.
                 hermes::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {

@@ -51,8 +51,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         // Both false: agy has no session-end hook (hooks.md lists none), the
         // recordings' transcripts no end line (`antigravity/fixtures/tool-run-hermetic`),
         // and no `AG_EVENTS` hook fires at a prompt. Flipping `resurrects_on_prompt`
-        // for the 5-min reaper strands a live idle session. An exit rides the
-        // shim-stamped pid.
+        // arms `short_idle_reap`, which strands a live idle session. An exit rides
+        // the shim-stamped pid.
         caps: SourceCaps {
             has_exit_signal: false,
             resurrects_on_prompt: false,
@@ -217,8 +217,9 @@ const ENVELOPE: Envelope = Envelope {
 /// If the payload lacks `conversationId`.
 pub(crate) fn decode_ag_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
-    // The App and IDE fire the same global hooks file under app data dirs of
-    // their own (hooks.md, `transcriptPath`).
+    // The App and IDE read the CLI's global `~/.gemini/config/` too (hooks.md,
+    // "Hook configuration locations"), under app data dirs of their own
+    // (hooks.md, `transcriptPath`).
     if non_empty(obj, "transcriptPath").is_some_and(|p| {
         !Path::new(p)
             .components()

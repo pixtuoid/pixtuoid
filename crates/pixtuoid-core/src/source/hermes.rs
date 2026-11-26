@@ -541,7 +541,7 @@ mod tests {
     }
 
     /// The shape no capture shows: a recorded run ends its only turn and its
-    /// session together.
+    /// session together (`hermes/fixtures/permission-hermetic`).
     #[test]
     fn a_second_turn_in_one_session_does_not_end_the_session() {
         let sid = "sess-multi";

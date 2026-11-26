@@ -93,9 +93,9 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// `SubagentStart`/`SubagentStop`, and any other event a subagent fires, which
 /// names it in `agent_id` beside the ROOT's `session_id` (hooks.md: the
 /// `agent_id` and `agent_type` "that identify the subagent"). A main-thread event
-/// falls through (`Ok(None)`). Needed despite JSONL registration: a
-/// Workflow-tool fleet's subagents carry no `Agent` tool_use and no end marker
-/// (#241), so without `SubagentStop` they hold desks until the stale sweep.
+/// falls through (`Ok(None)`). `SubagentStop` fires "when a subagent
+/// finishes" (hooks.md's events table), so a child ends without waiting for
+/// the stale sweep.
 pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     use crate::source::decoder::{subagent_fired, subagent_id, subagent_start};
     match hook.event {

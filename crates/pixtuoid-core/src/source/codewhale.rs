@@ -28,8 +28,8 @@
 //! - **Exit profile.** `session_end` fires on a graceful shutdown
 //!   (`docs/HOOKS.md:243`), so `has_exit_signal: true`. An ABRUPT exit fires
 //!   none — the shim resolves CodeWhale's pid by walking past the runner's shell
-//!   (on Windows too, #528) and `hook::HookPidWatch` ends the sprite when that
-//!   pid dies.
+//!   (`sh -c`, or `cmd /C` on Windows: `crates/engine/src/hooks/executor.rs:1651-1666`;
+//!   #528) and `hook::HookPidWatch` ends the sprite when that pid dies.
 
 use crate::source::decoder::{DecodeResult as Result, non_empty, required, required_or_err};
 use serde_json::Value;
@@ -83,7 +83,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 
 /// CodeWhale's one sub-agent tool; its `action` picks the verb
 /// (`parse_agent_tool_action`, `codewhale-hq/Codewhale`
-/// `crates/engine/src/tools/subagent/mod.rs`). The CHILD gets its own sprite from the
+/// `crates/engine/src/tools/subagent/mod.rs:14607`). The CHILD gets its own sprite from the
 /// `subagent_spawn`/`subagent_complete` observer hooks.
 pub(crate) const SUBAGENT_TOOL: &str = "agent";
 
@@ -152,7 +152,7 @@ pub(crate) fn decode_cw_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
     };
 
     Ok(Some(match event {
-        // message_submit (every prompt) is the RESURRECT path — a stale-swept
+        // message_submit (every prompt: `docs/HOOKS.md:245`) is the RESURRECT path — a stale-swept
         // session walks back in on its next prompt, CodeWhale's only
         // re-creation signal. The reducer ignores it when the slot exists.
         "session_start" | "message_submit" => vec![AgentEvent::SessionStart {

@@ -50,7 +50,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // (`packages/boot/app-boot/src/index.ts:860-899` at `dsh-v0.2.2-rc.5`):
             // both fall to `HookPidWatch` via the stamped pid.
             has_exit_signal: true,
-            // Sessions are persistent; a `--resume` boots a NEW dsh whose
+            // Sessions are persistent; a `dsh tui --resume <session>`
+            // (`docs/cli-help.md:55` at `dsh-v0.2.2-rc.5`) boots a NEW dsh whose
             // plugin emits a fresh `session_start` for the session's header id
             // on its `agent/created` (`install/dsh_plugin.mjs`) — the
             // SessionStart arm's ordinary re-registration, not this flag.

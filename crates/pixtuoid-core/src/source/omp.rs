@@ -1084,12 +1084,13 @@ const SESSION_FILE: &str = "sessionFile";
 /// extension's, the drift `verify_schema` reports.
 ///
 /// Identity: `sessionFile` (the ALLOCATED path — omp exposes it before the
-/// lazy persist materializes the JSONL, `session-manager.ts:1075`) through the watcher's own
-/// `normalize_path_key` fold then [`omp_id_from_path`], so both transports
-/// mint ONE AgentId per session, nested task children included. `sessionId`
-/// (the bare header UUID, a keyspace no stem can collide with — stems carry
-/// the date shape and `_`) covers `--no-session`, where no transcript will
-/// ever exist to coalesce with.
+/// lazy persist materializes the JSONL, `session-manager.ts:3365-3368`) through
+/// the watcher's own `normalize_path_key` fold then [`omp_id_from_path`], so
+/// both transports mint ONE AgentId per session, nested task children
+/// included. `sessionId` (the bare header UUID, a keyspace no stem can collide
+/// with — stems carry the date shape and `_`, `omp/fixtures/tool-run-hermetic`)
+/// covers `--no-session` ("Don't save the session": `docs/cli-reference.md:80`
+/// at `v19.2.1`), where no transcript will ever exist to coalesce with.
 ///
 /// A switch/branch means this omp process now drives the CURRENT file: the
 /// previous one gets its End without waiting for the stale sweep, and the
@@ -1130,8 +1131,9 @@ pub(crate) fn decode_omp_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agen
         // The trailing `identity()` is the focus-pid carrier (the declaration
         // doc owns the story).
         HOOK_SESSION_START => vec![session_start(), identity()],
-        // previous == current is the in-place branch REWRITE — an End+Start
-        // pair there would walk the sprite out for its own rewrite.
+        // previous == current is a branch within its own file (`branch(entryId)`
+        // moves only the leaf: `docs/session.md:594` at `v19.2.1`) — an End+Start
+        // pair there would walk the sprite out for its own branch.
         HOOK_SESSION_SWITCH | HOOK_SESSION_BRANCH => {
             let mut evs = Vec::new();
             if let Some(prev) = non_empty(obj, "previousSessionFile") {
@@ -1176,7 +1178,9 @@ mod tests {
     use super::*;
 
     /// A fork copies each entry whole, and an 8-hex entry id is unique only in
-    /// its own session, so a copy is named by the entry's id and stamp.
+    /// its own session (`docs/session-operations-export-share-fork-resume.md:396`,
+    /// `docs/session.md:118` at `v19.2.1`), so a copy is named by the entry's id
+    /// and stamp.
     #[test]
     fn an_entry_names_its_copies_by_id_and_stamp() {
         let line = json!({

@@ -286,8 +286,9 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
                 // The parent's session fires it
                 // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/updates.rs:726-733`),
                 // so its cwd is the PARENT's — correct for the default
-                // inherited-cwd child. A worktree-ISOLATED child runs
-                // elsewhere, leaving only its outfit-palette cwd key
+                // inherited-cwd child. A worktree-ISOLATED child
+                // (`crates/codegen/xai-grok-pager/docs/user-guide/16-subagents.md:155`)
+                // runs elsewhere, leaving only its outfit-palette cwd key
                 // parent-tinted: accepted residual.
                 cwd: cwd.unwrap_or("").into(),
                 parent_id: Some(agent_id),

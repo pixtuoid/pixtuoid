@@ -1,7 +1,8 @@
 //! opencode source — HOOK-ONLY, via a bundled TS plugin.
 //!
-//! opencode keeps sessions in SQLite with no tailable transcript, so its one
-//! external seam is the plugin API: the bundled plugin
+//! opencode keeps sessions in SQLite (`packages/cli/src/database-path.ts:4-13`,
+//! `packages/core/src/database/database.ts:3-4` at v2.4.1) with no tailable
+//! transcript, so its one external seam is the plugin API: the bundled plugin
 //! (`install/opencode_plugin.ts`) reads `ctx.event.subscribe()` and pipes an
 //! allowlisted copy of each event into the `pixtuoid-hook` shim:
 //!
@@ -11,8 +12,8 @@
 //!
 //! The upstream facts the decode rests on, at opencode v2.4.1:
 //!
-//! - `sessionID` is on every session event and is the session's durable key,
-//!   so slots key on it.
+//! - `sessionID` is on every session event and is the session's durable key
+//!   (`packages/schema/src/session-event.ts:29-36`), so slots key on it.
 //! - A subagent is a child SESSION: the `subagent` tool creates it with
 //!   `parentID` (`packages/core/src/tool/plugin/subagent.ts:175-176`), so the
 //!   record its first start carries links it.
@@ -435,8 +436,8 @@ mod tests {
     }
 
     /// `session.forked`'s `parentID` is the session it was copied from, beside
-    /// a message `boundary` (`packages/schema/src/session-event.ts:187-200`),
-    /// not a parent.
+    /// a message `boundary` (`packages/schema/src/session-event.ts:192-205` at
+    /// v2.4.1), not a parent.
     #[test]
     fn a_fork_is_no_child() {
         assert!(

@@ -2,7 +2,8 @@
 //!
 //! Reasonix (github.com/esengine/DeepSeek-Reasonix) ships a CC-style hook
 //! system; connecting it links a GLOBAL plugin whose hooks run the shim —
-//! project-scope hooks are trust-gated and would silently not fire. Payloads
+//! project hooks run only once approved (`internal/ext/hook/hook.go:228-229`
+//! @ v2.61.0), so those would silently not fire. Payloads
 //! arrive on the shared hook socket stamped
 //! `_pixtuoid_source: "reasonix"` in Reasonix's own envelope, NOT the CC shape:
 //!
@@ -13,15 +14,10 @@
 //! camelCase fields, `event` discriminator (not `hook_event_name`), no
 //! transcript path, and no tool-call id on any event we register
 //! (`internal/ext/hook/hook.go:828-834` Payload @ v2.61.0).
-//! It DOES carry `sessionId` — every recorded payload does — so that is the
-//! AgentId key. Keying on the workspace instead would merge two sessions in ONE
-//! project into a single sprite (the Cursor lesson; `hermes.rs` states it too).
-//!
-//! Why no JSONL transport: v2 session files are FULL-REWRITTEN (tmp+rename)
-//! once per turn — zero mid-turn writes, so a tail watcher shows nothing while
-//! the agent works; headless `reasonix run` writes no session file at all; and
-//! with no shared key between the file name and hook payloads, a JSONL agent
-//! could never coalesce with the hook agent (guaranteed two sprites).
+//! Every recorded payload carries `sessionId` (`reasonix/fixtures`), though
+//! `Payload` declares it `omitempty`, so that is the AgentId key. Keying on the
+//! workspace instead would merge two sessions in ONE project into a single
+//! sprite (the Cursor lesson; `hermes.rs` states it too).
 
 use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;

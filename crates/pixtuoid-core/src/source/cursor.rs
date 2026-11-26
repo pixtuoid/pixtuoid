@@ -1,40 +1,43 @@
-//! Cursor CLI source — HOOK-ONLY (no JSONL watcher).
+//! Cursor CLI source — HOOK-ONLY (no JSONL watcher). Bundle cites are
+//! cursor-agent 2026.11.22-e9042b2's `dist-package/` files.
 //!
 //! Only one of Cursor's three seams is reachable by a passive observer:
-//! `--output-format stream-json` is stdout of an invocation we would have to
-//! launch, and on-disk sessions are SQLite hex blobs. So **Cursor Hooks**
-//! (`~/.cursor/hooks.json`) is the seam. A per-session JSONL transcript does
-//! exist and the envelope carries its `transcript_path`, null until the file
-//! exists (the child bullet below) — the seam if a watcher is ever wanted.
+//! `--output-format stream-json` is a `--print` run's stdout (`8587.index.js`),
+//! one we would have to launch, and on-disk sessions are a per-chat `store.db`
+//! (`2724.index.js`). So **Cursor Hooks** (`~/.cursor/hooks.json`:
+//! `9622.index.js`'s `userConfigPath`) is the seam. A per-session JSONL
+//! transcript does exist and the envelope carries its `transcript_path`, null
+//! until the file exists (the child bullet below) — the seam if a watcher is
+//! ever wanted.
 //!
-//! The envelope reuses CC's `hook_event_name` field NAME with **camelCase
-//! values**; `tool_name` is PascalCase and the TOP-LEVEL `cwd` is empty —
-//! `workspace_roots[0]` is the real workspace. Keyed on `session_id`, present
-//! and CONSISTENT across every CLI event (`cursor/fixtures/tool-run`), so
-//! concurrent sessions in one project stay distinct.
+//! The recorded envelope (`cursor/fixtures/tool-run`) reuses CC's
+//! `hook_event_name` field NAME with **camelCase values**; `tool_name` is
+//! PascalCase and the TOP-LEVEL `cwd` is empty — `workspace_roots[0]` is the
+//! real workspace. Keyed on `session_id`, present and CONSISTENT across every
+//! CLI event, so concurrent sessions in one project stay distinct.
 //!
-//! - **cursor also runs Claude Code's hooks** (`~/.claude/settings.json` and the
-//!   project's, on by default: cursor.com/docs/reference/third-party-hooks), so a
-//!   user who connected both CLIs gets each cursor event again through CC's shim,
-//!   stamped `claude-code`. `decoder`'s cross-fire guard drops every one on
-//!   `cursor_version`. Lossless —
-//!   the `cursor`-stamped copy carries the whole arc.
+//! - **cursor-agent also runs Claude Code's hooks** (`~/.claude/settings.json`
+//!   and the project's: `9622.index.js`'s `claudeUserConfigPath`), so a user who
+//!   connected both CLIs gets each cursor event again through CC's shim, stamped
+//!   `claude-code`. `decoder`'s cross-fire guard drops every one on
+//!   `cursor_version`, a field every cursor hook carries (cursor.com/docs/hooks,
+//!   the common schema). Lossless — the `cursor`-stamped copy carries the whole
+//!   arc.
 //! - **A child is its own session, linked late.** pixtuoid registers no
 //!   subagent hook (`CURSOR_EVENTS`) and a child fires no `sessionStart`
 //!   (`cursor/fixtures/delegation`), so it registers on its first tool event.
 //!   A hook's `transcript_path` is the first of the child's transcripts that
-//!   exists when the hook runs, else null; once cursor-agent records the
-//!   child's parent (`3863.index.js:1` `setTranscriptParentConversationId`),
-//!   the first is `<parent>/subagents/<child>.jsonl` (cursor-agent
-//!   2026.10.22: `1841.index.js:1` `getTranscriptPathIfExists`,
-//!   `7923.index.js:1` `agent-transcript/dist/paths.js`). That path links the
-//!   child (`nested_parent`), and its parent's `Task` post then ends it. In
+//!   exists when the hook runs, else null (`9622.index.js`'s
+//!   `getTranscriptPathIfExists`); once cursor-agent records the child's parent
+//!   (`7896.index.js`'s `setTranscriptParentConversationId` call), the first is
+//!   `<parent>/subagents/<child>.jsonl` (`7923.index.js`'s
+//!   `agent-transcript/dist/paths.js`). That path links the child
+//!   (`nested_parent`), and its parent's `Task` post then ends it. In
 //!   `cursor/fixtures/delegation` the child's post carries that nested path.
-//! - `sessionEnd` FIRES on clean completion; `stop` is turn-end and did NOT fire
-//!   under `-p`. An abrupt exit rides the shim's `_pid` BEST-EFFORT: the walk
-//!   skips the `$SHELL -c` wrapper Cursor `eval`s hooks inside, but some hooks
-//!   arrive through a different non-shell ancestor, so the pid is not stable and
-//!   corroboration often withholds the arm (#896).
+//! - `sessionEnd` FIRES on clean completion; `stop`, the turn end, did NOT fire
+//!   under `-p` (`cursor/fixtures/tool-run`, `tool-failure`). An abrupt exit rides
+//!   the shim's `_pid` BEST-EFFORT (#896): the walk skips the shell Cursor runs
+//!   each hook command in (`9622.index.js`'s `executeCommandScript`).
 
 use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
@@ -66,10 +69,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_cursor_hook_payload,
         }),
         caps: SourceCaps {
-            // `sessionEnd` fires on clean completion (`cursor/fixtures/tool-run`).
-            // An abrupt exit rides the
-            // shim-stamped pid, which reaches the CLI only because the ancestor walk
-            // skips Cursor's wrapper shell (#896).
+            // The module doc's exit bullet — best-effort counts.
             has_exit_signal: true,
             // No prompt hook is registered (`CURSOR_EVENTS`).
             resurrects_on_prompt: false,
@@ -86,7 +86,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: crate::source::registry::Native::NONE,
 };
 
-/// Cursor's hook envelope, per `cursor.com/docs/hooks`.
+/// Cursor's hook envelope: `hook_event_name` from cursor.com/docs/hooks's
+/// common schema, `session_id` as the module doc keys it.
 const ENVELOPE: Envelope = Envelope {
     event_field: "hook_event_name",
     session_field: SessionField {
@@ -151,10 +152,10 @@ pub(crate) fn decode_cursor_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
                 },
             ]
         }
-        // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`, and
-        // `stop` doesn't fire under `-p` (`cursor/fixtures/tool-failure`), so
-        // without this arm a failed tool's ToolUseStart never ends and the
-        // sprite lingers Running.
+        // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`
+        // (`cursor/fixtures/tool-failure`), so without this arm a failed tool's
+        // ToolUseStart never ends where no `stop` follows (the module doc's exit
+        // bullet) and the sprite lingers Running.
         "postToolUse" | "postToolUseFailure" => nested_parent(obj)
             .map(|parent| AgentEvent::SessionStart {
                 agent_id,
@@ -183,8 +184,9 @@ pub(crate) fn decode_cursor_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
         }],
         _ => return Ok(None),
     };
-    // Re-read per event: the model changes mid-session, so reading it once
-    // would show the wrong one for the rest of the turn.
+    // Re-read per event: each event carries the model (cursor.com/docs/hooks,
+    // the common schema), and `/model` switches it mid-session (`8587.index.js`),
+    // so reading it once would show the wrong one for the rest of the turn.
     evs.extend(AgentEvent::model_info(
         agent_id,
         obj.get("model").and_then(|m| m.as_str()),

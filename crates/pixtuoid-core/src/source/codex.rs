@@ -118,13 +118,13 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
     let call = |kind| decode_call_hook(hook, kind).map(Some);
     match hook.event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
-        // `agent_id`, as `tests/sources/codex/fixtures/subagent-hermetic`
+        // `agent_id`, as `codex/fixtures/subagent-hermetic`
         // records). Keying the child on `agent_id` coalesces with that
         // rollout and joins the parent's scope tree (cascade / liveness /
         // readiness).
         "SubagentStart" => subagent_start(hook, str::to_owned).map(Some),
-        // End the CHILD promptly, else its rollout lingers to the 30-min
-        // stale-sweep. Losing the race against the child's slot creation
+        // End the CHILD promptly, else its rollout lingers until the stale-sweep
+        // (codex's `idle_threshold`). Losing the race against the child's slot creation
         // leaves a harmless no-op plus that same fallback.
         "SubagentStop" => Ok(Some(vec![AgentEvent::SessionEnd {
             agent_id: AgentId::from_parts(SOURCE_NAME, subagent_id(hook)?),
