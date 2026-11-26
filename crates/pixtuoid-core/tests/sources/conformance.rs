@@ -23,7 +23,9 @@ use pixtuoid_core::source::{AgentEvent, registry};
 // copies whose `read_dir` SWALLOWED errors where the other panics — an
 // unreadable capture dir made `wire_files()` empty, so the redaction rule
 // passed vacuously for it.
-use super::captures::{conformance_scenarios, fixture_lines, transcript_in, transcripts_in};
+use super::captures::{
+    conformance_scenarios, fixture_lines, saves_transcript, transcript_in, transcripts_in,
+};
 
 /// Hook-only-ness comes from the registry row, never a harness-side list — a
 /// second list could mark a JSONL source hook-only and pass the harness without
@@ -65,17 +67,20 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
          or a removed source whose fixtures should be deleted"
     );
     let transcripts = transcripts_in(dir);
-    let expected = if is_hook_only(source) { 0 } else { 1 };
+    let why = if is_hook_only(source) {
+        Some("its source is hook-only")
+    } else if !saves_transcript(source, dir) {
+        Some("its turn saves none")
+    } else {
+        None
+    };
+    let expected = usize::from(why.is_none());
     assert_eq!(
         transcripts.len(),
         expected,
-        "{} must contain exactly {expected} transcript .jsonl (source {source:?} is {}), found {}",
+        "{} must contain exactly {expected} transcript .jsonl ({}), found {}",
         dir.display(),
-        if expected == 0 {
-            "hook-only"
-        } else {
-            "JSONL-bearing"
-        },
+        why.unwrap_or("its source is JSONL-bearing"),
         transcripts.len()
     );
 
@@ -130,7 +135,8 @@ fn decode_fixture(source: &str, dir: &Path) -> Decoded {
 fn a_seeded_drive_coalesces_with_each_transcripts_own_decoder() {
     let mut ran = 0;
     for (source, scenario_dir) in conformance_scenarios() {
-        if is_hook_only(&source) || is_daemon(&source) {
+        if is_hook_only(&source) || is_daemon(&source) || !saves_transcript(&source, &scenario_dir)
+        {
             continue;
         }
         let transcript = transcript_in(&scenario_dir);
@@ -310,10 +316,10 @@ fn all_source_fixtures_decode_and_coalesce() {
         // Each present transport must actually contribute — else a
         // degenerate fixture (e.g. all-no-op JSONL) could pass coalescing
         // on hooks alone, silently skipping the keying path this guards.
-        if is_hook_only(&source) {
+        if d.jsonl.is_none() {
             assert!(
                 d.hooks.as_ref().is_some_and(|h| !h.events.is_empty()),
-                "{source}/{scenario}: a hook-only source's scenario must ship a non-empty hook-payloads.jsonl"
+                "{source}/{scenario}: a scenario with no transcript must ship a non-empty hook-payloads.jsonl"
             );
         } else {
             assert!(

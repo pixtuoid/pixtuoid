@@ -277,8 +277,10 @@ pub enum AgentEvent {
         effort: Option<String>,
     },
     /// The model a hook offers for a CLI whose transcript owns the model: the
-    /// reducer sets an EXISTING slot's model from it only while none is set,
-    /// so a [`ModelInfo`](Self::ModelInfo)'s replaces it, in either order.
+    /// reducer sets an EXISTING slot's model from it unless a
+    /// [`ModelInfo`](Self::ModelInfo) set it, so a session with no transcript
+    /// follows a switch while one with a transcript keeps it the owner, in
+    /// either order.
     ModelHint {
         /// The agent this observation is attributed to.
         agent_id: AgentId,

@@ -989,6 +989,16 @@ fn correlation_maps_stay_bounded_across_a_long_stream() {
         );
         r.apply(
             &mut scene,
+            AgentEvent::ModelInfo {
+                agent_id: a,
+                model: Some("claude-opus-5-5".into()),
+                effort: None,
+            },
+            now,
+            Transport::Jsonl,
+        );
+        r.apply(
+            &mut scene,
             AgentEvent::SessionEnd {
                 agent_id: a,
                 as_child: true,

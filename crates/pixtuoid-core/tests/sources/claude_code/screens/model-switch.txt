@@ -1,0 +1,40 @@
+
+ ▐▛███▛█   Claude Code v2.1.332
+▝▜██████▀  Haiku 5.5 · API Usage Billing
+ ▝▝   ▝▝   /private/tmp/pixtuoid-capture/proj
+
+
+❯ /model haiku                                                                                                          
+  ⎿  Set model to Haiku 5.5 and saved as your default for new sessions
+          .claude/settings.json pins Sonnet 5.5 — that applies on restart
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                    ◐ medium · /effort
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯  
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — CLAUDE_CODE_SKIP_PROMPT_HISTORY is set · --resume will not find this session; if unint…
+  ⏸ manual mode on · ? for shortcuts

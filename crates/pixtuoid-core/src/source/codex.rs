@@ -714,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn a_childs_prompt_starts_it_under_its_root() {
+    fn a_childs_prompt_starts_it_under_its_root_on_its_model() {
         let evs = hook("UserPromptSubmit", true, json!({"prompt": "CHILD-TASK"}));
         let [
             AgentEvent::SessionStart {
@@ -722,20 +722,27 @@ mod tests {
                 parent_id,
                 ..
             },
+            AgentEvent::ModelHint {
+                agent_id: hinted, ..
+            },
         ] = &evs[..]
         else {
-            panic!("one SessionStart: {evs:?}");
+            panic!("a SessionStart and its model: {evs:?}");
         };
         assert_eq!(*agent_id, AgentId::from_parts(SOURCE_NAME, CHILD));
+        assert_eq!(hinted, agent_id);
         assert_eq!(*parent_id, Some(AgentId::from_parts(SOURCE_NAME, ROOT)));
         let evs = hook("UserPromptSubmit", false, json!({"prompt": "go"}));
         assert!(
             matches!(
                 &evs[..],
-                [AgentEvent::SessionStart {
-                    parent_id: None,
-                    ..
-                }]
+                [
+                    AgentEvent::SessionStart {
+                        parent_id: None,
+                        ..
+                    },
+                    AgentEvent::ModelHint { .. }
+                ]
             ),
             "{evs:?}"
         );

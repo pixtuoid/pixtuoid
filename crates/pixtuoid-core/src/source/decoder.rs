@@ -574,20 +574,35 @@ pub(crate) fn shared_hook_arms(
         cwd: obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into(),
         parent_id: None,
     };
+    // Beside a transcript, the hook's stands in until the transcript names one.
+    let hook_model = |model: Option<&str>| {
+        if desc.is_some_and(|d| d.line_decoder().is_some()) {
+            AgentEvent::model_hint(agent_id, model)
+        } else {
+            AgentEvent::model_info(agent_id, model, None)
+        }
+    };
 
     match event {
-        "SessionStart" => {
+        // Of CC's `SessionStart` `model`, "Claude Code doesn't always include it"
+        // (<https://code.claude.com/docs/en/hooks#common-input-fields>). A codex
+        // prompt's `model` is its turn's (`codex-rs/core/src/hook_runtime.rs:723`),
+        // so an `ephemeral` thread, which "should not be materialized on disk"
+        // (`codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs:228`,
+        // both at rust-v0.172.0), follows a switch by it. The JSONL rollout stays
+        // the system of record for Codex tool activity.
+        "SessionStart" | "UserPromptSubmit" => {
             let mut evs = vec![start()];
-            // CC sends `model` on SessionStart alone, "and Claude Code doesn't always
-            // include it" (hooks.md, Common input fields); codex's later hints add nothing.
-            let model = non_empty(obj, "model");
-            // Beside a transcript, the hook's stands in until it names one.
-            evs.extend(if desc.is_some_and(|d| d.line_decoder().is_some()) {
-                AgentEvent::model_hint(agent_id, model)
-            } else {
-                AgentEvent::model_info(agent_id, model, None)
-            });
+            evs.extend(hook_model(non_empty(obj, "model")));
             Ok(evs)
+        }
+        // "use a PostModelSwitch hook to follow the model as it changes during a
+        // session" (<https://code.claude.com/docs/en/hooks#common-input-fields>):
+        // a session with no transcript has no other way. `requested_model` may be
+        // an alias or null (<https://code.claude.com/docs/en/hooks#premodelswitch-input>).
+        "PostModelSwitch" => {
+            let model = required(source, event, "to_model", |k| non_empty(obj, k));
+            Ok(hook_model(model).into_iter().collect())
         }
         "PreToolUse" => {
             let tool_name = hook_tool_name(obj, source, event);
@@ -615,7 +630,7 @@ pub(crate) fn shared_hook_arms(
             Ok(evs)
         }
         // A failed call fires PostToolUseFailure in PostToolUse's place
-        // (hooks.md, PostToolUseFailure;
+        // (<https://code.claude.com/docs/en/hooks#posttoolusefailure>;
         // `packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:347-361`
         // at `@moonshot-ai/kimi-code@2.7.3`).
         "PostToolUse" | "PostToolUseFailure" => {
@@ -653,8 +668,6 @@ pub(crate) fn shared_hook_arms(
                 },
             ),
         ]),
-        // The JSONL rollout stays the system of record for Codex tool activity.
-        "UserPromptSubmit" => Ok(vec![start()]),
         // Stop must NOT end the session: turns end many times per session.
         "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
@@ -1000,31 +1013,44 @@ mod tests {
         }
     }
 
-    /// CC's and codex's transcripts carry the model, so their `SessionStart`
-    /// hook's is a hint; kimi's hook is the only one.
+    /// CC's and codex's transcripts carry the model, so a hook's is a hint
+    /// beside one; kimi's hook is the only one. `PostModelSwitch` names the
+    /// model in `to_model`, beside a `requested_model` that may be an alias
+    /// (<https://code.claude.com/docs/en/hooks#premodelswitch-input>).
     #[test]
-    fn a_session_start_hook_s_model_is_a_hint_beside_a_transcript() {
+    fn a_hook_s_model_is_a_hint_beside_a_transcript() {
         let long = "m".repeat(MAX_DECODED_FIELD_CHARS + 1);
         let capped = ellipsize(&long, MAX_DECODED_FIELD_CHARS);
-        for (source, hint) in [("claude-code", true), ("codex", true), ("kimi", false)] {
-            let models = |model: &str| {
-                let evs = decode_hook_payload(serde_json::json!({
-                    "_pixtuoid_source": source,
-                    "hook_event_name": "SessionStart",
-                    "session_id": "ses-m",
-                    "cwd": "/repo",
-                    "model": model
-                }))
-                .unwrap();
-                let models = evs.iter().filter_map(|e| match e {
-                    AgentEvent::ModelHint { model, .. } => Some((true, model.clone())),
-                    AgentEvent::ModelInfo { model, .. } => Some((false, model.clone()?)),
-                    _ => None,
-                });
-                models.collect::<Vec<_>>()
-            };
-            assert_eq!(models(&long), [(hint, capped.clone())], "{source}");
-            assert_eq!(models(""), [], "{source}");
+        for (event, key) in [
+            ("SessionStart", "model"),
+            ("PostModelSwitch", "to_model"),
+            ("UserPromptSubmit", "model"),
+        ] {
+            for (source, hint) in [("claude-code", true), ("codex", true), ("kimi", false)] {
+                let models = |model: Option<&str>| {
+                    let mut v = serde_json::json!({
+                        "_pixtuoid_source": source,
+                        "hook_event_name": event,
+                        "session_id": "ses-m",
+                        "cwd": "/repo",
+                        "requested_model": "opus"
+                    });
+                    if let Some(model) = model {
+                        v[key] = model.into();
+                    }
+                    let evs = decode_hook_payload(v).unwrap();
+                    let models = evs.iter().filter_map(|e| match e {
+                        AgentEvent::ModelHint { model, .. } => Some((true, model.clone())),
+                        AgentEvent::ModelInfo { model, .. } => Some((false, model.clone()?)),
+                        _ => None,
+                    });
+                    models.collect::<Vec<_>>()
+                };
+                let row = format!("{source} {event}");
+                assert_eq!(models(Some(&long)), [(hint, capped.clone())], "{row}");
+                assert_eq!(models(Some("")), [], "{row}");
+                assert_eq!(models(None), [], "{row}");
+            }
         }
     }
     use serde_json::json;

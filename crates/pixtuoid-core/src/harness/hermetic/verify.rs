@@ -775,7 +775,11 @@ fn judge(
         return Ok(None);
     }
     let sessions = match scenario.shape {
-        Shape::ToolRun | Shape::Permission | Shape::ModelError | Shape::Cancel => 1,
+        Shape::ToolRun
+        | Shape::Permission
+        | Shape::ModelError
+        | Shape::Cancel
+        | Shape::ModelSwitch => 1,
         Shape::Subagent | Shape::ChildError | Shape::Succession => 2,
     };
     started_in(
@@ -809,6 +813,7 @@ fn judge(
             findings,
         ),
         Shape::Succession => succession(&events, findings),
+        Shape::ModelSwitch => switched(&events, findings),
     }
     if p.descriptor().caps().brackets_turns {
         bracketed(p, scenario, &events, &reached, findings);
@@ -1299,6 +1304,25 @@ fn succession(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
     }
 }
 
+fn switched(events: &[AgentEvent], findings: &mut Vec<(Label, String)>) {
+    let named: Vec<&str> = events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ModelHint { model, .. }
+            | AgentEvent::ModelInfo {
+                model: Some(model), ..
+            } => Some(model.as_str()),
+            _ => None,
+        })
+        .collect();
+    if !named.windows(2).any(|w| w[0] != w[1]) {
+        findings.push((
+            Label::Fail,
+            "the session never named a model, then a different one".into(),
+        ));
+    }
+}
+
 /// The scene a headless pixtuoid painted, and every drift breadcrumb it logged.
 /// The agent must be seen in the `shown` state its shape is about, and every
 /// agent, a child under its own label included, gone once the run's last step
@@ -1353,7 +1377,8 @@ pub(super) fn settled(shape: Shape) -> Option<&'static str> {
         | Shape::Subagent
         | Shape::ChildError
         | Shape::Succession
-        | Shape::Cancel => None,
+        | Shape::Cancel
+        | Shape::ModelSwitch => None,
     }
 }
 
@@ -1746,6 +1771,41 @@ mod tests {
         let d = recorded_succession(OM_NEW_SCENE);
         let v = verify(d.path()).expect("verify");
         assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+    }
+
+    /// Claude Code's recorded `/model`, which asked the model nothing.
+    fn recorded_model_switch() -> tempfile::TempDir {
+        let scene = "agents=[cc\u{b7}proj@0:idle]\nagents=[] daemons=[]\n";
+        let d = recorded("claude-code", "model-switch", scene);
+        write_manifest(d.path(), "claude-code", |m| {
+            m.scenario = "model-switch".into();
+            m.requests = 0;
+        });
+        d
+    }
+
+    #[test]
+    fn a_recorded_model_switch_passes_and_one_naming_one_model_fails() {
+        let d = recorded_model_switch();
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(v.label(), Label::Pass, "{:?}", v.findings());
+        let mut started = None;
+        edit_hooks(d.path(), |mut v| {
+            match v["hook_event_name"].as_str() {
+                Some("SessionStart") => started = Some(v["model"].clone()),
+                Some("PostModelSwitch") => v["to_model"] = started.clone().expect("started first"),
+                _ => {}
+            }
+            Some(v)
+        });
+        let v = verify(d.path()).expect("verify");
+        assert_eq!(
+            v.findings(),
+            [(
+                Label::Fail,
+                "the session never named a model, then a different one".into()
+            )]
+        );
     }
 
     #[test]

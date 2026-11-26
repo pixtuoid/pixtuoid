@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "codex",
   "version": "codex-cli 0.172.0",
-  "captured": "2026-11-25",
+  "captured": "2026-11-26",
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 182
+    "blanked": 180
   },
   "aimock": "1.48.0",
   "script": "tests/sources/codex/hermetic/two-turn.json",
@@ -29,7 +29,7 @@
     }
   },
   "sentinel_reads": {
-    "rollout-2026-11-25T18-46-00-01a21407-6afb-7873-bc2c-6bc0973fb3bb.jsonl": [
+    "rollout-2026-11-25T18-56-22-01a215c8-5da7-73d2-ad09-589add0c7faa.jsonl": [
       "16:/payload/info/last_token_usage/cached_input_tokens",
       "22:/payload/info/last_token_usage/cached_input_tokens",
       "35:/payload/info/last_token_usage/cached_input_tokens",

@@ -258,13 +258,17 @@ pub(super) struct Correlation {
     /// reader that fails to declare costs its agent the count, and never counts
     /// a replay.
     pub(super) caught_up: HashSet<AgentId>,
+    /// Slots whose model an [`AgentEvent::ModelInfo`](crate::AgentEvent::ModelInfo)
+    /// set, which no [`AgentEvent::ModelHint`](crate::AgentEvent::ModelHint)
+    /// replaces.
+    pub(super) model_set_by_info: HashSet<AgentId>,
 }
 
 #[cfg(test)]
 impl Correlation {
     /// Each map's name and size, read off an exhaustive destructure: a map
     /// added to the struct fails to compile here until it is measured.
-    pub(super) fn sizes(&self) -> [(&'static str, usize); 9] {
+    pub(super) fn sizes(&self) -> [(&'static str, usize); 10] {
         let Self {
             lifecycles,
             recent_proof_of_life,
@@ -275,6 +279,7 @@ impl Correlation {
             call_holders,
             reading_holders,
             caught_up,
+            model_set_by_info,
         } = self;
         [
             ("lifecycles", lifecycles.len()),
@@ -286,6 +291,7 @@ impl Correlation {
             ("call_holders", call_holders.len()),
             ("reading_holders", reading_holders.len()),
             ("caught_up", caught_up.len()),
+            ("model_set_by_info", model_set_by_info.len()),
         ]
     }
 }

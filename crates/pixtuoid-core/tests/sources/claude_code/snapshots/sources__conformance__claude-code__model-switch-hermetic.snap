@@ -1,0 +1,19 @@
+---
+source: crates/pixtuoid-core/tests/sources/conformance.rs
+expression: events
+---
+- SessionStart:
+    agent_id: 15285445526180414313
+    source: claude-code
+    session_id: 53b76a84-261f-4e05-94b3-285b42bf0d92
+    cwd: /private/tmp/pixtuoid-capture/proj
+    parent_id: ~
+- ModelHint:
+    agent_id: 15285445526180414313
+    model: claude-sonnet-5-5
+- ModelHint:
+    agent_id: 15285445526180414313
+    model: claude-haiku-5-5
+- SessionEnd:
+    agent_id: 15285445526180414313
+    as_child: false

@@ -93,7 +93,8 @@ pub(crate) const PROFILE: Profile = Profile {
             turn: Turn::PROFILE,
         },
         // A Bash call that runs and exits non-zero: a call its validation
-        // rejects fires no hook (hooks.md, PostToolUseFailure).
+        // rejects fires no hook, since "Validation rejections ... happen before
+        // hooks run" (<https://code.claude.com/docs/en/hooks#posttoolusefailure>).
         Scenario {
             name: "tool-error",
             shape: Shape::ToolRun,
@@ -118,6 +119,25 @@ pub(crate) const PROFILE: Profile = Profile {
                 args: &["--effort", "ultracode"],
                 prompt: Some("ultrathink: read NOTE.txt."),
                 second: Some(Second::Prompt("Say done.")),
+                ..Turn::PROFILE
+            },
+        },
+        // A session that saves no transcript switches its model, so only its
+        // hooks name each: its seed's `model`, then the switch's. The seed's
+        // `CLAUDE_CODE_SKIP_PROMPT_HISTORY` does in any mode what `-p`'s
+        // `--no-session-persistence` does
+        // (<https://code.claude.com/docs/en/cli-reference>), and the TUI's
+        // `SessionStart` names its model where a `-p` one names none
+        // (`permission-hermetic`'s `SessionStart` against `tool-run-hermetic`'s).
+        Scenario {
+            name: "model-switch",
+            shape: Shape::ModelSwitch,
+            surface: Surface::Tui { row: &TUI },
+            expects: &["SessionStart", "PostModelSwitch", "SessionEnd"],
+            turn: Turn {
+                prompt: Some("/model haiku"),
+                seed: Some("model-switch"),
+                saves_transcript: false,
                 ..Turn::PROFILE
             },
         },
