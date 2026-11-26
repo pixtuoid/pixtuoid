@@ -1,23 +1,17 @@
 #!/usr/bin/env python3
-"""Render the README's star-history chart from GitHub's own star history.
-
-GitHub announced on 2026-06-30 that `stargazers` (the who-starred-when list)
-would be limited to a repository's admins and collaborators —
-https://github.blog/changelog/2026-06-30-upcoming-access-restrictions-to-public-api-endpoints-and-ui-views/
-— and the cut-over blanked every hosted chart service (star-history.com
-included) for every repo it does not own. The chart is drawn here from the
-star history, which a public repo serves to any caller, and published to the
-`star-history` branch by `.github/workflows/star-history.yml`; nothing leaves
-the repo.
+"""Render the README's star-history chart in the office's own pixels.
 
 The chart is the office's night window: one tower per month of the last
 year, a floor per `stars_per_floor` stars, and this month's tower still going
-up under a crane.
+up under a crane. It is drawn here from GitHub's own star history and
+published to the `star-history` branch by `.github/workflows/star-history.yml`,
+because no hosted chart service can draw it.
 
-Usage: `star-history.py OWNER/REPO OUT_DIR` with the token in `GH_TOKEN`
-(`GITHUB_TOKEN` accepted). Writes `star-history-{light,dark}.svg`.
-`--selftest` exercises the pure halves (bucketing, axes, rendering, paging)
-with no network; exit 0 = pass.
+Usage: `star-history.py REPO_JSON HISTORY_JSON OUT_DIR` writes
+`star-history-{light,dark}.svg` from the two files the workflow's
+"Read the star history" step writes; run its `gh api` lines by hand for a
+local chart.
+`--selftest` exercises everything but the fetch; exit 0 = pass.
 """
 
 from __future__ import annotations
@@ -25,16 +19,13 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
-import os
 import pathlib
 import re
 import sys
 import unittest
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Iterable
-from typing import Any, NamedTuple
-from unittest import mock
-from urllib import request
+from collections.abc import Iterable
+from typing import NamedTuple
 
 from readme_pixels import (
     BASELINE,
@@ -52,15 +43,6 @@ from readme_pixels import (
     text_path,
     text_width,
 )
-
-API_URL = "https://api.github.com"
-# Pinned: an unversioned call drifts as GitHub retires its default, a retired pin answers 410 —
-# https://docs.github.com/en/rest/about-the-rest-api/api-versions
-API_VERSION = "2026-03-10"
-# The star history's documented `per_page` ceiling.
-HISTORY_PAGE = 30
-FETCH_TIMEOUT_S = 30
-NEXT_LINK = re.compile(r'<([^>]+)>;\s*rel="next"')
 
 Point = tuple[dt.date, int]
 
@@ -487,49 +469,23 @@ def write_charts(
     return paths
 
 
-Get = Callable[[str, str], tuple[Any, str | None]]
-
-
-def _next_link(header: str | None) -> str | None:
-    """The `rel="next"` URL of a `link` header; None on the last page."""
-    m = NEXT_LINK.search(header or "")
-    return m.group(1) if m else None
-
-
-def _rest_get(url: str, token: str) -> tuple[Any, str | None]:
-    """The reply's JSON and its next page's URL."""
-    req = request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {token}",
-            "User-Agent": "pixtuoid-star-history",
-            "X-GitHub-Api-Version": API_VERSION,
-        },
-    )
-    with request.urlopen(req, timeout=FETCH_TIMEOUT_S) as resp:
-        return json.load(resp), _next_link(resp.headers.get("link"))
-
-
-def fetch_star_dates(repo: str, token: str, get: Get = _rest_get) -> list[dt.date]:
-    """One date per star, from GitHub's star history:
+def star_dates(repo: str, count: int, pages: list[list[dict]]) -> list[dt.date]:
+    """One date per star in the pages of GitHub's star history (`gh api --paginate --slurp`):
     https://docs.github.com/en/rest/activity/starring#get-repository-star-history
     """
-    count = get(f"{API_URL}/repos/{repo}/stargazers/count", token)[0]["count"]
     dates: list[dt.date] = []
-    url = f"{API_URL}/repos/{repo}/stargazers/history?per_page={HISTORY_PAGE}"
-    while url:
-        weeks, url = get(url, token)
-        for week in weeks:
-            # `week` is its Sunday at 00:00 UTC (observed), but the days come bucketed in GitHub's
-            # own day, "not guaranteed to align with UTC": a star near midnight lands in the
-            # neighbouring day, and month, moving that month's tower by it, never the total.
-            sunday = dt.datetime.fromtimestamp(week["week"], dt.UTC).date()
-            for offset, stars in enumerate(week["days"]):
-                dates += [sunday + dt.timedelta(days=offset)] * stars
-    # No star under a non-zero count is the shape the changelog above announced for the list
-    # ("empty responses"), and would blank the README's chart. Any smaller shortfall is not
-    # that: the count also holds stars the history never returns (observed).
+    for week in (w for page in pages for w in page):
+        # `week` is its Sunday at 00:00 UTC (observed), but the days come bucketed in GitHub's
+        # own day, "not guaranteed to align with UTC": a star near midnight lands in the
+        # neighbouring day, and month, moving that month's tower by it, never the total.
+        sunday = dt.datetime.fromtimestamp(week["week"], dt.UTC).date()
+        for offset, stars in enumerate(week["days"]):
+            dates += [sunday + dt.timedelta(days=offset)] * stars
+    # No star under a non-zero count is the shape GitHub announced for the stargazers list it
+    # withheld ("empty responses",
+    # https://github.blog/changelog/2026-06-30-upcoming-access-restrictions-to-public-api-endpoints-and-ui-views/),
+    # and would blank the README's chart. Any smaller shortfall is not that: the count also
+    # holds stars the history never returns (observed).
     if not dates and count:
         raise RuntimeError(
             f"{repo}: the star history returned no stars for stargazer count {count}"
@@ -545,20 +501,6 @@ def _week(sunday: str, days: list[int]) -> dict:
     """One week of star history as the endpoint serves it."""
     start = dt.datetime.fromisoformat(sunday).replace(tzinfo=dt.UTC)
     return {"week": int(start.timestamp()), "total": sum(days), "days": days}
-
-
-def _fake_api(count: int, *pages: list[dict]) -> tuple[Get, list[str]]:
-    """A `get` serving `count`, then `pages` of history each linking the next; and the URLs it was asked for."""
-    seen: list[str] = []
-
-    def get(url: str, token: str) -> tuple[Any, str | None]:
-        seen.append(url)
-        if url.endswith("/stargazers/count"):
-            return {"count": count}, None
-        page = sum("/stargazers/count" not in u for u in seen) - 1
-        return pages[page], f"next-{page + 1}" if page + 1 < len(pages) else None
-
-    return get, seen
 
 
 class SelfTest(unittest.TestCase):
@@ -908,72 +850,47 @@ class SelfTest(unittest.TestCase):
             "empty series must still state a zero count",
         )
 
-    def test_fetch_follows_next_links_until_the_last_page(self) -> None:
-        get, seen = _fake_api(
+    def test_star_dates_run_every_page_from_each_sunday(self) -> None:
+        got = star_dates(
+            "o/r",
             6,
-            [_week("2026-11-22", [3, 1, 0, 0, 0, 0, 0])],
-            [_week("2026-11-15", [0, 0, 0, 0, 0, 0, 2])],
+            [
+                [_week("2026-11-22", [3, 1, 0, 0, 0, 0, 0])],
+                [_week("2026-11-15", [0, 0, 0, 0, 0, 0, 2])],
+            ],
         )
-        got = fetch_star_dates("o/r", "t", get=get)
         self.assertTrue(
             sorted(got)
             == [_d("2026-11-21")] * 2 + [_d("2026-11-22")] * 3 + [_d("2026-11-23")],
-            f"each week's days run from its Sunday, one date per star, got {sorted(got)}",
-        )
-        self.assertTrue(
-            seen
-            == [
-                f"{API_URL}/repos/o/r/stargazers/count",
-                f"{API_URL}/repos/o/r/stargazers/history?per_page={HISTORY_PAGE}",
-                "next-1",
-            ],
-            f"fetch must read the count, then follow each page's next link to the last, sent {seen}",
+            f"each week's days run from its Sunday, one date per star, on every page: {sorted(got)}",
         )
 
-    def test_next_link_reads_only_rel_next(self) -> None:
-        # https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api's own example.
-        header = (
-            '<https://api.github.com/repositories/1300192/issues?page=2>; rel="prev", '
-            '<https://api.github.com/repositories/1300192/issues?page=4>; rel="next", '
-            '<https://api.github.com/repositories/1300192/issues?page=515>; rel="last", '
-            '<https://api.github.com/repositories/1300192/issues?page=1>; rel="first"'
-        )
-        self.assertTrue(
-            _next_link(header)
-            == "https://api.github.com/repositories/1300192/issues?page=4",
-            f"got {_next_link(header)}",
-        )
-        last = '<https://api.github.com/x?page=2>; rel="prev", <https://api.github.com/x?page=1>; rel="first"'
-        self.assertTrue(
-            _next_link(last) is None and _next_link(None) is None,
-            "the last page, and a reply with no link header, end the paging",
-        )
+    def test_star_dates_refuse_a_withheld_history(self) -> None:
+        for count in (1, 452):
+            for pages in ([[]], [[_week("2026-11-22", [0] * 7)]]):
+                with self.assertRaises(
+                    RuntimeError,
+                    msg=f"no star under a count of {count} is a withheld history; it must raise, not publish a blank chart: {pages}",
+                ) as raised:
+                    star_dates("o/r", count, pages)
+                self.assertTrue(
+                    str(raised.exception).endswith(
+                        f"returned no stars for stargazer count {count}"
+                    ),
+                    f"the message must name what it refuses and the count: {raised.exception}",
+                )
 
-    def test_fetch_refuses_a_withheld_history(self) -> None:
-        for page in ([], [_week("2026-11-22", [0] * 7)]):
-            get, _ = _fake_api(452, page)
-            with self.assertRaises(
-                RuntimeError,
-                msg=f"no star under a non-zero count is the withdrawal shape; it must raise, not publish a blank chart: {page}",
-            ) as raised:
-                fetch_star_dates("o/r", "t", get=get)
-            self.assertTrue(
-                "no stars" in str(raised.exception) and "452" in str(raised.exception),
-                f"the message must name what it refuses and the count: {raised.exception}",
-            )
-
-    def test_fetch_charts_any_star_the_history_holds(self) -> None:
+    def test_star_dates_chart_any_star_the_history_holds(self) -> None:
         for count, stars in ((452, 1), (452, 451), (10**6, 1)):
-            get, _ = _fake_api(count, [_week("2026-11-22", [stars, 0, 0, 0, 0, 0, 0])])
+            week = _week("2026-11-22", [stars, 0, 0, 0, 0, 0, 0])
             self.assertTrue(
-                fetch_star_dates("o/r", "t", get=get) == [_d("2026-11-22")] * stars,
+                star_dates("o/r", count, [[week]]) == [_d("2026-11-22")] * stars,
                 f"{stars} of {count} stars must chart: the count also holds stars the history never returns",
             )
 
-    def test_fetch_charts_a_repo_with_no_stars(self) -> None:
-        get, _ = _fake_api(0, [_week("2026-11-22", [0] * 7)])
+    def test_star_dates_chart_a_repo_with_no_stars(self) -> None:
         self.assertTrue(
-            fetch_star_dates("o/r", "t", get=get) == [],
+            star_dates("o/r", 0, [[_week("2026-11-22", [0] * 7)]]) == [],
             "no star under a zero count is a starless repo, not a withheld history",
         )
 
@@ -993,12 +910,6 @@ class SelfTest(unittest.TestCase):
                 "every chart must be written non-empty",
             )
 
-    def test_main_needs_a_token(self) -> None:
-        with mock.patch.dict(os.environ, clear=True):
-            self.assertEqual(
-                main(["o/r", "out"]), 2, "no token must exit 2, before any request"
-            )
-
 
 SVG_NS = "{http://www.w3.org/2000/svg}"
 # One `_run` rectangle; every path here is built from them.
@@ -1008,22 +919,22 @@ RUN_RE = re.compile(r"M(-?\d+) (-?\d+)h(\d+)v(\d+)h-\d+z")
 def main(argv: list[str]) -> int:
     if "--selftest" in argv:
         unittest.main(argv=sys.argv[:1])
-    if len(argv) != 2:
+    if len(argv) != 3:
         print(__doc__, file=sys.stderr)
         return 2
-    repo, out_dir = argv
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    # Not for access: a token lifts the per-IP unauthenticated rate limit —
-    # https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
-    if not token:
-        print("star-history: GH_TOKEN (or GITHUB_TOKEN) is unset", file=sys.stderr)
-        return 2
-    dates = fetch_star_dates(repo, token)
+    repo_json, history_json, out_dir = (pathlib.Path(a) for a in argv)
+    repo = json.loads(repo_json.read_text(encoding="utf-8"))
+    name = repo["full_name"]
+    dates = star_dates(
+        name,
+        repo["stargazers_count"],
+        json.loads(history_json.read_text(encoding="utf-8")),
+    )
     series = cumulative_by_day(dates)
     today = dt.datetime.now(dt.UTC).date()
-    for p in write_charts(repo, series, pathlib.Path(out_dir), today):
+    for p in write_charts(name, series, out_dir, today):
         print(p)
-    print(f"{repo}: {len(dates)} stars", file=sys.stderr)
+    print(f"{name}: {len(dates)} stars", file=sys.stderr)
     return 0
 
 
