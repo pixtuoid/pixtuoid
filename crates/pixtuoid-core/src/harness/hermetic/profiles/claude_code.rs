@@ -92,10 +92,9 @@ pub(crate) const PROFILE: Profile = Profile {
             expects: &["SessionStart", "PreToolUse", "PostToolUse", "SessionEnd"],
             turn: Turn::PROFILE,
         },
-        // A Bash call that runs and exits non-zero, since PostToolUseFailure
-        // "Runs when a tool that started executing fails"
-        // (<https://code.claude.com/docs/en/hooks#posttoolusefailure>), which a
-        // call its validation rejects never does.
+        // A Bash call that runs and exits non-zero: a call its validation
+        // rejects fires no hook, since "Validation rejections ... happen before
+        // hooks run" (<https://code.claude.com/docs/en/hooks#posttoolusefailure>).
         Scenario {
             name: "tool-error",
             shape: Shape::ToolRun,
