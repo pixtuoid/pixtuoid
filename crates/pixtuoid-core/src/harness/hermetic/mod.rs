@@ -1593,6 +1593,20 @@ mod tests {
             }))),
             "blocks are served in place of toolCalls"
         );
+        assert!(
+            calls_a_tool(&reply(serde_json::json!({
+                "blocks": [],
+                "toolCalls": [{ "name": "read", "arguments": "{}" }]
+            }))),
+            "an empty blocks array is not served"
+        );
+        assert!(
+            !calls_a_tool(&reply(serde_json::json!({
+                "responsesBlocks": [{ "type": "text", "text": "Reading." }],
+                "blocks": [{ "type": "toolCall", "name": "read", "arguments": "{}" }]
+            }))),
+            "responsesBlocks are served in place of blocks"
+        );
         assert!(!calls_a_tool(&reply(
             serde_json::json!({ "toolCalls": [] })
         )));
