@@ -584,10 +584,15 @@ pub(crate) fn shared_hook_arms(
     };
 
     match event {
-        "SessionStart" => {
+        // Of CC's `SessionStart` `model`, "Claude Code doesn't always include it"
+        // (<https://code.claude.com/docs/en/hooks#common-input-fields>). A codex
+        // prompt's `model` is its turn's (`codex-rs/core/src/hook_runtime.rs:723`),
+        // so an `ephemeral` thread, which "should not be materialized on disk"
+        // (`codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs:228`,
+        // both at rust-v0.172.0), follows a switch by it. The JSONL rollout stays
+        // the system of record for Codex tool activity.
+        "SessionStart" | "UserPromptSubmit" => {
             let mut evs = vec![start()];
-            // "Claude Code doesn't always include it"
-            // (<https://code.claude.com/docs/en/hooks#common-input-fields>).
             evs.extend(hook_model(non_empty(obj, "model")));
             Ok(evs)
         }
@@ -663,16 +668,6 @@ pub(crate) fn shared_hook_arms(
                 },
             ),
         ]),
-        // The JSONL rollout stays the system of record for Codex tool activity.
-        // Its `model` is the turn's (`codex-rs/core/src/hook_runtime.rs:723`),
-        // which an `ephemeral` thread, with no rollout, follows a switch by
-        // (`codex-rs/app-server-protocol/schema/typescript/v2/ThreadStartParams.ts:19`,
-        // both at rust-v0.172.0).
-        "UserPromptSubmit" => {
-            let mut evs = vec![start()];
-            evs.extend(hook_model(non_empty(obj, "model")));
-            Ok(evs)
-        }
         // Stop must NOT end the session: turns end many times per session.
         "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
         "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
