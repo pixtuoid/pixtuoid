@@ -121,18 +121,20 @@ pub(crate) const PROFILE: Profile = Profile {
                 ..Turn::PROFILE
             },
         },
-        // A session that saves no transcript (`--no-session-persistence`,
-        // <https://code.claude.com/docs/en/cli-reference>) switching by `-p`'s
-        // `/model <model>` (<https://code.claude.com/docs/en/commands>, `/model`):
-        // its hooks alone name the model it switched to.
+        // A session that saves no transcript switches its model, so only its
+        // hooks name each: its seed's `model`, then the switch's. The seed's
+        // `CLAUDE_CODE_SKIP_PROMPT_HISTORY` does in any mode what `-p`'s
+        // `--no-session-persistence` does
+        // (<https://code.claude.com/docs/en/cli-reference>), and the TUI's
+        // `SessionStart` names its model where a `-p` one names none.
         Scenario {
             name: "model-switch",
             shape: Shape::ModelSwitch,
-            surface: Surface::Headless,
+            surface: Surface::Tui { row: &TUI },
             expects: &["SessionStart", "PostModelSwitch", "SessionEnd"],
             turn: Turn {
-                args: &["--no-session-persistence", "--model", "sonnet"],
                 prompt: Some("/model haiku"),
+                seed: Some("model-switch"),
                 saves_transcript: false,
                 ..Turn::PROFILE
             },

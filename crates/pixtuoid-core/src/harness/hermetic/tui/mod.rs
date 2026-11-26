@@ -1246,7 +1246,13 @@ mod tests {
     fn each_row_takes_the_prompt_and_ends_the_turn_its_run_recorded_as_it_answers() {
         const CODEX_TURN_ONE: &str = screen!("codex", "turn-one");
         const GROK_TURN_ONE: &str = screen!("grok", "turn-one");
-        let recorded: [(&str, &str, &str, &[&str]); 24] = [
+        let recorded: [(&str, &str, &str, &[&str]); 25] = [
+            (
+                "claude-code",
+                "model-switch",
+                BOOT,
+                &[screen!("claude_code", "model-switch")],
+            ),
             ("claude-code", "permission", BOOT, &[GATE]),
             ("codex", "permission", CODEX_BOOT, &[CODEX_GATE]),
             ("codex", "cancel", CODEX_BOOT, &[CODEX_CANCEL]),

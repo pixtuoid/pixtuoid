@@ -281,7 +281,7 @@ pub enum Shape {
     /// registers, and its turn ends.
     Cancel,
     /// A command that switches the session's model: the session registers,
-    /// names the model it switched to, and ends.
+    /// names a model, then a different one, and ends.
     ModelSwitch,
 }
 

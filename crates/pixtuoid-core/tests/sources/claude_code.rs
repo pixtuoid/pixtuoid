@@ -399,3 +399,38 @@ fn the_meter_is_the_sum_per_message_of_a_recorded_run() {
     let meter: u64 = driven.scene.agents.values().map(|a| a.tokens_used).sum();
     assert_eq!(meter, per_message);
 }
+
+/// A session that saves no transcript names its model in its hooks alone, its
+/// `SessionStart`'s and then its switch's, which the slot follows.
+#[test]
+fn a_recorded_session_with_no_transcript_follows_its_switch() {
+    let hooks = super::captures::sources_root()
+        .join("claude_code/fixtures/model-switch-hermetic")
+        .join(pixtuoid_core::harness::HOOK_PAYLOADS);
+    let lines = super::captures::fixture_lines(&hooks);
+    let named = |event: &str, key: &str| -> String {
+        lines
+            .iter()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).expect("valid hook json"))
+            .find(|v| v["hook_event_name"] == event)
+            .and_then(|v| v[key].as_str().map(str::to_owned))
+            .unwrap_or_else(|| panic!("the recording's {event} names its {key}"))
+    };
+    let (started, switched) = (
+        named("SessionStart", "model"),
+        named("PostModelSwitch", "to_model"),
+    );
+    assert_ne!(
+        started, switched,
+        "precondition: the switch changes the model"
+    );
+    let driven = Drive::hooks().lines(lines);
+    driven.assert_clean("claude-code model switch");
+    let models: Vec<_> = driven
+        .scene
+        .agents
+        .values()
+        .map(|a| a.model.as_deref())
+        .collect();
+    assert_eq!(models, [Some(switched.as_str())]);
+}

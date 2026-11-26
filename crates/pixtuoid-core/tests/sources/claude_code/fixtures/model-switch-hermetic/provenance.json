@@ -8,6 +8,7 @@
     "method": "decoder-allowlist",
     "blanked": 14
   },
+  "seed": "tests/sources/claude_code/hermetic/model-switch",
   "aimock": "1.48.0",
   "script": "tests/sources/claude_code/hermetic/model-switch.json",
   "dropped": {
