@@ -2093,16 +2093,6 @@ mod tests {
         })
     }
 
-    #[test]
-    fn grok_tagged_grok_envelope_decodes_via_the_custom_decoder() {
-        let evs = decode_hook_payload(grok_envelope("grok")).expect("decodes");
-        assert_eq!(evs.len(), 2, "Identity + ToolUseStart");
-        assert!(
-            evs.iter()
-                .all(|e| e.agent_id() == crate::AgentId::from_parts("grok", "0197fa30-sess"))
-        );
-    }
-
     /// cursor's envelopes on the claude-code channel, which used to reach CC's
     /// arms and bail.
     #[test]

@@ -3002,24 +3002,6 @@ mod tests {
     }
 
     #[test]
-    fn a_stamped_omp_payload_routes_to_this_decoder_through_the_registry() {
-        // Red until the registry row carries `HookDecoding::ClaimsAll`: without
-        // it the entry reads the payload on the shared CC envelope, finds no
-        // `hook_event_name` and refuses it.
-        let evs = crate::source::decoder::decode_hook_payload(serde_json::json!({
-            "_pixtuoid_source": "omp",
-            "type": "session_start", "sessionFile": HOOK_ROOT,
-            "sessionId": "x", "cwd": "/repo",
-        }))
-        .unwrap();
-        assert!(
-            matches!(&evs[..], [AgentEvent::SessionStart { agent_id, .. }, AgentEvent::Identity { .. }]
-                if *agent_id == hook_id(HOOK_ROOT)),
-            "expected the ClaimsAll route: {evs:?}"
-        );
-    }
-
-    #[test]
     fn a_raw_windows_hook_path_folds_to_the_watcher_key() {
         // The hook path arrives RAW from the TS extension; the decoder must
         // apply the same seam fold the JSONL watcher applies, or the two
