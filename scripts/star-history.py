@@ -1,24 +1,17 @@
 #!/usr/bin/env python3
-"""Render the README's star-history chart from GitHub's own stargazers data.
-
-GitHub announced on 2026-06-30 that `stargazers` (the who-starred-when list)
-would be limited to a repository's admins and collaborators —
-https://github.blog/changelog/2026-06-30-upcoming-access-restrictions-to-public-api-endpoints-and-ui-views/
-— and the cut-over blanked every hosted chart service (star-history.com
-included) for every repo it does not own. The repo's own Actions token is
-assumed to be a collaborator — the changelog names neither GraphQL nor Actions
-tokens, so the first live run is the proof — and the chart is drawn here and
-published to the `star-history` branch by `.github/workflows/star-history.yml`;
-nothing leaves the repo.
+"""Render the README's star-history chart in the office's own pixels.
 
 The chart is the office's night window: one tower per month of the last
 year, a floor per `stars_per_floor` stars, and this month's tower still going
-up under a crane.
+up under a crane. It is drawn here from GitHub's own star history and
+published to the `star-history` branch by `.github/workflows/star-history.yml`,
+because no hosted chart service can draw it.
 
-Usage: `star-history.py OWNER/REPO OUT_DIR` with the token in `GH_TOKEN`
-(`GITHUB_TOKEN` accepted). Writes `star-history-{light,dark}.svg`.
-`--selftest` exercises the pure halves (bucketing, axes, rendering, paging)
-with no network; exit 0 = pass.
+Usage: `star-history.py OWNER/REPO HISTORY_JSON OUT_DIR` writes
+`star-history-{light,dark}.svg` from the file the workflow's
+"Read the star history" step writes; run its `gh api` line by hand for a
+local chart.
+`--selftest` exercises everything but the fetch; exit 0 = pass.
 """
 
 from __future__ import annotations
@@ -26,16 +19,13 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
-import os
 import pathlib
 import re
 import sys
 import unittest
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from typing import NamedTuple
-from unittest import mock
-from urllib import request
 
 from readme_pixels import (
     BASELINE,
@@ -53,21 +43,6 @@ from readme_pixels import (
     text_path,
     text_width,
 )
-
-GRAPHQL_URL = "https://api.github.com/graphql"
-# The API's hard page ceiling for `stargazers(first:)`.
-PAGE_SIZE = 100
-STARGAZERS_QUERY = """
-query($owner: String!, $name: String!, $first: Int!, $after: String) {
-  repository(owner: $owner, name: $name) {
-    stargazerCount
-    stargazers(first: $first, after: $after, orderBy: {field: STARRED_AT, direction: ASC}) {
-      edges { starredAt }
-      pageInfo { hasNextPage endCursor }
-    }
-  }
-}
-"""
 
 Point = tuple[dt.date, int]
 
@@ -494,56 +469,36 @@ def write_charts(
     return paths
 
 
-def _graphql_post(query: str, variables: dict, token: str) -> dict:
-    body = json.dumps({"query": query, "variables": variables}).encode()
-    req = request.Request(
-        GRAPHQL_URL,
-        data=body,
-        headers={
-            "Authorization": f"bearer {token}",
-            "Content-Type": "application/json",
-            "User-Agent": "pixtuoid-star-history",
-        },
-    )
-    with request.urlopen(req, timeout=30) as resp:
-        return json.load(resp)
-
-
-def fetch_star_dates(
-    repo: str, token: str, post: Callable[[str, dict, str], dict] = _graphql_post
-) -> list[dt.date]:
-    owner, name = repo.split("/", 1)
+def star_dates(repo: str, pages: list[list[dict]]) -> list[dt.date]:
+    """One date per star in the pages of GitHub's star history (`gh api --paginate --slurp`):
+    https://docs.github.com/en/rest/activity/starring#get-repository-star-history
+    """
     dates: list[dt.date] = []
-    after: str | None = None
-    while True:
-        reply = post(
-            STARGAZERS_QUERY,
-            {"owner": owner, "name": name, "first": PAGE_SIZE, "after": after},
-            token,
-        )
-        if reply.get("errors"):
-            raise RuntimeError(
-                f"GraphQL errors for {repo}: {json.dumps(reply['errors'])}"
-            )
-        repository = reply["data"]["repository"]
-        page = repository["stargazers"]
-        dates.extend(
-            dt.datetime.fromisoformat(e["starredAt"]).date() for e in page["edges"]
-        )
-        if page["pageInfo"]["hasNextPage"]:
-            after = page["pageInfo"]["endCursor"]
-            continue
-        # The announced deprecation shape is an EMPTY list, not an error; a blank
-        # chart would replace the README's, so fewer rows than the public count reds the run.
-        if len(dates) < repository["stargazerCount"]:
-            raise RuntimeError(
-                f"{repo}: stargazers returned {len(dates)} rows for stargazerCount {repository['stargazerCount']}"
-            )
-        return dates
+    for week in (w for page in pages for w in page):
+        # `week` is its Sunday at 00:00 UTC (observed), but the days come bucketed in GitHub's
+        # own day, "not guaranteed to align with UTC": a star near midnight lands in the
+        # neighbouring day, and month, moving that month's tower by it, never the total.
+        sunday = dt.datetime.fromtimestamp(week["week"], dt.UTC).date()
+        for offset, stars in enumerate(week["days"]):
+            dates += [sunday + dt.timedelta(days=offset)] * stars
+    # No star is the shape GitHub announced for the stargazers list it withheld
+    # ("empty responses",
+    # https://github.blog/changelog/2026-06-30-upcoming-access-restrictions-to-public-api-endpoints-and-ui-views/),
+    # and would blank the README's chart. The star count is no tighter bound: it also holds
+    # stars the history never returns (observed).
+    if not dates:
+        raise RuntimeError(f"{repo}: the star history returned no stars")
+    return dates
 
 
 def _d(s: str) -> dt.date:
     return dt.date.fromisoformat(s)
+
+
+def _week(sunday: str, days: list[int]) -> dict:
+    """One week of star history as the endpoint serves it."""
+    start = dt.datetime.fromisoformat(sunday).replace(tzinfo=dt.UTC)
+    return {"week": int(start.timestamp()), "total": sum(days), "days": days}
 
 
 class SelfTest(unittest.TestCase):
@@ -893,97 +848,37 @@ class SelfTest(unittest.TestCase):
             "empty series must still state a zero count",
         )
 
-    def test_fetch_follows_cursors_until_the_last_page(self) -> None:
-        pages = [
-            {
-                "data": {
-                    "repository": {
-                        "stargazerCount": 3,
-                        "stargazers": {
-                            "edges": [
-                                {"starredAt": "2026-05-24T04:01:48Z"},
-                                {"starredAt": "2026-05-24T07:07:52Z"},
-                            ],
-                            "pageInfo": {"hasNextPage": True, "endCursor": "c1"},
-                        },
-                    }
-                }
-            },
-            {
-                "data": {
-                    "repository": {
-                        "stargazerCount": 3,
-                        "stargazers": {
-                            "edges": [{"starredAt": "2026-05-25T00:00:00Z"}],
-                            "pageInfo": {"hasNextPage": False, "endCursor": "c2"},
-                        },
-                    }
-                }
-            },
-        ]
-        seen: list[dict] = []
-
-        def post(query: str, variables: dict, token: str) -> dict:
-            seen.append(variables)
-            return pages[len(seen) - 1]
-
-        got = fetch_star_dates("o/r", "t", post=post)
-        self.assertTrue(
-            got == [_d("2026-05-24"), _d("2026-05-24"), _d("2026-05-25")],
-            f"fetch must flatten pages to dates, got {got}",
+    def test_star_dates_run_every_page_from_each_sunday(self) -> None:
+        got = star_dates(
+            "o/r",
+            [
+                [_week("2026-11-22", [3, 1, 0, 0, 0, 0, 0])],
+                [_week("2026-11-15", [0, 0, 0, 0, 0, 0, 2])],
+            ],
         )
         self.assertTrue(
-            [v.get("after") for v in seen] == [None, "c1"],
-            f"fetch must thread the cursor, sent {seen}",
+            sorted(got)
+            == [_d("2026-11-21")] * 2 + [_d("2026-11-22")] * 3 + [_d("2026-11-23")],
+            f"each week's days run from its Sunday, one date per star, on every page: {sorted(got)}",
         )
+
+    def test_star_dates_refuse_a_withheld_history(self) -> None:
+        for pages in ([[]], [[_week("2026-11-22", [0] * 7)]]):
+            with self.assertRaises(
+                RuntimeError,
+                msg=f"no star is a withheld history; it must raise, not publish a blank chart: {pages}",
+            ) as raised:
+                star_dates("o/r", pages)
+            self.assertTrue(
+                str(raised.exception) == "o/r: the star history returned no stars",
+                f"the message must name the repo and what it refuses: {raised.exception}",
+            )
+
+    def test_star_dates_chart_a_single_star(self) -> None:
         self.assertTrue(
-            seen[0]["owner"] == "o" and seen[0]["name"] == "r",
-            "fetch must split owner/name",
-        )
-
-    def test_fetch_refuses_a_withheld_list(self) -> None:
-        def post(query: str, variables: dict, token: str) -> dict:
-            return {
-                "data": {
-                    "repository": {
-                        "stargazerCount": 452,
-                        "stargazers": {
-                            "edges": [],
-                            "pageInfo": {"hasNextPage": False, "endCursor": None},
-                        },
-                    }
-                }
-            }
-
-        with self.assertRaises(
-            RuntimeError,
-            msg="an empty list under a non-zero stargazerCount is the deprecation shape — it must raise, not publish a blank chart",
-        ) as raised:
-            fetch_star_dates("o/r", "t", post=post)
-        self.assertTrue(
-            "452" in str(raised.exception) and "0" in str(raised.exception),
-            f"the message must show count vs rows: {raised.exception}",
-        )
-
-    def test_fetch_raises_on_graphql_errors(self) -> None:
-        def post(query: str, variables: dict, token: str) -> dict:
-            return {
-                "errors": [
-                    {
-                        "type": "NOT_FOUND",
-                        "message": "Could not resolve to a Repository",
-                    }
-                ]
-            }
-
-        with self.assertRaises(
-            RuntimeError, msg="fetch must raise on a GraphQL errors array"
-        ) as raised:
-            fetch_star_dates("o/r", "t", post=post)
-        self.assertIn(
-            "NOT_FOUND",
-            str(raised.exception),
-            "the GraphQL error type must reach the message",
+            star_dates("o/r", [[_week("2026-11-22", [1, 0, 0, 0, 0, 0, 0])]])
+            == [_d("2026-11-22")],
+            "one star is a history, however far short of the count: the count also holds stars the history never returns",
         )
 
     def test_write_charts_emits_one_file_per_theme(self) -> None:
@@ -1002,12 +897,6 @@ class SelfTest(unittest.TestCase):
                 "every chart must be written non-empty",
             )
 
-    def test_main_needs_a_token(self) -> None:
-        with mock.patch.dict(os.environ, clear=True):
-            self.assertEqual(
-                main(["o/r", "out"]), 2, "no token must exit 2, before any request"
-            )
-
 
 SVG_NS = "{http://www.w3.org/2000/svg}"
 # One `_run` rectangle; every path here is built from them.
@@ -1017,15 +906,13 @@ RUN_RE = re.compile(r"M(-?\d+) (-?\d+)h(\d+)v(\d+)h-\d+z")
 def main(argv: list[str]) -> int:
     if "--selftest" in argv:
         unittest.main(argv=sys.argv[:1])
-    if len(argv) != 2:
+    if len(argv) != 3:
         print(__doc__, file=sys.stderr)
         return 2
-    repo, out_dir = argv
-    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
-    if not token:
-        print("star-history: GH_TOKEN (or GITHUB_TOKEN) is unset", file=sys.stderr)
-        return 2
-    dates = fetch_star_dates(repo, token)
+    repo, history_json, out_dir = argv
+    dates = star_dates(
+        repo, json.loads(pathlib.Path(history_json).read_text(encoding="utf-8"))
+    )
     series = cumulative_by_day(dates)
     today = dt.datetime.now(dt.UTC).date()
     for p in write_charts(repo, series, pathlib.Path(out_dir), today):

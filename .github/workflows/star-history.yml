@@ -2,8 +2,8 @@ name: star-history
 
 # Draws the README's star chart and force-pushes it as ONE orphan commit on the
 # `star-history` branch (the branch never grows; main never sees a bot commit).
-# Why self-hosted (the 2026-06-30 stargazers restriction): the docstring of
-# scripts/star-history.py. `watch` refreshes on each new star —
+# Why self-hosted: the docstring of scripts/star-history.py.
+# `watch` refreshes on each new star —
 # `cancel-in-progress` folds a burst into one run — the cron keeps the right
 # edge current on quiet days, and the `push` arm republishes the moment the
 # renderer, its art or this file changes on main (it is also the first run after merge).
@@ -42,10 +42,13 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Render the chart
+      - name: Read the star history
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/star-history.py "$GITHUB_REPOSITORY" "$RUNNER_TEMP/chart"
+        run: gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/stargazers/history" >"$RUNNER_TEMP/history.json"
+
+      - name: Render the chart
+        run: python3 scripts/star-history.py "$GITHUB_REPOSITORY" "$RUNNER_TEMP/history.json" "$RUNNER_TEMP/chart"
 
       - id: day
         run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
