@@ -36,14 +36,14 @@
 //!   arrive through a different non-shell ancestor, so the pid is not stable and
 //!   corroboration often withholds the arm (#896).
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::AgentId;
-use crate::source::decoder::{SUBAGENTS_DIR, non_empty, required, required_or_err};
+use crate::source::decoder::{SUBAGENTS_DIR, non_empty, required};
 use crate::source::registry::{
-    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind,
+    ChildEndInference, Corroboration, Envelope, FocusChannel, Hook, HookDecoding, HookObject,
+    Hyphen, SessionKey, SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, ToolDetail};
 
@@ -60,7 +60,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: None,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_cursor_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_cursor_hook_payload,
+        }),
         caps: SourceCaps {
             // `sessionEnd` fires on clean completion. An abrupt exit rides the
             // shim-stamped pid, which reaches the CLI only because the ancestor walk
@@ -81,9 +84,19 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: crate::source::registry::Native::NONE,
 };
 
+/// Cursor's hook envelope, per `cursor.com/docs/hooks`.
+const ENVELOPE: Envelope = Envelope {
+    event: "hook_event_name",
+    // Present and CONSISTENT across every CLI hook event, so it distinguishes
+    // concurrent sessions in one project AND coalesces all of a session's events.
+    session: SessionKey {
+        within: None,
+        field: "session_id",
+    },
+};
+
 /// Decode one Cursor hook payload (already identified by
-/// `_pixtuoid_source == "cursor"`). Envelope per `cursor.com/docs/hooks`; an
-/// unregistered event bails, so registered-vs-decoded drift is loud.
+/// `_pixtuoid_source == "cursor"`); an unregistered event has no arm.
 ///
 /// The activity arms and the turn end prepend an [`AgentEvent::Identity`] (#221)
 /// because Cursor is HOOK-ONLY: the identity is the one claim that registers a
@@ -91,11 +104,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 ///
 /// # Errors
 ///
-/// If the payload lacks `hook_event_name` or `session_id`, or names an unregistered event.
-pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, "hook_event_name", |k| {
-        obj.get(k)?.as_str()
-    })?;
+/// If the payload lacks `session_id`.
+pub(crate) fn decode_cursor_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     // The top-level `cwd` is EMPTY/absent in CLI hook payloads —
     // `workspace_roots[0]` is the real one. Label/cwd only, NOT the AgentId key.
     let workspace = non_empty(obj, "cwd").or_else(|| {
@@ -105,12 +116,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             .and_then(|s| s.as_str())
             .filter(|s| !s.is_empty())
     });
-    // Key on `session_id` — present and CONSISTENT across every CLI hook event,
-    // so it distinguishes concurrent sessions in one project AND coalesces all of
-    // a session's events.
-    let key = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| {
-        non_empty(obj, k)
-    })?;
+    let key = hook.session()?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = workspace.unwrap_or("");
 
@@ -123,18 +129,18 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         )
     };
 
-    let decoded: Result<Vec<AgentEvent>> = match event {
-        "sessionStart" => Ok(vec![AgentEvent::SessionStart {
+    let mut evs = match event {
+        "sessionStart" => vec![AgentEvent::SessionStart {
             agent_id,
             source: SOURCE_NAME.to_string(),
             session_id: key.to_string(),
             cwd: cwd.into(),
             parent_id: None,
-        }]),
+        }],
         "preToolUse" => {
             let tool =
                 required(SOURCE_NAME, event, "tool_name", |k| obj.get(k)?.as_str()).unwrap_or("?");
-            Ok(vec![
+            vec![
                 identity(),
                 AgentEvent::ToolUseStart {
                     agent_id,
@@ -142,12 +148,12 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                     detail: Some(cursor_tool_detail(tool, obj.get("tool_input"))),
                     copy_id: None,
                 },
-            ])
+            ]
         }
         // A FAILED tool fires `postToolUseFailure` INSTEAD OF `postToolUse`.
         // Without this arm a failed tool's ToolUseStart never ends under `-p`
         // (where `stop` doesn't fire) and the sprite lingers Running.
-        "postToolUse" | "postToolUseFailure" => Ok(nested_parent(obj)
+        "postToolUse" | "postToolUseFailure" => nested_parent(obj)
             .map(|parent| AgentEvent::SessionStart {
                 agent_id,
                 source: SOURCE_NAME.to_string(),
@@ -163,22 +169,18 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                     tool_use_id: non_empty(obj, "tool_use_id").map(String::from),
                 },
             ])
-            .collect()),
+            .collect(),
         // Claims, unlike the shared `Stop`: a child's loop ends on `subagentStop`, and
         // `stop` blocks its loop for a follow-up reply, so none lands past a `Task` post
         // (cursor-agent 2026.11.11-043ef28: `index.js` `case"stop"` replies `followupMessage`;
         // `9448.index.js` `shouldSkipHookDueToLoopLimit` pairs `stop` with `subagentStop`).
-        "stop" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
-        "sessionEnd" => Ok(vec![AgentEvent::SessionEnd {
+        "stop" => vec![identity(), AgentEvent::turn_end(agent_id)],
+        "sessionEnd" => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
-        }]),
-        other => {
-            crate::source::drift::unknown_event(SOURCE_NAME, other);
-            Err(DecodeError::unsupported(SOURCE_NAME, other))
-        }
+        }],
+        _ => return Ok(None),
     };
-    let mut evs = decoded?;
     // Re-read per event: the model changes mid-session, so reading it once
     // would show the wrong one for the rest of the turn.
     evs.extend(AgentEvent::model_info(
@@ -186,7 +188,7 @@ pub(crate) fn decode_cursor_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         obj.get("model").and_then(|m| m.as_str()),
         None,
     ));
-    Ok(evs)
+    Ok(Some(evs))
 }
 
 fn cursor_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
@@ -215,11 +217,11 @@ fn nested_parent(obj: &HookObject) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{DecodeError, test_decode};
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_cursor_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     /// The payload's MAIN event — the LAST one (activity arms prepend an Identity).
@@ -414,7 +416,7 @@ mod tests {
         ];
         let ids: std::collections::BTreeSet<_> = events
             .iter()
-            .flat_map(|v| decode_cursor_hook_payload(test_obj(v)).unwrap())
+            .flat_map(|v| test_decode(SOURCE_NAME, v).unwrap())
             .map(|e| e.agent_id())
             .collect();
         assert_eq!(ids.len(), 1, "all events must coalesce to one AgentId");
@@ -461,7 +463,7 @@ mod tests {
                 json!({"hook_event_name": "sessionStart", "workspace_roots": ["/repo"]}),
             ),
         ] {
-            let err = decode_cursor_hook_payload(test_obj(&payload)).err();
+            let err = test_decode(SOURCE_NAME, &payload).err();
             assert!(
                 matches!(
                     &err,
@@ -472,9 +474,10 @@ mod tests {
             );
         }
         assert!(
-            decode_cursor_hook_payload(test_obj(
+            test_decode(
+                SOURCE_NAME,
                 &json!({"hook_event_name": "stop", "session_id": "s"})
-            ))
+            )
             .is_ok()
         );
     }
@@ -489,8 +492,11 @@ mod tests {
             "Bogus",
         ] {
             assert!(
-                decode_cursor_hook_payload(test_obj(&json!({"hook_event_name": ev, "cwd": "/r"})))
-                    .is_err(),
+                test_decode(
+                    SOURCE_NAME,
+                    &json!({"hook_event_name": ev, "session_id": "s", "cwd": "/r"})
+                )
+                .is_err(),
                 "{ev} must bail (not registered, must not decode silently)"
             );
         }

@@ -12,8 +12,8 @@ use crate::source::decoder::{
 
 use crate::AgentId;
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind, ToolIdKey, Transcript,
+    ChildEndInference, FocusChannel, Hook, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
+    SourceKind, ToolIdKey, Transcript,
 };
 use crate::source::{AgentEvent, CopyId};
 
@@ -95,17 +95,14 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// falls through (`Ok(None)`). Needed despite JSONL registration: a
 /// Workflow-tool fleet's subagents carry no `Agent` tool_use and no end marker,
 /// so without `SubagentStop` they hold desks until the stale sweep.
-pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    let event = obj
-        .get(crate::source::decoder::HOOK_EVENT_NAME)
-        .and_then(|s| s.as_str())
-        .unwrap_or("");
+pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     if event != "SubagentStart" && event != "SubagentStop" {
-        return crate::source::decoder::subagent_fired(obj, SOURCE_NAME, subagent_session);
+        return crate::source::decoder::subagent_fired(hook, subagent_session);
     }
     // Registry contract: claim our two events FULLY (Err on malformed), never
     // fall through — an empty id mints a phantom that never coalesces.
-    let session_id = crate::source::decoder::hook_session_id(obj, SOURCE_NAME, event)?;
+    let session_id = hook.session()?;
     let wire_agent_id = required_or_err(
         SOURCE_NAME,
         Some(event),
@@ -120,7 +117,7 @@ pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<Agent
             source: SOURCE_NAME.to_string(),
             session_id: prefixed,
             cwd,
-            parent_id: Some(AgentId::from_parts(SOURCE_NAME, &session_id)),
+            parent_id: Some(AgentId::from_parts(SOURCE_NAME, session_id)),
         }]))
     } else {
         // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
@@ -480,7 +477,7 @@ pub fn cc_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{test_decode, test_hook};
     use serde_json::json;
 
     #[test]
@@ -961,7 +958,7 @@ mod tests {
             let no_session = json!({"hook_event_name": event, "agent_id": "abc"});
             let mut err = None;
             let logs = crate::test_capture::capture_logs(|| {
-                err = decode_cc_hook_custom(test_obj(&no_session)).err();
+                err = test_decode(SOURCE_NAME, &no_session).err();
             });
             assert!(
                 matches!(
@@ -979,7 +976,7 @@ mod tests {
             }
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             assert!(
-                decode_cc_hook_custom(test_obj(&empty_child)).is_err(),
+                test_decode(SOURCE_NAME, &empty_child).is_err(),
                 "{event} with empty agent_id must Err — a phantom child never coalesces"
             );
         }
@@ -989,9 +986,7 @@ mod tests {
     fn subagent_stop_warns_only_when_stem_and_wire_id_disagree() {
         let capture = |payload: serde_json::Value| {
             crate::test_capture::capture_logs(|| {
-                decode_cc_hook_custom(test_obj(&payload))
-                    .expect("decodes")
-                    .expect("claimed");
+                test_decode(SOURCE_NAME, &payload).expect("decodes");
             })
         };
         let matched = capture(json!({
@@ -1019,18 +1014,23 @@ mod tests {
     #[test]
     fn non_subagent_events_fall_through_to_shared_arms() {
         let start = json!({"hook_event_name": "SessionStart", "session_id": "s"});
-        assert!(matches!(decode_cc_hook_custom(test_obj(&start)), Ok(None)));
+        assert!(matches!(
+            decode_cc_hook_custom(&test_hook(SOURCE_NAME, &start)),
+            Ok(None)
+        ));
     }
 
     #[test]
     fn subagent_stop_keys_on_stem_when_it_disagrees_with_prefixed_wire_id() {
-        let evs = decode_cc_hook_custom(test_obj(&json!({
-            "hook_event_name": "SubagentStop",
-            "session_id": "s",
-            "agent_id": "abc",
-            "agent_transcript_path": "/p/q/01-deadbeef/subagents/agent-zzz.jsonl"
-        })))
-        .unwrap()
+        let evs = test_decode(
+            SOURCE_NAME,
+            &json!({
+                "hook_event_name": "SubagentStop",
+                "session_id": "s",
+                "agent_id": "abc",
+                "agent_transcript_path": "/p/q/01-deadbeef/subagents/agent-zzz.jsonl"
+            }),
+        )
         .unwrap();
         assert_eq!(evs.len(), 1, "SubagentStop emits exactly one event");
         match &evs[0] {
@@ -1053,13 +1053,15 @@ mod tests {
 
     #[test]
     fn subagent_stop_with_stemless_path_falls_back_to_prefixed_id() {
-        let evs = decode_cc_hook_custom(test_obj(&json!({
-            "hook_event_name": "SubagentStop",
-            "session_id": "s",
-            "agent_id": "abc",
-            "agent_transcript_path": "/"
-        })))
-        .unwrap()
+        let evs = test_decode(
+            SOURCE_NAME,
+            &json!({
+                "hook_event_name": "SubagentStop",
+                "session_id": "s",
+                "agent_id": "abc",
+                "agent_transcript_path": "/"
+            }),
+        )
         .unwrap();
         assert_eq!(
             evs[0].agent_id(),

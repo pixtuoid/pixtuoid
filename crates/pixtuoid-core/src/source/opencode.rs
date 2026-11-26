@@ -30,10 +30,9 @@ use serde_json::{Map, Value};
 use crate::AgentId;
 use crate::source::decoder::{
     DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, required,
-    required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, Hyphen, SessionKey, SourceCaps,
     SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
@@ -52,7 +51,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: None,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_oc_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_oc_hook_payload,
+        }),
         caps: SourceCaps {
             // A TUI quit ends nothing: the session lives on in the server.
             has_exit_signal: false,
@@ -132,16 +134,24 @@ pub const DECODED_DATA_FIELDS: &[&str] = &[
     "source.id",
 ];
 
+/// The plugin's envelope: an event's `type`, and its `data` copied field by field.
+const ENVELOPE: Envelope = Envelope {
+    event: "type",
+    session: SessionKey {
+        within: Some("data"),
+        field: "sessionID",
+    },
+};
+
 /// Decode one opencode plugin envelope (already identified by
-/// `_pixtuoid_source == "opencode"`). An unmapped `type` is a benign skip: the
-/// forward filter lives in the plugin.
+/// `_pixtuoid_source == "opencode"`). The plugin forwards only
+/// `DECODED_EVENTS`, so an unmapped `type` is drift between the two.
 ///
 /// # Errors
 ///
-/// If the payload lacks `type`, or a mapped event lacks a
-/// non-empty `data.sessionID`.
-pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, "type", |k| obj.get(k)?.as_str())?;
+/// If a mapped event lacks a non-empty `data.sessionID`.
+pub(crate) fn decode_oc_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     let empty = Map::new();
     let data = obj.get("data").and_then(Value::as_object).unwrap_or(&empty);
     let at = obj
@@ -152,48 +162,48 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
 
     let read_turn = |k: &str| obj.get(k).and_then(Value::as_u64).map(TurnKey::Seq);
     let turn = read_turn(TURN);
-    match event {
+    Ok(Some(match event {
         // A new prompt re-emits SessionStart, the event that walks a swept
         // session back in, mid-walkout too. Its own `data` is only `sessionID`,
         // so the plugin adds the session's record (`ctx.session.get`).
         EXECUTION_STARTED => {
-            let mut out = session_start(data, at, event)?;
+            let mut out = session_start(hook, data, at)?;
             if let Some(turn) = required(SOURCE_NAME, event, TURN, read_turn) {
                 out.push(AgentEvent::TurnStart {
-                    agent_id: session(data, event)?.0,
+                    agent_id: session(hook)?.0,
                     turn,
                 });
             }
-            Ok(out)
+            out
         }
         // `data` is only `sessionID` (`packages/schema/src/session-event.ts:178`,
         // `Base`), so a child's end cannot be told from a root's here.
-        SESSION_DELETED => Ok(vec![AgentEvent::SessionEnd {
-            agent_id: session(data, event)?.0,
+        SESSION_DELETED => vec![AgentEvent::SessionEnd {
+            agent_id: session(hook)?.0,
             as_child: false,
-        }]),
+        }],
         EXECUTION_SUCCEEDED | EXECUTION_FAILED | EXECUTION_INTERRUPTED => {
-            ended(data, at, event, |agent_id| match turn {
+            ended(hook, at, |agent_id| match turn {
                 Some(turn) => AgentEvent::keyed_turn_end(agent_id, turn),
                 None => AgentEvent::turn_end(agent_id),
-            })
+            })?
         }
-        TOOL_STARTED => tool_started(data, at),
+        TOOL_STARTED => tool_started(hook, data, at)?,
         TOOL_SUCCESS | TOOL_FAILED => {
             let tool_use_id = field(data, "id").map(str::to_owned);
-            ended(data, at, event, |agent_id| AgentEvent::ToolUseEnd {
+            ended(hook, at, |agent_id| AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id,
-            })
+            })?
         }
-        PERMISSION_ASKED => permission_asked(data, at),
-        _ => Ok(vec![]),
-    }
+        PERMISSION_ASKED => permission_asked(hook, data, at)?,
+        _ => return Ok(None),
+    }))
 }
 
 /// The session an event concerns: its agent id and its `sessionID`.
-fn session<'d>(data: &'d Map<String, Value>, event: &str) -> Result<(AgentId, &'d str)> {
-    let session_id = required_or_err(SOURCE_NAME, Some(event), "sessionID", |k| field(data, k))?;
+fn session<'h>(hook: &Hook<'h>) -> Result<(AgentId, &'h str)> {
+    let session_id = hook.session()?;
     Ok((AgentId::from_parts(SOURCE_NAME, session_id), session_id))
 }
 
@@ -221,11 +231,11 @@ fn identity(agent_id: AgentId, session_id: &str, at: Option<&str>) -> AgentEvent
 /// `location.directory` is the cwd, `parentID` the parent session, and
 /// `model.id` the raw model slug.
 fn session_start(
+    hook: &Hook<'_>,
     data: &Map<String, Value>,
     at: Option<&str>,
-    event: &str,
 ) -> Result<Vec<AgentEvent>> {
-    let (agent_id, session_id) = session(data, event)?;
+    let (agent_id, session_id) = session(hook)?;
     let cwd = field(data, "location.directory").or(at);
     let mut out = Vec::new();
     // A start the plugin could not read a record for has no cwd, and a
@@ -252,19 +262,22 @@ fn session_start(
 /// An end, led by Identity (#221) as a tool start and a permission ask are,
 /// so one for a slot the reaper removed registers it again.
 fn ended(
-    data: &Map<String, Value>,
+    hook: &Hook<'_>,
     at: Option<&str>,
-    event: &str,
     end: impl FnOnce(AgentId) -> AgentEvent,
 ) -> Result<Vec<AgentEvent>> {
-    let (agent_id, session_id) = session(data, event)?;
+    let (agent_id, session_id) = session(hook)?;
     Ok(vec![identity(agent_id, session_id, at), end(agent_id)])
 }
 
 /// The tool's `id` is the call id its `success`/`failed` pair on. The input
 /// rides a later event, so the detail is the tool's name alone, or a Task.
-fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<AgentEvent>> {
-    let (agent_id, session_id) = session(data, TOOL_STARTED)?;
+fn tool_started(
+    hook: &Hook<'_>,
+    data: &Map<String, Value>,
+    at: Option<&str>,
+) -> Result<Vec<AgentEvent>> {
+    let (agent_id, session_id) = session(hook)?;
     let name = required(SOURCE_NAME, TOOL_STARTED, "name", |k| field(data, k)).unwrap_or("?");
     Ok(vec![
         identity(agent_id, session_id, at),
@@ -283,8 +296,12 @@ fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<Agent
 
 /// [`AgentEvent::UserActionRequest`], labelled by the request's `action` and keyed on its tool call
 /// (`source.id`) when it has one.
-fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<AgentEvent>> {
-    let (agent_id, session_id) = session(data, PERMISSION_ASKED)?;
+fn permission_asked(
+    hook: &Hook<'_>,
+    data: &Map<String, Value>,
+    at: Option<&str>,
+) -> Result<Vec<AgentEvent>> {
+    let (agent_id, session_id) = session(hook)?;
     let reason = field(data, "action").map_or_else(
         || "permission".to_owned(),
         |a| ellipsize(a, MAX_DECODED_FIELD_CHARS),
@@ -307,10 +324,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_oc_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     /// The payload's MAIN event: the last decoded, after any Identity.
@@ -332,7 +349,7 @@ mod tests {
         let decoded = |ev: &str, data: &Value| {
             format!(
                 "{:?}",
-                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": data})))
+                test_decode(SOURCE_NAME, &json!({"type": ev, "data": data}))
             )
         };
         for path in DECODED_DATA_FIELDS {
@@ -350,7 +367,7 @@ mod tests {
     }
 
     /// Every exported type reaches an arm and decodes to an event, and an
-    /// unmapped one is a benign skip.
+    /// unmapped one is refused.
     #[test]
     fn the_decoded_event_set_is_exactly_what_the_arms_match() {
         for ev in DECODED_EVENTS {
@@ -360,8 +377,11 @@ mod tests {
             assert!(!got.is_empty(), "{ev} must reach a real arm");
         }
         assert!(
-            decode_all(json!({"type": "session.viewed", "data": {"sessionID": "ses_x"}}))
-                .is_empty()
+            test_decode(
+                SOURCE_NAME,
+                &json!({"type": "session.viewed", "data": {"sessionID": "ses_x"}})
+            )
+            .is_err()
         );
     }
 
@@ -416,9 +436,12 @@ mod tests {
     #[test]
     fn a_fork_is_no_child() {
         assert!(
-            decode_all(json!({"type": "session.forked", "data": {
-                "sessionID": "ses_f", "parentID": "ses_p", "boundary": {}}}))
-            .is_empty()
+            test_decode(
+                SOURCE_NAME,
+                &json!({"type": "session.forked", "data": {
+                "sessionID": "ses_f", "parentID": "ses_p", "boundary": {}}})
+            )
+            .is_err()
         );
     }
 
@@ -566,15 +589,14 @@ mod tests {
 
     #[test]
     fn malformed_payloads_are_errors_not_panics() {
-        assert!(decode_oc_hook_payload(test_obj(&json!({"data": {"sessionID": "s"}}))).is_err());
+        assert!(test_decode(SOURCE_NAME, &json!({"data": {"sessionID": "s"}})).is_err());
         for ev in DECODED_EVENTS {
             assert!(
-                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": {}}))).is_err(),
+                test_decode(SOURCE_NAME, &json!({"type": ev, "data": {}})).is_err(),
                 "{ev} without a sessionID"
             );
             assert!(
-                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": {"sessionID": ""}})))
-                    .is_err(),
+                test_decode(SOURCE_NAME, &json!({"type": ev, "data": {"sessionID": ""}})).is_err(),
                 "{ev} with an empty sessionID"
             );
         }

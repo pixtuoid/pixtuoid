@@ -21,12 +21,12 @@ use std::path::PathBuf;
 
 use crate::AgentId;
 use crate::source::decoder::{
-    DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail,
-    non_empty, required, required_or_err,
+    DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail, non_empty,
+    required,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind,
+    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, HookObject, Hyphen, SessionKey,
+    SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys};
 
@@ -43,7 +43,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: Some("HERMES_HOME"),
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_hermes_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_hermes_hook_payload,
+        }),
         caps: SourceCaps {
             // `on_session_finalize` when the gateway finalizes a session, else the
             // gateway's death. NOT `on_session_end`, which despite the name is a
@@ -298,22 +301,28 @@ const KEYS: &[&str] = &["command", "file_path", "path", "pattern", "url"];
 #[doc(hidden)]
 pub const DETAIL_KEYS: &[&str] = KEYS;
 
+/// The envelope the plugin writes.
+const ENVELOPE: Envelope = Envelope {
+    event: "hook_event_name",
+    session: SessionKey {
+        within: None,
+        field: "session_id",
+    },
+};
+
 /// Decode one Hermes plugin envelope (already identified by
 /// `_pixtuoid_source == "hermes"`); an event outside the plugin's forward set
-/// bails, so plugin-vs-decoder drift is loud.
+/// has no arm.
 ///
 /// The activity arms prepend an [`AgentEvent::Identity`] because Hermes is HOOK-ONLY:
 /// the identity is the one claim that registers a session first seen mid-turn.
 ///
 /// # Errors
 ///
-/// If the payload lacks `hook_event_name` or `session_id`, or names an event
-/// the plugin does not forward.
-pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, "hook_event_name", |k| {
-        obj.get(k)?.as_str()
-    })?;
-    let session_id = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| field(obj, k))?;
+/// If the payload lacks `session_id`.
+pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
+    let session_id = hook.session()?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let cwd = field(obj, "cwd");
     let identity =
@@ -386,15 +395,12 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         // daemon attaching mid-session would otherwise not see the session
         // until the next tool call.
         ON_SESSION_END => vec![identity(), AgentEvent::turn_end(agent_id)],
-        other => {
-            crate::source::drift::unknown_event(SOURCE_NAME, other);
-            return Err(DecodeError::unsupported(SOURCE_NAME, other));
-        }
+        _ => return Ok(None),
     };
     // Only the session events carry it (`website/docs/user-guide/features/hooks.md:470-471`),
     // so an event without one must not clear it.
     evs.extend(AgentEvent::model_info(agent_id, field(obj, "model"), None));
-    Ok(evs)
+    Ok(Some(evs))
 }
 
 /// The non-empty string at top-level `name`.
@@ -412,11 +418,11 @@ fn field<'o>(obj: &'o HookObject, name: &'static str) -> Option<&'o str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
     use serde_json::{Value, json};
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_hermes_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     fn decode(v: Value) -> AgentEvent {
@@ -447,10 +453,7 @@ mod tests {
                 json!({"hook_event_name": ev, "cwd": "/Users/dev/proj"}),
                 json!({"hook_event_name": ev, "session_id": "", "cwd": "/Users/dev/proj"}),
             ] {
-                assert!(
-                    decode_hermes_hook_payload(test_obj(&payload)).is_err(),
-                    "{payload}"
-                );
+                assert!(test_decode(SOURCE_NAME, &payload).is_err(), "{payload}");
             }
         }
     }
@@ -547,9 +550,10 @@ mod tests {
             "on_session_end",
         ] {
             evs.extend(
-                decode_hermes_hook_payload(test_obj(
+                test_decode(
+                    SOURCE_NAME,
                     &json!({"hook_event_name": name, "session_id": sid, "cwd": "/r"}),
-                ))
+                )
                 .expect("decodes"),
             );
         }
@@ -568,9 +572,10 @@ mod tests {
     fn an_event_the_plugin_never_forwards_bails() {
         for ev in ["subagent_stop", "pre_message", "on_session_reset", "Bogus"] {
             assert!(
-                decode_hermes_hook_payload(test_obj(
+                test_decode(
+                    SOURCE_NAME,
                     &json!({"hook_event_name": ev, "session_id": "s", "cwd": "/r"})
-                ))
+                )
                 .is_err(),
                 "{ev} must bail (not forwarded, must not decode silently)"
             );
@@ -586,7 +591,7 @@ mod tests {
         let decoded = |ev: &str, payload: &Value| {
             let mut payload = payload.clone();
             payload["hook_event_name"] = json!(ev);
-            format!("{:?}", decode_hermes_hook_payload(test_obj(&payload)))
+            format!("{:?}", test_decode(SOURCE_NAME, &payload))
         };
         for name in DECODED_FIELDS {
             let mut blanked = full.clone();
@@ -619,9 +624,7 @@ mod tests {
 
     #[test]
     fn malformed_payloads_are_errors() {
-        assert!(
-            decode_hermes_hook_payload(test_obj(&json!({"session_id": "s", "cwd": "/r"}))).is_err()
-        );
+        assert!(test_decode(SOURCE_NAME, &json!({"session_id": "s", "cwd": "/r"})).is_err());
     }
 
     /// An UNSET `HERMES_HOME` must never be blamed for a relative default: the

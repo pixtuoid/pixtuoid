@@ -14,12 +14,12 @@ use serde_json::{Map, Value};
 
 use crate::AgentId;
 use crate::source::decoder::{
-    HookSubject, accept_all_paths, generic_tool_display, hook_identity, hook_session_id,
-    hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty, required, required_or_err,
+    accept_all_paths, generic_tool_display, hook_identity, hook_tool_id_key, hook_tool_name,
+    make_tool_detail, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind, ToolIdKey, Transcript,
+    ChildEndInference, FocusChannel, Hook, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
+    SourceKind, ToolIdKey, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};
 use crate::state::TurnKey;
@@ -112,16 +112,13 @@ const TURN_ID: &str = "turn_id";
 /// and `Stop`, and `SubagentStart`/`SubagentStop`, which change the event's
 /// SUBJECT to a child's AgentId; every other session event falls through to
 /// the shared arms, a child's under its own id.
-pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    let event = obj
-        .get(crate::source::decoder::HOOK_EVENT_NAME)
-        .and_then(|s| s.as_str())
-        .unwrap_or("");
+pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     // A malformed SubagentStart/Stop is an Err, not Ok(None): an empty
     // `session_id`/`agent_id` would mint a phantom that never coalesces with
     // the real rollout.
-    let guards = || -> Result<(String, String)> {
-        let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
+    let guards = || -> Result<(&str, String)> {
+        let session_id = hook.session()?;
         let child = required_or_err(
             SOURCE_NAME,
             Some(event),
@@ -130,6 +127,7 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
         )?;
         Ok((session_id, child.to_owned()))
     };
+    let call = |kind| decode_call_hook(hook, kind).map(Some);
     match event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
         // `agent_id`). Keying the child on `agent_id` coalesces with that
@@ -143,7 +141,7 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
                 source: SOURCE_NAME.to_string(),
                 session_id: child,
                 cwd,
-                parent_id: Some(AgentId::from_parts(SOURCE_NAME, &session_id)),
+                parent_id: Some(AgentId::from_parts(SOURCE_NAME, session_id)),
             }]))
         }
         // End the CHILD promptly, else its rollout lingers to the 30-min
@@ -156,35 +154,48 @@ pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<Ag
                 as_child: true,
             }]))
         }
-        "PreToolUse" | "PostToolUse" | "PermissionRequest" | "Stop" => {
-            decode_call_hook(obj, event).map(Some)
-        }
+        "PreToolUse" => call(CallHook::PreToolUse),
+        "PostToolUse" => call(CallHook::PostToolUse),
+        "PermissionRequest" => call(CallHook::PermissionRequest),
+        "Stop" => call(CallHook::Stop),
         // A child's other events name it in `agent_id` beside the root's
         // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:282-285`,
         // `core/src/hook_runtime.rs:1042-1061` at rust-v0.163.0).
-        _ => crate::source::decoder::subagent_fired(obj, SOURCE_NAME, str::to_owned),
+        _ => crate::source::decoder::subagent_fired(hook, str::to_owned),
     }
 }
 
-/// The hooks around a call and `Stop`, on their [`HookSubject`]. `PreToolUse`
+/// The hooks [`decode_call_hook`] decodes, so it has an arm for each and for
+/// no other.
+#[derive(Clone, Copy)]
+enum CallHook {
+    PreToolUse,
+    PostToolUse,
+    PermissionRequest,
+    Stop,
+}
+
+/// The hooks around a call and `Stop`, on the subagent that fired one, else
+/// the root session. `PreToolUse`
 /// fires only for a tool with a pre-use payload, and `PostToolUse` only on a
 /// success whose tool has a post-use payload (`codex-rs/core/src/tools/registry.rs:1173`,
 /// `:141-148`, `:1025-1032` at rust-v0.171.0), so the rollout's call is the
 /// item, and its output the one end of a call no `PostToolUse` reports.
-fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
-    let session_id = match HookSubject::of(obj).child {
-        Some(child) => child.to_owned(),
-        None => hook_session_id(obj, SOURCE_NAME, event)?,
+fn decode_call_hook(hook: &Hook<'_>, kind: CallHook) -> Result<Vec<AgentEvent>> {
+    let (obj, event) = (hook.obj, hook.event);
+    let session_id = match non_empty(obj, crate::source::decoder::SUBAGENT_ID) {
+        Some(child) => child,
+        None => hook.session()?,
     };
-    let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
+    let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let turn = turn_of(obj, event);
-    let identity = || hook_identity(agent_id, SOURCE_NAME, &session_id, obj);
+    let identity = || hook_identity(agent_id, SOURCE_NAME, session_id, obj);
     let tool_id_key = hook_tool_id_key(crate::source::registry::descriptor_for(SOURCE_NAME));
     let call =
         || required(SOURCE_NAME, event, tool_id_key, |k| non_empty(obj, k)).map(str::to_owned);
     let tool_name = || hook_tool_name(obj, SOURCE_NAME, event);
-    Ok(match event {
-        "PreToolUse" => {
+    Ok(match kind {
+        CallHook::PreToolUse => {
             let tool_name = tool_name();
             let pending = call().map(|tool_use_id| AgentEvent::ToolUsePending {
                 agent_id,
@@ -194,7 +205,7 @@ fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
             });
             [identity()].into_iter().chain(pending).collect()
         }
-        "PostToolUse" => {
+        CallHook::PostToolUse => {
             let ran = call().map(|c| AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: Some(c),
@@ -205,7 +216,7 @@ fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
         // at rust-v0.164.0), so this is its only signal. A `write_stdin`
         // prompt names its own call (`core/src/tools/approvals.rs:156-187`),
         // which no `PreToolUse` announces.
-        "PermissionRequest" => vec![
+        CallHook::PermissionRequest => vec![
             identity(),
             AgentEvent::user_action_request(
                 agent_id,
@@ -225,7 +236,7 @@ fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
         // Stop runs only with no follow-up pending, yet a blocking Stop hook
         // continues the turn (`core/src/session/turn.rs:722-759` at
         // rust-v0.164.0): it answers the turn's requests, and ends nothing.
-        _ => turn
+        CallHook::Stop => turn
             .map(|turn| AgentEvent::UserActionResolved {
                 agent_id,
                 by: Resolution::Turn(turn),
@@ -493,7 +504,7 @@ fn resolve_codex_home(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{test_decode, test_hook};
 
     #[test]
     fn codex_home_uses_env_when_it_points_at_an_existing_dir() {
@@ -632,7 +643,7 @@ mod tests {
             let no_session = json!({"hook_event_name": event, "agent_id": "child"});
             let mut err = None;
             let logs = crate::test_capture::capture_logs(|| {
-                err = decode_codex_hook_custom(test_obj(&no_session)).err();
+                err = test_decode(SOURCE_NAME, &no_session).err();
             });
             assert!(
                 matches!(
@@ -650,7 +661,7 @@ mod tests {
             }
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             assert!(
-                decode_codex_hook_custom(test_obj(&empty_child)).is_err(),
+                test_decode(SOURCE_NAME, &empty_child).is_err(),
                 "{event} with empty agent_id must Err — a phantom child never coalesces"
             );
         }
@@ -661,7 +672,10 @@ mod tests {
         for event in ["SessionStart", "UserPromptSubmit", "SessionEnd"] {
             let v = json!({"hook_event_name": event, "session_id": "s"});
             assert!(
-                matches!(decode_codex_hook_custom(test_obj(&v)), Ok(None)),
+                matches!(
+                    decode_codex_hook_custom(&test_hook(SOURCE_NAME, &v)),
+                    Ok(None)
+                ),
                 "{event}"
             );
         }
@@ -849,7 +863,7 @@ mod tests {
             "_pixtuoid_source": SOURCE_NAME,
         });
         assert!(matches!(
-            decode_codex_hook_custom(test_obj(&payload)),
+            decode_codex_hook_custom(&test_hook(SOURCE_NAME, &payload)),
             Ok(None)
         ));
         let events = crate::source::decoder::decode_hook_payload(payload).unwrap();

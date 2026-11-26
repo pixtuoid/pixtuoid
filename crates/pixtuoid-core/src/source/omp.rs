@@ -27,7 +27,7 @@ use crate::source::decoder::{
     generic_tool_display, non_empty, required,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, Hyphen, SessionKey, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, CopyId, RequestKeys, Resolution, ToolDetail};
@@ -61,7 +61,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             #[cfg(feature = "native")]
             native: native::TRANSCRIPT,
         }),
-        hook: Some(HookDecoding::ClaimsAll(decode_omp_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_omp_hook_payload,
+        }),
         caps: SourceCaps {
             // The `session_exit` entry is appended + flushed on every clean
             // teardown incl. SIGINT/SIGTERM (and the bridge fires
@@ -1057,12 +1060,26 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
     HOOK_SESSION_SHUTDOWN,
 ];
 
+/// The bridge extension's envelope (`install/omp_extension.ts`). Its session
+/// is `sessionId`, which omp always has (`getSessionId(): string`,
+/// `packages/coding-agent/src/session/session-manager.ts:3353` at `v19.2.1`);
+/// a `sessionFile`, when there is one, keys it instead
+/// ([`decode_omp_hook_payload`]).
+const ENVELOPE: Envelope = Envelope {
+    event: "type",
+    session: SessionKey {
+        within: None,
+        field: "sessionId",
+    },
+};
+
+/// The file a session persists to, `None` before omp allocates one
+/// (`getSessionFile(): string | undefined`, `session-manager.ts:3357`).
+const SESSION_FILE: &str = "sessionFile";
+
 /// Decode one bridge-extension payload (already routed here by
-/// `_pixtuoid_source == "omp"`). pixtuoid authors the envelope
-/// (`install/omp_extension.ts`), so an unknown `type` is foreign or a stale
-/// installed extension — a drift breadcrumb and a benign skip, never a bail:
-/// the hook plane log-and-continues (workspace convention) and a stale
-/// bridge is a supported state `verify_schema` reports.
+/// `_pixtuoid_source == "omp"`). A stale installed extension's `type` the
+/// decoder dropped is the drift `verify_schema` reports.
 ///
 /// Identity: `sessionFile` (the ALLOCATED path — omp exposes it before the
 /// lazy persist materializes the JSONL) through the watcher's own
@@ -1085,16 +1102,10 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
 ///
 /// # Errors
 ///
-/// Never: a malformed or unknown payload decodes to `vec![]`; the `Result` is the hook-decoder signature.
-pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let Some(ty) = required(SOURCE_NAME, "hook", "type", |k| obj.get(k)?.as_str()) else {
-        return Ok(vec![]);
-    };
-    let Some((key, parent_key)) = required(SOURCE_NAME, ty, "sessionFile", |k| {
-        omp_hook_session_key(obj, k)
-    }) else {
-        return Ok(vec![]);
-    };
+/// If the payload names neither `sessionFile` nor `sessionId`.
+pub(crate) fn decode_omp_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, ty) = (hook.obj, hook.event);
+    let (key, parent_key) = omp_hook_session_key(hook)?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, &key);
     let cwd = || {
         obj.get("cwd")
@@ -1112,10 +1123,10 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
     };
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, key.clone(), cwd());
 
-    match ty {
+    Ok(Some(match ty {
         // The trailing `identity()` is the focus-pid carrier (the declaration
         // doc owns the story).
-        HOOK_SESSION_START => Ok(vec![session_start(), identity()]),
+        HOOK_SESSION_START => vec![session_start(), identity()],
         // previous == current is the in-place branch REWRITE — an End+Start
         // pair there would walk the sprite out for its own rewrite.
         HOOK_SESSION_SWITCH | HOOK_SESSION_BRANCH => {
@@ -1134,33 +1145,27 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
             }
             evs.push(session_start());
             evs.push(identity());
-            Ok(evs)
+            evs
         }
-        HOOK_SESSION_SHUTDOWN => Ok(vec![AgentEvent::SessionEnd {
+        HOOK_SESSION_SHUTDOWN => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: parent_key.is_some(),
-        }]),
-        _ => {
-            crate::source::drift::unknown_event(SOURCE_NAME, ty);
-            Ok(vec![])
-        }
-    }
+        }],
+        _ => return Ok(None),
+    }))
 }
 
 /// The session key (and parent key) for one hook payload: the folded
 /// `sessionFile` stem chain, else the bare `sessionId` UUID.
-fn omp_hook_session_key(
-    obj: &serde_json::Map<String, Value>,
-    file_key: &str,
-) -> Option<(String, Option<String>)> {
-    if let Some(file) = non_empty(obj, file_key) {
+fn omp_hook_session_key(hook: &Hook<'_>) -> Result<(String, Option<String>)> {
+    if let Some(file) = non_empty(hook.obj, SESSION_FILE) {
         let folded = crate::id::normalize_path_key(file);
-        return Some((
+        return Ok((
             omp_id_from_path(Path::new(&folded)),
             omp_parent_key_from_path(Path::new(&folded)),
         ));
     }
-    non_empty(obj, "sessionId").map(|s| (s.to_string(), None))
+    Ok((hook.session()?.to_string(), None))
 }
 
 #[cfg(test)]
@@ -1215,7 +1220,7 @@ mod tests {
             "no stamp, no copy id"
         );
     }
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
     use serde_json::json;
 
     const ROOT: &str = "/home/u/.omp/agent/sessions/-dev-proj/2026-07-09T08-00-00-000Z_0197f0aa-0000-7000-8000-000000000001.jsonl";
@@ -2833,7 +2838,7 @@ mod tests {
     }
 
     fn hook(v: serde_json::Value) -> Vec<AgentEvent> {
-        decode_omp_hook_payload(test_obj(&v)).unwrap()
+        test_decode(SOURCE_NAME, &v).unwrap()
     }
 
     #[test]
@@ -2987,15 +2992,12 @@ mod tests {
         // started before the upgrade: the transcript carries every approval
         // (`install/omp_extension.ts`'s header).
         for ty in ["credential_disabled", "tool_approval_requested"] {
-            assert!(
-                hook(serde_json::json!({
-                    "type": ty, "sessionFile": HOOK_ROOT,
-                    "sessionId": "x", "cwd": "/repo", "toolCallId": "call_1",
-                }))
-                .is_empty()
-            );
+            let v = serde_json::json!({
+                "type": ty, "sessionFile": HOOK_ROOT,
+                "sessionId": "x", "cwd": "/repo", "toolCallId": "call_1",
+            });
+            assert!(test_decode(SOURCE_NAME, &v).is_err(), "{ty}");
         }
-        assert!(hook(serde_json::json!({"no_type": true})).is_empty());
     }
 
     #[test]

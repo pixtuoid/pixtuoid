@@ -456,7 +456,7 @@ mod tests {
     use super::*;
     use crate::AgentId;
     use crate::source::AgentEvent;
-    use crate::source::decoder::{SOURCE_STAMP, test_obj};
+    use crate::source::decoder::{SOURCE_STAMP, test_decode};
     use tokio::io::AsyncWriteExt;
 
     #[test]
@@ -587,12 +587,12 @@ mod tests {
     /// now load-bearing — and a PluginStamp pid needs no corroboration.
     #[test]
     fn an_omp_session_batch_pairs_start_and_identity_and_binds_once_trusted() {
-        let evs = crate::source::omp::decode_omp_hook_payload(test_obj(&serde_json::json!({
+        let evs = test_decode(crate::source::omp::SOURCE_NAME, &serde_json::json!({
             "type": "session_start",
             "sessionFile": "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-000000000001.jsonl",
             "sessionId": "01a00000-0000-7000-8000-000000000001",
             "cwd": "/repo",
-        })))
+        }))
         .unwrap();
         assert!(
             matches!(
@@ -611,13 +611,13 @@ mod tests {
 
         // The switch batch: the current id's Start+Identity pair still collapses
         // to one trusted sighting, and the ended id binds a no-op beside it.
-        let evs = crate::source::omp::decode_omp_hook_payload(test_obj(&serde_json::json!({
+        let evs = test_decode(crate::source::omp::SOURCE_NAME, &serde_json::json!({
             "type": "session_switch",
             "sessionFile": "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-000000000002.jsonl",
             "previousSessionFile": "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-000000000001.jsonl",
             "sessionId": "01a00000-0000-7000-8000-000000000002",
             "cwd": "/repo",
-        })))
+        }))
         .unwrap();
         assert_eq!(
             evs.len(),

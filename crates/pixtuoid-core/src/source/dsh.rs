@@ -17,7 +17,7 @@
 use crate::AgentId;
 use crate::source::decoder::{MAX_DECODED_FIELD_CHARS, ellipsize, non_empty, required};
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, Hyphen, SessionKey, SourceCaps,
     SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};
@@ -37,7 +37,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: None,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_dsh_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_dsh_payload,
+        }),
         caps: SourceCaps {
             // `agent/disposed` + the plugin's own effect-disposer sweep fire
             // on clean quit AND signal shutdown (dsh runs disposers there
@@ -107,6 +110,15 @@ const OUTCOME_ALLOWED: &str = "allowed-once";
 /// argument — spoofed or real — ever reaches this decoder.
 const SUBAGENT_TOOLS: &[&str] = &["subagent", "subagent_fork"];
 
+/// The envelope the plugin writes.
+const ENVELOPE: Envelope = Envelope {
+    event: "type",
+    session: SessionKey {
+        within: None,
+        field: "sessionId",
+    },
+};
+
 /// Decode one plugin payload into `AgentEvent`s (`HookDecoding::ClaimsAll`).
 ///
 /// Every arm except `session_end` leads or trails an
@@ -121,19 +133,14 @@ const SUBAGENT_TOOLS: &[&str] = &["subagent", "subagent_fork"];
 ///
 /// # Errors
 ///
-/// Never: the `Result` is the `HookDecoding::ClaimsAll` decoder signature, and a malformed payload decodes to `vec![]`.
-#[doc(hidden)]
-pub fn decode_dsh_payload(
-    obj: &HookObject,
-) -> crate::source::decoder::DecodeResult<Vec<AgentEvent>> {
+/// If the payload lacks `sessionId`.
+pub(crate) fn decode_dsh_payload(
+    hook: &Hook<'_>,
+) -> crate::source::decoder::DecodeResult<Option<Vec<AgentEvent>>> {
     const CALL_ID: &str = "callId";
     const TOOL_NAME: &str = "toolName";
-    let Some(ty) = required(SOURCE_NAME, "plugin", "type", |k| obj.get(k)?.as_str()) else {
-        return Ok(vec![]);
-    };
-    let Some(session_id) = required(SOURCE_NAME, ty, "sessionId", |k| non_empty(obj, k)) else {
-        return Ok(vec![]);
-    };
+    let (obj, ty) = (hook.obj, hook.event);
+    let session_id = hook.session()?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let parent_id = non_empty(obj, "parentSession").map(|p| AgentId::from_parts(SOURCE_NAME, p));
     let cwd = || {
@@ -158,8 +165,8 @@ pub fn decode_dsh_payload(
         }
     };
 
-    match ty {
-        SESSION_START => Ok(vec![
+    Ok(Some(match ty {
+        SESSION_START => vec![
             AgentEvent::SessionStart {
                 agent_id,
                 source: SOURCE_NAME.to_string(),
@@ -168,17 +175,17 @@ pub fn decode_dsh_payload(
                 parent_id,
             },
             identity(),
-        ]),
-        SESSION_END => Ok(vec![AgentEvent::SessionEnd {
+        ],
+        SESSION_END => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: parent_id.is_some(),
-        }]),
-        TURN_END => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
+        }],
+        TURN_END => vec![identity(), AgentEvent::turn_end(agent_id)],
         TOOL_CALL => {
             let tool_use_id = required(SOURCE_NAME, TOOL_CALL, CALL_ID, |k| non_empty(obj, k))
                 .map(str::to_string);
             required(SOURCE_NAME, TOOL_CALL, TOOL_NAME, |k| non_empty(obj, k));
-            Ok(vec![
+            vec![
                 identity(),
                 AgentEvent::ToolUseStart {
                     agent_id,
@@ -186,16 +193,16 @@ pub fn decode_dsh_payload(
                     detail: Some(tool_detail()),
                     copy_id: None,
                 },
-            ])
+            ]
         }
-        TOOL_RESULT => Ok(vec![
+        TOOL_RESULT => vec![
             identity(),
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: required(SOURCE_NAME, TOOL_RESULT, CALL_ID, |k| non_empty(obj, k))
                     .map(str::to_string),
             },
-        ]),
+        ],
         APPROVAL_ASKED => {
             let reason = match (non_empty(obj, TOOL_NAME), non_empty(obj, "reason")) {
                 (Some(t), Some(r)) => format!("{t}: {r}"),
@@ -203,7 +210,7 @@ pub fn decode_dsh_payload(
                 (None, Some(r)) => r.to_string(),
                 (None, None) => "approval".to_string(),
             };
-            Ok(vec![
+            vec![
                 identity(),
                 AgentEvent::user_action_request(
                     agent_id,
@@ -213,7 +220,7 @@ pub fn decode_dsh_payload(
                         ..RequestKeys::default()
                     },
                 ),
-            ])
+            ]
         }
         APPROVAL_DECIDED => {
             // A renamed/dropped `outcome` would fail CLOSED (every grant
@@ -246,20 +253,20 @@ pub fn decode_dsh_payload(
                     tool_use_id,
                 },
             };
-            Ok(vec![identity(), event])
+            vec![identity(), event]
         }
-        MODEL => Ok(std::iter::once(identity())
+        MODEL => std::iter::once(identity())
             .chain(AgentEvent::model_info(
                 agent_id,
                 non_empty(obj, "model"),
                 non_empty(obj, "reasoningEffort"),
             ))
-            .collect()),
+            .collect(),
         USAGE => {
             let n = |k: &str| obj.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
             // Fresh spend only: input + output + cache WRITES; cache reads are
             // re-served context (the CC `fresh_spend` semantics).
-            Ok(vec![
+            vec![
                 identity(),
                 AgentEvent::Usage {
                     agent_id,
@@ -269,25 +276,22 @@ pub fn decode_dsh_payload(
                     reading_id: None,
                     copy_id: None,
                 },
-            ])
+            ]
         }
-        _ => {
-            crate::source::drift::unknown_event(SOURCE_NAME, ty);
-            Ok(vec![])
-        }
-    }
+        _ => return Ok(None),
+    }))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
     use serde_json::{Value, json};
 
     const SID: &str = "01b00000-0000-7000-8000-000000000001";
 
     fn decode(v: Value) -> Vec<AgentEvent> {
-        decode_dsh_payload(test_obj(&v)).unwrap()
+        test_decode(SOURCE_NAME, &v).unwrap()
     }
 
     fn id() -> AgentId {
@@ -548,22 +552,6 @@ mod tests {
                 ]
             ),
             "{evs:?}"
-        );
-    }
-
-    #[test]
-    fn unknown_and_field_less_payloads_breadcrumb_and_decode_nothing() {
-        let quiet = crate::test_capture::capture_logs(|| {
-            assert!(decode(json!({"type": "mystery_event", "sessionId": SID})).is_empty());
-            assert!(decode(json!({"type": "tool_call"})).is_empty());
-        });
-        assert!(
-            quiet.contains("unknown_event") && quiet.contains("mystery_event"),
-            "an unknown type must leave a drift breadcrumb: {quiet}"
-        );
-        assert!(
-            quiet.contains("missing_field"),
-            "a sessionId-less payload must leave a breadcrumb: {quiet}"
         );
     }
 }

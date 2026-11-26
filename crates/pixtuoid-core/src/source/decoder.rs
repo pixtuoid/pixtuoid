@@ -1,7 +1,6 @@
 //! Shared decoder utilities used by per-source decoders. Hook payload decoding
-//! lives here because the hook socket is shared; a non-CC-shaped envelope is
-//! dispatched out to its own source module before the shared field requirements
-//! apply.
+//! lives here because the hook socket is shared: each payload's envelope is read
+//! here, then dispatched to its source's own arms or the shared CC-shaped ones.
 
 use std::path::{Path, PathBuf};
 
@@ -9,6 +8,7 @@ use serde_json::Value;
 
 use crate::AgentId;
 use crate::id::normalize_path_key;
+use crate::source::registry::{Envelope, Hook, HookDecoding, SessionKey};
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The JSONL line-decoder fn pointer: `(transcript_path, source, raw_line) ->
@@ -81,7 +81,7 @@ impl DecodeError {
         }
     }
 
-    pub(crate) fn unsupported(cli: &str, event: &str) -> Self {
+    fn unsupported(cli: &str, event: &str) -> Self {
         Self::Unsupported {
             cli: display_safe(cli),
             event: display_safe(event),
@@ -334,10 +334,18 @@ pub(crate) fn hook_source(obj: &serde_json::Map<String, Value>) -> Option<&str> 
     non_empty(obj, SOURCE_STAMP)
 }
 
-/// A test payload as the object every hook decoder is handed.
+/// A test payload as the object a decoder reads.
 #[cfg(test)]
 pub(crate) fn test_obj(v: &Value) -> &crate::source::registry::HookObject {
     v.as_object().expect("a test payload is an object")
+}
+
+/// A test payload decoded as `source`'s, through the entry every payload takes.
+#[cfg(test)]
+pub(crate) fn test_decode(source: &str, v: &Value) -> DecodeResult<Vec<AgentEvent>> {
+    let mut stamped = v.clone();
+    stamped[SOURCE_STAMP] = Value::from(source);
+    decode_hook_payload(stamped)
 }
 
 /// Envelopes that decode to NOTHING, quietly. A DAEMON source's payloads ride the
@@ -368,23 +376,6 @@ fn decodes_to_nothing(
         return true;
     }
     false
-}
-
-/// A source's OWN hook arms, run before the shared field requirements so an alien
-/// envelope (Reasonix: camelCase, `event` discriminator, no `session_id` at all) or
-/// a subject-changing event (a subagent's, whose AgentId is the CHILD's)
-/// decodes in its own module. An `Extend` decoder that declines (`Ok(None)`) falls
-/// through to the shared CC-shaped arms; a `ClaimsAll` decoder cannot.
-fn source_owned_arms(
-    desc: Option<&'static crate::source::registry::SourceDescriptor>,
-    obj: &crate::source::registry::HookObject,
-) -> DecodeResult<Option<Vec<AgentEvent>>> {
-    use crate::source::registry::HookDecoding;
-    match desc.and_then(|d| d.hook()) {
-        Some(HookDecoding::ClaimsAll(decode)) => decode(obj).map(Some),
-        Some(HookDecoding::Shared { extend, .. }) => extend(obj),
-        None => Ok(None),
-    }
 }
 
 /// `obj`'s string field `key`, `None` when absent or EMPTY: an empty id or
@@ -428,24 +419,14 @@ pub(crate) fn required_or_err<T>(
 /// The hook field naming the root session.
 const SESSION_ID: &str = "session_id";
 
-/// Whose session a hook speaks for: a subagent names itself in [`SUBAGENT_ID`]
-/// beside its root's `session_id`, a root in `session_id` alone.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct HookSubject<'a> {
-    /// The subagent's own id, when a subagent fired it.
-    pub(crate) child: Option<&'a str>,
-    /// The root session's id.
-    pub(crate) root: Option<&'a str>,
-}
-
-impl<'a> HookSubject<'a> {
-    pub(crate) fn of(obj: &'a serde_json::Map<String, Value>) -> Self {
-        Self {
-            child: non_empty(obj, SUBAGENT_ID),
-            root: non_empty(obj, SESSION_ID),
-        }
-    }
-}
+/// The CC-shaped envelope the shared arms key on.
+pub(crate) const SHARED_ENVELOPE: Envelope = Envelope {
+    event: HOOK_EVENT_NAME,
+    session: SessionKey {
+        within: None,
+        field: SESSION_ID,
+    },
+};
 
 /// A hook's `tool_name`, the key a request binds its pending calls by, so the
 /// pre-use and the prompt derive it alike; its absence is drift.
@@ -469,21 +450,6 @@ pub(crate) fn hook_tool_id_key(
         _ => crate::source::registry::ToolIdKey::ToolUse,
     }
     .wire_name()
-}
-
-/// The payload's `session_id`, rejected when missing or EMPTY: an empty one passes
-/// `as_str` but, for Codex (which keys the AgentId on it), would mint a phantom
-/// agent that never coalesces with any rollout. This and `hook_event_name`
-/// breadcrumb undeduped — the two fields are the whole hook plane's chokepoint.
-pub(crate) fn hook_session_id(
-    obj: &serde_json::Map<String, Value>,
-    source: &str,
-    event: &str,
-) -> DecodeResult<String> {
-    required_or_err(source, Some(event), SESSION_ID, |k| {
-        required(source, event, k, |k| non_empty(obj, k))
-    })
-    .map(str::to_string)
 }
 
 /// The identity context a hook arm attaches ahead of an event that may be its
@@ -516,12 +482,13 @@ pub const EVENT_STAMP: &str = "_pixtuoid_event";
 /// source/session_id/cwd (#221), the claim an unknown id registers from; the
 /// shared lifecycle arms do NOT: SessionStart carries identity, an end for an
 /// unknown id proves nothing, and on `Stop` an `Identity` would re-create a CC
-/// child past its cascade. A source's own arms (`source_owned_arms`) set their own.
+/// child past its cascade. A source's own arms set their own.
 /// A payload without a [`SOURCE_STAMP`] names no CLI and decodes to no events.
 ///
 /// # Errors
 ///
-/// If the payload is not an object, a source-owned decoder rejects it, `hook_event_name` or `session_id` is missing or empty, or the event is unsupported.
+/// If the payload is not an object, names no event or an unsupported one, or
+/// its arm rejects it, a missing or empty session key included.
 pub fn decode_hook_payload(v: Value) -> DecodeResult<Vec<AgentEvent>> {
     decode_hook_object(hook_object(&v)?)
 }
@@ -545,10 +512,36 @@ pub(crate) fn decode_hook_object(
     if decodes_to_nothing(source, obj, desc) {
         return Ok(vec![]);
     }
-    if let Some(evs) = source_owned_arms(desc, obj)? {
-        return Ok(evs);
-    }
-    shared_hook_arms(obj, source, desc)
+    let decoding = desc.and_then(|d| d.hook());
+    let hook = Hook::read(obj, source, envelope_of(decoding))?;
+    let decoded = match decoding {
+        Some(HookDecoding::ClaimsAll { decode, .. }) => decode(&hook)?,
+        Some(HookDecoding::Shared { extend, .. }) => match extend(&hook)? {
+            None => shared_hook_arms(&hook, desc)?,
+            claimed => claimed,
+        },
+        None => shared_hook_arms(&hook, desc)?,
+    };
+    decoded.ok_or_else(|| unlisted(&hook))
+}
+
+/// Where `decoding`'s payloads name their event and session: an unregistered
+/// source's take the shared arms', so they are CC-shaped.
+fn envelope_of(decoding: Option<&HookDecoding>) -> Envelope {
+    decoding.map_or(SHARED_ENVELOPE, HookDecoding::envelope)
+}
+
+/// A test payload as `source`'s arms are handed it.
+#[cfg(test)]
+pub(crate) fn test_hook<'a>(source: &'a str, v: &'a Value) -> Hook<'a> {
+    let decoding = crate::source::registry::descriptor_for(source).and_then(|d| d.hook());
+    Hook::read(test_obj(v), source, envelope_of(decoding)).expect("a test payload names its event")
+}
+
+/// The one report of an event no arm lists, so no arm refuses one unseen.
+fn unlisted(hook: &Hook<'_>) -> DecodeError {
+    super::drift::unknown_event(hook.source, hook.event);
+    DecodeError::unsupported(hook.source, hook.event)
 }
 
 /// The shared CC-shaped arms, for every source whose row has no claiming decoder.
@@ -557,20 +550,19 @@ pub(crate) fn decode_hook_object(
 /// (openai/codex#20204) — and hook firing is version-unstable: a
 /// `matcher="*"` group is silently dropped, some builds emit none (openai/codex#21639).
 pub(crate) fn shared_hook_arms(
-    obj: &serde_json::Map<String, Value>,
-    source: &str,
+    hook: &Hook<'_>,
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
-) -> DecodeResult<Vec<AgentEvent>> {
-    let event = required_or_err(source, None, HOOK_EVENT_NAME, |k| {
-        required(source, "hook", k, |k| obj.get(k)?.as_str())
-    })?;
-    let session_id = hook_session_id(obj, source, event)?;
-    let agent_id = AgentId::from_parts(source, &session_id);
+) -> DecodeResult<Option<Vec<AgentEvent>>> {
+    let Hook {
+        obj, source, event, ..
+    } = *hook;
+    let session_id = hook.session()?;
+    let agent_id = AgentId::from_parts(source, session_id);
     let tool_id_key = hook_tool_id_key(desc);
     let start = || AgentEvent::SessionStart {
         agent_id,
         source: source.to_string(),
-        session_id: session_id.clone(),
+        session_id: session_id.to_string(),
         cwd: obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into(),
         parent_id: None,
     };
@@ -583,7 +575,7 @@ pub(crate) fn shared_hook_arms(
         }
     };
 
-    match event {
+    Ok(Some(match event {
         // Of CC's `SessionStart` `model`, "Claude Code doesn't always include it"
         // (<https://code.claude.com/docs/en/hooks#common-input-fields>). A codex
         // prompt's `model` is its turn's (`codex-rs/core/src/hook_runtime.rs:723`),
@@ -594,7 +586,7 @@ pub(crate) fn shared_hook_arms(
         "SessionStart" | "UserPromptSubmit" => {
             let mut evs = vec![start()];
             evs.extend(hook_model(non_empty(obj, "model")));
-            Ok(evs)
+            evs
         }
         // "use a PostModelSwitch hook to follow the model as it changes during a
         // session" (<https://code.claude.com/docs/en/hooks#common-input-fields>):
@@ -602,7 +594,7 @@ pub(crate) fn shared_hook_arms(
         // an alias or null (<https://code.claude.com/docs/en/hooks#premodelswitch-input>).
         "PostModelSwitch" => {
             let model = required(source, event, "to_model", |k| non_empty(obj, k));
-            Ok(hook_model(model).into_iter().collect())
+            hook_model(model).into_iter().collect()
         }
         "PreToolUse" => {
             let tool_name = hook_tool_name(obj, source, event);
@@ -615,7 +607,7 @@ pub(crate) fn shared_hook_arms(
                 tool_name: tool_name.clone(),
                 turn: None,
             });
-            let mut evs = vec![hook_identity(agent_id, source, &session_id, obj)];
+            let mut evs = vec![hook_identity(agent_id, source, session_id, obj)];
             evs.extend(pending);
             evs.push(AgentEvent::ToolUseStart {
                 agent_id,
@@ -627,7 +619,7 @@ pub(crate) fn shared_hook_arms(
                 )),
                 copy_id: None,
             });
-            Ok(evs)
+            evs
         }
         // A failed call fires PostToolUseFailure in PostToolUse's place
         // (<https://code.claude.com/docs/en/hooks#posttoolusefailure>;
@@ -635,29 +627,29 @@ pub(crate) fn shared_hook_arms(
         // at `@moonshot-ai/kimi-code@2.7.3`).
         "PostToolUse" | "PostToolUseFailure" => {
             let tool_use_id = non_empty(obj, tool_id_key).map(String::from);
-            Ok(vec![
-                hook_identity(agent_id, source, &session_id, obj),
+            vec![
+                hook_identity(agent_id, source, session_id, obj),
                 AgentEvent::ToolUseEnd {
                     agent_id,
                     tool_use_id,
                 },
-            ])
+            ]
         }
         "Notification" => {
             let msg = obj.get("message").and_then(|s| s.as_str());
-            Ok(vec![
-                hook_identity(agent_id, source, &session_id, obj),
+            vec![
+                hook_identity(agent_id, source, session_id, obj),
                 AgentEvent::user_action_request(
                     agent_id,
                     msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
                     RequestKeys::default(),
                 ),
-            ])
+            ]
         }
         // The prompt names its tool, and kimi's its call too; an empty name
         // binds nothing.
-        "PermissionRequest" => Ok(vec![
-            hook_identity(agent_id, source, &session_id, obj),
+        "PermissionRequest" => vec![
+            hook_identity(agent_id, source, session_id, obj),
             AgentEvent::user_action_request(
                 agent_id,
                 Some("permission".into()),
@@ -667,20 +659,17 @@ pub(crate) fn shared_hook_arms(
                     ..RequestKeys::default()
                 },
             ),
-        ]),
+        ],
         // Stop must NOT end the session: turns end many times per session.
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
-        "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
+        "Stop" => vec![AgentEvent::turn_end(agent_id)],
+        "SessionEnd" => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
-        }]),
+        }],
         // SubagentStart/Stop change the event's SUBJECT to the child AgentId, which
-        // these session-keyed arms cannot express — see `source_owned_arms`.
-        other => {
-            super::drift::unknown_event(source, other);
-            Err(DecodeError::unsupported(source, other))
-        }
-    }
+        // these session-keyed arms cannot express: the source's own arms do.
+        _ => return Ok(None),
+    }))
 }
 
 /// The hook field naming the event.
@@ -694,22 +683,24 @@ pub(crate) const SUBAGENT_ID: &str = "agent_id";
 /// wire's `agent_id` to that session's id, and a start it decodes to is
 /// parented on the root. An event naming no subagent declines (`Ok(None)`).
 pub(crate) fn subagent_fired(
-    obj: &serde_json::Map<String, Value>,
-    source: &str,
+    hook: &Hook<'_>,
     session: fn(&str) -> String,
 ) -> DecodeResult<Option<Vec<AgentEvent>>> {
-    let subject = HookSubject::of(obj);
-    let Some(agent) = subject.child else {
+    let Some(agent) = non_empty(hook.obj, SUBAGENT_ID) else {
         return Ok(None);
     };
-    let desc = crate::source::registry::descriptor_for(source);
-    let root = subject.root.map(|root| AgentId::from_parts(source, root));
-    let mut own = obj.clone();
+    let desc = crate::source::registry::descriptor_for(hook.source);
+    let mut own = hook.obj.clone();
     own.insert(SESSION_ID.into(), Value::from(session(agent)));
-    let mut evs = shared_hook_arms(&own, source, desc)?;
+    let mut evs =
+        shared_hook_arms(&Hook { obj: &own, ..*hook }, desc)?.ok_or_else(|| unlisted(hook))?;
     for e in &mut evs {
         if let AgentEvent::SessionStart { parent_id, .. } = e {
-            *parent_id = parent_id.or(root);
+            // Read for a start alone: no other arm names the root.
+            *parent_id = parent_id.or_else(|| {
+                let root = hook.session().ok()?;
+                Some(AgentId::from_parts(hook.source, root))
+            });
         }
     }
     Ok(Some(evs))
@@ -1454,45 +1445,7 @@ mod tests {
     }
 
     #[test]
-    fn the_hook_planes_required_field_bails_leave_drift_breadcrumbs() {
-        let renamed_event = capture_logs(|| {
-            assert!(
-                decode_hook_payload(json!({
-                    "hookEventNameZ": "Stop",
-                    "session_id": "ses-1",
-                    "_pixtuoid_source": "claude-code",
-                }))
-                .is_err()
-            );
-        });
-        for needle in [
-            crate::source::drift::TARGET,
-            "missing_field",
-            "hook_event_name",
-        ] {
-            assert!(
-                renamed_event.contains(needle),
-                "missing {needle:?} in captured log:\n{renamed_event}"
-            );
-        }
-
-        let renamed_session = capture_logs(|| {
-            assert!(
-                decode_hook_payload(json!({
-                    "hook_event_name": "Stop",
-                    "sessionIdZ": "ses-1",
-                    "_pixtuoid_source": "claude-code",
-                }))
-                .is_err()
-            );
-        });
-        for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
-            assert!(
-                renamed_session.contains(needle),
-                "missing {needle:?} in captured log:\n{renamed_session}"
-            );
-        }
-
+    fn the_grok_cross_fire_drop_leaves_no_breadcrumb() {
         let cross_fire = capture_logs(|| {
             assert!(
                 decode_hook_payload(json!({
@@ -1673,70 +1626,91 @@ mod tests {
             (
                 jcode::SOURCE_NAME,
                 Box::new(|| {
-                    jcode::decode_jcode_hook_payload(test_obj(&json!({
-                        "event":"pre_tool","session_id":"session_fox_123_a","tool_name":name})))
+                    test_decode(
+                        jcode::SOURCE_NAME,
+                        &json!({
+                        "event":"pre_tool","session_id":"session_fox_123_a","tool_name":name}),
+                    )
                     .expect("jcode decodes")
                 }),
             ),
             (
                 reasonix::SOURCE_NAME,
                 Box::new(|| {
-                    reasonix::decode_rx_hook_payload(test_obj(&json!({
-                        "event":"PreToolUse","sessionId":"s","cwd":"/r","toolName":name,"toolArgs":{"command":tgt}})))
+                    test_decode(reasonix::SOURCE_NAME, &json!({
+                        "event":"PreToolUse","sessionId":"s","cwd":"/r","toolName":name,"toolArgs":{"command":tgt}}))
                     .expect("reasonix decodes")
                 }),
             ),
             (
                 dsh::SOURCE_NAME,
                 Box::new(|| {
-                    dsh::decode_dsh_payload(test_obj(&json!({
-                        "type":"tool_call","sessionId":"s1","callId":"c1","toolName":name})))
+                    test_decode(
+                        dsh::SOURCE_NAME,
+                        &json!({
+                        "type":"tool_call","sessionId":"s1","callId":"c1","toolName":name}),
+                    )
                     .expect("dsh decodes")
                 }),
             ),
             (
                 codewhale::SOURCE_NAME,
                 Box::new(|| {
-                    codewhale::decode_cw_hook_payload(test_obj(&json!({
+                    test_decode(
+                        codewhale::SOURCE_NAME,
+                        &json!({
                         "event":"tool_call_before","session_id":"s","cwd":"/r","tool":name,
-                        "tool_args":cw_args})))
+                        "tool_args":cw_args}),
+                    )
                     .expect("codewhale decodes")
                 }),
             ),
             (
                 opencode::SOURCE_NAME,
                 Box::new(|| {
-                    opencode::decode_oc_hook_payload(test_obj(&json!({
+                    test_decode(
+                        opencode::SOURCE_NAME,
+                        &json!({
                         "type":"session.tool.input.started",
-                        "data":{"sessionID":"ses-1","id":"c1","name":name}})))
+                        "data":{"sessionID":"ses-1","id":"c1","name":name}}),
+                    )
                     .expect("opencode decodes")
                 }),
             ),
             (
                 cursor::SOURCE_NAME,
                 Box::new(|| {
-                    cursor::decode_cursor_hook_payload(test_obj(&json!({
+                    test_decode(
+                        cursor::SOURCE_NAME,
+                        &json!({
                         "hook_event_name":"preToolUse","session_id":"s",
-                        "tool_name":name,"tool_input":{"command":tgt}})))
+                        "tool_name":name,"tool_input":{"command":tgt}}),
+                    )
                     .expect("cursor decodes")
                 }),
             ),
             (
                 hermes::SOURCE_NAME,
                 Box::new(|| {
-                    hermes::decode_hermes_hook_payload(test_obj(&json!({
+                    test_decode(
+                        hermes::SOURCE_NAME,
+                        &json!({
                         "hook_event_name":"pre_tool_call","session_id":"s","cwd":"/r",
-                        "tool_name":name,"args":{"command":tgt}})))
+                        "tool_name":name,"args":{"command":tgt}}),
+                    )
                     .expect("hermes decodes")
                 }),
             ),
             (
                 grok::SOURCE_NAME,
                 Box::new(|| {
-                    grok::decode_grok_hook_payload(test_obj(&json!({
+                    test_decode(
+                        grok::SOURCE_NAME,
+                        &json!({
                         "hookEventName":"pre_tool_use","sessionId":"s","cwd":"/r",
                         "workspaceRoot":"/r","toolName":name,"toolUseId":"c1",
-                        "toolInput":{"command":tgt},"toolInputTruncated":false})))
+                        "toolInput":{"command":tgt},"toolInputTruncated":false}),
+                    )
                     .expect("grok decodes")
                 }),
             ),
@@ -1881,9 +1855,10 @@ mod tests {
                 reasonix::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    reasonix::decode_rx_hook_payload(test_obj(
+                    test_decode(
+                        reasonix::SOURCE_NAME,
                         &json!({"event":"Notification","sessionId":"s","cwd":"/r","message":raw}),
-                    ))
+                    )
                     .expect("reasonix decodes")
                 }),
             ),
@@ -1891,8 +1866,11 @@ mod tests {
                 dsh::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    dsh::decode_dsh_payload(test_obj(&json!({
-                        "type":"approval_asked","sessionId":"s1","toolName":"bash","reason":raw})))
+                    test_decode(
+                        dsh::SOURCE_NAME,
+                        &json!({
+                        "type":"approval_asked","sessionId":"s1","toolName":"bash","reason":raw}),
+                    )
                     .expect("dsh decodes")
                 }),
             ),
@@ -1900,9 +1878,12 @@ mod tests {
                 opencode::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    opencode::decode_oc_hook_payload(test_obj(&json!({
+                    test_decode(
+                        opencode::SOURCE_NAME,
+                        &json!({
                         "type":"permission.asked",
-                        "data":{"sessionID":"ses-1","action":raw}})))
+                        "data":{"sessionID":"ses-1","action":raw}}),
+                    )
                     .expect("opencode decodes")
                 }),
             ),
@@ -1910,10 +1891,13 @@ mod tests {
                 grok::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    grok::decode_grok_hook_payload(test_obj(&json!({
+                    test_decode(
+                        grok::SOURCE_NAME,
+                        &json!({
                         "hookEventName":"notification","sessionId":"s","cwd":"/r",
                         "workspaceRoot":"/r","notificationType":"permission_prompt",
-                        "message":raw})))
+                        "message":raw}),
+                    )
                     .expect("grok decodes")
                 }),
             ),
@@ -1921,8 +1905,11 @@ mod tests {
                 codewhale::SOURCE_NAME,
                 ReasonKind::NoReason,
                 Box::new(|| {
-                    codewhale::decode_cw_hook_payload(test_obj(&json!({
-                        "event":"waiting_for_user","session_id":"s","cwd":"/r","message":raw})))
+                    test_decode(
+                        codewhale::SOURCE_NAME,
+                        &json!({
+                        "event":"waiting_for_user","session_id":"s","cwd":"/r","message":raw}),
+                    )
                     .expect("codewhale decodes")
                 }),
             ),
@@ -1930,9 +1917,12 @@ mod tests {
                 jcode::SOURCE_NAME,
                 ReasonKind::NoReason,
                 Box::new(|| {
-                    jcode::decode_jcode_hook_payload(test_obj(&json!({
+                    test_decode(
+                        jcode::SOURCE_NAME,
+                        &json!({
                         "event":"pre_tool","session_id":"session_fox_123_a",
-                        "tool_name":"bash","message":raw})))
+                        "tool_name":"bash","message":raw}),
+                    )
                     .expect("jcode decodes")
                 }),
             ),
@@ -1940,9 +1930,12 @@ mod tests {
                 cursor::SOURCE_NAME,
                 ReasonKind::NoReason,
                 Box::new(|| {
-                    cursor::decode_cursor_hook_payload(test_obj(&json!({
+                    test_decode(
+                        cursor::SOURCE_NAME,
+                        &json!({
                         "hook_event_name":"preToolUse","session_id":"s",
-                        "tool_name":"Shell","tool_input":{"command":"ls"},"message":raw})))
+                        "tool_name":"Shell","tool_input":{"command":"ls"},"message":raw}),
+                    )
                     .expect("cursor decodes")
                 }),
             ),
@@ -1952,9 +1945,12 @@ mod tests {
                 hermes::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    hermes::decode_hermes_hook_payload(test_obj(&json!({
+                    test_decode(
+                        hermes::SOURCE_NAME,
+                        &json!({
                         "hook_event_name":"pre_approval_request","session_id":"s","cwd":"/r",
-                        "description":raw})))
+                        "description":raw}),
+                    )
                     .expect("hermes decodes")
                 }),
             ),
@@ -2120,5 +2116,242 @@ mod tests {
         }))
         .expect("decodes");
         assert!(!evs.is_empty());
+    }
+
+    /// Whether `logs` hold a `kind` breadcrumb from `source` carrying the
+    /// `(key, value)` field, any such breadcrumb for `None`.
+    fn breadcrumbed(
+        logs: &str,
+        source: &str,
+        kind: crate::source::drift::DriftKind,
+        field: Option<(&str, &str)>,
+    ) -> bool {
+        use crate::source::drift::{KIND_FIELD, SOURCE_FIELD};
+        let head = format!(
+            "{SOURCE_FIELD}={source} {KIND_FIELD}=\"{}\"",
+            <&str>::from(kind)
+        );
+        logs.lines().any(|l| {
+            l.contains(&head)
+                && field.is_none_or(|(k, v)| l.split_whitespace().any(|f| f == format!("{k}={v}")))
+        })
+    }
+
+    /// `v` stamped as `source`'s, decoded, with what it logged.
+    fn stamped_decode(source: &str, mut v: Value) -> (DecodeResult<Vec<AgentEvent>>, String) {
+        v[SOURCE_STAMP] = json!(source);
+        let mut out = None;
+        let logs = crate::test_capture::capture_logs(|| out = Some(decode_hook_payload(v)));
+        (out.expect("ran"), logs)
+    }
+
+    /// The hook-decoding rows, which each table below must cover exactly.
+    fn hook_sources() -> std::collections::BTreeSet<&'static str> {
+        crate::source::registry::REGISTRY
+            .iter()
+            .filter(|d| d.hook().is_some())
+            .map(|d| d.name)
+            .collect()
+    }
+
+    /// A session key an arm keys on breadcrumbs its absence, for `pixtuoid
+    /// doctor` to count, however the source spells it.
+    #[test]
+    fn every_hook_source_breadcrumbs_a_missing_session_key() {
+        use crate::source::drift::DriftKind;
+        use crate::source::{
+            antigravity, claude_code, codewhale, codex, cursor, dsh, grok, hermes, jcode, kimi,
+            omp, opencode, reasonix,
+        };
+        let rows = [
+            (
+                claude_code::SOURCE_NAME,
+                json!({"hook_event_name": "PreToolUse"}),
+                "session_id",
+            ),
+            (
+                codex::SOURCE_NAME,
+                json!({"hook_event_name": "PreToolUse"}),
+                "session_id",
+            ),
+            (
+                kimi::SOURCE_NAME,
+                json!({"hook_event_name": "Stop"}),
+                "session_id",
+            ),
+            (
+                cursor::SOURCE_NAME,
+                json!({"hook_event_name": "preToolUse"}),
+                "session_id",
+            ),
+            // A real envelope always carries its cwd and workspace root.
+            (
+                grok::SOURCE_NAME,
+                json!({
+                    "hookEventName": "pre_tool_use", "cwd": "/r", "workspaceRoot": "/r", "toolName": "t",
+                }),
+                "sessionId",
+            ),
+            (
+                codewhale::SOURCE_NAME,
+                json!({"event": "tool_call_before", "cwd": "/r"}),
+                "session_id",
+            ),
+            (
+                codewhale::SOURCE_NAME,
+                json!({"event": "subagent_spawn", "agent_id": "a", "workspace": "/r"}),
+                "session_id",
+            ),
+            (
+                hermes::SOURCE_NAME,
+                json!({"hook_event_name": "pre_tool_call"}),
+                "session_id",
+            ),
+            (
+                jcode::SOURCE_NAME,
+                json!({"event": "pre_tool"}),
+                "session_id",
+            ),
+            (
+                reasonix::SOURCE_NAME,
+                json!({"event": "PreToolUse", "cwd": "/r"}),
+                "sessionId",
+            ),
+            (
+                antigravity::SOURCE_NAME,
+                json!({EVENT_STAMP: "PreToolUse"}),
+                "conversationId",
+            ),
+            (dsh::SOURCE_NAME, json!({"type": "tool_call"}), "sessionId"),
+            (
+                omp::SOURCE_NAME,
+                json!({"type": "session_start"}),
+                "sessionId",
+            ),
+            (
+                opencode::SOURCE_NAME,
+                json!({"type": "session.tool.input.started", "data": {}}),
+                "sessionID",
+            ),
+        ];
+        let failed: Vec<_> = rows
+            .iter()
+            .filter_map(|(source, v, key)| {
+                let (decoded, logs) = stamped_decode(source, v.clone());
+                let refused =
+                    matches!(decoded, Err(DecodeError::Missing { field, .. }) if field == *key);
+                let noted =
+                    breadcrumbed(&logs, source, DriftKind::MissingField, Some(("field", key)));
+                (!(refused && noted))
+                    .then(|| format!("{source}: {decoded:?}, breadcrumbed: {noted}"))
+            })
+            .collect();
+        assert!(failed.is_empty(), "{failed:#?}");
+        let covered = rows.iter().map(|(s, ..)| *s).collect();
+        assert_eq!(hook_sources(), covered, "a row per hook-decoding source");
+    }
+
+    /// An envelope naming no event breadcrumbs that, whichever field the
+    /// source names its events in.
+    #[test]
+    fn every_hook_source_breadcrumbs_a_missing_event() {
+        let failed: Vec<_> = hook_sources()
+            .into_iter()
+            .filter_map(|source| {
+                let (decoded, logs) = stamped_decode(source, json!({}));
+                let refused = matches!(decoded, Err(DecodeError::Missing { context: None, .. }));
+                let noted = breadcrumbed(
+                    &logs,
+                    source,
+                    crate::source::drift::DriftKind::MissingField,
+                    None,
+                );
+                (!(refused && noted))
+                    .then(|| format!("{source}: {decoded:?}, breadcrumbed: {noted}"))
+            })
+            .collect();
+        assert!(failed.is_empty(), "{failed:#?}");
+    }
+
+    /// An event no arm lists is refused and breadcrumbed, never decoded as
+    /// a listed one's events.
+    #[test]
+    fn every_hook_source_breadcrumbs_an_unlisted_event() {
+        use crate::source::drift::DriftKind;
+        use crate::source::{
+            antigravity, claude_code, codewhale, codex, cursor, dsh, grok, hermes, jcode, kimi,
+            omp, opencode, reasonix,
+        };
+        const UNLISTED: &str = "NoSuchEvent";
+        let rows = [
+            (
+                claude_code::SOURCE_NAME,
+                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+            ),
+            (
+                codex::SOURCE_NAME,
+                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+            ),
+            (
+                codex::SOURCE_NAME,
+                json!({"hook_event_name": UNLISTED, "session_id": "s", "agent_id": "c", "turn_id": "t"}),
+            ),
+            (
+                kimi::SOURCE_NAME,
+                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+            ),
+            (
+                cursor::SOURCE_NAME,
+                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+            ),
+            (
+                grok::SOURCE_NAME,
+                json!({"hookEventName": UNLISTED, "sessionId": "s"}),
+            ),
+            (
+                codewhale::SOURCE_NAME,
+                json!({"event": UNLISTED, "session_id": "s", "cwd": "/r"}),
+            ),
+            (
+                hermes::SOURCE_NAME,
+                json!({"hook_event_name": UNLISTED, "session_id": "s"}),
+            ),
+            (
+                jcode::SOURCE_NAME,
+                json!({"event": UNLISTED, "session_id": "s"}),
+            ),
+            (
+                reasonix::SOURCE_NAME,
+                json!({"event": UNLISTED, "sessionId": "s", "cwd": "/r"}),
+            ),
+            (
+                antigravity::SOURCE_NAME,
+                json!({EVENT_STAMP: UNLISTED, "conversationId": "s"}),
+            ),
+            (
+                dsh::SOURCE_NAME,
+                json!({"type": UNLISTED, "sessionId": "s"}),
+            ),
+            (
+                omp::SOURCE_NAME,
+                json!({"type": UNLISTED, "sessionId": "s"}),
+            ),
+            (
+                opencode::SOURCE_NAME,
+                json!({"type": UNLISTED, "data": {"sessionID": "s"}}),
+            ),
+        ];
+        let failed: Vec<_> = rows
+            .iter()
+            .filter_map(|(source, v)| {
+                let (decoded, logs) = stamped_decode(source, v.clone());
+                let refused = matches!(&decoded, Err(DecodeError::Unsupported { event, .. }) if event == UNLISTED);
+                let noted = breadcrumbed(&logs, source, DriftKind::UnknownEvent, Some(("name", UNLISTED)));
+                (!(refused && noted)).then(|| format!("{source}: {decoded:?}, breadcrumbed: {noted}"))
+            })
+            .collect();
+        assert!(failed.is_empty(), "{failed:#?}");
+        let covered = rows.iter().map(|(s, _)| *s).collect();
+        assert_eq!(hook_sources(), covered, "a row per hook-decoding source");
     }
 }

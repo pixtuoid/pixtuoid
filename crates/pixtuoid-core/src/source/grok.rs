@@ -28,7 +28,7 @@
 //!   No open-FD probe is possible: every append opens and drops the file
 //!   handle, unlike Codex's for-lifetime rollout fd.
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -37,7 +37,7 @@ use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, Hook, HookDecoding, Hyphen, SessionKey, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
@@ -74,7 +74,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             #[cfg(feature = "native")]
             native: native::TRANSCRIPT,
         }),
-        hook: Some(HookDecoding::ClaimsAll(decode_grok_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_grok_hook_payload,
+        }),
         caps: SourceCaps {
             // `session_end` does NOT fire on a plain TUI quit (the loop breaks without
             // draining the session actor), so the DOMINANT exit is signal-less; the
@@ -118,6 +121,17 @@ const SESSION_END: &str = "session_end";
 /// The hook field naming the event, in grok's own camelCase envelope.
 pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
 
+/// grok's envelope: `HookEventEnvelope`'s camelCase keys
+/// (`crates/codegen/xai-grok-hooks/src/event.rs:358-361` at `xai-org/grok-build`
+/// `2bdd1d6a63`), whose `sessionId` is no `Option`.
+const ENVELOPE: Envelope = Envelope {
+    event: HOOK_EVENT_NAME,
+    session: SessionKey {
+        within: None,
+        field: "sessionId",
+    },
+};
+
 /// Decode one grok hook payload (already identified by
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
 ///
@@ -125,49 +139,47 @@ pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
 /// it is the resurrect carrier, because grok's `session_end` is unreliable (a
 /// TUI quit fires none) so a stale-swept LIVE session must walk back in on its
 /// next prompt.
-/// Anything unrecognized bails: registered-vs-decoded drift must be loud.
 ///
 /// # Errors
 ///
-/// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
-pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, HOOK_EVENT_NAME, |k| obj.get(k)?.as_str())?;
+/// If an event keyed on its session lacks `sessionId`, or a subagent event lacks `subagentId`.
+pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
-    let key = required_or_err(SOURCE_NAME, Some(event), "sessionId", |k| {
-        non_empty(obj, k).or(cwd)
-    })?;
-    let agent_id = AgentId::from_parts(SOURCE_NAME, key);
-    let cwd_path = || cwd.map(PathBuf::from);
-
-    let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd_path());
+    // Read only by the arms that key on it: a subagent's end keys on the
+    // child, an ignored notice on nothing.
+    let session = || -> Result<(AgentId, &str)> {
+        let key = hook.session()?;
+        Ok((AgentId::from_parts(SOURCE_NAME, key), key))
+    };
+    let identity = |agent_id, key: &str| {
+        AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd.map(PathBuf::from))
+    };
+    let start = |agent_id, key: &str| AgentEvent::SessionStart {
+        agent_id,
+        source: SOURCE_NAME.to_string(),
+        session_id: key.to_string(),
+        cwd: cwd.unwrap_or("").into(),
+        parent_id: None,
+    };
     let tool_use_id = || {
         obj.get("toolUseId")
             .and_then(|s| s.as_str())
             .map(String::from)
     };
 
-    match event {
+    Ok(Some(match event {
         "session_start" => {
             // grok's payload ALSO carries a public `source` field ("new"/"load"
             // — the start REASON, exactly CC's overload). Never read it:
             // attribution comes ONLY from `_pixtuoid_source`, else agents split
             // into un-reapable ghosts.
-            Ok(vec![AgentEvent::SessionStart {
-                agent_id,
-                source: SOURCE_NAME.to_string(),
-                session_id: key.to_string(),
-                cwd: cwd.unwrap_or("").into(),
-                parent_id: None,
-            }])
+            let (agent_id, key) = session()?;
+            vec![start(agent_id, key)]
         }
         "user_prompt_submit" => {
-            let mut evs = vec![AgentEvent::SessionStart {
-                agent_id,
-                source: SOURCE_NAME.to_string(),
-                session_id: key.to_string(),
-                cwd: cwd.unwrap_or("").into(),
-                parent_id: None,
-            }];
+            let (agent_id, key) = session()?;
+            let mut evs = vec![start(agent_id, key)];
             // Upstream fires it with the turn's prompt id, the key the
             // transcript's `turn_completed` ends the turn by
             // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn.rs:909-917`
@@ -178,33 +190,37 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                     turn: TurnKey::Id(prompt.into()),
                 });
             }
-            Ok(evs)
+            evs
         }
         "pre_tool_use" => {
+            let (agent_id, key) = session()?;
             let tool =
                 required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str()).unwrap_or("?");
-            Ok(vec![
-                identity(),
+            vec![
+                identity(agent_id, key),
                 AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: tool_use_id(),
                     detail: Some(grok_tool_detail(tool, obj.get("toolInput"))),
                     copy_id: None,
                 },
-            ])
+            ]
         }
         // A FAILED tool fires `post_tool_use_failure` INSTEAD OF
         // `post_tool_use`; a DENIED one fires `permission_denied` and never
         // runs at all. All three close the activity, which also resolves a
         // permission `UserActionRequest` gated on this tool — right for the denied case:
         // the prompt is answered, so the sprite must not stay RequiresAction.
-        "post_tool_use" | "post_tool_use_failure" | "permission_denied" => Ok(vec![
-            identity(),
-            AgentEvent::ToolUseEnd {
-                agent_id,
-                tool_use_id: tool_use_id(),
-            },
-        ]),
+        "post_tool_use" | "post_tool_use_failure" | "permission_denied" => {
+            let (agent_id, key) = session()?;
+            vec![
+                identity(agent_id, key),
+                AgentEvent::ToolUseEnd {
+                    agent_id,
+                    tool_use_id: tool_use_id(),
+                },
+            ]
+        }
         "notification" => {
             let kind = required(SOURCE_NAME, event, "notificationType", |k| {
                 obj.get(k)?.as_str()
@@ -215,15 +231,16 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // hook (the tool proceeds → its post_tool_use End clears the
                 // gate); denial fires permission_denied (same End, above).
                 "permission_prompt" | "elicitation_dialog" => {
+                    let (agent_id, key) = session()?;
                     let msg = non_empty(obj, "message").unwrap_or(kind);
-                    Ok(vec![
-                        identity(),
+                    vec![
+                        identity(agent_id, key),
                         AgentEvent::user_action_request(
                             agent_id,
                             Some(ellipsize(msg, MAX_DECODED_FIELD_CHARS)),
                             RequestKeys::default(),
                         ),
-                    ])
+                    ]
                 }
                 // `idle_prompt` is the 60s-idle nudge — idle, not blocked; a
                 // RequiresAction would misrender every lunch break as a permission
@@ -233,16 +250,17 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // finishing — no `toolUseId`, and its spawning tool call
                 // already Ended at backgrounding time, so nothing to close.
                 // All matched explicitly so none spams the breadcrumb.
-                "idle_prompt" | "agent_error" | "task_complete" => Ok(vec![]),
+                "idle_prompt" | "agent_error" | "task_complete" => vec![],
                 other => {
                     crate::source::drift::unknown_event(SOURCE_NAME, &format!("{event}:{other}"));
-                    Ok(vec![])
+                    vec![]
                 }
             }
         }
         "subagent_start" => {
+            let (agent_id, _) = session()?;
             let child_session_id = subagent_child_key(obj, event)?;
-            Ok(vec![AgentEvent::SessionStart {
+            vec![AgentEvent::SessionStart {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child_session_id),
                 source: SOURCE_NAME.to_string(),
                 session_id: child_session_id,
@@ -252,21 +270,18 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                 // parent-tinted: accepted residual.
                 cwd: cwd.unwrap_or("").into(),
                 parent_id: Some(agent_id),
-            }])
+            }]
         }
-        "subagent_stop" => Ok(vec![AgentEvent::SessionEnd {
+        "subagent_stop" => vec![AgentEvent::SessionEnd {
             agent_id: AgentId::from_parts(SOURCE_NAME, &subagent_child_key(obj, event)?),
             as_child: true,
-        }]),
-        SESSION_END => Ok(vec![AgentEvent::SessionEnd {
-            agent_id,
+        }],
+        SESSION_END => vec![AgentEvent::SessionEnd {
+            agent_id: session()?.0,
             as_child: false,
-        }]),
-        other => {
-            crate::source::drift::unknown_event(SOURCE_NAME, other);
-            Err(DecodeError::unsupported(SOURCE_NAME, other))
-        }
-    }
+        }],
+        _ => return Ok(None),
+    }))
 }
 
 /// The child's `subagentId` — upstream sets `child_session_id = subagent_id`,
@@ -585,7 +600,7 @@ fn resolve_grok_home(user: Option<PathBuf>, cwd: impl FnOnce() -> PathBuf) -> Pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{DecodeError, test_decode};
 
     fn cwd() -> PathBuf {
         PathBuf::from("/work")
@@ -615,7 +630,7 @@ mod tests {
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_grok_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     /// The payload's MAIN event is the LAST decoded one — activity arms
@@ -851,20 +866,10 @@ mod tests {
     fn subagent_events_without_subagent_id_are_malformed() {
         for event in ["subagent_start", "subagent_stop"] {
             assert!(
-                decode_grok_hook_payload(test_obj(&envelope(event))).is_err(),
+                test_decode(SOURCE_NAME, &envelope(event)).is_err(),
                 "{event} without subagentId must bail"
             );
         }
-    }
-
-    #[test]
-    fn key_falls_back_to_cwd_when_session_id_absent() {
-        let ev = decode(json!({
-            "hookEventName": "session_end",
-            "cwd": "/Users/dev/proj"
-        }));
-        assert!(matches!(ev, AgentEvent::SessionEnd { agent_id, .. }
-            if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/proj")));
     }
 
     fn missing(field: &str, logs: &str) -> bool {
@@ -898,9 +903,10 @@ mod tests {
     fn nothing_to_key_on_is_malformed() {
         for payload in [
             json!({"hookEventName": SESSION_END}),
-            json!({"hookEventName": SESSION_END, "cwd": "", "workspaceRoot": ""}),
+            // A cwd keys no session.
+            json!({"hookEventName": SESSION_END, "cwd": "/r", "workspaceRoot": "/r"}),
         ] {
-            let err = decode_grok_hook_payload(test_obj(&payload)).err();
+            let err = test_decode(SOURCE_NAME, &payload).err();
             assert!(
                 matches!(
                     &err,
@@ -910,7 +916,7 @@ mod tests {
                 "{payload}: {err:?}"
             );
         }
-        assert!(decode_grok_hook_payload(test_obj(&json!({"sessionId": "s"}))).is_err());
+        assert!(test_decode(SOURCE_NAME, &json!({"sessionId": "s"})).is_err());
     }
 
     #[test]
@@ -926,7 +932,7 @@ mod tests {
             "bogus",
         ] {
             assert!(
-                decode_grok_hook_payload(test_obj(&envelope(ev))).is_err(),
+                test_decode(SOURCE_NAME, &envelope(ev)).is_err(),
                 "{ev} must bail"
             );
         }

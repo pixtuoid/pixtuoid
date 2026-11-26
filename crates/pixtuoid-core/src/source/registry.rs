@@ -50,26 +50,99 @@ impl ToolIdKey {
 /// The JSON object a hook or presence decoder reads, so none re-checks its shape.
 pub type HookObject = Map<String, Value>;
 
-/// How a source's hook payloads decode. The source's own decoder runs FIRST,
-/// before any shared field requirement, so an alien envelope (no `session_id` at
-/// all) can still decode; TYPED by whether it may decline, so a
-/// [`Self::ClaimsAll`] row has no `Option` to get wrong and no shared-arm setting
-/// it would never read.
+/// Where a source's hook payloads name their event and session, the two fields
+/// the hook plane keys on. `decoder::decode_hook_object` reads the event, and
+/// `Hook::session` the session, each breadcrumbing its absence, so no arm
+/// spells either and none can leave one unreported.
+#[derive(Debug, Clone, Copy)]
+pub struct Envelope {
+    /// The top-level field naming the event.
+    pub(crate) event: &'static str,
+    pub(crate) session: SessionKey,
+}
+
+/// Where an envelope's session id sits.
+#[derive(Debug, Clone, Copy)]
+pub struct SessionKey {
+    /// The top-level object holding it, `None` for the envelope itself.
+    pub(crate) within: Option<&'static str>,
+    /// The field, as a missing-field breadcrumb names it.
+    pub(crate) field: &'static str,
+}
+
+/// A hook payload as a source's arms get it, its event already read.
+#[derive(Debug, Clone, Copy)]
+pub struct Hook<'a> {
+    pub(crate) obj: &'a HookObject,
+    /// The source its stamp names, which need not be a registry row's.
+    pub(crate) source: &'a str,
+    pub(crate) event: &'a str,
+    pub(crate) session_key: SessionKey,
+}
+
+impl<'a> Hook<'a> {
+    /// `obj` as `source`'s payload, refused when `envelope` finds no event.
+    pub(crate) fn read(obj: &'a HookObject, source: &'a str, envelope: Envelope) -> Result<Self> {
+        use crate::source::decoder::{non_empty, required, required_or_err};
+        let event = required_or_err(source, None, envelope.event, |k| {
+            required(source, "hook", k, |k| non_empty(obj, k))
+        })?;
+        Ok(Self {
+            obj,
+            source,
+            event,
+            session_key: envelope.session,
+        })
+    }
+
+    /// The session the event keys on, refused when missing or EMPTY: an empty
+    /// id would mint a phantom agent that never coalesces with its transcript.
+    /// An arm whose subject is another session's (a subagent's own) never
+    /// reads it, so a wire that leaves it off there costs nothing.
+    pub(crate) fn session(&self) -> Result<&'a str> {
+        use crate::source::decoder::{non_empty, required, required_or_err};
+        let SessionKey { within, field } = self.session_key;
+        required_or_err(self.source, Some(self.event), field, |k| {
+            required(self.source, self.event, k, |k| match within {
+                Some(holder) => non_empty(self.obj.get(holder)?.as_object()?, k),
+                None => non_empty(self.obj, k),
+            })
+        })
+    }
+}
+
+/// A source's own hook arms: `Ok(None)` for an event they have no arm for.
+pub type HookArms = fn(&Hook<'_>) -> Result<Option<Vec<AgentEvent>>>;
+
+/// How a source's hook payloads decode, TYPED by what its arms' `Ok(None)`
+/// means, so a [`Self::ClaimsAll`] row has no shared-arm setting it would never
+/// read.
 #[derive(Debug, Clone, Copy)]
 pub enum HookDecoding {
-    /// The shared CC-shaped arms, keyed on `session_id`, which `extend` EXTENDS:
-    /// `Ok(Some(events))` short-circuits, `Ok(None)` DECLINES and falls through
-    /// to the shared arms, `Err` propagates.
+    /// The shared CC-shaped arms, on the CC envelope, which `extend` EXTENDS:
+    /// its `Ok(None)` falls through to them.
     Shared {
         /// The per-call tool id's wire name.
         tool_id_key: ToolIdKey,
-        extend: fn(&HookObject) -> Result<Option<Vec<AgentEvent>>>,
+        extend: HookArms,
     },
-    /// CLAIMS every event: an alien-envelope source (no shared
-    /// `hook_event_name`/`session_id` for the shared arms to key on) whose
-    /// decoder handles EVERYTHING and constructs its own AgentIds. It can NOT
-    /// decline, so a payload never silently falls through to the shared arms.
-    ClaimsAll(fn(&HookObject) -> Result<Vec<AgentEvent>>),
+    /// CLAIMS every event: an alien-envelope source whose arms handle
+    /// EVERYTHING and construct their own AgentIds; their `Ok(None)` is an
+    /// unknown event, never a fall-through to the shared arms.
+    ClaimsAll {
+        envelope: Envelope,
+        decode: HookArms,
+    },
+}
+
+impl HookDecoding {
+    /// Where its payloads name their event and session.
+    pub(crate) fn envelope(&self) -> Envelope {
+        match self {
+            Self::Shared { .. } => crate::source::decoder::SHARED_ENVELOPE,
+            Self::ClaimsAll { envelope, .. } => *envelope,
+        }
+    }
 }
 
 /// Reducer-facing capability flags — stable facts about the source's wire
@@ -1055,14 +1128,10 @@ mod tests {
         #[test]
         fn every_hook_and_presence_decoder_never_panics(v in arb_json()) {
             for d in REGISTRY {
-                match (d.hook(), v.as_object()) {
-                    (Some(HookDecoding::Shared { extend, .. }), Some(obj)) => {
-                        let _ = extend(obj);
-                    }
-                    (Some(HookDecoding::ClaimsAll(f)), Some(obj)) => {
-                        let _ = f(obj);
-                    }
-                    _ => {}
+                if let (Some(_), Some(obj)) = (d.hook(), v.as_object()) {
+                    let mut stamped = obj.clone();
+                    stamped.insert(crate::source::decoder::SOURCE_STAMP.into(), d.name.into());
+                    let _ = crate::source::decoder::decode_hook_object(&stamped);
                 }
                 if let (Some(presence), Some(obj)) = (d.presence_decoder(), v.as_object()) {
                     let _ = presence(obj);

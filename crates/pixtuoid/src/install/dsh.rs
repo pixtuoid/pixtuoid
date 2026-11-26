@@ -456,16 +456,17 @@ mod tests {
 
     #[test]
     fn every_plugin_payload_type_decodes_to_events() {
-        use pixtuoid_core::source::dsh::decode_dsh_payload;
+        use pixtuoid_core::source::decoder::{SOURCE_STAMP, decode_hook_payload};
         let sid = "01b00000-0000-7000-8000-000000000001";
         for ty in plugin_wire_types() {
             let payload = serde_json::json!({
+                SOURCE_STAMP: pixtuoid_core::source::dsh::SOURCE_NAME,
                 "type": ty, "sessionId": sid, "cwd": "/r",
                 "callId": "c1", "toolName": "bash",
                 "outcome": "allowed-once", "model": "m",
                 "inputTokens": 1, "outputTokens": 1,
             });
-            let evs = decode_dsh_payload(payload.as_object().expect("an object")).expect("decodes");
+            let evs = decode_hook_payload(payload).expect("decodes");
             assert!(
                 !evs.is_empty(),
                 "{ty} decodes to nothing — a dead wire name"

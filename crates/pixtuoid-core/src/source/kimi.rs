@@ -24,14 +24,11 @@
 //! `SubagentStart`/`SubagentStop` payload shape is uncaptured, so sessions render
 //! FLAT until a byte-real capture can add nesting.
 
-use crate::source::decoder::{
-    DecodeResult as Result, hook_identity, hook_session_id, shared_hook_arms,
-};
-use serde_json::Value;
+use crate::source::decoder::{DecodeResult as Result, hook_identity, shared_hook_arms};
 
 use crate::AgentId;
 use crate::source::registry::{
-    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Corroboration, FocusChannel, Hook, HookDecoding, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind, ToolIdKey,
 };
 use crate::source::{AgentEvent, registry};
@@ -92,32 +89,31 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// swept since, registers on its next turn end. Claimed here, not in the
 /// shared `Stop` arm, whose CC children an `Identity` would re-create past
 /// their cascade.
-pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    let event = match obj.get("hook_event_name").and_then(|s| s.as_str()) {
+pub(crate) fn decode_kimi_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    match hook.event {
         // A cancelled turn fires `Interrupt` in place of `Stop`
         // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:422-424`
         // at `@moonshot-ai/kimi-code@2.5.3`).
-        Some(event @ ("Stop" | "StopFailure" | "Interrupt")) => event,
+        "Stop" | "StopFailure" | "Interrupt" => {}
         _ => return Ok(None),
-    };
+    }
     // Read under the event's own name, so a missing id breadcrumbs as sent.
-    let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
-    let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
-    let mut evs = vec![hook_identity(agent_id, SOURCE_NAME, &session_id, obj)];
-    let mut own = obj.clone();
-    own.insert("hook_event_name".into(), Value::from("Stop"));
-    evs.extend(shared_hook_arms(
-        &own,
-        SOURCE_NAME,
-        registry::descriptor_for(SOURCE_NAME),
-    )?);
+    let session_id = hook.session()?;
+    let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
+    let mut evs = vec![hook_identity(agent_id, SOURCE_NAME, session_id, hook.obj)];
+    let stop = Hook {
+        event: "Stop",
+        ..*hook
+    };
+    let desc = registry::descriptor_for(SOURCE_NAME);
+    evs.extend(shared_hook_arms(&stop, desc)?.into_iter().flatten());
     Ok(Some(evs))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{test_decode, test_hook};
     use serde_json::json;
 
     /// A failed or a cancelled turn's end decodes as `Stop` does.
@@ -151,12 +147,8 @@ mod tests {
             "UserPromptSubmit",
             "SubagentStart",
         ] {
-            let out = decode_kimi_hook_custom(test_obj(&json!({
-                "hook_event_name": ev,
-                "session_id": "s",
-                "cwd": "/repo"
-            })))
-            .expect("decodes");
+            let v = json!({"hook_event_name": ev, "session_id": "s", "cwd": "/repo"});
+            let out = decode_kimi_hook_custom(&test_hook(SOURCE_NAME, &v)).expect("decodes");
             assert!(
                 out.is_none(),
                 "{ev} must be declined (Ok(None)) by the custom decoder, got {out:?}"
@@ -174,10 +166,7 @@ mod tests {
                 json!({ "hook_event_name": ev, "session_id": "" }),
             ] {
                 let logs = crate::test_capture::capture_logs(|| {
-                    assert!(
-                        decode_kimi_hook_custom(test_obj(&payload)).is_err(),
-                        "{payload}"
-                    );
+                    assert!(test_decode(SOURCE_NAME, &payload).is_err(), "{payload}");
                 });
                 let line = format!(
                     "{SOURCE_FIELD}={SOURCE_NAME} {KIND_FIELD}=\"{}\" event={ev} field=session_id",
