@@ -534,8 +534,10 @@ def fetch_star_dates(
             after = page["pageInfo"]["endCursor"]
             continue
         # The announced deprecation shape is an EMPTY list, not an error; a blank
-        # chart would replace the README's, so fewer rows than the public count reds the run.
-        if len(dates) < repository["stargazerCount"]:
+        # chart would replace the README's, so no rows under a non-zero count reds the run.
+        # A partial list is not that shape: the count, and the connection's `totalCount`
+        # that equals it, also hold stars the list never returns (observed; GitHub documents no cause).
+        if not dates and repository["stargazerCount"]:
             raise RuntimeError(
                 f"{repo}: stargazers returned {len(dates)} rows for stargazerCount {repository['stargazerCount']}"
             )
@@ -963,6 +965,29 @@ class SelfTest(unittest.TestCase):
         self.assertTrue(
             "452" in str(raised.exception) and "0" in str(raised.exception),
             f"the message must show count vs rows: {raised.exception}",
+        )
+
+    def test_fetch_keeps_a_list_one_short_of_the_count(self) -> None:
+        def post(query: str, variables: dict, token: str) -> dict:
+            return {
+                "data": {
+                    "repository": {
+                        "stargazerCount": 3,
+                        "stargazers": {
+                            "edges": [
+                                {"starredAt": "2026-11-19T07:49:42Z"},
+                                {"starredAt": "2026-11-19T20:11:27Z"},
+                            ],
+                            "pageInfo": {"hasNextPage": False, "endCursor": "c1"},
+                        },
+                    }
+                }
+            }
+
+        self.assertTrue(
+            fetch_star_dates("o/r", "t", post=post)
+            == [_d("2026-11-19"), _d("2026-11-19")],
+            "the count also holds a star the list never returns; the rows it does return must chart",
         )
 
     def test_fetch_raises_on_graphql_errors(self) -> None:
