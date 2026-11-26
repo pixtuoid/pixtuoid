@@ -1588,7 +1588,7 @@ mod tests {
         );
         assert!(
             !calls_a_tool(&reply(serde_json::json!({
-                "responsesBlocks": [{ "type": "text", "text": "Reading." }],
+                "blocks": [{ "type": "text", "text": "Reading." }],
                 "toolCalls": [{ "name": "read", "arguments": "{}" }]
             }))),
             "blocks are served in place of toolCalls"
