@@ -6,7 +6,7 @@
   "command": "just hermetic --record codex",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 227
+    "blanked": 228
   },
   "aimock": "1.48.0",
   "script": "tests/sources/codex/hermetic/subagent.json",

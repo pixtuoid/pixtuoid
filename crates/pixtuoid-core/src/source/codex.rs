@@ -118,15 +118,14 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
     // A malformed SubagentStart/Stop is an Err, not Ok(None): an empty
     // `session_id`/`agent_id` would mint a phantom that never coalesces with
     // the real rollout.
-    let guards = || -> Result<(&str, String)> {
-        let session_id = hook.session()?;
-        let child = required_or_err(
+    let child = || {
+        required_or_err(
             SOURCE_NAME,
             Some(event),
             crate::source::decoder::SUBAGENT_ID,
             |k| non_empty(obj, k),
-        )?;
-        Ok((session_id, child.to_owned()))
+        )
+        .map(str::to_owned)
     };
     let call = |kind| decode_call_hook(hook, kind).map(Some);
     match event {
@@ -135,7 +134,7 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
         // rollout and joins the parent's scope tree (cascade / liveness /
         // readiness).
         "SubagentStart" => {
-            let (session_id, child) = guards()?;
+            let (session_id, child) = (hook.session()?, child()?);
             let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
             Ok(Some(vec![AgentEvent::SessionStart {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child),
@@ -149,7 +148,7 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
         // stale-sweep. Losing the race against the child's slot creation
         // leaves a harmless no-op plus that same fallback.
         "SubagentStop" => {
-            let (_session_id, child) = guards()?;
+            let child = child()?;
             Ok(Some(vec![AgentEvent::SessionEnd {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child),
                 as_child: true,
@@ -640,26 +639,28 @@ mod tests {
 
     #[test]
     fn subagent_hooks_with_empty_ids_are_err_not_fallthrough() {
+        // A child's end keys on the child alone, so only a start reads the root.
+        let event = "SubagentStart";
+        let no_session = json!({"hook_event_name": event, "agent_id": "child"});
+        let mut err = None;
+        let logs = crate::test_capture::capture_logs(|| {
+            err = test_decode(SOURCE_NAME, &no_session).err();
+        });
+        assert!(
+            matches!(
+                &err,
+                Some(crate::source::decoder::DecodeError::Missing {
+                    context: Some(context),
+                    field: "session_id",
+                    ..
+                }) if context == event
+            ),
+            "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
+        );
+        for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
+            assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
+        }
         for event in ["SubagentStart", "SubagentStop"] {
-            let no_session = json!({"hook_event_name": event, "agent_id": "child"});
-            let mut err = None;
-            let logs = crate::test_capture::capture_logs(|| {
-                err = test_decode(SOURCE_NAME, &no_session).err();
-            });
-            assert!(
-                matches!(
-                    &err,
-                    Some(crate::source::decoder::DecodeError::Missing {
-                        context: Some(context),
-                        field: "session_id",
-                        ..
-                    }) if context == event
-                ),
-                "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
-            );
-            for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
-                assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
-            }
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             assert!(
                 test_decode(SOURCE_NAME, &empty_child).is_err(),

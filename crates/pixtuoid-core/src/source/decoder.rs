@@ -531,8 +531,8 @@ impl<'a> Hook<'a> {
     }
 
     /// The session the event keys on, refused when missing or EMPTY: an empty
-    /// id keys no session. An arm whose subject is another session's (a
-    /// subagent's own) never reads it, so a wire that leaves it off there
+    /// id keys no session. Only an arm that keys on it reads it: a subagent's
+    /// end keys on the child alone, so a wire that leaves the root off there
     /// costs nothing.
     pub(crate) fn session(&self) -> DecodeResult<&'a str> {
         let SessionField { within, field } = self.session_field;

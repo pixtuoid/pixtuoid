@@ -103,7 +103,6 @@ pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentE
     }
     // Registry contract: claim our two events FULLY (Err on malformed), never
     // fall through — an empty id mints a phantom that never coalesces.
-    let session_id = hook.session()?;
     let wire_agent_id = required_or_err(
         SOURCE_NAME,
         Some(event),
@@ -112,13 +111,14 @@ pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentE
     )?;
     let prefixed = subagent_session(wire_agent_id);
     if event == "SubagentStart" {
+        let parent = hook.session()?;
         let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
         Ok(Some(vec![AgentEvent::SessionStart {
             agent_id: AgentId::from_parts(SOURCE_NAME, &prefixed),
             source: SOURCE_NAME.to_string(),
             session_id: prefixed,
             cwd,
-            parent_id: Some(AgentId::from_parts(SOURCE_NAME, session_id)),
+            parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
         }]))
     } else {
         // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
@@ -955,26 +955,28 @@ mod tests {
 
     #[test]
     fn subagent_hooks_with_empty_ids_are_err_not_fallthrough() {
+        // A child's end keys on the child alone, so only a start reads the root.
+        let event = "SubagentStart";
+        let no_session = json!({"hook_event_name": event, "agent_id": "abc"});
+        let mut err = None;
+        let logs = crate::test_capture::capture_logs(|| {
+            err = test_decode(SOURCE_NAME, &no_session).err();
+        });
+        assert!(
+            matches!(
+                &err,
+                Some(crate::source::decoder::DecodeError::Missing {
+                    context: Some(context),
+                    field: "session_id",
+                    ..
+                }) if context == event
+            ),
+            "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
+        );
+        for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
+            assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
+        }
         for event in ["SubagentStart", "SubagentStop"] {
-            let no_session = json!({"hook_event_name": event, "agent_id": "abc"});
-            let mut err = None;
-            let logs = crate::test_capture::capture_logs(|| {
-                err = test_decode(SOURCE_NAME, &no_session).err();
-            });
-            assert!(
-                matches!(
-                    &err,
-                    Some(crate::source::decoder::DecodeError::Missing {
-                        context: Some(context),
-                        field: "session_id",
-                        ..
-                    }) if context == event
-                ),
-                "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
-            );
-            for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
-                assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
-            }
             let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
             assert!(
                 test_decode(SOURCE_NAME, &empty_child).is_err(),

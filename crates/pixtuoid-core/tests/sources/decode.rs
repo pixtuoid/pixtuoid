@@ -366,11 +366,16 @@ fn cc_subagent_start_does_not_double_prefix_an_already_prefixed_agent_id() {
 #[test]
 fn cc_subagent_hooks_reject_missing_or_empty_agent_id() {
     for event in ["SubagentStart", "SubagentStop"] {
+        let rootless =
+            json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "agent_id": "abc"});
         for payload in [
             json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "session_id": "parent-sess"}),
             json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "session_id": "parent-sess", "agent_id": ""}),
-            json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "agent_id": "abc"}),
-        ] {
+        ]
+        .into_iter()
+        // A child's end keys on the child alone, so only a start needs its root.
+        .chain((event == "SubagentStart").then_some(rootless))
+        {
             assert!(
                 decode_hook_payload(payload.clone()).is_err(),
                 "CC {event} with missing/empty ids must Err, got Ok for {payload}"
