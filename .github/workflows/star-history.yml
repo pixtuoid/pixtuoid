@@ -45,12 +45,10 @@ jobs:
       - name: Read the star history
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api "repos/$GITHUB_REPOSITORY" >"$RUNNER_TEMP/repo.json"
-          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/stargazers/history" >"$RUNNER_TEMP/history.json"
+        run: gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/stargazers/history" >"$RUNNER_TEMP/history.json"
 
       - name: Render the chart
-        run: python3 scripts/star-history.py "$RUNNER_TEMP/repo.json" "$RUNNER_TEMP/history.json" "$RUNNER_TEMP/chart"
+        run: python3 scripts/star-history.py "$GITHUB_REPOSITORY" "$RUNNER_TEMP/history.json" "$RUNNER_TEMP/chart"
 
       - id: day
         run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"

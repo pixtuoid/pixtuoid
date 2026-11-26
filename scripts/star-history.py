@@ -7,9 +7,9 @@ up under a crane. It is drawn here from GitHub's own star history and
 published to the `star-history` branch by `.github/workflows/star-history.yml`,
 because no hosted chart service can draw it.
 
-Usage: `star-history.py REPO_JSON HISTORY_JSON OUT_DIR` writes
-`star-history-{light,dark}.svg` from the two files the workflow's
-"Read the star history" step writes; run its `gh api` lines by hand for a
+Usage: `star-history.py OWNER/REPO HISTORY_JSON OUT_DIR` writes
+`star-history-{light,dark}.svg` from the file the workflow's
+"Read the star history" step writes; run its `gh api` line by hand for a
 local chart.
 `--selftest` exercises everything but the fetch; exit 0 = pass.
 """
@@ -469,7 +469,7 @@ def write_charts(
     return paths
 
 
-def star_dates(repo: str, count: int, pages: list[list[dict]]) -> list[dt.date]:
+def star_dates(repo: str, pages: list[list[dict]]) -> list[dt.date]:
     """One date per star in the pages of GitHub's star history (`gh api --paginate --slurp`):
     https://docs.github.com/en/rest/activity/starring#get-repository-star-history
     """
@@ -481,15 +481,13 @@ def star_dates(repo: str, count: int, pages: list[list[dict]]) -> list[dt.date]:
         sunday = dt.datetime.fromtimestamp(week["week"], dt.UTC).date()
         for offset, stars in enumerate(week["days"]):
             dates += [sunday + dt.timedelta(days=offset)] * stars
-    # No star under a non-zero count is the shape GitHub announced for the stargazers list it
-    # withheld ("empty responses",
+    # No star is the shape GitHub announced for the stargazers list it withheld
+    # ("empty responses",
     # https://github.blog/changelog/2026-06-30-upcoming-access-restrictions-to-public-api-endpoints-and-ui-views/),
-    # and would blank the README's chart. Any smaller shortfall is not that: the count also
-    # holds stars the history never returns (observed).
-    if not dates and count:
-        raise RuntimeError(
-            f"{repo}: the star history returned no stars for stargazer count {count}"
-        )
+    # and would blank the README's chart. The star count is no tighter bound: it also holds
+    # stars the history never returns (observed).
+    if not dates:
+        raise RuntimeError(f"{repo}: the star history returned no stars")
     return dates
 
 
@@ -853,7 +851,6 @@ class SelfTest(unittest.TestCase):
     def test_star_dates_run_every_page_from_each_sunday(self) -> None:
         got = star_dates(
             "o/r",
-            6,
             [
                 [_week("2026-11-22", [3, 1, 0, 0, 0, 0, 0])],
                 [_week("2026-11-15", [0, 0, 0, 0, 0, 0, 2])],
@@ -866,32 +863,22 @@ class SelfTest(unittest.TestCase):
         )
 
     def test_star_dates_refuse_a_withheld_history(self) -> None:
-        for count in (1, 452):
-            for pages in ([[]], [[_week("2026-11-22", [0] * 7)]]):
-                with self.assertRaises(
-                    RuntimeError,
-                    msg=f"no star under a count of {count} is a withheld history; it must raise, not publish a blank chart: {pages}",
-                ) as raised:
-                    star_dates("o/r", count, pages)
-                self.assertTrue(
-                    str(raised.exception).endswith(
-                        f"returned no stars for stargazer count {count}"
-                    ),
-                    f"the message must name what it refuses and the count: {raised.exception}",
-                )
-
-    def test_star_dates_chart_any_star_the_history_holds(self) -> None:
-        for count, stars in ((452, 1), (452, 451), (10**6, 1)):
-            week = _week("2026-11-22", [stars, 0, 0, 0, 0, 0, 0])
+        for pages in ([[]], [[_week("2026-11-22", [0] * 7)]]):
+            with self.assertRaises(
+                RuntimeError,
+                msg=f"no star is a withheld history; it must raise, not publish a blank chart: {pages}",
+            ) as raised:
+                star_dates("o/r", pages)
             self.assertTrue(
-                star_dates("o/r", count, [[week]]) == [_d("2026-11-22")] * stars,
-                f"{stars} of {count} stars must chart: the count also holds stars the history never returns",
+                str(raised.exception) == "o/r: the star history returned no stars",
+                f"the message must name the repo and what it refuses: {raised.exception}",
             )
 
-    def test_star_dates_chart_a_repo_with_no_stars(self) -> None:
+    def test_star_dates_chart_a_single_star(self) -> None:
         self.assertTrue(
-            star_dates("o/r", 0, [[_week("2026-11-22", [0] * 7)]]) == [],
-            "no star under a zero count is a starless repo, not a withheld history",
+            star_dates("o/r", [[_week("2026-11-22", [1, 0, 0, 0, 0, 0, 0])]])
+            == [_d("2026-11-22")],
+            "one star is a history, however far short of the count: the count also holds stars the history never returns",
         )
 
     def test_write_charts_emits_one_file_per_theme(self) -> None:
@@ -922,19 +909,15 @@ def main(argv: list[str]) -> int:
     if len(argv) != 3:
         print(__doc__, file=sys.stderr)
         return 2
-    repo_json, history_json, out_dir = (pathlib.Path(a) for a in argv)
-    repo = json.loads(repo_json.read_text(encoding="utf-8"))
-    name = repo["full_name"]
+    repo, history_json, out_dir = argv
     dates = star_dates(
-        name,
-        repo["stargazers_count"],
-        json.loads(history_json.read_text(encoding="utf-8")),
+        repo, json.loads(pathlib.Path(history_json).read_text(encoding="utf-8"))
     )
     series = cumulative_by_day(dates)
     today = dt.datetime.now(dt.UTC).date()
-    for p in write_charts(name, series, out_dir, today):
+    for p in write_charts(repo, series, pathlib.Path(out_dir), today):
         print(p)
-    print(f"{name}: {len(dates)} stars", file=sys.stderr)
+    print(f"{repo}: {len(dates)} stars", file=sys.stderr)
     return 0
 
 

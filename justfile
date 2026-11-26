@@ -1099,8 +1099,7 @@ compare-selftest:
 hook-scrub-selftest:
     bash scripts/lib/hook-scrub-selftest.sh
 
-# The README star chart's renderer — bitmap font, axes, paging. (Its copied
-# office colours are pinned from Rust: scene's `tests/readme_chart_palette.rs`.)
+# The chart's copied office colours are pinned from Rust: scene's `tests/readme_chart_palette.rs`.
 [doc("Self-test the README star-chart renderer")]
 [group('meta')]
 star-history-selftest:
