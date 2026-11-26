@@ -498,7 +498,7 @@ impl Reducer {
                 agent_id,
                 model,
                 effort,
-            } => Self::apply_model_info(
+            } => self.apply_model_info(
                 scene,
                 agent_id,
                 ModelObservation {
@@ -508,8 +508,10 @@ impl Reducer {
                 now,
             ),
             AgentEvent::ModelHint { agent_id, model } => {
-                if let Some(slot) = scene.agents.get_mut(&agent_id) {
-                    slot.model.get_or_insert_with(|| Arc::from(model));
+                if let Some(slot) = scene.agents.get_mut(&agent_id)
+                    && !self.corr.observed_models.contains(&agent_id)
+                {
+                    slot.model = Some(Arc::from(model));
                 }
             }
             AgentEvent::Ultracode { agent_id, on } => {
@@ -1030,16 +1032,19 @@ impl Reducer {
     /// level it reads with apply-time `now`, so a session idle past the TTL
     /// shows that level for one more TTL.
     fn apply_model_info(
+        &mut self,
         scene: &mut SceneState,
         agent_id: AgentId,
         obs: ModelObservation<'_>,
         now: SystemTime,
     ) {
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            if let Some(m) = obs.model
-                && slot.model.as_deref() != Some(m)
-            {
-                slot.model = Some(Arc::from(m));
+            if let Some(m) = obs.model {
+                // Even when it equals the hint it confirms.
+                self.corr.observed_models.insert(agent_id);
+                if slot.model.as_deref() != Some(m) {
+                    slot.model = Some(Arc::from(m));
+                }
             }
             if let Some(e) = obs.effort {
                 slot.effort = Some(crate::state::EffortObservation::new(Arc::from(e), now));
@@ -1612,10 +1617,11 @@ impl Reducer {
             self.remove_agent_correlation(&id);
             // Evict with the slot, else a same-id ghost inherits the vouch.
             self.corr.recent_proof_of_life.remove(&id);
-            // A resurrect keeps `tokens_used` and `tool_call_count`, so it keeps
-            // the ids that built them.
+            // A resurrect keeps `tokens_used`, `tool_call_count` and `model`, so
+            // it keeps the records behind them.
             self.corr.counted_readings.forget(&id);
             self.corr.calls.forget(&id);
+            self.corr.observed_models.remove(&id);
             self.corr.reading_holders.release(id, now);
             self.corr.call_holders.release(id, now);
             self.corr.note_removed(id, now);

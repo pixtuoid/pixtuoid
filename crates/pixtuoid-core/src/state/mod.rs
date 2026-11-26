@@ -372,8 +372,7 @@ pub struct AgentSlot {
     pub pid: Option<crate::source::PidIdentity>,
     /// The RAW model string, uninterpreted wire truth: the last
     /// [`ModelInfo`](crate::AgentEvent::ModelInfo)'s, so a mid-session `/model`
-    /// switch tracks, else a [`ModelHint`](crate::AgentEvent::ModelHint)'s while
-    /// none is set.
+    /// switch tracks, else the last [`ModelHint`](crate::AgentEvent::ModelHint)'s.
     #[serde(
         with = "opt_arc_str_serde",
         skip_serializing_if = "Option::is_none",

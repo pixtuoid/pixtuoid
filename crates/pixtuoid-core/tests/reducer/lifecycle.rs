@@ -1240,38 +1240,60 @@ fn a_cc_effort_level_and_ultracode_end_alike_in_either_order() {
 }
 
 #[test]
-fn a_model_hint_fills_only_an_unset_model() {
+fn a_model_hint_yields_only_to_a_model_info() {
     let id = AgentId::from_parts("claude-code", "ses_h");
-    let hint = (
-        AgentEvent::ModelHint {
-            agent_id: id,
-            model: "claude-opus-5-5".into(),
-        },
-        Transport::Hook,
-    );
-    let info = (
-        AgentEvent::ModelInfo {
-            agent_id: id,
-            model: Some("claude-fable-5".into()),
-            effort: None,
-        },
-        Transport::Jsonl,
-    );
+    let hint = |model: &str| {
+        (
+            AgentEvent::ModelHint {
+                agent_id: id,
+                model: model.into(),
+            },
+            Transport::Hook,
+        )
+    };
+    let info = |model: &str| {
+        (
+            AgentEvent::ModelInfo {
+                agent_id: id,
+                model: Some(model.into()),
+                effort: None,
+            },
+            Transport::Jsonl,
+        )
+    };
+    let (opus, sonnet) = (hint("claude-opus-5-5"), hint("claude-sonnet-5"));
+    let (fable, haiku) = (info("claude-fable-5"), info("claude-haiku-5"));
+    let confirmed = info("claude-opus-5-5");
     let rows = [
         (
             "a hint fills an unset model",
-            vec![&hint],
+            vec![&opus],
             "claude-opus-5-5",
         ),
         (
+            "a hint replaces a hint",
+            vec![&opus, &sonnet],
+            "claude-sonnet-5",
+        ),
+        (
             "a model replaces a hint",
-            vec![&hint, &info],
+            vec![&opus, &fable],
             "claude-fable-5",
         ),
         (
             "a hint never replaces a model",
-            vec![&info, &hint],
+            vec![&fable, &opus],
             "claude-fable-5",
+        ),
+        (
+            "a hint never replaces a model that equals the hint before it",
+            vec![&opus, &confirmed, &sonnet],
+            "claude-opus-5-5",
+        ),
+        (
+            "the last model wins past a hint",
+            vec![&fable, &opus, &haiku],
+            "claude-haiku-5",
         ),
     ];
     let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);

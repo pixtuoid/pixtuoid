@@ -23,6 +23,8 @@ pub(crate) const EVENTS: &[&str] = &[
     // tool_use, no transcript end marker.
     "SubagentStart",
     "SubagentStop",
+    // A session with no transcript names its model nowhere else after a switch.
+    "PostModelSwitch",
     "SessionEnd",
 ];
 
@@ -504,6 +506,7 @@ mod tests {
                 "PermissionRequest",
                 "SubagentStart",
                 "SubagentStop",
+                "PostModelSwitch",
                 "SessionEnd",
             ],
         );

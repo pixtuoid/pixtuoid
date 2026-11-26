@@ -121,6 +121,25 @@ pub(crate) const PROFILE: Profile = Profile {
                 ..Turn::PROFILE
             },
         },
+        // The resumed turn, started on the default model, restores the
+        // session's (<https://code.claude.com/docs/en/hooks#postmodelswitch>).
+        Scenario {
+            name: "model-resume",
+            shape: Shape::ToolRun,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "PreToolUse",
+                "PostToolUse",
+                "PostModelSwitch",
+                "SessionEnd",
+            ],
+            turn: Turn {
+                args: &["--model", "sonnet"],
+                second: Some(Second::Prompt("Say done.")),
+                ..Turn::PROFILE
+            },
+        },
         Scenario {
             name: "subagent",
             shape: Shape::Subagent,
