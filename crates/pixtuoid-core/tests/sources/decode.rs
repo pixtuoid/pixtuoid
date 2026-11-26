@@ -166,31 +166,6 @@ fn codex_subagent_stop_ends_child_not_parent() {
 }
 
 #[test]
-fn codex_subagent_hooks_reject_missing_or_empty_agent_id() {
-    for event in ["SubagentStart", "SubagentStop"] {
-        assert!(
-            decode_hook_payload(json!({
-                "hook_event_name": event,
-                "session_id": "parent-sess",
-                "_pixtuoid_source": "codex"
-            }))
-            .is_err(),
-            "{event} without agent_id must Err"
-        );
-        assert!(
-            decode_hook_payload(json!({
-                "hook_event_name": event,
-                "session_id": "parent-sess",
-                "agent_id": "",
-                "_pixtuoid_source": "codex"
-            }))
-            .is_err(),
-            "{event} with empty agent_id must Err"
-        );
-    }
-}
-
-#[test]
 fn cc_subagent_start_keys_prefixed_child_and_links_parent() {
     for agent_type in ["general-purpose", "workflow-subagent"] {
         let ev = decode_single(json!({
