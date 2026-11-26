@@ -88,8 +88,9 @@ pub(crate) fn transcripts_in(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Whether the capture at `dir` holds a transcript: one whose hermetic turn
-/// saves none holds hook payloads alone.
+/// Whether the hermetic turn behind `dir` saved its transcript, by its
+/// scenario's `saves_transcript`: `true` for a capture no scenario recorded,
+/// and for a hook-only source's, which holds none either way.
 pub(crate) fn saves_transcript(source: &str, dir: &Path) -> bool {
     pixtuoid_core::harness::hermetic::profile(source)
         .and_then(|p| {

@@ -159,7 +159,7 @@ tests/sources/<module>/fixtures/<scenario>/
 
 A scenario ships the transports its run wrote: both files (Claude Code,
 Codex), a transcript only (copilot, which has no hooks), or hook payloads only
-(reasonix, which is hook-only, with no JSONL to watch, and a hermetic turn
+(reasonix, which is hook-only, with no JSONL to watch; or a hermetic turn
 whose `saves_transcript` is false).
 
 **A transcript whose session id comes from its PARENT DIR keeps that dir.**
