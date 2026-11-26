@@ -261,7 +261,7 @@ pub(super) struct Correlation {
     /// Slots whose model an [`AgentEvent::ModelInfo`](crate::AgentEvent::ModelInfo)
     /// set, which no [`AgentEvent::ModelHint`](crate::AgentEvent::ModelHint)
     /// replaces.
-    pub(super) observed_models: HashSet<AgentId>,
+    pub(super) model_info_seen: HashSet<AgentId>,
 }
 
 #[cfg(test)]
@@ -279,7 +279,7 @@ impl Correlation {
             call_holders,
             reading_holders,
             caught_up,
-            observed_models,
+            model_info_seen,
         } = self;
         [
             ("lifecycles", lifecycles.len()),
@@ -291,7 +291,7 @@ impl Correlation {
             ("call_holders", call_holders.len()),
             ("reading_holders", reading_holders.len()),
             ("caught_up", caught_up.len()),
-            ("observed_models", observed_models.len()),
+            ("model_info_seen", model_info_seen.len()),
         ]
     }
 }

@@ -509,7 +509,7 @@ impl Reducer {
             ),
             AgentEvent::ModelHint { agent_id, model } => {
                 if let Some(slot) = scene.agents.get_mut(&agent_id)
-                    && !self.corr.observed_models.contains(&agent_id)
+                    && !self.corr.model_info_seen.contains(&agent_id)
                 {
                     slot.model = Some(Arc::from(model));
                 }
@@ -1041,7 +1041,7 @@ impl Reducer {
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
             if let Some(m) = obs.model {
                 // Even when it equals the hint it confirms.
-                self.corr.observed_models.insert(agent_id);
+                self.corr.model_info_seen.insert(agent_id);
                 if slot.model.as_deref() != Some(m) {
                     slot.model = Some(Arc::from(m));
                 }
@@ -1583,11 +1583,8 @@ impl Reducer {
     }
 
     /// Retire the per-slot correlation a departing life owns, on BOTH a
-    /// resurrect-in-place and a slot removal. Death-only teardown
-    /// (`recent_proof_of_life`, forgetting the call records
-    /// ([`CallLedger::forget`](crate::state::calls::CallLedger::forget)) and the
-    /// counted readings, [`Correlation::note_removed`]) and the copy-id holders'
-    /// release deliberately stay at the sweep site — they must NOT run on a
+    /// resurrect-in-place and a slot removal. Death-only teardown deliberately
+    /// stays at the sweep site, [`Self::sweep_exited`]: it must NOT run on a
     /// resurrect.
     fn remove_agent_correlation(&mut self, id: &AgentId) {
         self.corr.action_requests.end_life(id);
@@ -1621,7 +1618,7 @@ impl Reducer {
             // it keeps the records behind them.
             self.corr.counted_readings.forget(&id);
             self.corr.calls.forget(&id);
-            self.corr.observed_models.remove(&id);
+            self.corr.model_info_seen.remove(&id);
             self.corr.reading_holders.release(id, now);
             self.corr.call_holders.release(id, now);
             self.corr.note_removed(id, now);

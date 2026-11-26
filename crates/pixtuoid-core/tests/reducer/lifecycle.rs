@@ -1564,6 +1564,39 @@ fn a_resurrect_keeps_its_call_ids() {
     assert_eq!(scene.agents[&id].tool_call_count, 1);
 }
 
+/// A resurrect keeps `model`, so a hint still yields to the `ModelInfo` that
+/// set it.
+#[test]
+fn a_resurrect_keeps_its_models_owner() {
+    let (mut r, mut scene, id, t0) = usage_scene();
+    let info = AgentEvent::ModelInfo {
+        agent_id: id,
+        model: Some("claude-fable-5".into()),
+        effort: None,
+    };
+    r.apply(&mut scene, info, t0, Transport::Jsonl);
+    sess_end(&mut r, &mut scene, id, false, t0, Transport::Hook);
+    let revived = t0 + EXIT_GRACE_WINDOW / 2;
+    let restart = AgentEvent::SessionStart {
+        agent_id: id,
+        source: "claude-code".into(),
+        session_id: "abc".into(),
+        cwd: PathBuf::from("/"),
+        parent_id: None,
+    };
+    r.apply(&mut scene, restart, revived, Transport::Hook);
+    assert!(
+        scene.agents[&id].exiting_at.is_none(),
+        "precondition: resurrected in place"
+    );
+    let hint = AgentEvent::ModelHint {
+        agent_id: id,
+        model: "claude-opus-5-5".into(),
+    };
+    r.apply(&mut scene, hint, revived, Transport::Hook);
+    assert_eq!(scene.agents[&id].model.as_deref(), Some("claude-fable-5"));
+}
+
 /// A call the dead life left open ended with it: its late gate raises no wait
 /// on the revived slot.
 #[test]
