@@ -167,6 +167,13 @@ startup:
             expects: &["session_start", "session_shutdown"],
             turn: Turn::PROFILE,
         },
+        // A TUI session's first prompt has the model title the session and
+        // card that title, and its turn's end has it predict the user's next
+        // message; the TUI scripts answer each with its decline at `v19.2.1`:
+        // `<title/>` (`src/utils/title-generator.ts:555-556`), `<title>none</title>`
+        // (`src/prompts/system/title-marker-instruction.md:1`, which
+        // `src/utils/title-generator.ts:394` appends to the card's prompt) and
+        // `NO_PREDICTION` (`src/modes/controllers/composer-prediction-controller.ts:19-20`).
         Scenario {
             name: "approve",
             shape: Shape::Permission,
