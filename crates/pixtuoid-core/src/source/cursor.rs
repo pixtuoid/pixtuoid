@@ -69,10 +69,11 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_cursor_hook_payload,
         }),
         caps: SourceCaps {
-            // `sessionEnd` ends a clean session, and the shim's walk resolves one
-            // pid across a session's every hook (`cursor/fixtures/tool-run`), so
-            // `hook::HookPidWatch` arms on the second and ends a killed one.
-            exits_can_go_unseen: false,
+            // An interactive session's hooks can resolve to different ancestors
+            // (#897's measurement), and a pid other than the armed one demotes the
+            // watch (`hook::pid_watch`'s `Bindings::sight`), so a kill after that
+            // goes unreported.
+            exits_can_go_unseen: true,
             // `stop` carries an `Identity`, but no `-p` turn fires it (the module
             // doc's exit bullet), so a tool-less one re-registers nothing.
             resurrects_on_prompt: false,

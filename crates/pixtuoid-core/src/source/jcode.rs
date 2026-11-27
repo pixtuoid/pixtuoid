@@ -38,10 +38,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // (`crates/jcode-app-core/src/agent.rs:1238-1255`, `:1274-1287`), and no
             // pid channel watches the shared server.
             exits_can_go_unseen: true,
-            // `turn_start` re-emits SessionStart, but a `jcode run --json` turn
-            // fires none: `run_once_capture` skips the hook `run_once` fires
-            // (`crates/jcode-app-core/src/agent/turn_execution.rs:69-71`, `:84-113`;
-            // `src/cli/commands.rs:2655-2656`).
+            // A `jcode run --json` turn fires neither `turn_start` nor `turn_end`:
+            // `run_once_capture` skips both hooks `run_once` fires
+            // (`crates/jcode-app-core/src/agent/turn_execution.rs:71`, `:75`,
+            // `:79-113`; `src/cli/commands.rs:2655-2656`).
             resurrects_on_prompt: false,
             // It mints no `Task`, so no slot ever delegates.
             delegations_are_hook_silent: false,
@@ -78,7 +78,7 @@ pub(crate) fn decode_jcode_hook_payload(hook: &Hook<'_>) -> DecodeResult<Option<
     // late: the activity alone registers nothing. It honors its tombstones.
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd.clone());
     let (claim, activity) = match event {
-        // Its registration, and the resurrect path: a swept session walks back in.
+        // Its registration, which also re-registers a swept TUI session.
         "turn_start" => (
             AgentEvent::SessionStart {
                 agent_id,

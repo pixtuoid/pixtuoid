@@ -157,7 +157,7 @@ pub(crate) fn decode_cw_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
 
     Ok(Some(match event {
         // message_submit (every TUI prompt: `docs/HOOKS.md:245`) re-registers a swept TUI
-        // session; the reducer ignores it when the slot exists.
+        // session.
         "session_start" | "message_submit" => vec![AgentEvent::SessionStart {
             agent_id,
             source: SOURCE_NAME.to_string(),
