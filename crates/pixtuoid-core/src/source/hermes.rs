@@ -14,8 +14,12 @@
 //! ```
 //!
 //! Keyed on `session_id`, not the workspace: cwd-keying would merge two
-//! sessions in one project. The payload (`hermes/fixtures/tool-run-hermetic`)
-//! reuses CC's `hook_event_name` field NAME with snake_case VALUES
+//! sessions in one project. A delegated child is a session of its own, whose
+//! hooks carry its own `session_id`; the parent's `subagent_start` names it as
+//! `child_session_id` beside `parent_session_id`
+//! (`hermes/fixtures/subagent-hermetic`), so it nests. The payload
+//! (`hermes/fixtures/tool-run-hermetic`) reuses CC's `hook_event_name` field
+//! NAME with snake_case VALUES
 //! alien to the shared CC-shaped arms, so the decoder is
 //! `HookDecoding::ClaimsAll`: it claims EVERY event.
 
@@ -26,13 +30,13 @@ use crate::AgentId;
 use crate::source::decoder::Hook;
 use crate::source::decoder::{
     DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail, non_empty,
-    required,
+    required, required_or_err,
 };
 use crate::source::registry::{
     ChildEndInference, Envelope, FocusChannel, HookDecoding, HookObject, Hyphen, SessionField,
     SourceCaps, SourceDescriptor, SourceKind,
 };
-use crate::source::{AgentEvent, RequestKeys};
+use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
 /// The Hermes CLI source's registry name (its `SourceDescriptor.name`).
 pub const SOURCE_NAME: &str = "hermes";
@@ -58,11 +62,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // at v0.23.3).
             has_exit_signal: true,
             resurrects_on_prompt: false,
-            // The plugin forwards neither `subagent_start` nor `subagent_stop`,
-            // the hooks naming a child's parent (`hooks.md:484-485` at v0.23.3), so
-            // sessions render flat.
+            // A child's own hooks keep firing under the session its start parents
+            // (`hermes/fixtures/subagent-hermetic`).
             delegations_are_hook_silent: false,
-            child_end_inference: ChildEndInference::TaskDrain,
+            // A model's top-level delegation returns its handle while its children
+            // run on (`run_agent.py:1399-1402` at v0.23.3), and each child's
+            // `subagent_stop` ends it.
+            child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
             brackets_turns: false,
         },
@@ -262,6 +268,17 @@ const PRE_APPROVAL_REQUEST: &str = "pre_approval_request";
 const POST_TOOL_CALL: &str = "post_tool_call";
 const ON_SESSION_END: &str = "on_session_end";
 const ON_SESSION_FINALIZE: &str = "on_session_finalize";
+const SUBAGENT_START: &str = "subagent_start";
+const SUBAGENT_STOP: &str = "subagent_stop";
+
+/// The fields a delegation's hooks name its two sessions in, where no
+/// `session_id` rides (`website/docs/user-guide/features/hooks.md:484-485` at
+/// v0.23.3).
+const PARENT_SESSION_ID: &str = "parent_session_id";
+const CHILD_SESSION_ID: &str = "child_session_id";
+
+/// The subagent dispatch tool (`tools/delegate_tool.py:1000` at v0.23.3).
+const DISPATCH_TOOL: &str = "delegate_task";
 
 /// The events this decoder turns into events. Pinned to its arms by
 /// `every_exported_set_is_exactly_its_dispatch_arms`, and to what the plugin
@@ -275,15 +292,20 @@ pub const DECODED_EVENTS: &[&str] = &[
     POST_TOOL_CALL,
     ON_SESSION_END,
     ON_SESSION_FINALIZE,
+    SUBAGENT_START,
+    SUBAGENT_STOP,
 ];
 
-/// The events hermes fires outside a session's turn, where `ctx.session_cwd()`
-/// is undefined (`website/docs/user-guide/features/plugins.md:1109`): the gateway
-/// finalizes a session at its viewer's close or its own stop. The plugin sends
-/// them no cwd, and no arm reads one: `only_an_event_inside_a_turn_reads_the_cwd`.
+/// The events hermes fires once the turn of the session they key on is over,
+/// where `ctx.session_cwd()` names no cwd of its
+/// (`website/docs/user-guide/features/plugins.md:1160` at v0.23.3): the gateway
+/// finalizes a session at its viewer's close or its own stop, and a child's stop
+/// fires once its run returned (`tools/delegate_tool_dispatch.py:222-242` at
+/// v0.23.3). The plugin sends them no cwd, and no arm reads one:
+/// `only_an_event_inside_a_turn_reads_the_cwd`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
-pub const OUTSIDE_A_TURN: &[&str] = &[ON_SESSION_FINALIZE];
+pub const OUTSIDE_A_TURN: &[&str] = &[ON_SESSION_FINALIZE, SUBAGENT_STOP];
 
 /// Every payload field the decoder reads but the event's name, pinned by
 /// `every_decoded_field_is_read`.
@@ -299,6 +321,8 @@ pub const DECODED_FIELDS: &[&str] = &[
     "tool_call_id",
     "description",
     "model",
+    PARENT_SESSION_ID,
+    CHILD_SESSION_ID,
 ];
 
 /// The `args` keys a tool's detail is read from.
@@ -327,12 +351,27 @@ const ENVELOPE: Envelope = Envelope {
 ///
 /// # Errors
 ///
-/// If the payload lacks `session_id`.
+/// If the payload lacks the session it keys on, `session_id` or a delegation's
+/// [`CHILD_SESSION_ID`], or a delegation's start lacks its [`PARENT_SESSION_ID`].
 pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
-    let session_id = hook.session()?;
+    let named =
+        |key: &'static str| required_or_err(SOURCE_NAME, Some(event), key, |k| field(obj, k));
+    // A delegation's hooks are its child's.
+    let session_id = if matches!(event, SUBAGENT_START | SUBAGENT_STOP) {
+        named(CHILD_SESSION_ID)?
+    } else {
+        hook.session()?
+    };
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let cwd = field(obj, "cwd");
+    let start = |parent_id| AgentEvent::SessionStart {
+        agent_id,
+        source: SOURCE_NAME.to_string(),
+        session_id: session_id.to_string(),
+        cwd: cwd.unwrap_or_default().into(),
+        parent_id,
+    };
     let identity =
         || AgentEvent::identity(agent_id, SOURCE_NAME, session_id, cwd.map(PathBuf::from));
     // A call's start, its approval wait and its end each carry it
@@ -341,13 +380,7 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
     let tool_use_id = || field(obj, "tool_call_id").map(String::from);
 
     let mut evs = match event {
-        ON_SESSION_START => vec![AgentEvent::SessionStart {
-            agent_id,
-            source: SOURCE_NAME.to_string(),
-            session_id: session_id.to_string(),
-            cwd: cwd.unwrap_or_default().into(),
-            parent_id: None,
-        }],
+        ON_SESSION_START => vec![start(None)],
         PRE_TOOL_CALL => {
             let tool = required(SOURCE_NAME, event, "tool_name", |k| field(obj, k)).unwrap_or("?");
             vec![
@@ -355,7 +388,11 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
                 AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: tool_use_id(),
-                    detail: Some(generic_keyed_detail(tool, obj.get("args"), KEYS)),
+                    detail: Some(if tool == DISPATCH_TOOL {
+                        ToolDetail::Task
+                    } else {
+                        generic_keyed_detail(tool, obj.get("args"), KEYS)
+                    }),
                     copy_id: None,
                 },
             ]
@@ -404,6 +441,18 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
         // daemon attaching mid-session would otherwise not see the session
         // until the next tool call.
         ON_SESSION_END => vec![identity(), AgentEvent::turn_end(agent_id)],
+        // Fired as the child is built, before it runs, on the thread that
+        // dispatched it (`tools/delegate_tool.py:394-402`, `:512` at v0.23.3), so
+        // the cwd is the parent's, which the child starts in
+        // (`tools/delegate_tool_child_run.py:886-899` at v0.23.3).
+        SUBAGENT_START => vec![start(Some(AgentId::from_parts(
+            SOURCE_NAME,
+            named(PARENT_SESSION_ID)?,
+        )))],
+        SUBAGENT_STOP => vec![AgentEvent::SessionEnd {
+            agent_id,
+            as_child: true,
+        }],
         _ => return Ok(None),
     };
     // Only the session events carry it (`website/docs/user-guide/features/hooks.md:474`,
@@ -577,9 +626,42 @@ mod tests {
         );
     }
 
+    /// The child's own hooks key on the session its start names, so they land
+    /// on the slot it registers under its parent.
+    #[test]
+    fn a_subagent_start_registers_the_child_its_own_hooks_key_on_under_its_parent() {
+        let start = decode_all(json!({"hook_event_name": "subagent_start",
+            "parent_session_id": "p", "child_session_id": "c", "cwd": "/repo"}));
+        let child_call = decode(json!({"hook_event_name": "pre_tool_call",
+            "session_id": "c", "cwd": "/repo", "tool_name": "read_file"}));
+        assert_eq!(
+            start,
+            [AgentEvent::SessionStart {
+                agent_id: child_call.agent_id(),
+                source: SOURCE_NAME.into(),
+                session_id: "c".into(),
+                cwd: "/repo".into(),
+                parent_id: Some(AgentId::from_parts(SOURCE_NAME, "p")),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_subagent_stop_ends_the_child_alone() {
+        let stop = decode_all(json!({"hook_event_name": "subagent_stop",
+            "parent_session_id": "p", "child_session_id": "c"}));
+        assert_eq!(
+            stop,
+            [AgentEvent::SessionEnd {
+                agent_id: AgentId::from_parts(SOURCE_NAME, "c"),
+                as_child: true,
+            }]
+        );
+    }
+
     #[test]
     fn an_event_the_plugin_never_forwards_bails() {
-        for ev in ["subagent_stop", "pre_message", "on_session_reset", "Bogus"] {
+        for ev in ["pre_message", "on_session_reset", "Bogus"] {
             assert!(
                 test_decode(
                     SOURCE_NAME,
@@ -596,7 +678,8 @@ mod tests {
     #[test]
     fn every_decoded_field_is_read() {
         let full = json!({"session_id": "s", "cwd": "/r", "tool_name": "terminal",
-            "tool_call_id": "c", "description": "why", "model": "m"});
+            "tool_call_id": "c", "description": "why", "model": "m",
+            "parent_session_id": "p", "child_session_id": "k"});
         let decoded = |ev: &str, payload: &Value| {
             let mut payload = payload.clone();
             payload["hook_event_name"] = json!(ev);
@@ -619,8 +702,12 @@ mod tests {
     fn only_an_event_inside_a_turn_reads_the_cwd() {
         for ev in DECODED_EVENTS {
             let decoded = |payload: Value| format!("{:?}", decode_all(payload));
-            let with = decoded(json!({"hook_event_name": ev, "session_id": "s", "cwd": "/repo"}));
-            let without = decoded(json!({"hook_event_name": ev, "session_id": "s"}));
+            let with = decoded(
+                json!({"hook_event_name": ev, "session_id": "s", "cwd": "/repo",
+                "parent_session_id": "p", "child_session_id": "c"}),
+            );
+            let without = decoded(json!({"hook_event_name": ev, "session_id": "s",
+                "parent_session_id": "p", "child_session_id": "c"}));
             assert_eq!(with == without, OUTSIDE_A_TURN.contains(ev), "{ev}");
         }
         let finalize = decode_all(json!({"hook_event_name": "on_session_finalize",

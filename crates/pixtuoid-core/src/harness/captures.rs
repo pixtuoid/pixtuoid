@@ -375,6 +375,7 @@ pub const OUTSIDE_CONFORMANCE: &[(&str, &str)] = &[
     ("cursor", "delegation"),
     ("dsh", "subagent-hermetic"),
     ("grok", "subagent-hermetic"),
+    ("hermes", "subagent-hermetic"),
     ("omp", "approve-hermetic"),
     ("omp", "ask-hermetic"),
     ("omp", "nested-approve-hermetic"),
@@ -589,6 +590,14 @@ const ID_FAMILIES: &[IdFamily] = &[
             "local-b65b0c6b008cbf991f9bba7c89ed68d89e5aefca3f897033db205cca4ca90bcf",
             "local-33495004b27dda4f734c247e04b46ed7abebc24f60b73816ea6120625359848e",
         )],
+    },
+    // A delegated child's (`tui_gateway/session_registry.py:401-406` at v0.23.3).
+    IdFamily {
+        name: "hermes-minted-session",
+        key: None,
+        pattern: r"\b\d{8}_\d{6}_[0-9a-f]{6}\b",
+        seen_in: "hermes/fixtures/subagent-hermetic",
+        renamed: &[("20261126_194013_a9c9d3", "20261126_194423_9a85d1")],
     },
     // Codex's and omp's.
     IdFamily {

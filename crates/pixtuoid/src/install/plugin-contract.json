@@ -28,7 +28,9 @@
         "pre_approval_request",
         "post_tool_call",
         "on_session_end",
-        "on_session_finalize"
+        "on_session_finalize",
+        "subagent_start",
+        "subagent_stop"
       ],
       "consumes": [],
       "fields": [
@@ -37,7 +39,9 @@
         "tool_name",
         "tool_call_id",
         "description",
-        "model"
+        "model",
+        "parent_session_id",
+        "child_session_id"
       ],
       "detail_keys": [
         "command",
@@ -47,7 +51,8 @@
         "url"
       ],
       "outside_a_turn": [
-        "on_session_finalize"
+        "on_session_finalize",
+        "subagent_stop"
       ]
     },
     {

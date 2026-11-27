@@ -32,12 +32,23 @@ FORWARD = (
     "post_tool_call",
     "on_session_end",
     "on_session_finalize",
+    "subagent_start",
+    "subagent_stop",
 )
-# `ctx.session_cwd()` is defined only within a session's turn (plugins.md:1109),
-# and the gateway finalizes a session outside any.
-OUTSIDE_A_TURN = ("on_session_finalize",)
+# `ctx.session_cwd()` names the cwd of the session whose turn runs
+# (plugins.md:1160 at v0.23.3), and these fire once the turn of the session
+# they name is over.
+OUTSIDE_A_TURN = ("on_session_finalize", "subagent_stop")
 # Copied by name, so no prompt, tool output or other argument leaves hermes.
-FIELDS = ("session_id", "tool_name", "tool_call_id", "description", "model")
+FIELDS = (
+    "session_id",
+    "tool_name",
+    "tool_call_id",
+    "description",
+    "model",
+    "parent_session_id",
+    "child_session_id",
+)
 ARGS = ("command", "file_path", "path", "pattern", "url")
 
 

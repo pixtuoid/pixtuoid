@@ -8,6 +8,7 @@ mod cursor;
 mod decode;
 mod delegation;
 mod grok;
+mod hermes;
 mod kimi;
 mod manager;
 mod merge;
