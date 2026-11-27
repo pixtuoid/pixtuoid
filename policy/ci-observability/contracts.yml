@@ -683,14 +683,16 @@
   why: >-
     curl cannot remove a failed attempt's bytes from stdout before it retries
     (curl.se/docs/manpage.html, `--retry`), so a body captured from stdout can
-    carry them and still look like a clean answer. `-o` makes curl truncate the
-    file instead.
+    carry them and still look like a clean answer. `-o` or `-O` makes curl truncate
+    the file instead.
   assert: |
-    [.. | objects | .run? | strings | scan("curl[^|;&)]*") | select(contains("--retry"))]
-      | all(test("\\s(-o|--output)\\s"))
+    [.. | objects | .run? | strings | gsub("\\\\\n"; " ") | scan("curl[^|;&)\n]*")
+      | select(contains("--retry"))]
+      | all(test("\\s(-[A-Za-z]*[oO][A-Za-z]*|--output|--remote-name)\\s"))
   break:
     - '. + {"run": "x=$(curl -fsSL --retry 3 https://e)"}'
     - '. + {"run": "curl --retry 3 https://e | jq ."}'
+    - '. + {"run": "curl -o a https://a\ncurl --retry 3 https://b >b"}'
 
 # ── Copies of the source registry
 
