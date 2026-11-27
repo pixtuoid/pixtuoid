@@ -729,7 +729,7 @@ pub const NOT_HERMETIC: &[Unprofiled] = &[Unprofiled {
     // Owner, 2026-10-13: no custom model endpoint. `--endpoint` re-points
     // Cursor's own backend (default `https://api2.cursor.sh`, `cursor-agent
     // --help` at 2026.11.22-e9042b2), which "all requests are routed through"
-    // (<https://cursor.com/docs/settings/api-keys>), not a model API.
+    // (<https://cursor.com/help/models-and-usage/api-keys>), not a model API.
     absence: Absence::NoModelEndpoint,
     // `DOWNLOAD_URL="https://downloads.cursor.com/lab/<build>/${OS}/${ARCH}/…"`
     // (the script at 2026.10.22-27dcf5f, `:85`).
