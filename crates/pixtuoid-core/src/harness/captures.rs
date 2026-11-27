@@ -591,9 +591,12 @@ const ID_FAMILIES: &[IdFamily] = &[
             "local-33495004b27dda4f734c247e04b46ed7abebc24f60b73816ea6120625359848e",
         )],
     },
-    // A delegated child's (`tui_gateway/session_registry.py:401-406` at v0.23.3).
+    // `new_session_id`'s timestamped id (`session_rules/session_ids.py:56-60` at
+    // v0.23.3), which a delegated child carries, where a gateway-bound session
+    // carries `hermes-session`'s derived `local-` id
+    // (`persistence/authority/bindings.py:47-49` at v0.23.3).
     IdFamily {
-        name: "hermes-minted-session",
+        name: "hermes-stamped-session",
         key: None,
         pattern: r"\b\d{8}_\d{6}_[0-9a-f]{6}\b",
         seen_in: "hermes/fixtures/subagent-hermetic",
