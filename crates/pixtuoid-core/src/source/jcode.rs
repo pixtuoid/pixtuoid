@@ -42,7 +42,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // `run_once_capture` skips both hooks `run_once` fires
             // (`crates/jcode-app-core/src/agent/turn_execution.rs:71`, `:75`,
             // `:79-113`; `src/cli/commands.rs:2655-2656`).
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             // It mints no `Task`, so no slot ever delegates.
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::None,

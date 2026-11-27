@@ -61,7 +61,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // `on_session_end` carries an `Identity` and fires at each turn's
             // finalization (`website/docs/user-guide/features/hooks.md:476` at
             // v0.23.3), in the gateway every turn runs in (the module doc).
-            resurrects_on_prompt: true,
+            re_registers_each_turn: true,
             // The plugin forwards neither `subagent_start` nor `subagent_stop`,
             // the hooks naming a child's parent (`hooks.md:484-485` at v0.23.3), so
             // sessions render flat.

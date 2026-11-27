@@ -53,7 +53,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A completed turn's `turn_end` carries an `Identity`, but the plugin
             // never sees a Ctrl-C'd turn's end (`brackets_turns` below), so a
             // tool-less turn cancelled re-registers nothing.
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             delegations_are_hook_silent: false,
             // The dispatch returns at launch (`packages/subagent/tool-subagent/src/index.ts:210`
             // at `dsh-v0.2.2-rc.5`), and the child's own `session_end` ends it

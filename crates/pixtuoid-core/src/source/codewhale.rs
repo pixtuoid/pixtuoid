@@ -68,7 +68,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A TUI's `message_submit` re-emits SessionStart, but a desktop or web
             // thread fires only engine events (`docs/HOOKS.md:22-30`), so a swept
             // one returns on its next tool call alone.
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             // The recorded dispatch (`codewhale/fixtures/child-error-hermetic`)
             // fires nothing of the child's own between `subagent_spawn` and
             // `subagent_complete`.

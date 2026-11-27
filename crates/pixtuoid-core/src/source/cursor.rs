@@ -76,7 +76,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             exits_can_go_unseen: true,
             // `stop` carries an `Identity`, but no `-p` turn fires it (the module
             // doc's exit bullet), so a tool-less one re-registers nothing.
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             // A child's events ride its own session (`cursor/fixtures/delegation`),
             // so the parent's goes quiet until its `Task` post.
             delegations_are_hook_silent: true,

@@ -61,7 +61,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A prompt fires no hook pixtuoid registers (`install::claude::EVENTS`),
             // and its line, like a text reply's, decodes to no life
             // (`decode_cc_line`): only a tool call's line re-registers a swept slot.
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             delegations_are_hook_silent: false,
             // A subagent turn fires SubagentStart, and SubagentStop once it has
             // finished responding; an Agent call that backgrounds its subagent

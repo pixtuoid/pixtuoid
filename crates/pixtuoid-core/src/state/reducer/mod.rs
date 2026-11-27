@@ -46,7 +46,7 @@ pub const STALE_BLOCKED_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 pub const STALE_UNKNOWN_CWD_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
 /// [`STALE_IDLE_TIMEOUT`] for a source whose [`SourceCaps::short_idle_reap`]
-/// holds: a human on a break walks back in on their next prompt.
+/// holds: a human on a break comes back with their next turn.
 #[doc(hidden)]
 pub const STALE_SHORT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 

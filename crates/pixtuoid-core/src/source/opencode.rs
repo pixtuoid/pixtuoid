@@ -65,7 +65,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             exits_can_go_unseen: true,
             // The next prompt's `session.execution.started` decodes to
             // `SessionStart`.
-            resurrects_on_prompt: true,
+            re_registers_each_turn: true,
             // A `subagent` child is parented by its first start's `parentID`, so
             // its events keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,

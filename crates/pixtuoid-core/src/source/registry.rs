@@ -123,7 +123,7 @@ pub(crate) struct SourceCaps {
     /// `Identity`), or a transcript line the watcher reads as life
     /// (`first_sight::Life::Lives`)? A surface where only a tool call brings it
     /// back makes it false.
-    pub(crate) resurrects_on_prompt: bool,
+    pub(crate) re_registers_each_turn: bool,
     /// Are subagent delegations invisible on this source's event stream (a
     /// window in which the PARENT's own stream goes quiet)? When true, a Delegating slot's
     /// `last_event_at` freezes for the whole delegation, so the reducer gives it
@@ -177,7 +177,7 @@ impl SourceCaps {
     /// All-false caps for a `Daemon` source: it creates no `AgentSlot`s to reap.
     pub(crate) const INERT_DAEMON: SourceCaps = SourceCaps {
         exits_can_go_unseen: false,
-        resurrects_on_prompt: false,
+        re_registers_each_turn: false,
         delegations_are_hook_silent: false,
         child_end_inference: ChildEndInference::None,
         child_hooks_unnamed: false,
@@ -188,9 +188,9 @@ impl SourceCaps {
     /// alone ends some session (`exits_can_go_unseen`), and its false positive,
     /// a live idle slot no probe vouches for
     /// ([`PROOF_OF_LIFE_TTL`](crate::state::correlation::PROOF_OF_LIFE_TTL)),
-    /// must self-heal (`resurrects_on_prompt`).
+    /// must self-heal (`re_registers_each_turn`).
     pub(crate) fn short_idle_reap(&self) -> bool {
-        self.exits_can_go_unseen && self.resurrects_on_prompt
+        self.exits_can_go_unseen && self.re_registers_each_turn
     }
 }
 

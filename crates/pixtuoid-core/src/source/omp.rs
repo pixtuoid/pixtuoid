@@ -78,7 +78,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // arm), and the bridge's `session_start` fires only at a start or a
             // `--resume` (`omp/fixtures/resume-hermetic`), so only a tool call's
             // line re-registers a swept session.
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             // The `task` dispatch emits a toolCall/toolResult pair on the parent
             // AND the child persists its own parent-linked transcript
             // (`omp/fixtures/subagent-hermetic`).

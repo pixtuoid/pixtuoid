@@ -106,7 +106,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // prompt that fires it, and one no hook reaches on the
             // `turn_completed` line that ends each turn, a tool-less one's
             // included (`grok/fixtures/model-error-hermetic`).
-            resurrects_on_prompt: true,
+            re_registers_each_turn: true,
             // A BLOCKING spawn's Task detail gets its post_tool_use at
             // completion (`grok/fixtures/subagent-hermetic`), and a background
             // spawn never mints a Task at all.
@@ -151,7 +151,7 @@ const ENVELOPE: Envelope = Envelope {
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
 ///
 /// `user_prompt_submit` maps to `SessionStart` too, beside its turn's start:
-/// it is a resurrect carrier [`DESCRIPTOR`]'s `resurrects_on_prompt` names.
+/// it is a re-registration carrier [`DESCRIPTOR`]'s `re_registers_each_turn` names.
 ///
 /// # Errors
 ///

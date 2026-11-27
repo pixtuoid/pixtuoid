@@ -56,7 +56,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // No `AG_EVENTS` hook fires at a prompt, `Stop` carries no `Identity`,
             // and a `USER_INPUT` step or a tool-less `PLANNER_RESPONSE` decodes to
             // nothing: only a tool call brings a swept session back.
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,

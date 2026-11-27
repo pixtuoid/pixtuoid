@@ -64,7 +64,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A prompt's line and a text reply's decode to no life
             // (`copilot/fixtures/resume-hermetic`'s resumed turn), so only a tool
             // call's line re-registers a swept session.
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             // The `task` dispatch emits `tool.execution_start`/`complete` AND
             // explicit `subagent.started`/`completed` events.
             delegations_are_hook_silent: false,

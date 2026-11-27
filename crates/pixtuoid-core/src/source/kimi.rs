@@ -62,7 +62,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A TUI turn's end carries an `Identity` (`decode_kimi_hook_custom`), but
             // `-p` can dispose its agent before `Stop` (`kimi/fixtures/tool-run-hermetic`
             // has none), so a tool-less `-p` turn can re-register nothing.
-            resurrects_on_prompt: false,
+            re_registers_each_turn: false,
             // Consumed via the `Agent` tool: 0.36.1's `AgentToolInputSchema` injects
             // `subagent_type: "coder"` when the model omits it, so `make_tool_detail`
             // mints Task. `AgentSwarm` has NO such injection, so an omitting swarm
