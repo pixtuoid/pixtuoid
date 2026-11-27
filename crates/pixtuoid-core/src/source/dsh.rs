@@ -116,7 +116,7 @@ const OUTCOME_ALLOWED: &str = "allowed-once";
 /// argument — spoofed or real — ever reaches this decoder.
 const SUBAGENT_TOOLS: &[&str] = &["subagent", "subagent_fork"];
 
-/// The envelope the plugin writes.
+/// Where the plugin's payload names its event and session.
 const ENVELOPE: Envelope = Envelope {
     event_field: "type",
     session_field: SessionField {

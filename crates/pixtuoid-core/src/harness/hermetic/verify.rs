@@ -21,7 +21,7 @@ use super::{
 use crate::harness::captures::{json_lines, jsonl_files_under};
 use crate::harness::provenance::Dropped;
 use crate::harness::reads::{
-    blank_of, child_pointer, embedded_json, is_hook_envelope, is_shim_stamp, string_leaves,
+    blank_of, child_pointer, embedded_json, is_hook_payloads, is_shim_stamp, string_leaves,
 };
 use crate::harness::{
     CaptureRecord, Drive, Driven, HOOK_PAYLOADS, ProcessExit, Reach, captures, read_json,
@@ -220,14 +220,14 @@ pub fn verify_lifecycle(dir: &Path) -> std::io::Result<Verdict> {
     let mut delivered = 0;
     for file in jsonl_files_under(dir)
         .into_iter()
-        .filter(|f| is_hook_envelope(f))
+        .filter(|f| is_hook_payloads(f))
     {
         delivered += json_lines(&file)?.len();
     }
     if delivered > 0 {
         findings.push((
             Label::Fail,
-            format!("{delivered} hook envelopes arrived after the last uninstall"),
+            format!("{delivered} hook payloads arrived after the last uninstall"),
         ));
     }
     Ok(Verdict::new(findings))
@@ -257,7 +257,7 @@ pub fn verify_source(p: &Profile, dirs: &[PathBuf]) -> std::io::Result<Verdict> 
         for file in jsonl_files_under(dir) {
             let mut lines = json_lines(&file)?;
             for line in &lines {
-                if is_hook_envelope(&file)
+                if is_hook_payloads(&file)
                     && let Some(event) = (p.event_name)(line)
                 {
                     fired.insert(event.into_owned());
@@ -449,7 +449,7 @@ impl Fields {
     /// `type` is no kind a run's line could have.
     fn add(&mut self, p: &Profile, file: &Path, line: &Value, run: bool) {
         key_chains(line, &mut Vec::new(), &mut self.keys);
-        let stamped = is_hook_envelope(file);
+        let stamped = is_hook_payloads(file);
         let leaves: BTreeSet<String> = leaves(line, stamped).into_iter().collect();
         if leaves.is_empty() {
             return;
@@ -505,10 +505,10 @@ pub(crate) fn committed_reads(p: &Profile) -> std::io::Result<Fields> {
     Ok(reads)
 }
 
-/// A line's kind: the hook event of an envelope, the `type` of a transcript
+/// A line's kind: the hook event of a payload, the `type` of a transcript
 /// line.
 fn kind_of(p: &Profile, file: &Path, line: &Value) -> String {
-    if is_hook_envelope(file) {
+    if is_hook_payloads(file) {
         format!("{HOOK}{}", (p.event_name)(line).as_deref().unwrap_or("?"))
     } else {
         format!("{TX}{}", line["type"].as_str().unwrap_or("?"))
@@ -516,7 +516,7 @@ fn kind_of(p: &Profile, file: &Path, line: &Value) -> String {
 }
 
 /// Every leaf of `v` holding a value (`reads::blank_of`), by its
-/// pointer with `*` for an array index. A `stamped` hook envelope's shim
+/// pointer with `*` for an array index. A `stamped` hook payload's shim
 /// stamps are skipped, as the probe skips them (`reads::is_shim_stamp`).
 fn leaves(v: &Value, stamped: bool) -> Vec<String> {
     fn walk(v: &Value, at: &str, stamped: bool, out: &mut Vec<String>) {
@@ -750,7 +750,7 @@ fn judge(
     }
     for t in jsonl_files_under(dir)
         .into_iter()
-        .filter(|f| !is_hook_envelope(f))
+        .filter(|f| !is_hook_payloads(f))
     {
         let Some(drive) = Drive::transcript_at(p.source, &t) else {
             continue;
@@ -1570,7 +1570,7 @@ mod tests {
     fn edit_transcripts(dir: &Path, mut keep: impl FnMut(&str) -> bool) {
         for t in jsonl_files_under(dir)
             .into_iter()
-            .filter(|f| !is_hook_envelope(f))
+            .filter(|f| !is_hook_payloads(f))
         {
             let text = std::fs::read_to_string(&t).expect("read");
             let kept: String = text
@@ -1587,8 +1587,8 @@ mod tests {
     }
 
     /// A lifecycle run in a fresh directory: `records` as its steps reported,
-    /// its silent turn's manifest, and `envelopes` hook lines.
-    fn lifecycle_run(records: &[StepRecord], envelopes: usize) -> tempfile::TempDir {
+    /// its silent turn's manifest, and `payloads` hook lines.
+    fn lifecycle_run(records: &[StepRecord], payloads: usize) -> tempfile::TempDir {
         let d = tempfile::tempdir().expect("tempdir");
         std::fs::write(
             d.path().join(LIFECYCLE_RECORD),
@@ -1598,7 +1598,7 @@ mod tests {
         write_manifest(d.path(), "codex", |_| {});
         std::fs::write(
             d.path().join(HOOK_PAYLOADS),
-            "{\"hook_event_name\":\"Stop\"}\n".repeat(envelopes),
+            "{\"hook_event_name\":\"Stop\"}\n".repeat(payloads),
         )
         .expect("hooks");
         d
@@ -1628,7 +1628,7 @@ mod tests {
         let d = lifecycle_run(&sound(), 2);
         let v = verify_lifecycle(d.path()).expect("verify");
         assert!(
-            has(&v, Label::Fail, "2 hook envelopes arrived"),
+            has(&v, Label::Fail, "2 hook payloads arrived"),
             "{:?}",
             v.findings()
         );
@@ -3705,7 +3705,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stamped_envelope_drops_its_top_level_shim_stamps_only() {
+    fn a_stamped_payload_drops_its_top_level_shim_stamps_only() {
         use crate::source::decoder::{FORWARDED_AT_STAMP, PID_STAMP};
         let v =
             serde_json::json!({FORWARDED_AT_STAMP: 5, PID_STAMP: 7, "_x": 3, "a": {PID_STAMP: 1}});
@@ -3844,7 +3844,7 @@ mod tests {
         let d = recorded("codex", "tool-run", CX_SCENE);
         for t in jsonl_files_under(d.path())
             .into_iter()
-            .filter(|f| !is_hook_envelope(f))
+            .filter(|f| !is_hook_payloads(f))
         {
             let text = std::fs::read_to_string(&t).expect("read");
             let out: Vec<String> = text

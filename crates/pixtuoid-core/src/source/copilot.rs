@@ -9,11 +9,11 @@
 //! - **Session id = the PARENT-DIR UUID** of `events.jsonl` (the filename stem is
 //!   the constant `events`, NOT the id).
 //! - **Sub-agents INTERLEAVE in the root file**: each line of a child carries its
-//!   own envelope `agentId` (a UUID, not the spawning `task` call's id, which rides
+//!   own top-level `agentId` (a UUID, not the spawning `task` call's id, which rides
 //!   `data.toolCallId` / `data.parentToolCallId`); there is no per-agent file split.
 //! - `subagent.completed` is **minimal** on disk (`toolCallId`/`agentName`/
 //!   `agentDisplayName` only) — never require model/token/duration fields.
-//! - The `ephemeral` envelope flag is inconsistent across CLI versions — never
+//! - The top-level `ephemeral` flag is inconsistent across CLI versions — never
 //!   rely on it; map by `type` and ignore the rest.
 
 use std::path::{Path, PathBuf};
@@ -476,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn subagent_completed_keys_off_the_envelope_agent_id() {
+    fn subagent_completed_keys_off_the_top_level_agent_id() {
         let line = r#"{"type":"subagent.completed","agentId":"call_7","data":{}}"#;
         match &decode(line)[..] {
             [AgentEvent::SessionEnd { agent_id, as_child }] => {
@@ -672,7 +672,7 @@ mod tests {
             );
         }
         // The FIRST filter's whole job, and nothing else pins it: an empty
-        // envelope `agentId` must FALL THROUGH to `data.toolCallId` rather than
+        // top-level `agentId` must FALL THROUGH to `data.toolCallId` rather than
         // short-circuit the `or_else` into `None`. Delete it and the assertions
         // above still pass, while every real child silently stops registering.
         let line = r#"{"type":"subagent.completed","agentId":"","data":{"toolCallId":"call_1"}}"#;
@@ -684,7 +684,7 @@ mod tests {
     }
 
     #[test]
-    fn child_tool_line_attributes_to_the_child_via_envelope_agent_id() {
+    fn child_tool_line_attributes_to_the_child_via_its_top_level_agent_id() {
         let line = json!({
             "type": "tool.execution_start",
             "data": {"toolCallId": "tooluse_child1", "toolName": "view", "arguments": {}},
@@ -696,7 +696,7 @@ mod tests {
             [AgentEvent::ToolUseStart { agent_id, .. }] => assert_eq!(
                 *agent_id,
                 AgentId::from_parts(SOURCE_NAME, "call_SGMJ1yjMtpgFUbZct2fEo2Hk"),
-                "a line with envelope agentId must attribute to the CHILD, not root"
+                "a line with a top-level agentId must attribute to the CHILD, not root"
             ),
             other => panic!("expected child ToolUseStart, got {other:?}"),
         }

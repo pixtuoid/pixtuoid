@@ -258,7 +258,7 @@ async fn a_takeover_starts_its_last_hooks_from_nothing() {
 }
 
 // Only a payload that did something is a sighting: grok and cursor cross-fire
-// claude-code's installed hook with their own envelope, and that must not read
+// claude-code's installed hook with their own payload, and that must not read
 // as Claude Code firing.
 #[tokio::test]
 async fn only_a_payload_that_decoded_to_something_is_a_sighting() {

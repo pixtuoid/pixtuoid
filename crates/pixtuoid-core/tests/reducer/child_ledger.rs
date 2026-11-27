@@ -646,7 +646,7 @@ fn inside_the_end_gate_an_identity_readmits_an_ended_child_only_under_its_parent
     }
 }
 
-/// A grok hook envelope, the shape its recorded subagent run carries: a prompt
+/// A grok hook payload, the shape its recorded subagent run carries: a prompt
 /// names its turn.
 fn grok_hook(event: &str, session: &str) -> serde_json::Value {
     let mut v = serde_json::json!({

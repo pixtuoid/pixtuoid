@@ -3,10 +3,10 @@
 //! Session transcripts DO exist (`<KIMI_CODE_HOME>/sessions/<workDirKey>/
 //! <sessionId>/agents/main/wire.jsonl`, default home `~/.kimi-code`) but the wire
 //! format is EXPLICITLY unstable: a `WIRE_PROTOCOL_VERSION` in a first-line
-//! `metadata` envelope, a `wire/migration/` module, docs saying *"do not manually
+//! `metadata` record, a `wire/migration/` module, docs saying *"do not manually
 //! edit files inside `sessions/`"*, and undocumented version-specific op `type`
 //! strings. So pixtuoid does NOT tail it. The seam is **hooks**
-//! (`<KIMI_CODE_HOME>/config.toml` `[[hooks]]`), whose envelope is
+//! (`<KIMI_CODE_HOME>/config.toml` `[[hooks]]`), whose payload is
 //! CLAUDE-CODE-SHAPED: snake_case
 //! `hook_event_name`/`session_id`/`cwd`/`tool_name`/`tool_input` with PascalCase
 //! event VALUES — **except the per-call id, which Kimi spells `tool_call_id`**

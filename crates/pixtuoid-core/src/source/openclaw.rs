@@ -3,7 +3,7 @@
 //! observed gateway earns a presence mascot instead, and OpenClaw officially supports
 //! several isolated gateways per host, so two live gateways render as two mascots.
 //!
-//! This module owns ONLY the WIRE decode, including which gateway an envelope came
+//! This module owns ONLY the WIRE decode, including which gateway a payload came
 //! from (its resolved `gatewayPort` → `DaemonInstanceId`); the daemon-agnostic
 //! presence STATE MACHINE and decay TTLs live in [`crate::source::daemon`], keyed by
 //! (source, instance) so N daemons AND N gateways coexist. Its updates ride an
@@ -68,7 +68,7 @@ fn turn_key(obj: &serde_json::Map<String, Value>) -> TurnKey {
     )
 }
 
-/// Narrow the wire `gatewayPort` to this gateway's stable instance id; an envelope
+/// Narrow the wire `gatewayPort` to this gateway's stable instance id; a payload
 /// without a usable one is REJECTED rather than bucketed with another gateway's.
 fn gateway_instance(obj: &serde_json::Map<String, Value>, event: &str) -> Result<DaemonInstanceId> {
     let raw = required_or_err(SOURCE_NAME, Some(event), GATEWAY_PORT_FIELD, |k| obj.get(k))?;
@@ -86,7 +86,7 @@ fn gateway_instance(obj: &serde_json::Map<String, Value>, event: &str) -> Result
     Ok(DaemonInstanceId::from_port(port))
 }
 
-/// Decode one OpenClaw plugin envelope into the sending gateway's identity plus its
+/// Decode one OpenClaw plugin payload into the sending gateway's identity plus its
 /// presence deltas. Reads ONLY allowlisted scalar fields — never
 /// `messages`/`prompt`/`sessionFile`, even if the plugin regressed and forwarded them
 /// (defense in depth for the privacy invariant).
@@ -402,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unusable_gateway_port_rejects_the_whole_envelope() {
+    fn an_unusable_gateway_port_rejects_the_whole_payload() {
         for bad in [
             json!(0),
             json!(-1),
@@ -435,7 +435,7 @@ mod tests {
     }
 
     #[test]
-    fn a_port_less_envelope_is_rejected() {
+    fn a_port_less_payload_is_rejected() {
         let err =
             decode_openclaw_hook_payload(test_obj(&json!({"type": "gateway_start", "_pid": 7})))
                 .expect_err("no gateway to key it on");
@@ -455,7 +455,7 @@ mod tests {
         });
         assert!(
             !logs.contains(crate::source::drift::TARGET),
-            "a port-bearing envelope must be silent, got:\n{logs}"
+            "a port-bearing payload must be silent, got:\n{logs}"
         );
     }
 

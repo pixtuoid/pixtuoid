@@ -6,7 +6,7 @@
 //! project hooks run only once approved (`internal/ext/hook/hook.go:228-229`
 //! @ v2.61.0), so those would silently not fire. Payloads
 //! arrive on the shared hook socket stamped
-//! `_pixtuoid_source: "reasonix"` in Reasonix's own envelope, NOT the CC shape:
+//! `_pixtuoid_source: "reasonix"` in Reasonix's own payload shape, NOT CC's:
 //!
 //! ```json
 //! {"event":"PreToolUse","sessionId":"s1","cwd":"/repo","toolName":"bash","toolArgs":{"command":"ls"}}
@@ -121,7 +121,7 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
     (own, own.split_once(SUBAGENT_ROLE).map(|(root, _)| root))
 }
 
-/// Reasonix's envelope, the module doc's `Payload`.
+/// Where Reasonix's payload, the module doc's `Payload`, names its event and session.
 const ENVELOPE: Envelope = Envelope {
     event_field: "event",
     session_field: SessionField {

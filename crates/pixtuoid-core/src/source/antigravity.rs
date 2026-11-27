@@ -199,9 +199,9 @@ fn decode_ag_tool_call(
     }
 }
 
-/// agy's envelope: agy's documented input names no event (hooks.md, "common
-/// input fields"), so the shim stamps the one the installer registered the
-/// command for.
+/// Where agy's payload names its event and session: its documented input
+/// names no event (hooks.md, "common input fields"), so the shim stamps the
+/// one the installer registered the command for.
 const ENVELOPE: Envelope = Envelope {
     event_field: EVENT_STAMP,
     session_field: SessionField {

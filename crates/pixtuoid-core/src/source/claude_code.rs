@@ -696,7 +696,7 @@ mod tests {
             assert_eq!(
                 cc_activity_recency(line("some-new-type", half).as_bytes()),
                 TailActivity::SidecarOnly,
-                "half a message envelope must not read as a turn — the predicate is \
+                "half a `message` must not read as a turn — the predicate is \
                  the CONJUNCTION, or a future CC sidecar type floods: {half}"
             );
         }

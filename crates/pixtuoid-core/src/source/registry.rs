@@ -22,14 +22,14 @@ use crate::source::{
     jcode, kimi, omp, openclaw, opencode, reasonix,
 };
 
-/// The wire NAME of the per-call tool id in this source's hook envelope, read by
+/// The wire NAME of the per-call tool id in this source's hook payload, read by
 /// the shared arms. It is a registry row and not a per-source copy of those arms
 /// because reading the wrong name is SILENT — the field is optional, so a
 /// mis-spelling is indistinguishable from an absent id, and every kimi tool call
 /// decoded to `None` for the whole source's life.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolIdKey {
-    /// `tool_use_id` — Claude Code's spelling, and every CC-shaped envelope's
+    /// `tool_use_id` — Claude Code's spelling, and every CC-shaped payload's
     /// but Kimi's.
     ToolUse,
     /// `tool_call_id` — Kimi's (capture-verified: `kimi/fixtures/tool-run-hermetic` never
@@ -61,10 +61,10 @@ pub struct Envelope {
     pub(crate) session_field: SessionField,
 }
 
-/// Where an envelope's session id sits.
+/// Where a payload's session id sits.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SessionField {
-    /// The top-level object holding it, `None` for the envelope itself.
+    /// The top-level object holding it, `None` for the payload's top level.
     pub(crate) within: Option<&'static str>,
     /// Its name, as a missing-field breadcrumb names it.
     pub(crate) field: &'static str,
@@ -78,14 +78,14 @@ pub type HookArms = fn(&crate::source::decoder::Hook<'_>) -> Result<Option<Vec<A
 /// read.
 #[derive(Debug, Clone, Copy)]
 pub enum HookDecoding {
-    /// The shared CC-shaped arms, on the CC envelope, which `extend` EXTENDS:
+    /// The shared CC-shaped arms, on `decoder::SHARED_ENVELOPE`, which `extend` EXTENDS:
     /// its `Ok(None)` falls through to them.
     Shared {
         /// The per-call tool id's wire name.
         tool_id_key: ToolIdKey,
         extend: HookArms,
     },
-    /// CLAIMS every event: a source whose envelope or event names the shared
+    /// CLAIMS every event: a source whose payload keys or event names the shared
     /// arms can't read, whose arms handle EVERYTHING and construct their own
     /// AgentIds; their
     /// `Ok(None)` is an unknown event, never a fall-through to the shared arms.
@@ -311,7 +311,7 @@ pub enum Corroboration {
 }
 
 impl FocusChannel {
-    /// Whether a hook-envelope `_pid` stamp is this session's own focusable
+    /// Whether a hook-payload `_pid` stamp is this session's own focusable
     /// process.
     #[cfg(feature = "native")]
     pub(crate) fn stamps_focus_pid(self) -> bool {
@@ -645,13 +645,13 @@ pub(crate) fn head_filter_for(source: &str) -> Option<HeadFilter> {
     descriptor_for(source).and_then(|d| d.head_filter())
 }
 
-/// A daemon source's wire decoder: its envelope → the sending INSTANCE's
+/// A daemon source's wire decoder: its payload → the sending INSTANCE's
 /// identity plus its presence deltas. Handed to the `HookRouter` demux, which
 /// therefore never learns what makes two instances of a daemon different.
 pub(crate) type PresenceDecoder = fn(&HookObject) -> Result<crate::source::daemon::DecodedPresence>;
 
-/// The daemon source stamped on a hook envelope with its decoded presence, or
-/// `None` for any other envelope, which belongs to the agent arms.
+/// The daemon source stamped on a hook payload with its decoded presence, or
+/// `None` for any other payload, which belongs to the agent arms.
 #[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn presence_of(
     obj: &HookObject,

@@ -1,6 +1,6 @@
 //! Shared decoder utilities used by per-source decoders. Hook payload decoding
-//! lives here because the hook socket is shared: each payload's envelope is read
-//! here, then dispatched to its source's own arms or the shared CC-shaped ones.
+//! lives here because the hook socket is shared: where each payload names its event and session
+//! is read here, then it is dispatched to its source's own arms or the shared CC-shaped ones.
 
 use std::path::{Path, PathBuf};
 
@@ -160,7 +160,7 @@ pub(crate) fn checked_pid(raw: i64) -> Option<i32> {
     i32::try_from(raw).ok().filter(|&p| p > 0)
 }
 
-/// The hook-envelope key that carries the agent CLI's pid: a plugin stamps it
+/// The hook-payload key that carries the agent CLI's pid: a plugin stamps it
 /// from inside the CLI, else the shim from its ancestry (`pixtuoid-hook`'s `cli_pid`).
 /// Pinned by `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
 #[doc(hidden)]
@@ -315,17 +315,17 @@ fn rfc3339_date_time(s: &str) -> Option<std::borrow::Cow<'_, str>> {
 /// `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
 pub const SOURCE_STAMP: &str = "_pixtuoid_source";
 
-/// The key the shim stamps with when it forwarded the envelope, in
+/// The key the shim stamps with when it forwarded the payload, in
 /// milliseconds since the epoch. Pinned by
 /// `each_key_the_shim_stamps_is_the_one_core_reads` to the shim's copy.
 #[doc(hidden)]
 pub const FORWARDED_AT_STAMP: &str = "_shim_ts_ms";
 
-/// Every key the shim stamps on a hook envelope.
+/// Every key the shim stamps on a hook payload.
 #[doc(hidden)]
 pub const SHIM_STAMPS: [&str; 4] = [FORWARDED_AT_STAMP, SOURCE_STAMP, EVENT_STAMP, PID_STAMP];
 
-/// The CLI a hook envelope belongs to — read ONLY from the shim-owned
+/// The CLI a hook payload belongs to — read ONLY from the shim-owned
 /// [`SOURCE_STAMP`]. CC's public `source` field carries the SessionStart REASON
 /// (startup/resume/clear/compact), so reading it would namespace the agent under
 /// "startup" and split it from the claude-code-keyed tool/JSONL/SessionEnd events:
@@ -348,12 +348,12 @@ pub(crate) fn test_decode(source: &str, v: &Value) -> DecodeResult<Vec<AgentEven
     decode_hook_payload(stamped)
 }
 
-/// Envelopes that decode to NOTHING, quietly. A DAEMON source's payloads ride the
+/// Payloads that decode to NOTHING, quietly. A DAEMON source's payloads ride the
 /// sibling presence channel and carry no `hook_event_name` at all. grok scans
 /// `~/.claude/settings.json` AND `~/.cursor/hooks.json` BY DEFAULT
 /// (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:67-77` at
 /// `xai-org/grok-build` `2bdd1d6a63`, grok's cite base: [`crate::source::grok`]'s module doc)
-/// and fires the shim installed there with its OWN camelCase envelope, so a
+/// and fires the shim installed there with its OWN camelCase payload, so a
 /// duplicate arrives tagged `claude-code`/`cursor` beside the grok-tagged one.
 fn decodes_to_nothing(
     source: &str,
@@ -369,12 +369,12 @@ fn decodes_to_nothing(
     if (cc || source == crate::source::cursor::SOURCE_NAME)
         && obj.contains_key(crate::source::grok::HOOK_EVENT_NAME)
     {
-        tracing::trace!(source, "dropping grok cross-fired hook envelope");
+        tracing::trace!(source, "dropping grok cross-fired hook payload");
         return true;
     }
     // cursor's duplicates through Claude Code's hooks, `source/cursor.rs`'s module doc.
     if cc && obj.contains_key("cursor_version") {
-        tracing::trace!("dropping a cursor hook envelope on the claude-code channel");
+        tracing::trace!("dropping a cursor hook payload on the claude-code channel");
         return true;
     }
     false
@@ -425,7 +425,7 @@ const PAYLOAD: &str = "payload";
 /// The hook field naming the root session.
 const SESSION_ID: &str = "session_id";
 
-/// The CC-shaped envelope the shared arms key on.
+/// Where a CC-shaped payload names its event and session, for the shared arms.
 pub(crate) const SHARED_ENVELOPE: Envelope = Envelope {
     event_field: HOOK_EVENT_NAME,
     session_field: SessionField {
@@ -532,7 +532,7 @@ impl<'a> Hook<'a> {
         })
     }
 
-    /// The session the envelope names, refused when missing or EMPTY: an empty
+    /// The session the payload names, refused when missing or EMPTY: an empty
     /// id keys no session. An arm reads it only where it uses it, as its key or
     /// a child's parent: a subagent's end keys on the child alone, so a wire that
     /// leaves it off there costs nothing.
@@ -2129,7 +2129,7 @@ mod tests {
         );
     }
 
-    fn grok_envelope(tag: &str) -> Value {
+    fn grok_payload(tag: &str) -> Value {
         json!({
             "_pixtuoid_source": tag,
             "hookEventName": "pre_tool_use",
@@ -2144,11 +2144,11 @@ mod tests {
         })
     }
 
-    /// cursor's envelopes on the claude-code channel, which used to reach CC's
+    /// cursor's payloads on the claude-code channel, which used to reach CC's
     /// arms and bail.
     #[test]
-    fn a_cursor_envelope_on_the_claude_code_channel_is_dropped_quietly() {
-        let envelope = json!({
+    fn a_cursor_payload_on_the_claude_code_channel_is_dropped_quietly() {
+        let payload = json!({
             "hook_event_name": "preToolUse",
             "session_id": "s1",
             "cursor_version": "2026.10.22-27dcf5f",
@@ -2157,16 +2157,16 @@ mod tests {
             "tool_use_id": "t1",
         });
         assert!(
-            test_decode(crate::source::claude_code::SOURCE_NAME, &envelope)
+            test_decode(crate::source::claude_code::SOURCE_NAME, &payload)
                 .expect("must not error")
                 .is_empty(),
-            "a claude-code-stamped cursor envelope is a duplicate of the cursor-stamped one"
+            "a claude-code-stamped cursor payload is a duplicate of the cursor-stamped one"
         );
 
         // The cursor-stamped copy is the one that must survive — dropping both
         // would erase cursor from the office entirely.
         assert!(
-            !test_decode(crate::source::cursor::SOURCE_NAME, &envelope)
+            !test_decode(crate::source::cursor::SOURCE_NAME, &payload)
                 .expect("Ok")
                 .is_empty(),
             "the stamped copy carries the arc"
@@ -2174,23 +2174,23 @@ mod tests {
     }
 
     #[test]
-    fn cross_fired_grok_envelopes_are_dropped_quietly() {
+    fn cross_fired_grok_payloads_are_dropped_quietly() {
         for tag in ["claude-code", "cursor"] {
-            let evs = decode_hook_payload(grok_envelope(tag))
-                .unwrap_or_else(|e| panic!("{tag}: cross-fired envelope must be Ok, got {e}"));
+            let evs = decode_hook_payload(grok_payload(tag))
+                .unwrap_or_else(|e| panic!("{tag}: cross-fired payload must be Ok, got {e}"));
             assert!(
                 evs.is_empty(),
-                "{tag}: cross-fired grok envelope must decode to zero events, got {evs:?}"
+                "{tag}: cross-fired grok payload must decode to zero events, got {evs:?}"
             );
         }
         assert!(
-            decode_hook_payload(grok_envelope("some-future-cli")).is_err(),
-            "a non-cc/cursor camelCase envelope must bail (observed), not drop silently"
+            decode_hook_payload(grok_payload("some-future-cli")).is_err(),
+            "a non-cc/cursor camelCase payload must bail (observed), not drop silently"
         );
     }
 
     #[test]
-    fn cc_envelopes_still_decode_normally_despite_the_guard() {
+    fn cc_payloads_still_decode_normally_despite_the_guard() {
         let evs = decode_hook_payload(json!({
             "_pixtuoid_source": "claude-code",
             "hook_event_name": "PreToolUse",
@@ -2251,7 +2251,7 @@ mod tests {
                 json!({"hook_event_name": "preToolUse"}),
                 "session_id",
             ),
-            // A real envelope always carries its cwd and workspace root:
+            // A real payload always carries its cwd and workspace root:
             // neither is an `Option` (`crates/codegen/xai-grok-hooks/src/event.rs:362-363`
             // at `xai-org/grok-build` `2bdd1d6a63`).
             (
@@ -2357,7 +2357,7 @@ mod tests {
         );
     }
 
-    /// An envelope naming no event breadcrumbs that, whichever field the
+    /// A payload naming no event breadcrumbs that, whichever field the
     /// source names its events in.
     #[test]
     fn every_hook_source_breadcrumbs_a_missing_event() {

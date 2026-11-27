@@ -665,7 +665,7 @@ const MESSAGE: &str = "message";
 /// can1357/oh-my-pi#18491).
 const MODEL_USAGE: &str = "model_usage";
 
-/// The `custom` entry envelope. Its `customType:"tool_execution_start"` duplicates
+/// The `custom` entry. Its `customType:"tool_execution_start"` duplicates
 /// each toolCall right before execution and is deliberately NOT decoded — the same
 /// `tool_use_id` would double-count `tool_call_count`.
 const CUSTOM: &str = "custom";
@@ -1062,8 +1062,9 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
     HOOK_SESSION_SHUTDOWN,
 ];
 
-/// The bridge extension's envelope (`install/omp_extension.ts`). Its session
-/// is `sessionId`, which omp always has (`getSessionId(): string`,
+/// Where the bridge extension's payload (`install/omp_extension.ts`) names its
+/// event and session. Its session is `sessionId`, which omp always has
+/// (`getSessionId(): string`,
 /// `packages/coding-agent/src/session/session-manager.ts:3353` at `v19.2.1`);
 /// a `sessionFile`, when there is one, keys it instead
 /// ([`decode_omp_hook_payload`]).

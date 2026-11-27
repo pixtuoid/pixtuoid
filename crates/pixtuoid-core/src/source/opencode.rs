@@ -21,7 +21,7 @@
 //!   which each execution's start publishes (`packages/core/src/session/execution.ts:139-146`,
 //!   `run-coordinator.ts:61-62`, `:98`),
 //!   so a session the plugin joined late registers on its next turn (#1934).
-//! - An event published in a location carries it on its envelope, beside
+//! - An event published in a location carries it at its payload's top level, beside
 //!   `data` (`packages/schema/src/event.ts:114`, `:138`):
 //!   `opencode/fixtures/permission-hermetic`'s tool and permission events do,
 //!   its `session.execution.*` events do not.
@@ -94,7 +94,7 @@ const TOOL_SUCCESS: &str = "session.tool.success";
 const TOOL_FAILED: &str = "session.tool.failed";
 const PERMISSION_ASKED: &str = "permission.asked";
 
-/// The envelope's turn: an execution start's durable `seq`, which the plugin
+/// The payload's turn: an execution start's durable `seq`, which the plugin
 /// also stamps on that execution's settle; one whose start it never saw names
 /// none. Pinned to the plugin's key by its selftest, through
 /// `the_plugin_contract_is_the_committed_file`.
@@ -139,7 +139,8 @@ pub const DECODED_DATA_FIELDS: &[&str] = &[
     "source.id",
 ];
 
-/// The plugin's envelope: an event's `type`, and its `data` copied field by field.
+/// Where the plugin's payload names its event and session: an event's `type`, and its `data`
+/// copied field by field.
 const ENVELOPE: Envelope = Envelope {
     event_field: "type",
     session_field: SessionField {
@@ -148,7 +149,7 @@ const ENVELOPE: Envelope = Envelope {
     },
 };
 
-/// Decode one opencode plugin envelope (already identified by
+/// Decode one opencode plugin payload (already identified by
 /// `_pixtuoid_source == "opencode"`). The plugin forwards only
 /// `DECODED_EVENTS`, so an unmapped `type` is drift between the two.
 ///

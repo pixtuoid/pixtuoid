@@ -20,7 +20,7 @@
 //! A decoder ending in a bare `_ => vec![]` is silent even when the line does
 //! arrive; grep the decoders for that shape rather than keeping a list here.
 //!
-//! Every value is untrusted wire content, `source` included (a hook envelope's
+//! Every value is untrusted wire content, `source` included (a hook payload's
 //! `_pixtuoid_source` need not be a registry name), made display-safe HERE at
 //! emission, whatever subscriber the host installs: the non-TUI `tracing`
 //! stream goes to stderr, and is on by default at `warn`.

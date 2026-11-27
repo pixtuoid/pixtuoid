@@ -7,7 +7,7 @@
 //! CodeWhale's hooks DON'T hand the command a CC-shaped JSON payload on stdin —
 //! identity travels as ENV VARS (`docs/HOOKS.md:298-322`). So the shim runs in
 //! **env-mode** (`pixtuoid-hook --event <name>`): it reads the env vars and
-//! synthesizes this envelope, stamped `_pixtuoid_source: "codewhale"`:
+//! synthesizes this payload, stamped `_pixtuoid_source: "codewhale"`:
 //!
 //! ```json
 //! {"event":"tool_call_before","session_id":"sess_1a2b3c4d","cwd":"/repo","tool":"exec_shell","tool_args":"{\"command\":\"ls -la\"}","tool_call_id":"7f7a…"}
@@ -110,8 +110,8 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
     })
 }
 
-/// The envelope env-mode synthesizes, whose names the raw subagent hooks share
-/// (`docs/HOOKS.md:658-665`).
+/// Where env-mode's synthesized payload names its event and session: field
+/// names the raw subagent hooks share too (`docs/HOOKS.md:658-665`).
 const ENVELOPE: Envelope = Envelope {
     event_field: "event",
     session_field: SessionField {
@@ -120,7 +120,7 @@ const ENVELOPE: Envelope = Envelope {
     },
 };
 
-/// Decode one CodeWhale hook envelope (already identified by
+/// Decode one CodeWhale hook payload (already identified by
 /// `_pixtuoid_source == "codewhale"`), keyed on `session_id`.
 ///
 /// The activity arms prepend an [`AgentEvent::Identity`]: CodeWhale is

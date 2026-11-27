@@ -316,7 +316,7 @@ fn bind_targets(source: &str, evs: &[AgentEvent]) -> std::collections::BTreeMap<
 }
 
 /// Stamp the connection's peeked `_pid` onto every `Identity` event of a decoded
-/// batch — the per-source decoders never see the envelope key, so this single
+/// batch — the per-source decoders never see the payload's `_pid` key, so this single
 /// patch point IS the whole focus-jump wiring.
 ///
 /// The gate is the registry's [`FocusChannel`](crate::source::registry::FocusChannel) capability. `TranscriptProbe`
@@ -412,7 +412,7 @@ async fn handle_conn(
                     // order on the same channel, so the reducer registers with
                     // real identity before the activity event applies.
                     Ok(evs) => {
-                        // Not beside the forward: an envelope that decodes to
+                        // Not beside the forward: a payload that decodes to
                         // nothing is no sign of its CLI.
                         let source = hook_source(obj);
                         if let (Some(relay), Some(source)) =

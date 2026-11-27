@@ -52,7 +52,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: crate::source::registry::Native::NONE,
 };
 
-/// The envelope the shim builds from jcode's hook environment.
+/// Where the payload the shim builds from jcode's hook environment names its event and session.
 const ENVELOPE: Envelope = Envelope {
     event_field: "event",
     session_field: SessionField {

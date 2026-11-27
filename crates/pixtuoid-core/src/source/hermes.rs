@@ -14,7 +14,7 @@
 //! ```
 //!
 //! Keyed on `session_id`, not the workspace: cwd-keying would merge two
-//! sessions in one project. The envelope (`hermes/fixtures/tool-run-hermetic`)
+//! sessions in one project. The payload (`hermes/fixtures/tool-run-hermetic`)
 //! reuses CC's `hook_event_name` field NAME with snake_case VALUES
 //! alien to the shared CC-shaped arms, so the decoder is
 //! `HookDecoding::ClaimsAll`: it claims EVERY event.
@@ -285,7 +285,7 @@ pub const DECODED_EVENTS: &[&str] = &[
 #[doc(hidden)]
 pub const OUTSIDE_A_TURN: &[&str] = &[ON_SESSION_FINALIZE];
 
-/// Every envelope field the decoder reads but the event's name, pinned by
+/// Every payload field the decoder reads but the event's name, pinned by
 /// `every_decoded_field_is_read`.
 /// The plugin sends these and `args` cut to [`DETAIL_KEYS`], nothing more of
 /// hermes's kwargs, which its selftest holds it to through
@@ -309,7 +309,7 @@ const KEYS: &[&str] = &["command", "file_path", "path", "pattern", "url"];
 #[doc(hidden)]
 pub const DETAIL_KEYS: &[&str] = KEYS;
 
-/// The envelope the plugin writes.
+/// Where the plugin's payload names its event and session.
 const ENVELOPE: Envelope = Envelope {
     event_field: "hook_event_name",
     session_field: SessionField {
@@ -318,7 +318,7 @@ const ENVELOPE: Envelope = Envelope {
     },
 };
 
-/// Decode one Hermes plugin envelope (already identified by
+/// Decode one Hermes plugin payload (already identified by
 /// `_pixtuoid_source == "hermes"`); an event outside the plugin's forward set
 /// has no arm.
 ///

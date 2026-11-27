@@ -759,7 +759,7 @@ mod tests {
     /// The shim (`pixtuoid-hook`) is the key's one writer, a crate this one
     /// cannot import from, so its own recorded output pins the spelling.
     #[test]
-    fn a_recorded_envelope_carries_the_forwarded_at_stamp_by_this_key() {
+    fn a_recorded_payload_carries_the_forwarded_at_stamp_by_this_key() {
         let hooks = crate::harness::sources_root()
             .join("codex/fixtures/tool-run-hermetic")
             .join(crate::harness::HOOK_PAYLOADS);

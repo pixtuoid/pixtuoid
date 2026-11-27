@@ -11,7 +11,7 @@
 //!   even `/rewind` appending a `rewind_marker` (`storage/mod.rs:2060-2079`). Its
 //!   SIBLINGS `chat_history.jsonl` and `rewind_points.jsonl` are REWRITTEN whole
 //!   via temp+rename (`jsonl/mod.rs:610-614`, `:1742-1749`, `:1808`) — never tail them.
-//! - **Hooks**: JSON envelope on stdin with **camelCase field names and
+//! - **Hooks**: JSON payload on stdin with **camelCase field names and
 //!   snake_case event values** (`crates/codegen/xai-grok-hooks/src/event.rs:78-180`,
 //!   `:357-375`), hence the claims-all custom decoder below. Nine of those keys
 //!   are also copied in snake_case, and `hook_event_name` carries CC's
@@ -132,10 +132,10 @@ const XAI_TURN_COMPLETED: &str = "turn_completed";
 const XAI_HOOK_EXECUTION: &str = "hook_execution";
 const SESSION_END: &str = "session_end";
 
-/// The hook field naming the event, in grok's own camelCase envelope.
+/// The hook field naming the event, in grok's own camelCase payload.
 pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
 
-/// grok's envelope: `HookEventEnvelope`'s camelCase keys
+/// Where grok's payload names its event and session: `HookEventEnvelope`'s camelCase keys
 /// (`crates/codegen/xai-grok-hooks/src/event.rs:358-361` at `xai-org/grok-build`
 /// `2bdd1d6a63`), whose `sessionId` is no `Option`.
 const ENVELOPE: Envelope = Envelope {
@@ -363,7 +363,7 @@ fn grok_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
 }
 
-/// Decode one `updates.jsonl` line. Envelope: `{"timestamp":<unix-secs>,
+/// Decode one `updates.jsonl` line, shaped `{"timestamp":<unix-secs>,
 /// "method":…,"params":{"sessionId":…,"update":{"sessionUpdate":"<tag>",…}}}`,
 /// where ACP notifications use camelCase fields and the xAI extension's fields
 /// are verbatim snake_case Rust names (`rename_all` covers only the tag).
@@ -669,7 +669,7 @@ mod tests {
         decode_all(v).pop().expect("at least one event")
     }
 
-    fn envelope(event: &str) -> Value {
+    fn payload(event: &str) -> Value {
         json!({
             "hookEventName": event,
             "sessionId": "0197fa30-sess",
@@ -682,7 +682,7 @@ mod tests {
     #[test]
     fn session_start_public_source_field_never_drives_attribution() {
         for reason in ["new", "load"] {
-            let mut v = envelope("session_start");
+            let mut v = payload("session_start");
             v["source"] = json!(reason);
             match decode(v) {
                 AgentEvent::SessionStart { source, .. } => assert_eq!(source, SOURCE_NAME),
@@ -714,7 +714,7 @@ mod tests {
     /// The transcript's `_meta.modelId` owns the model.
     #[test]
     fn session_start_decodes_no_model() {
-        let mut v = envelope("session_start");
+        let mut v = payload("session_start");
         v["modelId"] = json!("grok-4-code");
         assert!(matches!(
             &decode_all(v)[..],
@@ -767,7 +767,7 @@ mod tests {
 
     #[test]
     fn tool_target_uses_grok_arg_vocabulary() {
-        let mut v = envelope("pre_tool_use");
+        let mut v = payload("pre_tool_use");
         v["toolName"] = json!("read_file");
         v["toolInput"] = json!({"path": "src/lib.rs"});
         assert!(
@@ -779,7 +779,7 @@ mod tests {
     #[test]
     fn permission_and_elicitation_notifications_are_user_action_requests() {
         for kind in ["permission_prompt", "elicitation_dialog"] {
-            let mut v = envelope("notification");
+            let mut v = payload("notification");
             v["notificationType"] = json!(kind);
             v["message"] = json!("Tool permission requested");
             let evs = decode_all(v);
@@ -794,7 +794,7 @@ mod tests {
 
     #[test]
     fn user_action_request_reason_falls_back_to_the_notification_type() {
-        let mut v = envelope("notification");
+        let mut v = payload("notification");
         v["notificationType"] = json!("permission_prompt");
         assert!(
             matches!(decode(v), AgentEvent::UserActionRequest { reason, .. }
@@ -812,7 +812,7 @@ mod tests {
     #[test]
     fn known_notification_types_stay_silent_while_a_novel_one_breadcrumbs() {
         for known in ["idle_prompt", "agent_error", "task_complete"] {
-            let mut v = envelope("notification");
+            let mut v = payload("notification");
             v["notificationType"] = json!(known);
             let logs = crate::test_capture::capture_logs(|| {
                 assert!(decode_all(v).is_empty());
@@ -824,7 +824,7 @@ mod tests {
         }
         // Control: the breadcrumb still fires for a genuinely new type, so the
         // assertions above are silence-by-recognition, not a dead detector.
-        let mut novel = envelope("notification");
+        let mut novel = payload("notification");
         novel["notificationType"] = json!("some_future_nudge");
         let logs = crate::test_capture::capture_logs(|| {
             assert!(decode_all(novel).is_empty());
@@ -842,7 +842,7 @@ mod tests {
 
     #[test]
     fn subagent_start_registers_the_child_under_the_parent() {
-        let mut v = envelope("subagent_start");
+        let mut v = payload("subagent_start");
         v["subagentId"] = json!("0197fa31-child");
         v["subagentType"] = json!("explore");
         v["description"] = json!("map the build");
@@ -865,7 +865,7 @@ mod tests {
                 assert_eq!(
                     *parent_id,
                     Some(AgentId::from_parts(SOURCE_NAME, "0197fa30-sess")),
-                    "parent link from the envelope's (parent) sessionId"
+                    "parent link from the payload's (parent) sessionId"
                 );
             }
             other => panic!("expected the child's SessionStart alone, got {other:?}"),
@@ -884,7 +884,7 @@ mod tests {
 
     #[test]
     fn subagent_stop_ends_the_child_as_child() {
-        let mut v = envelope("subagent_stop");
+        let mut v = payload("subagent_stop");
         v["subagentId"] = json!("0197fa31-child");
         v["subagentType"] = json!("explore");
         v["exitCode"] = json!(0);
@@ -901,7 +901,7 @@ mod tests {
     fn subagent_events_without_subagent_id_are_malformed() {
         for event in ["subagent_start", "subagent_stop"] {
             assert!(
-                test_decode(SOURCE_NAME, &envelope(event)).is_err(),
+                test_decode(SOURCE_NAME, &payload(event)).is_err(),
                 "{event} without subagentId must bail"
             );
         }
@@ -918,7 +918,7 @@ mod tests {
 
     #[test]
     fn a_prompt_submit_hook_starts_its_turn() {
-        let mut v = envelope("user_prompt_submit");
+        let mut v = payload("user_prompt_submit");
         v["promptId"] = json!("prompt-1");
         let evs = decode_all(v);
         assert!(
@@ -929,7 +929,7 @@ mod tests {
             "{evs:?}"
         );
         let logs = crate::test_capture::capture_logs(|| {
-            let evs = decode_all(envelope("user_prompt_submit"));
+            let evs = decode_all(payload("user_prompt_submit"));
             assert!(
                 matches!(evs.as_slice(), [AgentEvent::SessionStart { .. }]),
                 "{evs:?}"
@@ -971,7 +971,7 @@ mod tests {
             "bogus",
         ] {
             assert!(
-                test_decode(SOURCE_NAME, &envelope(ev)).is_err(),
+                test_decode(SOURCE_NAME, &payload(ev)).is_err(),
                 "{ev} must bail"
             );
         }

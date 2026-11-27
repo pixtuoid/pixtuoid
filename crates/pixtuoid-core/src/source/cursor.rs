@@ -6,11 +6,11 @@
 //! one we would have to launch, and on-disk sessions are a per-chat `store.db`
 //! (`2724.index.js`). So **Cursor Hooks** (`~/.cursor/hooks.json`:
 //! `9622.index.js`'s `userConfigPath`) is the seam. A per-session JSONL
-//! transcript does exist and the envelope carries its `transcript_path`, null
+//! transcript does exist and the payload carries its `transcript_path`, null
 //! until the file exists (the child bullet below) — the seam if a watcher is
 //! ever wanted.
 //!
-//! The recorded envelope (`cursor/fixtures/tool-run`) reuses CC's
+//! The recorded payload (`cursor/fixtures/tool-run`) reuses CC's
 //! `hook_event_name` field NAME with **camelCase values**; `tool_name` is
 //! PascalCase and the TOP-LEVEL `cwd` is empty — `workspace_roots[0]` is the
 //! real workspace. Keyed on `session_id`, present and CONSISTENT across every
@@ -86,8 +86,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     native: crate::source::registry::Native::NONE,
 };
 
-/// Cursor's hook envelope: `hook_event_name` from cursor.com/docs/hooks's
-/// common schema, `session_id` as the module doc keys it.
+/// Where Cursor's hook payload names its event and session: `hook_event_name`
+/// from cursor.com/docs/hooks's common schema, `session_id` as the module doc
+/// keys it.
 const ENVELOPE: Envelope = Envelope {
     event_field: "hook_event_name",
     session_field: SessionField {
