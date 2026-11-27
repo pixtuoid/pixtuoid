@@ -4,7 +4,8 @@
 //! one-AgentId rule cannot hold.
 //!
 //! It pins that the child is a session of its own, linked to its parent by its
-//! nested transcript path, and that the parent's `Task` dispatch ends on its own post.
+//! nested transcript path or else by the parent's foreground `Task` post, and
+//! that the dispatch ends on that post.
 
 use std::collections::BTreeSet;
 
@@ -78,6 +79,56 @@ fn a_task_dispatch_ends_on_the_post_that_carries_its_id() {
         )),
         "its post ends it"
     );
+}
+
+/// Every post of a short child can precede its transcript (`source::cursor`'s
+/// module doc), so none names its parent. With the child's posts and the
+/// parent's `sessionEnd` cut, the parent's `Task` post alone links the child
+/// and ends it.
+#[test]
+fn a_child_naming_no_parent_is_linked_and_ended_by_its_parents_task_post() {
+    let rows: Vec<(String, serde_json::Value)> = lines()
+        .into_iter()
+        .map(|l| {
+            let v = serde_json::from_str(&l).expect("a payload");
+            (l, v)
+        })
+        .collect();
+    let session = |v: &serde_json::Value| v["session_id"].as_str().expect("keyed").to_owned();
+    let event = |v: &serde_json::Value| v["hook_event_name"].as_str().map(str::to_owned);
+    let parent = rows
+        .iter()
+        .find(|(_, v)| event(v).as_deref() == Some("sessionStart"))
+        .map(|(_, v)| session(v))
+        .expect("the parent starts");
+    let cut = rows.iter().filter(|(_, v)| match event(v).as_deref() {
+        Some("sessionEnd") => false,
+        Some("postToolUse") => session(v) == parent,
+        _ => true,
+    });
+    let d = Drive::hooks().lines(cut.map(|(l, _)| l.clone()));
+    d.assert_clean("cursor delegation, the child's posts cut");
+    assert!(
+        !d.events.iter().any(|e| matches!(
+            e,
+            AgentEvent::SessionStart {
+                parent_id: Some(_),
+                ..
+            }
+        )),
+        "no event of the child's names its parent"
+    );
+    let parent = pixtuoid_core::AgentId::from_parts("cursor", &parent);
+    let child = d
+        .scene
+        .agents
+        .keys()
+        .copied()
+        .find(|id| *id != parent)
+        .expect("the child registers");
+    let slot = &d.scene.agents[&child];
+    assert_eq!(slot.parent_id, Some(parent), "the Task post links it");
+    assert!(slot.exiting_at.is_some(), "the Task post ends it");
 }
 
 /// The child appears on its first tool event, before the wire names its

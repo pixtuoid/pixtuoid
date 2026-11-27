@@ -885,6 +885,48 @@ fn child_lifecycle_is_stamped_on_sweep_and_pruned_by_gc() {
     );
 }
 
+/// A late link records the child's lifecycle as a linked start does, so its
+/// next life re-joins the parent (#246).
+#[test]
+fn a_parent_link_records_the_child_lifecycle() {
+    use crate::AgentId;
+    use crate::source::{AgentEvent, Transport};
+    use crate::state::SceneState;
+    use std::path::PathBuf;
+    use std::time::{Duration, SystemTime};
+
+    let mut r = super::Reducer::new();
+    let mut scene = SceneState::uniform(4);
+    let [parent, child] = ["parent", "child"].map(|s| AgentId::from_parts("cursor", s));
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    for agent_id in [parent, child] {
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id,
+                source: "cursor".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id: None,
+            },
+            t0,
+            Transport::Hook,
+        );
+    }
+    r.apply(
+        &mut scene,
+        AgentEvent::ParentLink {
+            agent_id: child,
+            parent_id: parent,
+        },
+        t0,
+        Transport::Hook,
+    );
+    let entry = r.corr.lifecycles.get(&child).expect("child link recorded");
+    assert_eq!(entry.parent_id, Some(parent));
+    assert!(entry.child_end.is_none(), "alive — no gc clock yet");
+}
+
 /// A synthetic stream of one iteration a second through the REAL reducer: a
 /// per-event leak (a missed prune site) grows a map ~linearly and blows the bound.
 #[test]

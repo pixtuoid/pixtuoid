@@ -1021,6 +1021,9 @@ pub pixtuoid_core::source::AgentEvent::ModelInfo
 pub pixtuoid_core::source::AgentEvent::ModelInfo::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::ModelInfo::effort: core::option::Option<alloc::string::String>
 pub pixtuoid_core::source::AgentEvent::ModelInfo::model: core::option::Option<alloc::string::String>
+pub pixtuoid_core::source::AgentEvent::ParentLink
+pub pixtuoid_core::source::AgentEvent::ParentLink::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::source::AgentEvent::ParentLink::parent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::ProofOfLife
 pub pixtuoid_core::source::AgentEvent::ProofOfLife::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::source::AgentEvent::Rename
@@ -1811,6 +1814,9 @@ pub pixtuoid_core::AgentEvent::ModelInfo
 pub pixtuoid_core::AgentEvent::ModelInfo::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::ModelInfo::effort: core::option::Option<alloc::string::String>
 pub pixtuoid_core::AgentEvent::ModelInfo::model: core::option::Option<alloc::string::String>
+pub pixtuoid_core::AgentEvent::ParentLink
+pub pixtuoid_core::AgentEvent::ParentLink::agent_id: pixtuoid_core::id::AgentId
+pub pixtuoid_core::AgentEvent::ParentLink::parent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::ProofOfLife
 pub pixtuoid_core::AgentEvent::ProofOfLife::agent_id: pixtuoid_core::id::AgentId
 pub pixtuoid_core::AgentEvent::Rename

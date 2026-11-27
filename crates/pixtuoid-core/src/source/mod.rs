@@ -215,6 +215,15 @@ pub enum AgentEvent {
         /// The label, minted as a [`Rename`](Self::Rename)'s is.
         label: String,
     },
+    /// A parent's word that `agent_id` is its child: links a live, unlinked
+    /// slot and never registers one, since the parent's event is no proof the
+    /// child lives.
+    ParentLink {
+        /// The child.
+        agent_id: AgentId,
+        /// Its parent.
+        parent_id: AgentId,
+    },
     /// A session ended — marks the slot exiting (GC'd after the grace window).
     SessionEnd {
         /// The ending agent.
@@ -555,6 +564,7 @@ impl AgentEvent {
             AgentEvent::UserActionResolved { agent_id, .. } => *agent_id,
             AgentEvent::Rename { agent_id, .. } => *agent_id,
             AgentEvent::LabelHint { agent_id, .. } => *agent_id,
+            AgentEvent::ParentLink { agent_id, .. } => *agent_id,
             AgentEvent::SessionEnd { agent_id, .. } => *agent_id,
             AgentEvent::ProofOfLife { agent_id, .. } => *agent_id,
             AgentEvent::Identity { agent_id, .. } => *agent_id,
@@ -582,6 +592,7 @@ impl AgentEvent {
             AgentEvent::SessionStart { .. }
             | AgentEvent::Rename { .. }
             | AgentEvent::LabelHint { .. }
+            | AgentEvent::ParentLink { .. }
             | AgentEvent::SessionEnd { .. }
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
@@ -644,6 +655,7 @@ impl AgentEvent {
             AgentEvent::SessionStart { .. }
             | AgentEvent::Rename { .. }
             | AgentEvent::LabelHint { .. }
+            | AgentEvent::ParentLink { .. }
             | AgentEvent::SessionEnd { .. }
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
