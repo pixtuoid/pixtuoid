@@ -868,10 +868,18 @@ mod tests {
                 [AgentEvent::Identity { .. }]
             ));
         });
-        assert!(
-            logs.contains(TURN_ID) && logs.contains("tool_use_id"),
-            "{logs}"
-        );
+        for (event, field) in [("Stop", TURN_ID), ("PreToolUse", "tool_use_id")] {
+            let fields = [("event", event), ("field", field)];
+            assert!(
+                crate::source::drift::breadcrumbed(
+                    &logs,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::MissingField,
+                    &fields
+                ),
+                "{fields:?}\n{logs}"
+            );
+        }
     }
 
     #[test]
@@ -1102,7 +1110,15 @@ mod tests {
                 "an end naming no turn still ends the work: {out:?}"
             );
         });
-        assert!(logs.contains(TURN_ID), "{logs}");
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("event", "task_complete"), ("field", TURN_ID)]
+            ),
+            "{logs}"
+        );
     }
 
     #[test]
