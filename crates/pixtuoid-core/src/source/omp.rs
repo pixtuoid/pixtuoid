@@ -2126,7 +2126,22 @@ mod tests {
             let out = crate::test_capture::capture_logs(|| {
                 evs = decode(&missing);
             });
-            assert_eq!(out.contains(field), drift, "{field}: {line}\n{out}");
+            if drift {
+                assert!(
+                    crate::source::drift::breadcrumbed(
+                        &out,
+                        SOURCE_NAME,
+                        crate::source::drift::DriftKind::MissingField,
+                        &[("field", field)]
+                    ),
+                    "{field}: {line}\n{out}"
+                );
+            } else {
+                assert!(
+                    !out.contains(crate::source::drift::TARGET),
+                    "{field}: {line}\n{out}"
+                );
+            }
             match (field, &evs[..]) {
                 ("approved", [AgentEvent::ToolUseEnd { .. }]) | ("toolName", [_]) => {}
                 other => panic!("{field}: {line}: {other:?}"),

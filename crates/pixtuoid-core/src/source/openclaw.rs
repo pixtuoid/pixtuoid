@@ -454,7 +454,7 @@ mod tests {
             .expect("decodes");
         });
         assert!(
-            !logs.contains("missing_field"),
+            !logs.contains(crate::source::drift::TARGET),
             "a port-bearing envelope must be silent, got:\n{logs}"
         );
     }
