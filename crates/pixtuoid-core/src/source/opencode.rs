@@ -1,7 +1,8 @@
 //! opencode source — HOOK-ONLY, via a bundled TS plugin.
 //!
-//! opencode keeps sessions in SQLite with no tailable transcript, so its one
-//! external seam is the plugin API: the bundled plugin
+//! opencode keeps sessions in SQLite (`packages/cli/src/database-path.ts:4-13`,
+//! `packages/core/src/database/database.ts:3-4` at v2.4.1) with no tailable
+//! transcript, so its one external seam is the plugin API: the bundled plugin
 //! (`install/opencode_plugin.ts`) reads `ctx.event.subscribe()` and pipes an
 //! allowlisted copy of each event into the `pixtuoid-hook` shim:
 //!
@@ -9,31 +10,33 @@
 //! {"type":"session.execution.started","data":{"sessionID":"ses_…","location":{"directory":"/repo"},"parentID":"ses_…","model":{"id":"…"}},"_pid":12345}
 //! ```
 //!
-//! The upstream facts the decode rests on, at opencode v2:
+//! The upstream facts the decode rests on, at opencode v2.4.1:
 //!
-//! - `sessionID` is on every session event and is the session's durable key,
-//!   so slots key on it.
+//! - `sessionID` is on every session event and is the session's durable key
+//!   (`packages/schema/src/session-event.ts:29-36`), so slots key on it.
 //! - A subagent is a child SESSION: the `subagent` tool creates it with
-//!   `parentID` (`packages/core/src/tool/plugin/subagent.ts:188-189`), so the
+//!   `parentID` (`packages/core/src/tool/plugin/subagent.ts:175-176`), so the
 //!   record its first start carries links it.
-//! - A session registers at its first turn's start, the one signal for it: the
-//!   plugin's subscription may not be live yet when opencode publishes the
-//!   session's creation (#1934).
-//! - An event published in a location carries it on its envelope, beside
-//!   `data` (`packages/schema/src/event.ts:114`, `:138`): the recording's tool
-//!   and permission events do, its `session.execution.*` events do not.
+//! - A session registers at its first turn's start, `session.execution.started`,
+//!   which each execution's start publishes (`packages/core/src/session/execution.ts:139-146`,
+//!   `run-coordinator.ts:61-62`, `:98`),
+//!   so a session the plugin joined late registers on its next turn (#1934).
+//! - An event published in a location carries it at its payload's top level, beside
+//!   `data` (`packages/schema/src/event.ts:114`, `:138`):
+//!   `opencode/fixtures/permission-hermetic`'s tool and permission events do,
+//!   its `session.execution.*` events do not.
 
 use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, required,
-    required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
     SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
@@ -52,9 +55,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: None,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_oc_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_oc_hook_payload,
+        }),
         caps: SourceCaps {
-            // A TUI quit ends nothing: the session lives on in the server.
+            // A TUI quit ends nothing (`opencode/fixtures/cancel-hermetic`): the
+            // session lives on in the server.
             has_exit_signal: false,
             // The next prompt's `session.execution.started` decodes to
             // `SessionStart`.
@@ -62,15 +69,15 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A `subagent` child is parented by its first start's `parentID`, so
             // its events keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,
-            // A `subagent` call can return while its child runs on
-            // (`packages/core/src/tool/plugin/subagent.ts:229-243` at v2.0.32),
+            // A `subagent` call returns at launch, its child running on
+            // (`packages/core/src/tool/plugin/subagent.ts:216-217` at v2.4.1),
             // and a session ends only by `session.deleted`.
             child_end_inference: ChildEndInference::Durable,
             child_hooks_unnamed: false,
             brackets_turns: true,
         },
         // The plugin runs in the background server every TUI attaches to
-        // (`packages/client/src/service-contender.ts:19-20`), not in a TUI.
+        // (`packages/client/src/service-contender.ts:19-20` at v2.4.1), not in a TUI.
         focus: FocusChannel::ServerStamp,
     },
     #[cfg(feature = "native")]
@@ -87,7 +94,7 @@ const TOOL_SUCCESS: &str = "session.tool.success";
 const TOOL_FAILED: &str = "session.tool.failed";
 const PERMISSION_ASKED: &str = "permission.asked";
 
-/// The envelope's turn: an execution start's durable `seq`, which the plugin
+/// The payload's turn: an execution start's durable `seq`, which the plugin
 /// also stamps on that execution's settle; one whose start it never saw names
 /// none. Pinned to the plugin's key by its selftest, through
 /// `the_plugin_contract_is_the_committed_file`.
@@ -115,14 +122,14 @@ pub const DECODED_EVENTS: &[&str] = &[
     PERMISSION_ASKED,
 ];
 
-/// Every `data` path `field` reads, dotted, pinned by
+/// Every `data` path the decoder reads, dotted, pinned by
 /// `every_decoded_data_field_is_read`. The plugin's `allowlisted` copies these
 /// and nothing more, which its selftest holds it to through
 /// `the_plugin_contract_is_the_committed_file`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_DATA_FIELDS: &[&str] = &[
-    "sessionID",
+    ENVELOPE.session_field.field,
     "parentID",
     "location.directory",
     "model.id",
@@ -132,16 +139,25 @@ pub const DECODED_DATA_FIELDS: &[&str] = &[
     "source.id",
 ];
 
-/// Decode one opencode plugin envelope (already identified by
-/// `_pixtuoid_source == "opencode"`). An unmapped `type` is a benign skip: the
-/// forward filter lives in the plugin.
+/// Where the plugin's payload names its event and session: an event's `type`, and its `data`
+/// copied field by field.
+const ENVELOPE: Envelope = Envelope {
+    event_field: "type",
+    session_field: SessionField {
+        within: Some("data"),
+        field: "sessionID",
+    },
+};
+
+/// Decode one opencode plugin payload (already identified by
+/// `_pixtuoid_source == "opencode"`). The plugin forwards only
+/// `DECODED_EVENTS`, so an unmapped `type` is drift between the two.
 ///
 /// # Errors
 ///
-/// If the payload lacks `type`, or a mapped event lacks a
-/// non-empty `data.sessionID`.
-pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, "type", |k| obj.get(k)?.as_str())?;
+/// If a mapped event lacks a non-empty `data.sessionID`.
+pub(crate) fn decode_oc_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     let empty = Map::new();
     let data = obj.get("data").and_then(Value::as_object).unwrap_or(&empty);
     let at = obj
@@ -152,48 +168,49 @@ pub(crate) fn decode_oc_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
 
     let read_turn = |k: &str| obj.get(k).and_then(Value::as_u64).map(TurnKey::Seq);
     let turn = read_turn(TURN);
-    match event {
+    Ok(Some(match event {
         // A new prompt re-emits SessionStart, the event that walks a swept
-        // session back in, mid-walkout too. Its own `data` is only `sessionID`,
-        // so the plugin adds the session's record (`ctx.session.get`).
+        // session back in, mid-walkout too. Its own `data` is only `sessionID`
+        // (`packages/schema/src/session-event.ts:245` at v2.4.1), so the plugin
+        // adds the session's record (`ctx.session.get`).
         EXECUTION_STARTED => {
-            let mut out = session_start(data, at, event)?;
+            let mut out = session_start(hook, data, at)?;
             if let Some(turn) = required(SOURCE_NAME, event, TURN, read_turn) {
                 out.push(AgentEvent::TurnStart {
-                    agent_id: session(data, event)?.0,
+                    agent_id: session(hook)?.0,
                     turn,
                 });
             }
-            Ok(out)
+            out
         }
-        // `data` is only `sessionID` (`packages/schema/src/session-event.ts:178`,
-        // `Base`), so a child's end cannot be told from a root's here.
-        SESSION_DELETED => Ok(vec![AgentEvent::SessionEnd {
-            agent_id: session(data, event)?.0,
+        // `data` is only `sessionID` (`packages/schema/src/session-event.ts:182-188`
+        // at v2.4.1), so a child's end cannot be told from a root's here.
+        SESSION_DELETED => vec![AgentEvent::SessionEnd {
+            agent_id: session(hook)?.0,
             as_child: false,
-        }]),
+        }],
         EXECUTION_SUCCEEDED | EXECUTION_FAILED | EXECUTION_INTERRUPTED => {
-            ended(data, at, event, |agent_id| match turn {
+            ended(hook, at, |agent_id| match turn {
                 Some(turn) => AgentEvent::keyed_turn_end(agent_id, turn),
                 None => AgentEvent::turn_end(agent_id),
-            })
+            })?
         }
-        TOOL_STARTED => tool_started(data, at),
+        TOOL_STARTED => tool_started(hook, data, at)?,
         TOOL_SUCCESS | TOOL_FAILED => {
             let tool_use_id = field(data, "id").map(str::to_owned);
-            ended(data, at, event, |agent_id| AgentEvent::ToolUseEnd {
+            ended(hook, at, |agent_id| AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id,
-            })
+            })?
         }
-        PERMISSION_ASKED => permission_asked(data, at),
-        _ => Ok(vec![]),
-    }
+        PERMISSION_ASKED => permission_asked(hook, data, at)?,
+        _ => return Ok(None),
+    }))
 }
 
 /// The session an event concerns: its agent id and its `sessionID`.
-fn session<'d>(data: &'d Map<String, Value>, event: &str) -> Result<(AgentId, &'d str)> {
-    let session_id = required_or_err(SOURCE_NAME, Some(event), "sessionID", |k| field(data, k))?;
+fn session<'h>(hook: &Hook<'h>) -> Result<(AgentId, &'h str)> {
+    let session_id = hook.session()?;
     Ok((AgentId::from_parts(SOURCE_NAME, session_id), session_id))
 }
 
@@ -219,13 +236,13 @@ fn identity(agent_id: AgentId, session_id: &str, at: Option<&str>) -> AgentEvent
 }
 
 /// `location.directory` is the cwd, `parentID` the parent session, and
-/// `model.id` the raw model slug.
+/// `model.id` the raw model slug (`opencode/fixtures/subagent-hermetic`).
 fn session_start(
+    hook: &Hook<'_>,
     data: &Map<String, Value>,
     at: Option<&str>,
-    event: &str,
 ) -> Result<Vec<AgentEvent>> {
-    let (agent_id, session_id) = session(data, event)?;
+    let (agent_id, session_id) = session(hook)?;
     let cwd = field(data, "location.directory").or(at);
     let mut out = Vec::new();
     // A start the plugin could not read a record for has no cwd, and a
@@ -252,19 +269,23 @@ fn session_start(
 /// An end, led by Identity (#221) as a tool start and a permission ask are,
 /// so one for a slot the reaper removed registers it again.
 fn ended(
-    data: &Map<String, Value>,
+    hook: &Hook<'_>,
     at: Option<&str>,
-    event: &str,
     end: impl FnOnce(AgentId) -> AgentEvent,
 ) -> Result<Vec<AgentEvent>> {
-    let (agent_id, session_id) = session(data, event)?;
+    let (agent_id, session_id) = session(hook)?;
     Ok(vec![identity(agent_id, session_id, at), end(agent_id)])
 }
 
-/// The tool's `id` is the call id its `success`/`failed` pair on. The input
-/// rides a later event, so the detail is the tool's name alone, or a Task.
-fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<AgentEvent>> {
-    let (agent_id, session_id) = session(data, TOOL_STARTED)?;
+/// The tool's `id` is the call id its `success`/`failed` pair on, and its input
+/// rides the later `session.tool.called` (`packages/schema/src/session-event.ts:485-498`,
+/// `:523-531` at v2.4.1), so the detail is the tool's name alone, or a Task.
+fn tool_started(
+    hook: &Hook<'_>,
+    data: &Map<String, Value>,
+    at: Option<&str>,
+) -> Result<Vec<AgentEvent>> {
+    let (agent_id, session_id) = session(hook)?;
     let name = required(SOURCE_NAME, TOOL_STARTED, "name", |k| field(data, k)).unwrap_or("?");
     Ok(vec![
         identity(agent_id, session_id, at),
@@ -282,9 +303,13 @@ fn tool_started(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<Agent
 }
 
 /// [`AgentEvent::UserActionRequest`], labelled by the request's `action` and keyed on its tool call
-/// (`source.id`) when it has one.
-fn permission_asked(data: &Map<String, Value>, at: Option<&str>) -> Result<Vec<AgentEvent>> {
-    let (agent_id, session_id) = session(data, PERMISSION_ASKED)?;
+/// (`source.id`) when it has one (`opencode/fixtures/permission-hermetic`).
+fn permission_asked(
+    hook: &Hook<'_>,
+    data: &Map<String, Value>,
+    at: Option<&str>,
+) -> Result<Vec<AgentEvent>> {
+    let (agent_id, session_id) = session(hook)?;
     let reason = field(data, "action").map_or_else(
         || "permission".to_owned(),
         |a| ellipsize(a, MAX_DECODED_FIELD_CHARS),
@@ -307,10 +332,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_oc_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     /// The payload's MAIN event: the last decoded, after any Identity.
@@ -322,8 +347,8 @@ mod tests {
         json!({"type": EXECUTION_STARTED, "data": data, "_pid": 13358})
     }
 
-    /// [`field`]'s assertion holds every read to the list; this holds every
-    /// listed path to a read, by blanking it.
+    /// [`field`]'s assertion holds every read but the session's to the list;
+    /// this holds every listed path to a read, by blanking it.
     #[test]
     fn every_decoded_data_field_is_read() {
         let full = json!({"sessionID": "s", "parentID": "p", "location": {"directory": "/r"},
@@ -332,7 +357,7 @@ mod tests {
         let decoded = |ev: &str, data: &Value| {
             format!(
                 "{:?}",
-                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": data})))
+                test_decode(SOURCE_NAME, &json!({"type": ev, "data": data}))
             )
         };
         for path in DECODED_DATA_FIELDS {
@@ -350,7 +375,7 @@ mod tests {
     }
 
     /// Every exported type reaches an arm and decodes to an event, and an
-    /// unmapped one is a benign skip.
+    /// unmapped one is refused.
     #[test]
     fn the_decoded_event_set_is_exactly_what_the_arms_match() {
         for ev in DECODED_EVENTS {
@@ -360,8 +385,11 @@ mod tests {
             assert!(!got.is_empty(), "{ev} must reach a real arm");
         }
         assert!(
-            decode_all(json!({"type": "session.viewed", "data": {"sessionID": "ses_x"}}))
-                .is_empty()
+            test_decode(
+                SOURCE_NAME,
+                &json!({"type": "session.viewed", "data": {"sessionID": "ses_x"}})
+            )
+            .is_err()
         );
     }
 
@@ -411,14 +439,17 @@ mod tests {
     }
 
     /// `session.forked`'s `parentID` is the session it was copied from, beside
-    /// a message `boundary` (`packages/schema/src/session-event.ts:187-200`),
-    /// not a parent.
+    /// a message `boundary` (`packages/schema/src/session-event.ts:192-205` at
+    /// v2.4.1), not a parent.
     #[test]
     fn a_fork_is_no_child() {
         assert!(
-            decode_all(json!({"type": "session.forked", "data": {
-                "sessionID": "ses_f", "parentID": "ses_p", "boundary": {}}}))
-            .is_empty()
+            test_decode(
+                SOURCE_NAME,
+                &json!({"type": "session.forked", "data": {
+                "sessionID": "ses_f", "parentID": "ses_p", "boundary": {}}})
+            )
+            .is_err()
         );
     }
 
@@ -488,7 +519,12 @@ mod tests {
             );
         });
         assert!(
-            logs.contains("missing_field") && logs.contains(TURN),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("field", TURN)]
+            ),
             "{logs}"
         );
     }
@@ -525,7 +561,7 @@ mod tests {
                     "{ev}: {got:?}"
                 );
             });
-            assert!(!logs.contains("missing_field"), "{ev}: {logs}");
+            assert!(!logs.contains(crate::source::drift::TARGET), "{ev}: {logs}");
         }
     }
 
@@ -566,15 +602,14 @@ mod tests {
 
     #[test]
     fn malformed_payloads_are_errors_not_panics() {
-        assert!(decode_oc_hook_payload(test_obj(&json!({"data": {"sessionID": "s"}}))).is_err());
+        assert!(test_decode(SOURCE_NAME, &json!({"data": {"sessionID": "s"}})).is_err());
         for ev in DECODED_EVENTS {
             assert!(
-                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": {}}))).is_err(),
+                test_decode(SOURCE_NAME, &json!({"type": ev, "data": {}})).is_err(),
                 "{ev} without a sessionID"
             );
             assert!(
-                decode_oc_hook_payload(test_obj(&json!({"type": ev, "data": {"sessionID": ""}})))
-                    .is_err(),
+                test_decode(SOURCE_NAME, &json!({"type": ev, "data": {"sessionID": ""}})).is_err(),
                 "{ev} with an empty sessionID"
             );
         }

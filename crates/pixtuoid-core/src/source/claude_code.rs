@@ -7,13 +7,14 @@ use serde_json::Value;
 use crate::source::decoder::TailActivity;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, make_tool_detail, non_empty,
-    required, required_or_err,
+    required,
 };
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind, ToolIdKey, Transcript,
+    ChildEndInference, FocusChannel, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
+    SourceKind, ToolIdKey, Transcript,
 };
 use crate::source::{AgentEvent, CopyId};
 
@@ -90,60 +91,41 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// CC's source-specific hook arms, which change the event's SUBJECT to a
 /// subagent's AgentId where the shared session-keyed arms cannot:
 /// `SubagentStart`/`SubagentStop`, and any other event a subagent fires, which
-/// names it in `agent_id` beside the ROOT's `session_id` (hooks.md: the
-/// `agent_id` and `agent_type` "that identify the subagent"). A main-thread event
-/// falls through (`Ok(None)`). Needed despite JSONL registration: a
-/// Workflow-tool fleet's subagents carry no `Agent` tool_use and no end marker,
-/// so without `SubagentStop` they hold desks until the stale sweep.
-pub(crate) fn decode_cc_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    let event = obj
-        .get(crate::source::decoder::HOOK_EVENT_NAME)
-        .and_then(|s| s.as_str())
-        .unwrap_or("");
-    if event != "SubagentStart" && event != "SubagentStop" {
-        return crate::source::decoder::subagent_fired(obj, SOURCE_NAME, subagent_session);
-    }
-    // Registry contract: claim our two events FULLY (Err on malformed), never
-    // fall through — an empty id mints a phantom that never coalesces.
-    let session_id = crate::source::decoder::hook_session_id(obj, SOURCE_NAME, event)?;
-    let wire_agent_id = required_or_err(
-        SOURCE_NAME,
-        Some(event),
-        crate::source::decoder::SUBAGENT_ID,
-        |k| non_empty(obj, k),
-    )?;
-    let prefixed = subagent_session(wire_agent_id);
-    if event == "SubagentStart" {
-        let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-        Ok(Some(vec![AgentEvent::SessionStart {
-            agent_id: AgentId::from_parts(SOURCE_NAME, &prefixed),
-            source: SOURCE_NAME.to_string(),
-            session_id: prefixed,
-            cwd,
-            parent_id: Some(AgentId::from_parts(SOURCE_NAME, &session_id)),
-        }]))
-    } else {
-        // `SubagentStop` also carries `agent_transcript_path`, whose stem is the
-        // authoritative key — exact parity with the watcher's own deriver.
-        let path_key = non_empty(obj, "agent_transcript_path")
-            .map(|p| cc_id_from_path(Path::new(&crate::id::normalize_path_key(p))))
-            .filter(|s| !s.is_empty());
-        if let Some(ref k) = path_key
-            && *k != prefixed
-        {
-            // Upstream scheme change: hook-FIRST Start registrations go phantom.
-            crate::source::drift::shape_drift(
-                SOURCE_NAME,
-                crate::source::drift::ShapeDrift::SubagentStem {
-                    stem: k,
-                    agent_id: &prefixed,
-                },
-            );
+/// names it in `agent_id` beside the ROOT's `session_id`
+/// (<https://code.claude.com/docs/en/hooks>: the `agent_id` and `agent_type`
+/// "that identify the subagent"). A main-thread event falls through
+/// (`Ok(None)`). `SubagentStop` fires "when a subagent finishes" (the same
+/// page's events table), so a child ends without waiting for the stale sweep.
+pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    use crate::source::decoder::{subagent_fired, subagent_id, subagent_start};
+    match hook.event {
+        "SubagentStart" => subagent_start(hook, subagent_session).map(Some),
+        "SubagentStop" => {
+            let prefixed = subagent_session(subagent_id(hook)?);
+            // `SubagentStop` also carries `agent_transcript_path`
+            // (`claude_code/fixtures/subagent-hermetic`), whose stem is the
+            // authoritative key — exact parity with the watcher's own deriver.
+            let path_key = non_empty(hook.obj, "agent_transcript_path")
+                .map(|p| cc_id_from_path(Path::new(&crate::id::normalize_path_key(p))))
+                .filter(|s| !s.is_empty());
+            if let Some(ref k) = path_key
+                && *k != prefixed
+            {
+                // Upstream scheme change: hook-FIRST Start registrations go phantom.
+                crate::source::drift::shape_drift(
+                    SOURCE_NAME,
+                    crate::source::drift::ShapeDrift::SubagentStem {
+                        stem: k,
+                        agent_id: &prefixed,
+                    },
+                );
+            }
+            Ok(Some(vec![AgentEvent::SessionEnd {
+                agent_id: AgentId::from_parts(SOURCE_NAME, &path_key.unwrap_or(prefixed)),
+                as_child: true,
+            }]))
         }
-        Ok(Some(vec![AgentEvent::SessionEnd {
-            agent_id: AgentId::from_parts(SOURCE_NAME, &path_key.unwrap_or(prefixed)),
-            as_child: true,
-        }]))
+        _ => subagent_fired(hook, subagent_session),
     }
 }
 
@@ -480,7 +462,7 @@ pub fn cc_derive_label(path: &Path, source: &str, cwd: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{test_decode, test_hook};
     use serde_json::json;
 
     #[test]
@@ -580,7 +562,12 @@ mod tests {
             let _ = decode_cc_line("/p/s.jsonl", SOURCE_NAME, line);
         });
         assert!(
-            out.contains(crate::source::drift::TARGET) && out.contains("assistant-v2"),
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::UnknownEvent,
+                &[("name", "assistant-v2")]
+            ),
             "a renamed turn type went unreported:\n{out}"
         );
     }
@@ -629,13 +616,14 @@ mod tests {
                 let _ = decode_cc_line("/p/s.jsonl", SOURCE_NAME, line);
             }
         });
-        assert!(
-            out.contains(crate::source::drift::TARGET) && out.contains("message"),
-            "a decoded type losing `message` must name the field it lost:\n{out}"
-        );
         for ty in DECODED_TYPES {
             assert!(
-                out.contains(ty),
+                crate::source::drift::breadcrumbed(
+                    &out,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::MissingField,
+                    &[("event", ty), ("field", MESSAGE)]
+                ),
                 "{ty} lost `message` and decoded to nothing, silently:\n{out}"
             );
         }
@@ -708,7 +696,7 @@ mod tests {
             assert_eq!(
                 cc_activity_recency(line("some-new-type", half).as_bytes()),
                 TailActivity::SidecarOnly,
-                "half a message envelope must not read as a turn — the predicate is \
+                "half a `message` must not read as a turn — the predicate is \
                  the CONJUNCTION, or a future CC sidecar type floods: {half}"
             );
         }
@@ -957,30 +945,46 @@ mod tests {
 
     #[test]
     fn subagent_hooks_with_empty_ids_are_err_not_fallthrough() {
+        // A child's end keys on the child alone, so only a start reads the root.
+        let event = "SubagentStart";
+        let no_session = json!({"hook_event_name": event, "agent_id": "abc"});
+        let mut err = None;
+        let logs = crate::test_capture::capture_logs(|| {
+            err = test_decode(SOURCE_NAME, &no_session).err();
+        });
+        assert!(
+            matches!(
+                &err,
+                Some(crate::source::decoder::DecodeError::Missing {
+                    context: Some(context),
+                    field: "session_id",
+                    ..
+                }) if context == event
+            ),
+            "{event} without session_id must Err naming it in {event}, got {err:?}"
+        );
+        let fields = [("event", event), ("field", "session_id")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "{fields:?} in\n{logs}"
+        );
         for event in ["SubagentStart", "SubagentStop"] {
-            let no_session = json!({"hook_event_name": event, "agent_id": "abc"});
-            let mut err = None;
-            let logs = crate::test_capture::capture_logs(|| {
-                err = decode_cc_hook_custom(test_obj(&no_session)).err();
-            });
+            let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
+            let decoded = test_decode(SOURCE_NAME, &empty_child);
             assert!(
                 matches!(
-                    &err,
-                    Some(crate::source::decoder::DecodeError::Missing {
-                        context: Some(context),
-                        field: "session_id",
+                    decoded,
+                    Err(crate::source::decoder::DecodeError::Missing {
+                        field: crate::source::decoder::SUBAGENT_ID,
                         ..
-                    }) if context == event
+                    })
                 ),
-                "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
-            );
-            for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
-                assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
-            }
-            let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
-            assert!(
-                decode_cc_hook_custom(test_obj(&empty_child)).is_err(),
-                "{event} with empty agent_id must Err — a phantom child never coalesces"
+                "{event} with empty agent_id must err naming it, got {decoded:?}"
             );
         }
     }
@@ -989,9 +993,7 @@ mod tests {
     fn subagent_stop_warns_only_when_stem_and_wire_id_disagree() {
         let capture = |payload: serde_json::Value| {
             crate::test_capture::capture_logs(|| {
-                decode_cc_hook_custom(test_obj(&payload))
-                    .expect("decodes")
-                    .expect("claimed");
+                test_decode(SOURCE_NAME, &payload).expect("decodes");
             })
         };
         let matched = capture(json!({
@@ -1001,7 +1003,7 @@ mod tests {
             "agent_transcript_path": "/p/parent/subagents/agent-abc123.jsonl"
         }));
         assert!(
-            !matched.contains("shape_drift"),
+            !matched.contains(crate::source::drift::TARGET),
             "an agreeing stem must stay silent, got:\n{matched}"
         );
         let drifted = capture(json!({
@@ -1011,7 +1013,12 @@ mod tests {
             "agent_transcript_path": "/p/parent/subagents/agent-zzz999.jsonl"
         }));
         assert!(
-            drifted.contains("shape_drift") && drifted.contains("agent-zzz999"),
+            crate::source::drift::breadcrumbed(
+                &drifted,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::ShapeDrift,
+                &[("stem", "\"agent-zzz999\"")]
+            ),
             "a disagreeing stem must fire the drift alarm, got:\n{drifted}"
         );
     }
@@ -1019,18 +1026,23 @@ mod tests {
     #[test]
     fn non_subagent_events_fall_through_to_shared_arms() {
         let start = json!({"hook_event_name": "SessionStart", "session_id": "s"});
-        assert!(matches!(decode_cc_hook_custom(test_obj(&start)), Ok(None)));
+        assert!(matches!(
+            decode_cc_hook_custom(&test_hook(SOURCE_NAME, &start)),
+            Ok(None)
+        ));
     }
 
     #[test]
     fn subagent_stop_keys_on_stem_when_it_disagrees_with_prefixed_wire_id() {
-        let evs = decode_cc_hook_custom(test_obj(&json!({
-            "hook_event_name": "SubagentStop",
-            "session_id": "s",
-            "agent_id": "abc",
-            "agent_transcript_path": "/p/q/01-deadbeef/subagents/agent-zzz.jsonl"
-        })))
-        .unwrap()
+        let evs = test_decode(
+            SOURCE_NAME,
+            &json!({
+                "hook_event_name": "SubagentStop",
+                "session_id": "s",
+                "agent_id": "abc",
+                "agent_transcript_path": "/p/q/01-deadbeef/subagents/agent-zzz.jsonl"
+            }),
+        )
         .unwrap();
         assert_eq!(evs.len(), 1, "SubagentStop emits exactly one event");
         match &evs[0] {
@@ -1053,13 +1065,15 @@ mod tests {
 
     #[test]
     fn subagent_stop_with_stemless_path_falls_back_to_prefixed_id() {
-        let evs = decode_cc_hook_custom(test_obj(&json!({
-            "hook_event_name": "SubagentStop",
-            "session_id": "s",
-            "agent_id": "abc",
-            "agent_transcript_path": "/"
-        })))
-        .unwrap()
+        let evs = test_decode(
+            SOURCE_NAME,
+            &json!({
+                "hook_event_name": "SubagentStop",
+                "session_id": "s",
+                "agent_id": "abc",
+                "agent_transcript_path": "/"
+            }),
+        )
         .unwrap();
         assert_eq!(
             evs[0].agent_id(),

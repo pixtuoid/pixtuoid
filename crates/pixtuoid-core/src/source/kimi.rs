@@ -3,10 +3,10 @@
 //! Session transcripts DO exist (`<KIMI_CODE_HOME>/sessions/<workDirKey>/
 //! <sessionId>/agents/main/wire.jsonl`, default home `~/.kimi-code`) but the wire
 //! format is EXPLICITLY unstable: a `WIRE_PROTOCOL_VERSION` in a first-line
-//! `metadata` envelope, a `wire/migration/` module, docs saying *"do not manually
+//! `metadata` record, a `wire/migration/` module, docs saying *"do not manually
 //! edit files inside `sessions/`"*, and undocumented version-specific op `type`
 //! strings. So pixtuoid does NOT tail it. The seam is **hooks**
-//! (`<KIMI_CODE_HOME>/config.toml` `[[hooks]]`), whose envelope is
+//! (`<KIMI_CODE_HOME>/config.toml` `[[hooks]]`), whose payload is
 //! CLAUDE-CODE-SHAPED: snake_case
 //! `hook_event_name`/`session_id`/`cwd`/`tool_name`/`tool_input` with PascalCase
 //! event VALUES — **except the per-call id, which Kimi spells `tool_call_id`**
@@ -25,13 +25,13 @@
 //! FLAT until a byte-real capture can add nesting.
 
 use crate::source::decoder::{
-    DecodeResult as Result, hook_identity, hook_session_id, shared_hook_arms,
+    DecodeResult as Result, hook_identity, refuse_unknown_event, shared_hook_arms,
 };
-use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::registry::{
-    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Corroboration, FocusChannel, HookDecoding, Hyphen, SourceCaps,
     SourceDescriptor, SourceKind, ToolIdKey,
 };
 use crate::source::{AgentEvent, registry};
@@ -92,32 +92,32 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 /// swept since, registers on its next turn end. Claimed here, not in the
 /// shared `Stop` arm, whose CC children an `Identity` would re-create past
 /// their cascade.
-pub(crate) fn decode_kimi_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    let event = match obj.get("hook_event_name").and_then(|s| s.as_str()) {
-        // A cancelled turn fires `Interrupt` in place of `Stop`
-        // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:422-424`
-        // at `@moonshot-ai/kimi-code@2.5.3`).
-        Some(event @ ("Stop" | "StopFailure" | "Interrupt")) => event,
+pub(crate) fn decode_kimi_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    match hook.event {
+        // A cancelled turn fires `Interrupt` and a failed one `StopFailure` in place
+        // of `Stop`
+        // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:423-429`
+        // at `@moonshot-ai/kimi-code@2.8.0`; `kimi/fixtures/model-error-hermetic`).
+        "Stop" | "StopFailure" | "Interrupt" => {}
         _ => return Ok(None),
-    };
+    }
     // Read under the event's own name, so a missing id breadcrumbs as sent.
-    let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
-    let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
-    let mut evs = vec![hook_identity(agent_id, SOURCE_NAME, &session_id, obj)];
-    let mut own = obj.clone();
-    own.insert("hook_event_name".into(), Value::from("Stop"));
-    evs.extend(shared_hook_arms(
-        &own,
-        SOURCE_NAME,
-        registry::descriptor_for(SOURCE_NAME),
-    )?);
+    let session_id = hook.session()?;
+    let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
+    let mut evs = vec![hook_identity(agent_id, SOURCE_NAME, session_id, hook.obj)];
+    let stop = Hook {
+        event: "Stop",
+        ..*hook
+    };
+    let desc = registry::descriptor_for(SOURCE_NAME);
+    evs.extend(shared_hook_arms(&stop, desc)?.ok_or_else(|| refuse_unknown_event(&stop))?);
     Ok(Some(evs))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{test_decode, test_hook};
     use serde_json::json;
 
     /// A failed or a cancelled turn's end decodes as `Stop` does.
@@ -151,12 +151,8 @@ mod tests {
             "UserPromptSubmit",
             "SubagentStart",
         ] {
-            let out = decode_kimi_hook_custom(test_obj(&json!({
-                "hook_event_name": ev,
-                "session_id": "s",
-                "cwd": "/repo"
-            })))
-            .expect("decodes");
+            let v = json!({"hook_event_name": ev, "session_id": "s", "cwd": "/repo"});
+            let out = decode_kimi_hook_custom(&test_hook(SOURCE_NAME, &v)).expect("decodes");
             assert!(
                 out.is_none(),
                 "{ev} must be declined (Ok(None)) by the custom decoder, got {out:?}"
@@ -167,25 +163,19 @@ mod tests {
     /// The hook plane's `session_id` chokepoint: its drift breadcrumb too.
     #[test]
     fn a_claimed_event_without_session_id_errs_and_breadcrumbs() {
-        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
+        use crate::source::drift::{DriftKind, breadcrumbed};
         for ev in ["Stop", "StopFailure", "Interrupt"] {
             for payload in [
                 json!({ "hook_event_name": ev, "cwd": "/repo" }),
                 json!({ "hook_event_name": ev, "session_id": "" }),
             ] {
                 let logs = crate::test_capture::capture_logs(|| {
-                    assert!(
-                        decode_kimi_hook_custom(test_obj(&payload)).is_err(),
-                        "{payload}"
-                    );
+                    assert!(test_decode(SOURCE_NAME, &payload).is_err(), "{payload}");
                 });
-                let line = format!(
-                    "{SOURCE_FIELD}={SOURCE_NAME} {KIND_FIELD}=\"{}\" event={ev} field=session_id",
-                    <&str>::from(DriftKind::MissingField),
-                );
+                let fields = [("event", ev), ("field", "session_id")];
                 assert!(
-                    logs.contains(TARGET) && logs.contains(&line),
-                    "{line:?} in\n{logs}"
+                    breadcrumbed(&logs, SOURCE_NAME, DriftKind::MissingField, &fields),
+                    "{fields:?} in\n{logs}"
                 );
             }
         }

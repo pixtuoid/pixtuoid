@@ -151,7 +151,7 @@ pub struct Driven {
     /// events, led by its seed when the drive is [`Drive::seeded`] and
     /// `Sight::registers` admits it.
     pub events: Vec<AgentEvent>,
-    /// Every daemon envelope's presence deltas, which [`Fold::feed`] merges
+    /// Every daemon payload's presence deltas, which [`Fold::feed`] merges
     /// into `scene` on their own channel, never through the reducer.
     pub presence: Vec<PresenceMsg>,
     /// The index in `events` of each SEED, which stands in for the watcher's
@@ -319,7 +319,7 @@ enum Decode {
         source: String,
         logical: String,
     },
-    /// Carries NO source: `decode_hook_payload` routes on the envelope's own
+    /// Carries NO source: `decode_hook_payload` routes on the payload's own
     /// `_pixtuoid_source` stamp, so a source passed in here would be inert at
     /// best and a lie at worst.
     Hooks,
@@ -409,9 +409,9 @@ impl Drive {
         })
     }
 
-    /// Drive hook envelopes through the shared `decode_hook_payload` on
+    /// Drive hook payloads through the shared `decode_hook_payload` on
     /// `Transport::Hook`, a daemon's through its presence decoder instead. Takes NO
-    /// source: the dispatcher routes by the envelope's own `_pixtuoid_source`
+    /// source: the dispatcher routes by the payload's own `_pixtuoid_source`
     /// stamp.
     ///
     /// There is no seed here by construction: a hook that may register carries
@@ -826,7 +826,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_daemon_envelope_reaches_the_scene_on_the_presence_channel() {
+    fn a_daemon_payload_reaches_the_scene_on_the_presence_channel() {
         let up = r#"{"type":"gateway_start","gatewayPort":49242,"_pixtuoid_source":"openclaw"}"#;
         let d = Drive::hooks().lines([up]);
         assert_eq!(d.scene.daemons().count(), 1, "{d:?}");
@@ -834,7 +834,7 @@ mod tests {
     }
 
     #[test]
-    fn a_daemon_envelope_its_decoder_refuses_is_a_decode_error() {
+    fn a_daemon_payload_its_decoder_refuses_is_a_decode_error() {
         let bad = r#"{"gatewayPort":49242,"_pixtuoid_source":"openclaw"}"#;
         let d = Drive::hooks().lines([bad]);
         assert_eq!(d.decode_errors.len(), 1, "{d:?}");
@@ -1141,7 +1141,7 @@ mod tests {
     }
 
     #[test]
-    fn a_hook_envelope_registers_itself_with_no_seed() {
+    fn a_hook_payload_registers_itself_with_no_seed() {
         let payload = serde_json::json!({
             "_pixtuoid_source": "claude-code",
             "hook_event_name": "SessionStart",
@@ -1160,7 +1160,7 @@ mod tests {
         assert!(Drive::transcript("not-a-source", "/x.jsonl").is_none());
     }
 
-    /// A hook envelope the dispatcher rejects (no `hook_event_name`), carrying
+    /// A hook payload the dispatcher rejects (no `hook_event_name`), carrying
     /// prose under a key — what the failure report must NOT echo back to a terminal.
     const PROSE_LINE: &str =
         r#"{"_pixtuoid_source":"claude-code","type":"assistant","secret":"do not print me"}"#;

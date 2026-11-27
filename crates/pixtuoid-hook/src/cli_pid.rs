@@ -1,4 +1,4 @@
-//! The spawning agent CLI's pid, for the hook envelope's `_pid`.
+//! The spawning agent CLI's pid, for the hook payload's `_pid`.
 //!
 //! A runner that interposes a shell makes the raw parent a corpse-to-be: a
 //! `cmd.exe /C` on Windows (#528), and on Unix any wrapper with work left after
@@ -77,9 +77,9 @@ fn first_cli_ancestor(start: u32, row_of: impl Fn(u32) -> Option<ProcRow>) -> Op
 }
 
 /// The walk's own slice of the send bound. `arm_watchdog` is already running and
-/// hard-exits at the FULL bound, so an unbudgeted walk costs the ENVELOPE, not
-/// just `_pid` — and a process table can stall on either OS (an AV/EDR filter
-/// over Toolhelp32; a throttled or contended procfs).
+/// hard-exits at the FULL bound, so an unbudgeted walk costs the PAYLOAD, not
+/// just `_pid` — and a process table can stall on either OS (opinion, unmeasured:
+/// an AV/EDR filter over Toolhelp32; a throttled or contended procfs).
 const WALK_BUDGET: std::time::Duration =
     std::time::Duration::from_millis(crate::transport::WRITE_TIMEOUT_MS / 4);
 
@@ -255,7 +255,7 @@ mod tests {
     }
 
     /// The only parser over bytes we do not control. A panic here drops the whole
-    /// envelope, and the walk runs off-thread where a panic would be INVISIBLE to
+    /// payload, and the walk runs off-thread where a panic would be INVISIBLE to
     /// the suite — so the hostile rows are pinned directly rather than through
     /// `proc_row`'s read.
     #[test]

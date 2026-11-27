@@ -3,13 +3,14 @@ use serde_json::Value;
 use std::path::Path;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
-    DecodeError, EVENT_STAMP, extract_top_level_cwd, first_non_blank_str, generic_tool_display,
-    non_empty, required, required_or_err,
+    EVENT_STAMP, extract_top_level_cwd, first_non_blank_str, generic_tool_display, non_empty,
+    required,
 };
 use crate::source::registry::{
-    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind, Transcript,
+    ChildEndInference, Corroboration, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField,
+    SourceCaps, SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys};
 
@@ -35,18 +36,23 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             id_from_path: ag_id_from_path,
             path_filter: admits_transcript,
             head_filter: None,
-            // AG step lines carry no cwd field at all; the cwd rides the
-            // `SessionStart` hook.
+            // AG step lines carry no cwd field at all
+            // (`antigravity/fixtures/tool-run-hermetic`); the cwd rides the hooks'
+            // `workspacePaths`.
             cwd_extractor: extract_top_level_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]
             native: native::TRANSCRIPT,
         }),
-        hook: Some(HookDecoding::ClaimsAll(decode_ag_hook_payload)),
-        // Both false is VERIFIED: no end marker (`status` is per-step, always DONE)
-        // and no end hook, and no prompt-time hook re-registers a swept session.
-        // Flipping `resurrects_on_prompt` for the 5-min reaper strands a live idle
-        // session. An exit rides the shim-stamped pid.
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_ag_hook_payload,
+        }),
+        // Both false: agy has no session-end hook (hooks.md lists none), the
+        // recordings' transcripts no end line (`antigravity/fixtures/tool-run-hermetic`),
+        // and no `AG_EVENTS` hook fires at a prompt. Flipping `resurrects_on_prompt`
+        // arms `short_idle_reap`, which strands a live idle session. An exit rides
+        // the shim-stamped pid.
         caps: SourceCaps {
             has_exit_signal: false,
             resurrects_on_prompt: false,
@@ -193,28 +199,37 @@ fn decode_ag_tool_call(
     }
 }
 
-/// Decode one agy hook payload, its event named by [`EVENT_STAMP`]: agy names
-/// none in its payload.
+/// Where agy's payload names its event and session: its documented input
+/// names no event (hooks.md, "common input fields"), so the shim stamps the
+/// one the installer registered the command for.
+const ENVELOPE: Envelope = Envelope {
+    event_field: EVENT_STAMP,
+    session_field: SessionField {
+        within: None,
+        field: "conversationId",
+    },
+};
+
+/// Decode one agy hook payload.
 ///
 /// # Errors
 ///
-/// If the payload lacks the event stamp or `conversationId`,
-/// or fires an event the installer never registers.
-pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, EVENT_STAMP, |k| obj.get(k)?.as_str())?;
-    // The App and IDE fire the same global hooks file under app data dirs of
-    // their own (hooks.md, `transcriptPath`).
+/// If the payload lacks `conversationId`.
+pub(crate) fn decode_ag_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
+    // The App and the IDE load installed plugins too (hooks.md, "Managing hooks
+    // in the Antigravity App"; antigravity.google/docs/plugins.md, "Standalone IDE
+    // plugin installation"), each naming transcripts under an app data dir of its
+    // own (hooks.md, `transcriptPath`).
     if non_empty(obj, "transcriptPath").is_some_and(|p| {
         !Path::new(p)
             .components()
             .any(|c| c.as_os_str() == CLI_APP_DATA_DIR)
     }) {
         tracing::trace!(event, "dropping a hook another Antigravity app fired");
-        return Ok(vec![]);
+        return Ok(Some(vec![]));
     }
-    let key = required_or_err(SOURCE_NAME, Some(event), "conversationId", |k| {
-        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
-    })?;
+    let key = hook.session()?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = required(SOURCE_NAME, event, "workspacePaths", |k| {
         obj.get(k)?.as_array()?.first()?.as_str()
@@ -230,10 +245,10 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
     };
     let call_id =
         || required(SOURCE_NAME, event, "stepIdx", |k| obj.get(k)?.as_i64()).map(step_tool_id);
-    match event {
+    Ok(Some(match event {
         // The focus pid rides an `Identity`, so a session that never calls a
         // tool still names it.
-        "SessionStart" => Ok(vec![
+        "SessionStart" => vec![
             AgentEvent::SessionStart {
                 agent_id,
                 source: SOURCE_NAME.to_string(),
@@ -242,7 +257,7 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 parent_id: None,
             },
             identity(),
-        ]),
+        ],
         "PreToolUse" => {
             let tool_use_id = call_id();
             let tool = required(SOURCE_NAME, event, "toolCall", |k| obj.get(k));
@@ -250,25 +265,23 @@ pub(crate) fn decode_ag_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 .and_then(|t| required(SOURCE_NAME, event, "name", |k| t.get(k)?.as_str()))
                 .unwrap_or("?");
             let args = tool.and_then(|t| t.get("args"));
-            Ok(vec![
+            vec![
                 identity(),
                 decode_ag_tool_call(agent_id, name, args, tool_use_id),
-            ])
+            ]
         }
-        "PostToolUse" => Ok(vec![
+        "PostToolUse" => vec![
             identity(),
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: call_id(),
             },
-        ]),
-        // Turn end: the session lives on to the next prompt.
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
-        other => {
-            crate::source::drift::unknown_event(SOURCE_NAME, other);
-            Err(DecodeError::unsupported(SOURCE_NAME, other))
-        }
-    }
+        ],
+        // Turn end, as the execution loop terminates (hooks.md, `Stop`): the
+        // session lives on to the next prompt.
+        "Stop" => vec![AgentEvent::turn_end(agent_id)],
+        _ => return Ok(None),
+    }))
 }
 
 /// The first present path/command field of an Antigravity tool call's `args`,
@@ -294,7 +307,7 @@ fn ag_tool_target(args: Option<&Value>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
 
     #[cfg(feature = "native")]
     #[test]
@@ -423,7 +436,12 @@ mod tests {
             }
         });
         assert!(
-            logs.contains("unknown_event") && logs.contains("PLANNER_REPLY"),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::UnknownEvent,
+                &[("name", "PLANNER_REPLY")]
+            ),
             "a tool-call step under a renamed type must fire the drift breadcrumb, got:\n{logs}"
         );
 
@@ -432,7 +450,7 @@ mod tests {
             decode_ag_line("/x/t.jsonl", SOURCE_NAME, result_step);
         });
         assert!(
-            !quiet.contains("unknown_event"),
+            !quiet.contains(crate::source::drift::TARGET),
             "a tool_calls-less result step must NOT breadcrumb, got:\n{quiet}"
         );
     }
@@ -488,8 +506,7 @@ mod tests {
 
     #[test]
     fn a_hook_keys_on_the_conversation_whose_transcript_the_watcher_walks() {
-        let out =
-            decode_ag_hook_payload(test_obj(&hook("SessionStart", serde_json::json!({})))).unwrap();
+        let out = test_decode(SOURCE_NAME, &hook("SessionStart", serde_json::json!({}))).unwrap();
         let key = ag_id_from_path(&Path::new(LOGS).join(TRANSCRIPT));
         assert_eq!(key, "c1");
         match out.as_slice() {
@@ -516,20 +533,20 @@ mod tests {
             "stepIdx": 2,
             "toolCall": { "name": "read_file", "args": { "Path": "/repo/NOTE.txt" } },
         });
-        let start = decode_ag_hook_payload(test_obj(&hook("PreToolUse", call.clone()))).unwrap();
+        let start = test_decode(SOURCE_NAME, &hook("PreToolUse", call.clone())).unwrap();
         assert!(
             start.iter().any(|e| matches!(e,
                 AgentEvent::ToolUseStart { tool_use_id: Some(t), detail: Some(d), .. }
                     if t == "ag-2" && d.display() == "read_file: /repo/NOTE.txt")),
             "{start:?}"
         );
-        let end = decode_ag_hook_payload(test_obj(&hook("PostToolUse", call))).unwrap();
+        let end = test_decode(SOURCE_NAME, &hook("PostToolUse", call)).unwrap();
         assert!(
             end.iter().any(|e| matches!(e,
                 AgentEvent::ToolUseEnd { tool_use_id: Some(t), .. } if t == "ag-2")),
             "{end:?}"
         );
-        let stop = decode_ag_hook_payload(test_obj(&hook("Stop", serde_json::json!({})))).unwrap();
+        let stop = test_decode(SOURCE_NAME, &hook("Stop", serde_json::json!({}))).unwrap();
         assert!(
             matches!(stop.as_slice(), [AgentEvent::TurnEnd { .. }]),
             "{stop:?}"
@@ -542,7 +559,7 @@ mod tests {
             "stepIdx": 4,
             "toolCall": { "name": "ask_question", "args": {} },
         });
-        let out = decode_ag_hook_payload(test_obj(&hook("PreToolUse", ask))).unwrap();
+        let out = test_decode(SOURCE_NAME, &hook("PreToolUse", ask)).unwrap();
         assert!(
             out.iter().any(|e| matches!(e,
                 AgentEvent::UserActionRequest { tool_use_id: Some(t), .. } if t == "ag-4")),
@@ -563,22 +580,18 @@ mod tests {
         };
         for app in ["antigravity", "antigravity-ide"] {
             assert!(
-                decode_ag_hook_payload(test_obj(&at(app)))
-                    .unwrap()
-                    .is_empty(),
+                test_decode(SOURCE_NAME, &at(app)).unwrap().is_empty(),
                 "{app}"
             );
         }
         assert!(
-            !decode_ag_hook_payload(test_obj(&at(CLI_APP_DATA_DIR)))
+            !test_decode(SOURCE_NAME, &at(CLI_APP_DATA_DIR))
                 .unwrap()
                 .is_empty()
         );
         let blanked = hook("SessionStart", serde_json::json!({ "transcriptPath": "" }));
         assert!(
-            !decode_ag_hook_payload(test_obj(&blanked))
-                .unwrap()
-                .is_empty(),
+            !test_decode(SOURCE_NAME, &blanked).unwrap().is_empty(),
             "a recording blanks the unread path, and still decodes"
         );
     }
@@ -587,12 +600,16 @@ mod tests {
     fn an_unregistered_hook_event_is_a_breadcrumbed_error() {
         let logs = crate::test_capture::capture_logs(|| {
             assert!(
-                decode_ag_hook_payload(test_obj(&hook("PreInvocation", serde_json::json!({}))))
-                    .is_err()
+                test_decode(SOURCE_NAME, &hook("PreInvocation", serde_json::json!({}))).is_err()
             );
         });
         assert!(
-            logs.contains("unknown_event") && logs.contains("PreInvocation"),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::UnknownEvent,
+                &[("name", "PreInvocation")]
+            ),
             "{logs}"
         );
     }

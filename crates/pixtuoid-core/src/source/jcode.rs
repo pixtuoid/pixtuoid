@@ -1,19 +1,19 @@
 //! Jcode hook-only source. The shim forwards selected environment fields, never tool inputs.
 //!
-//! Cites are `1jehuang/jcode` at `v0.99.1`.
+//! Cites are `1jehuang/jcode` at `v1.0.3`.
 
 use std::path::PathBuf;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
-    DecodeError, DecodeResult, display_safe, hook_session_id, label_prefix_for, non_empty,
-    required, required_or_err,
+    DecodeResult, display_safe, label_prefix_for, non_empty, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
     SourceDescriptor, SourceKind,
 };
-use crate::source::{AgentEvent, ToolDetail, drift};
+use crate::source::{AgentEvent, ToolDetail};
 
 /// The Jcode CLI source's registry name.
 pub const SOURCE_NAME: &str = "jcode";
@@ -28,7 +28,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: None,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_jcode_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_jcode_hook_payload,
+        }),
         caps: SourceCaps {
             has_exit_signal: true,
             resurrects_on_prompt: true,
@@ -36,22 +39,31 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
-            // Its hooks name no turn, and each observer is a detached process
-            // (`crates/jcode-base/src/hooks.rs:346-376`), so no ordered stream.
+            // Its hooks name no turn (`crates/jcode-app-core/src/agent/turn_execution.rs:391-394`,
+            // `:413-417`), and each observer is a detached process
+            // (`crates/jcode-base/src/hooks.rs:520-554`), so no ordered stream.
             brackets_turns: false,
         },
-        // A shared server owns many sessions, so its pid names none of them.
+        // A shared server owns many sessions (`crates/jcode-base/src/hooks.rs:214-217`),
+        // so its pid names none of them.
         focus: FocusChannel::Unsupported,
     },
     #[cfg(feature = "native")]
     native: crate::source::registry::Native::NONE,
 };
 
-pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, "event", |k| {
-        required(SOURCE_NAME, "hook", k, |k| non_empty(obj, k))
-    })?;
-    let key = &hook_session_id(obj, SOURCE_NAME, event)?;
+/// Where the payload the shim builds from jcode's hook environment names its event and session.
+const ENVELOPE: Envelope = Envelope {
+    event_field: "event",
+    session_field: SessionField {
+        within: None,
+        field: "session_id",
+    },
+};
+
+pub(crate) fn decode_jcode_hook_payload(hook: &Hook<'_>) -> DecodeResult<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
+    let key = hook.session()?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let cwd = non_empty(obj, "cwd").map(PathBuf::from);
     // The Identity is the one claim that registers a session the office joined
@@ -73,14 +85,15 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
             identity(),
             Some(AgentEvent::ToolUseStart {
                 agent_id,
-                // pre_tool has no call ID; post_tool's ID cannot pair with it.
+                // pre_tool names no call (`crates/jcode-base/src/hooks.rs:579-585`),
+                // so no post_tool can pair with it.
                 tool_use_id: None,
                 detail: Some(ToolDetail::Generic {
                     display: display_safe(required_or_err(
                         SOURCE_NAME,
                         Some(event),
                         "tool_name",
-                        |k| required(SOURCE_NAME, event, k, |k| non_empty(obj, k)),
+                        |k| non_empty(obj, k),
                     )?),
                 }),
                 copy_id: None,
@@ -95,15 +108,12 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
         ),
         "turn_end" => (identity(), Some(AgentEvent::turn_end(agent_id))),
         "session_end" => {
-            return Ok(vec![AgentEvent::SessionEnd {
+            return Ok(Some(vec![AgentEvent::SessionEnd {
                 agent_id,
                 as_child: false,
-            }]);
+            }]));
         }
-        other => {
-            drift::unknown_event(SOURCE_NAME, other);
-            return Err(DecodeError::unsupported(SOURCE_NAME, other));
-        }
+        _ => return Ok(None),
     };
     let mut events = vec![
         claim,
@@ -115,7 +125,7 @@ pub(crate) fn decode_jcode_hook_payload(obj: &HookObject) -> DecodeResult<Vec<Ag
     let model = non_empty(obj, "model").map(display_safe);
     events.extend(AgentEvent::model_info(agent_id, model.as_deref(), None));
     events.extend(activity);
-    Ok(events)
+    Ok(Some(events))
 }
 
 /// The memorable word of a `session_<word>_<ms>_<hex>` id
@@ -134,13 +144,14 @@ fn session_label(id: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source::decoder::DecodeError;
     use crate::source::{ToolDetail, Transport};
     use crate::{AgentId, Reducer, SceneState};
     use serde_json::{Value, json};
     use std::time::SystemTime;
 
     fn decode(v: &Value) -> DecodeResult<Vec<AgentEvent>> {
-        decode_jcode_hook_payload(v.as_object().expect("an object"))
+        crate::source::decoder::test_decode(SOURCE_NAME, v)
     }
 
     fn payload(event: &str, id: &str) -> Value {
@@ -238,7 +249,7 @@ mod tests {
 
     #[test]
     fn unknown_and_missing_contract_fields_fail_closed() {
-        use crate::source::drift::{DriftKind, KIND_FIELD, SOURCE_FIELD, TARGET};
+        use crate::source::drift::{DriftKind, breadcrumbed};
         for value in [json!({}), payload("unregistered", "session_fox_123_a")] {
             assert!(decode(&value).is_err(), "{value}");
         }
@@ -261,13 +272,10 @@ mod tests {
                 ),
                 "{value}: {err:?}"
             );
-            let line = format!(
-                "{SOURCE_FIELD}={SOURCE_NAME} {KIND_FIELD}=\"{}\" event={event} field={missing}",
-                <&str>::from(DriftKind::MissingField),
-            );
+            let fields = [("event", event), ("field", missing)];
             assert!(
-                logs.contains(TARGET) && logs.contains(&line),
-                "{line:?} in\n{logs}"
+                breadcrumbed(&logs, SOURCE_NAME, DriftKind::MissingField, &fields),
+                "{fields:?} in\n{logs}"
             );
         }
     }

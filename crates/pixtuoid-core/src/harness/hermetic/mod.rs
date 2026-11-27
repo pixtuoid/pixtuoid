@@ -1869,7 +1869,7 @@ mod tests {
         let mut events = Vec::new();
         for file in crate::harness::jsonl_files_under(dir) {
             let bytes = std::fs::read(&file).expect("a committed capture reads");
-            let driven = if crate::harness::reads::is_hook_envelope(&file) {
+            let driven = if crate::harness::reads::is_hook_payloads(&file) {
                 crate::harness::Drive::hooks().body(&bytes)
             } else if let Some(drive) = crate::harness::Drive::transcript_at(source, &file) {
                 drive.seeded().body(&bytes)

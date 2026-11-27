@@ -36,7 +36,7 @@ const TUI: tui::Tui = tui::Tui {
     conpty: tui::ConPty::PaintsNothing,
 };
 
-/// The registration a grok envelope's `hookEventName` answers to: the wire
+/// The registration a grok payload's `hookEventName` answers to: the wire
 /// spells each key in snake_case
 /// (`crates/codegen/xai-grok-hooks/src/event.rs:78-180`).
 fn event(v: &Value) -> Option<Cow<'_, str>> {

@@ -1,10 +1,9 @@
 # @pixtuoid-hermes-plugin — managed by pixtuoid (connect/disconnect Hermes Agent in pixtuoid's Sources panel: press s).
 #
-# Hermes runs every turn in its gateway, whose own cwd is its install dir, so
-# pixtuoid integrates as a plugin there that reads each session's workspace from
-# `ctx.session_cwd()` (website/docs/user-guide/features/plugins.md:1109 at
-# v0.22.5) and pipes an allowlisted copy of each event into the `pixtuoid-hook`
-# shim on stdin. A raise or a hang in `pre_tool_call` blocks the user's tool
+# A plugin in Hermes's gateway, the one place each session's workspace can be
+# read (`ctx.session_cwd()`; why: `source/hermes.rs`'s module doc). It pipes an
+# allowlisted copy of each event into the `pixtuoid-hook` shim on stdin.
+# A raise or a hang in `pre_tool_call` blocks the user's tool
 # (hermes_cli/plugins_dispatch.py:60, :277-293), so every error is swallowed and
 # the one wait is the shim's exit, which its write-timeout watchdog bounds
 # (`transport::WRITE_TIMEOUT`, invariant #5).

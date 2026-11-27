@@ -57,7 +57,7 @@ pub fn strip_unread(source: &str, files: &[PathBuf]) -> std::io::Result<Strip> {
         let per_line = strip_with(source, &drive, file, &mut lines);
         strip.sentinel_reads.insert(
             file.clone(),
-            sentinel_reads_of(source, &drive, &mut lines, is_hook_envelope(file)),
+            sentinel_reads_of(source, &drive, &mut lines, is_hook_payloads(file)),
         );
         let mut out = String::new();
         for (i, here) in per_line.into_iter().enumerate() {
@@ -86,7 +86,7 @@ pub(crate) fn strip_lines(source: &str, file: &Path, lines: &mut [Value]) -> boo
 
 /// Each line's count of subtrees blanked, `lines` rewritten in place.
 fn strip_with(source: &str, drive: &Drive, file: &Path, lines: &mut [Value]) -> Vec<usize> {
-    let stamped = is_hook_envelope(file);
+    let stamped = is_hook_payloads(file);
     let base = events_of(source, drive, lines, !stamped);
     (0..lines.len())
         .map(|i| probe(source, drive, lines, &base, i, "", stamped))
@@ -246,15 +246,15 @@ pub fn strip_corpus(root: &Path, mut report: impl FnMut(&Capture, &Strip)) -> st
     Ok(())
 }
 
-/// A hook envelope file, by the name the recorder gives it, `.new` included.
-pub(crate) fn is_hook_envelope(file: &Path) -> bool {
+/// A hook-payloads file, by the name the recorder gives it, `.new` included.
+pub(crate) fn is_hook_payloads(file: &Path) -> bool {
     file.file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|n| n.starts_with(crate::harness::HOOK_PAYLOADS))
 }
 
 fn drive_for(source: &str, file: &Path) -> Option<Drive> {
-    if is_hook_envelope(file) {
+    if is_hook_payloads(file) {
         Some(Drive::hooks())
     } else {
         Drive::transcript(source, &file.to_string_lossy())
@@ -288,10 +288,10 @@ type Decoded = (
 );
 
 /// Everything the registry reads from a line, not only the line decoder: a
-/// daemon's envelopes decode to no `AgentEvent` by design (presence rides
+/// daemon's payloads decode to no `AgentEvent` by design (presence rides
 /// `presence_decoder`), and the watcher registers a `transcript` through
 /// `cwd_extractor` and `parent_extractor` on whichever line a first sight
-/// reads, a revived file's new bytes included. A hook envelope never meets them.
+/// reads, a revived file's new bytes included. A hook payload never meets them.
 /// Compared as rendered, the way a golden is: `PathBuf` equality drops a
 /// trailing slash, and grok's `workspaceRoot` fallback differs by exactly that.
 fn events_of(source: &str, drive: &Drive, lines: &[Value], transcript: bool) -> Decoded {
@@ -341,7 +341,7 @@ pub(crate) fn blank_of(node: &Value) -> Option<Value> {
     (blank != *node).then_some(blank)
 }
 
-/// What [`probe`] writes over `node`: [`blank_of`], but a hook envelope's root
+/// What [`probe`] writes over `node`: [`blank_of`], but a hook payload's root
 /// keeps its shim stamps, since without its source stamp a line is no source's
 /// and decodes to nothing, read or not.
 fn neutral_of(stamped: bool, at: &str, node: &Value) -> Option<Value> {
@@ -363,7 +363,7 @@ pub(crate) fn child_pointer(at: &str, key: &str) -> String {
     format!("{at}/{}", key.replace('~', "~0").replace('/', "~1"))
 }
 
-/// Whether `key` under `at` is one of a hook envelope's top-level
+/// Whether `key` under `at` is one of a hook payload's top-level
 /// [`SHIM_STAMPS`](crate::source::decoder::SHIM_STAMPS), which the strip keeps:
 /// [`FORWARDED_AT_STAMP`](crate::source::decoder::FORWARDED_AT_STAMP) is read by no decoder,
 /// but the merge orders lines by it.
@@ -403,7 +403,7 @@ pub(crate) const WRITE_STAMPS: &[(&str, &str, Spelling)] = &[
     ("claude-code", "timestamp", Spelling::Rfc3339),
     ("codex", "timestamp", Spelling::Rfc3339),
     // Not its `timestamp`, to the whole second (`grok::decode_grok_line`'s
-    // envelope), which lets a line reach the reducer ahead of a hook grok
+    // line shape), which lets a line reach the reducer ahead of a hook grok
     // fired before writing it.
     ("grok", "timestamp_us", Spelling::EpochMicros),
     ("omp", "timestamp", Spelling::Rfc3339),
@@ -421,7 +421,7 @@ pub(crate) fn is_write_stamp(source: &str, transcript: bool, at: &str, key: &str
 }
 
 /// Whether `key` under `at` is one the strip keeps whatever the decoders read:
-/// a hook envelope's shim stamp, or a transcript's write stamp.
+/// a hook payload's shim stamp, or a transcript's write stamp.
 fn kept_key(source: &str, stamped: bool, at: &str, key: &str) -> bool {
     (stamped && is_shim_stamp(at, key)) || is_write_stamp(source, !stamped, at, key)
 }
@@ -525,7 +525,7 @@ mod tests {
                     source,
                     &drive_for(source, f)?,
                     &lines,
-                    !is_hook_envelope(f),
+                    !is_hook_payloads(f),
                 ))
             })
             .collect()
@@ -652,7 +652,7 @@ mod tests {
         assert_eq!(cwds(&rollout), before);
     }
 
-    /// First-sight registers a transcript, never a hook envelope, so a hook
+    /// First-sight registers a transcript, never a hook payload, so a hook
     /// line's cwd survives only where a decoder reads it: hermes's finalize,
     /// outside any turn, reads none, and its every in-turn event reads its own.
     #[test]

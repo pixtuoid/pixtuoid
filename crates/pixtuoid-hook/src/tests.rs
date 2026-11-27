@@ -205,7 +205,7 @@ fn hook_event_from_argv_reads_both_forms_and_never_the_env_mode_flag() {
 }
 
 #[test]
-fn env_payload_folds_codewhale_env_into_the_envelope() {
+fn env_payload_folds_codewhale_env_into_the_payload() {
     let env: std::collections::HashMap<&str, &str> = [
         ("DEEPSEEK_WORKSPACE", "/repo"),
         ("DEEPSEEK_TOOL_NAME", "exec_shell"),
@@ -224,14 +224,14 @@ fn env_payload_folds_codewhale_env_into_the_envelope() {
     assert_eq!(map["tool_call_id"], json!("call-1"));
 }
 
-/// env-mode's envelope still carries `_pid` — via the ONE stamping site, which
+/// env-mode's payload still carries `_pid` — via the ONE stamping site, which
 /// is what keeps a Windows ancestor walk from running twice per hook. Composed
 /// rather than asserted on `env_payload_from` alone: that fn stamping its own
 /// pid is exactly the duplicate this pins against.
 #[test]
 fn env_mode_gets_its_pid_from_the_single_enrich_site() {
     let mut map = env_payload_from("tool_call_before", |_| None);
-    assert!(!map.contains_key("_pid"), "not stamped at envelope build");
+    assert!(!map.contains_key("_pid"), "not stamped at payload build");
     enrich_payload(&mut map, None, None, 0, || Some(4321));
     assert_eq!(map["_pid"], json!(4321), "stamped once, by enrich_payload");
 }

@@ -1,43 +1,52 @@
 //! Grok Build source (`grok`, xai-org/grok-build) — TRANSCRIPT-BEARING with a
-//! hook install target (the CC/Codex class: both transports).
+//! hook install target (the CC/Codex class: both transports). Upstream cites
+//! are `xai-org/grok-build` at `2bdd1d6a63`, its last public sync, whose
+//! `xai-grok-shell` is 1.0.45 (`crates/codegen/xai-grok-shell/Cargo.toml:4`).
+//! No public commit maps to the 1.0.92 pin, whose `--version` names the
+//! unpublished `b06756fd6256` (`grok/fixtures/two-turn-hermetic/provenance.json`):
+//! where a 1.0.92 recording reaches a claim, it is the authority.
 //!
 //! - **Transcript**: `{grok_home}/sessions/<enc-cwd>/<session-id>/updates.jsonl`
-//!   is append-ONLY for the session's whole life (even `/rewind` appends a
-//!   `rewind_marker` instead of truncating). The SIBLING `chat_history.jsonl`
-//!   is REWRITTEN via temp+rename on resume/compaction/rewind — never tail it.
-//! - **Hooks**: JSON envelope on stdin with **camelCase field names and
-//!   snake_case event values** (`hookEventName`, `sessionId`, `toolUseId`, …)
-//!   — the only spelling pre-1.0 sent, hence the claims-all custom decoder
-//!   below; 1.0.x mirrors every key in CC's snake_case too
-//!   (`grok/fixtures/tool-run-hermetic`), which this decoder still does not read. Hooks
-//!   dispatch SEQUENTIALLY inline on the session actor, so the shim's
-//!   `WRITE_TIMEOUT` bound matters here.
-//! - **Keying**: `sessionId` is consistent across every event of a session, ==
-//!   the transcript's parent-DIR name (upstream joins the id into
-//!   `session_dir`; `grok_id_from_path` mirrors it), == a subagent's `subagentId`. Hook and
-//!   watcher keys therefore coalesce, and a child's tool hooks carry the
-//!   CHILD's `sessionId`.
-//! - **Subagents**: in-process children persisted as FLAT siblings in the
-//!   normal sessions tree. Children fire NO `session_start` hook of their own
+//!   is append-ONLY (`crates/codegen/xai-grok-shell/src/session/storage/jsonl/mod.rs:678`),
+//!   even `/rewind` appending a `rewind_marker` (`storage/mod.rs:2060-2079`). Its
+//!   SIBLINGS `chat_history.jsonl` and `rewind_points.jsonl` are REWRITTEN whole
+//!   via temp+rename (`jsonl/mod.rs:610-614`, `:1742-1749`, `:1808`) — never tail them.
+//! - **Hooks**: JSON payload on stdin with **camelCase field names and
+//!   snake_case event values** (`crates/codegen/xai-grok-hooks/src/event.rs:78-180`,
+//!   `:357-375`), hence the claims-all custom decoder below. Nine of those keys
+//!   are also copied in snake_case, and `hook_event_name` carries CC's
+//!   PascalCase name; the camelCase keys stay authoritative (`:377-404`). A
+//!   long-running hook blocks the UI
+//!   (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:678`), so the
+//!   shim's `WRITE_TIMEOUT` bound matters here.
+//! - **Keying**: `sessionId` is the transcript's parent-DIR name (upstream joins
+//!   the id into `session_dir`, `jsonl/mod.rs:185-190`; `grok_id_from_path`
+//!   mirrors it), and a subagent's `subagentId` is the `sessionId` its own tool
+//!   hooks carry (`grok/fixtures/subagent-hermetic`). Hook and watcher keys
+//!   therefore coalesce.
+//! - **Subagents**: children persist as FLAT siblings in the sessions tree and
+//!   fire NO `session_start` hook of their own (`grok/fixtures/subagent-hermetic`)
 //!   — the `subagent_start` hook (or the parent transcript's
 //!   `subagent_spawned` line) is the child's registration carrier.
-//! - **Exit profile**: `session_end` fires on shutdown and channel-closed
-//!   teardown but NOT on a plain TUI quit, and not on kill. The reliable exit
-//!   signal is the liveness ladder over grok's own crash-recovery registry
-//!   `{grok_home}/active_sessions.json` (removed on clean quit, left on crash).
-//!   No open-FD probe is possible: every append opens and drops the file
-//!   handle, unlike Codex's for-lifetime rollout fd.
+//! - **Exit profile**: a TUI `/exit` fires `session_end`
+//!   (`grok/fixtures/two-turn-hermetic`, `permission-hermetic`); a kill or a
+//!   crash fires none and leaves the session in grok's crash-recovery registry
+//!   `{grok_home}/active_sessions.json`, which a clean exit clears
+//!   (`crates/codegen/xai-grok-active-sessions/src/lib.rs:1-2`). The liveness
+//!   ladder over that registry is the exit authority. No open-FD probe is
+//!   possible: each append opens and drops its handle (`jsonl/mod.rs:418-433`).
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, generic_tool_display, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
@@ -63,22 +72,28 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         transcript: Some(Transcript {
             line_decoder: decode_grok_line,
             id_from_path: grok_id_from_path,
-            // Session dirs carry rewrite-on-resume siblings (chat_history /
-            // rewind_points / events.jsonl) that must never be tailed.
+            // Session dirs carry siblings rewritten whole (the module doc's
+            // transcript) that must never be tailed.
             path_filter: is_updates_jsonl,
             head_filter: None,
-            // Always-None: grok lines carry no cwd — the URL-encoded group dir
-            // does, applied via the watcher's cwd deriver.
+            // Always-None: grok lines carry no cwd (`grok/fixtures/subagent-hermetic`)
+            // — the URL-encoded group dir does, applied via the watcher's cwd deriver.
             cwd_extractor: extract_grok_cwd,
             parent_extractor: None,
             #[cfg(feature = "native")]
             native: native::TRANSCRIPT,
         }),
-        hook: Some(HookDecoding::ClaimsAll(decode_grok_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_grok_hook_payload,
+        }),
         caps: SourceCaps {
-            // `session_end` does NOT fire on a plain TUI quit (the loop breaks without
-            // draining the session actor), so the DOMINANT exit is signal-less; the
-            // authority is the liveness probe over grok's `active_sessions.json`.
+            // `false` though a TUI `/exit` fires `session_end` (the module doc's
+            // exit profile): a crashed session no probe tracks has only the stale
+            // sweep, which `false` shortens (`short_idle_reap`). A headless run
+            // registers in `active_sessions.json` only under `GROK_TRACK_HEADLESS`
+            // (`crates/codegen/xai-grok-pager/src/headless.rs:1078-1086` at
+            // `2bdd1d6a63`), and off Unix no probe reads it (`native.rs:76-81`).
             has_exit_signal: false,
             // Every prompt fires `user_prompt_submit` (→ SessionStart) but a
             // message relayed to a running subagent from its parent: upstream
@@ -92,14 +107,16 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // safe for grok's untracked headless one-shots.
             resurrects_on_prompt: true,
             // A BLOCKING spawn's Task detail gets its post_tool_use at
-            // completion, and a background spawn never mints a Task at all.
+            // completion (`grok/fixtures/subagent-hermetic`), and a background
+            // spawn never mints a Task at all.
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
             brackets_turns: false,
         },
         // `active_sessions.json` maps session_id → pid with an `opened_at` recycle
-        // guard; a shim stamp would shadow it with a walk carrying no guard (#527).
+        // guard (`crates/codegen/xai-grok-active-sessions/src/lib.rs:15-21`); a
+        // shim stamp would shadow it with a walk carrying no guard (#527).
         focus: FocusChannel::TranscriptProbe,
     },
     #[cfg(feature = "native")]
@@ -115,59 +132,69 @@ const XAI_TURN_COMPLETED: &str = "turn_completed";
 const XAI_HOOK_EXECUTION: &str = "hook_execution";
 const SESSION_END: &str = "session_end";
 
-/// The hook field naming the event, in grok's own camelCase envelope.
+/// The hook field naming the event, in grok's own camelCase payload.
 pub(crate) const HOOK_EVENT_NAME: &str = "hookEventName";
+
+/// Where grok's payload names its event and session: `HookEventEnvelope`'s camelCase keys
+/// (`crates/codegen/xai-grok-hooks/src/event.rs:358-361` at `xai-org/grok-build`
+/// `2bdd1d6a63`), whose `sessionId` is no `Option`.
+const ENVELOPE: Envelope = Envelope {
+    event_field: HOOK_EVENT_NAME,
+    session_field: SessionField {
+        within: None,
+        field: "sessionId",
+    },
+};
 
 /// Decode one grok hook payload (already identified by
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
 ///
-/// `user_prompt_submit` maps to `SessionStart` too, beside its turn's start —
-/// it is the resurrect carrier, because grok's `session_end` is unreliable (a
-/// TUI quit fires none) so a stale-swept LIVE session must walk back in on its
-/// next prompt.
-/// Anything unrecognized bails: registered-vs-decoded drift must be loud.
+/// `user_prompt_submit` maps to `SessionStart` too, beside its turn's start:
+/// it is the resurrect carrier [`DESCRIPTOR`]'s `resurrects_on_prompt` names.
 ///
 /// # Errors
 ///
-/// If the payload lacks `hookEventName`, carries none of `sessionId`, `cwd` or `workspaceRoot`, names an unrecognized event, or is a subagent event without `subagentId`.
-pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, HOOK_EVENT_NAME, |k| obj.get(k)?.as_str())?;
+/// If an event keyed on or parented by its session lacks `sessionId`, or a
+/// subagent event lacks `subagentId`.
+pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
-    let key = required_or_err(SOURCE_NAME, Some(event), "sessionId", |k| {
-        non_empty(obj, k).or(cwd)
-    })?;
-    let agent_id = AgentId::from_parts(SOURCE_NAME, key);
-    let cwd_path = || cwd.map(PathBuf::from);
-
-    let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd_path());
+    // Read only by the arms that use it, as a key or a child's parent: a
+    // subagent's end keys on the child, an ignored notice on nothing.
+    let session = || -> Result<(AgentId, &str)> {
+        let key = hook.session()?;
+        Ok((AgentId::from_parts(SOURCE_NAME, key), key))
+    };
+    let identity = |agent_id, key: &str| {
+        AgentEvent::identity(agent_id, SOURCE_NAME, key, cwd.map(PathBuf::from))
+    };
+    let start = |agent_id, key: &str| AgentEvent::SessionStart {
+        agent_id,
+        source: SOURCE_NAME.to_string(),
+        session_id: key.to_string(),
+        cwd: cwd.unwrap_or("").into(),
+        parent_id: None,
+    };
     let tool_use_id = || {
         obj.get("toolUseId")
             .and_then(|s| s.as_str())
             .map(String::from)
     };
 
-    match event {
+    Ok(Some(match event {
         "session_start" => {
-            // grok's payload ALSO carries a public `source` field ("new"/"load"
-            // — the start REASON, exactly CC's overload). Never read it:
+            // grok's payload ALSO carries a public `source` field, "new" or
+            // "load" (`crates/codegen/xai-grok-hooks/src/event.rs:413-414`,
+            // `crates/codegen/xai-grok-shell/src/agent/mvp_agent/agent_ops.rs:5075`
+            // at `2bdd1d6a63`): the start REASON, exactly CC's overload. Never read it:
             // attribution comes ONLY from `_pixtuoid_source`, else agents split
             // into un-reapable ghosts.
-            Ok(vec![AgentEvent::SessionStart {
-                agent_id,
-                source: SOURCE_NAME.to_string(),
-                session_id: key.to_string(),
-                cwd: cwd.unwrap_or("").into(),
-                parent_id: None,
-            }])
+            let (agent_id, key) = session()?;
+            vec![start(agent_id, key)]
         }
         "user_prompt_submit" => {
-            let mut evs = vec![AgentEvent::SessionStart {
-                agent_id,
-                source: SOURCE_NAME.to_string(),
-                session_id: key.to_string(),
-                cwd: cwd.unwrap_or("").into(),
-                parent_id: None,
-            }];
+            let (agent_id, key) = session()?;
+            let mut evs = vec![start(agent_id, key)];
             // Upstream fires it with the turn's prompt id, the key the
             // transcript's `turn_completed` ends the turn by
             // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn.rs:909-917`
@@ -178,103 +205,121 @@ pub(crate) fn decode_grok_hook_payload(obj: &HookObject) -> Result<Vec<AgentEven
                     turn: TurnKey::Id(prompt.into()),
                 });
             }
-            Ok(evs)
+            evs
         }
         "pre_tool_use" => {
+            let (agent_id, key) = session()?;
             let tool =
                 required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str()).unwrap_or("?");
-            Ok(vec![
-                identity(),
+            vec![
+                identity(agent_id, key),
                 AgentEvent::ToolUseStart {
                     agent_id,
                     tool_use_id: tool_use_id(),
                     detail: Some(grok_tool_detail(tool, obj.get("toolInput"))),
                     copy_id: None,
                 },
-            ])
+            ]
         }
         // A FAILED tool fires `post_tool_use_failure` INSTEAD OF
-        // `post_tool_use`; a DENIED one fires `permission_denied` and never
-        // runs at all. All three close the activity, which also resolves a
-        // permission `UserActionRequest` gated on this tool — right for the denied case:
-        // the prompt is answered, so the sprite must not stay RequiresAction.
-        "post_tool_use" | "post_tool_use_failure" | "permission_denied" => Ok(vec![
-            identity(),
-            AgentEvent::ToolUseEnd {
-                agent_id,
-                tool_use_id: tool_use_id(),
-            },
-        ]),
+        // `post_tool_use` (`grok/fixtures/tool-error-hermetic`); a DENIED one
+        // fires `permission_denied` and never runs at all
+        // (`grok/fixtures/permission-hermetic`). All three close the activity,
+        // which also resolves a permission `UserActionRequest` gated on this tool —
+        // right for the denied case: the prompt is answered, so the sprite must
+        // not stay RequiresAction.
+        "post_tool_use" | "post_tool_use_failure" | "permission_denied" => {
+            let (agent_id, key) = session()?;
+            vec![
+                identity(agent_id, key),
+                AgentEvent::ToolUseEnd {
+                    agent_id,
+                    tool_use_id: tool_use_id(),
+                },
+            ]
+        }
         "notification" => {
             let kind = required(SOURCE_NAME, event, "notificationType", |k| {
                 obj.get(k)?.as_str()
             })
             .unwrap_or("?");
             match kind {
-                // Fires BEFORE the prompt shows. Resolution: approval fires NO
-                // hook (the tool proceeds → its post_tool_use End clears the
-                // gate); denial fires permission_denied (same End, above).
+                // Queued as the prompt is requested
+                // (`crates/codegen/xai-grok-workspace/src/permission/manager/mod.rs:1363-1369`)
+                // and fired from a listener task
+                // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/updates.rs:969-983`),
+                // so it precedes the answer (`grok/fixtures/permission-hermetic`). No
+                // event reports an approval
+                // (`HookEventName`, `crates/codegen/xai-grok-hooks/src/event.rs:78-180`):
+                // the tool proceeds, and its post_tool_use End clears the gate; a
+                // denial fires permission_denied (same End, above).
                 "permission_prompt" | "elicitation_dialog" => {
+                    let (agent_id, key) = session()?;
                     let msg = non_empty(obj, "message").unwrap_or(kind);
-                    Ok(vec![
-                        identity(),
+                    vec![
+                        identity(agent_id, key),
                         AgentEvent::user_action_request(
                             agent_id,
                             Some(ellipsize(msg, MAX_DECODED_FIELD_CHARS)),
                             RequestKeys::default(),
                         ),
-                    ])
+                    ]
                 }
-                // `idle_prompt` is the 60s-idle nudge — idle, not blocked; a
-                // RequiresAction would misrender every lunch break as a permission
-                // prompt. `agent_error` is the retry-exhausted toast, an
-                // errored TURN, which its transcript's `turn_completed` ends.
-                // `task_complete` announces a BACKGROUNDED shell/monitor task
-                // finishing — no `toolUseId`, and its spawning tool call
-                // already Ended at backgrounding time, so nothing to close.
-                // All matched explicitly so none spams the breadcrumb.
-                "idle_prompt" | "agent_error" | "task_complete" => Ok(vec![]),
+                // `idle_prompt` fires about a minute after the session settles
+                // (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:381`)
+                // — idle, not blocked; a RequiresAction would misrender every lunch
+                // break as a permission prompt. `agent_error` reports a turn's
+                // failed or exhausted retries
+                // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/hook_dispatch.rs:61-78`),
+                // an errored TURN its transcript's `turn_completed` ends
+                // (`grok/fixtures/model-error-hermetic`). `task_complete` announces
+                // a background task finishing and names no call
+                // (`crates/codegen/xai-grok-shell/src/tools/notification_bridge.rs:608-614`),
+                // so nothing to close. All matched explicitly so none spams the
+                // breadcrumb.
+                "idle_prompt" | "agent_error" | "task_complete" => vec![],
                 other => {
                     crate::source::drift::unknown_event(SOURCE_NAME, &format!("{event}:{other}"));
-                    Ok(vec![])
+                    vec![]
                 }
             }
         }
         "subagent_start" => {
+            let (agent_id, _) = session()?;
             let child_session_id = subagent_child_key(obj, event)?;
-            Ok(vec![AgentEvent::SessionStart {
+            vec![AgentEvent::SessionStart {
                 agent_id: AgentId::from_parts(SOURCE_NAME, &child_session_id),
                 source: SOURCE_NAME.to_string(),
                 session_id: child_session_id,
-                // The envelope cwd is the PARENT's — correct for the default
-                // inherited-cwd child. A worktree-ISOLATED child runs
-                // elsewhere, leaving only its outfit-palette cwd key
+                // The parent's session fires it
+                // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/updates.rs:726-733`),
+                // so its cwd is the PARENT's — correct for the default
+                // inherited-cwd child. A worktree-ISOLATED child
+                // (`crates/codegen/xai-grok-pager/docs/user-guide/16-subagents.md:155`)
+                // runs elsewhere, leaving only its outfit-palette cwd key
                 // parent-tinted: accepted residual.
                 cwd: cwd.unwrap_or("").into(),
                 parent_id: Some(agent_id),
-            }])
+            }]
         }
-        "subagent_stop" => Ok(vec![AgentEvent::SessionEnd {
+        "subagent_stop" => vec![AgentEvent::SessionEnd {
             agent_id: AgentId::from_parts(SOURCE_NAME, &subagent_child_key(obj, event)?),
             as_child: true,
-        }]),
-        SESSION_END => Ok(vec![AgentEvent::SessionEnd {
-            agent_id,
+        }],
+        SESSION_END => vec![AgentEvent::SessionEnd {
+            agent_id: session()?.0,
             as_child: false,
-        }]),
-        other => {
-            crate::source::drift::unknown_event(SOURCE_NAME, other);
-            Err(DecodeError::unsupported(SOURCE_NAME, other))
-        }
-    }
+        }],
+        _ => return Ok(None),
+    }))
 }
 
-/// The child's `subagentId` — upstream sets `child_session_id = subagent_id`,
-/// so this key coalesces with the child's own tool hooks AND its flat
-/// transcript dir name.
+/// The child's `subagentId`, the `sessionId` its own tool hooks carry and its
+/// flat transcript dir's name (`grok/fixtures/subagent-hermetic`), so the keys
+/// coalesce.
 fn subagent_child_key(obj: &serde_json::Map<String, Value>, event: &str) -> Result<String> {
     required_or_err(SOURCE_NAME, Some(event), "subagentId", |k| {
-        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
+        non_empty(obj, k)
     })
     .map(String::from)
 }
@@ -318,7 +363,7 @@ fn grok_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     crate::source::decoder::generic_keyed_detail(tool, args, KEYS)
 }
 
-/// Decode one `updates.jsonl` line. Envelope: `{"timestamp":<unix-secs>,
+/// Decode one `updates.jsonl` line, shaped `{"timestamp":<unix-secs>,
 /// "method":…,"params":{"sessionId":…,"update":{"sessionUpdate":"<tag>",…}}}`,
 /// where ACP notifications use camelCase fields and the xAI extension's fields
 /// are verbatim snake_case Rust names (`rename_all` covers only the tag).
@@ -585,7 +630,7 @@ fn resolve_grok_home(user: Option<PathBuf>, cwd: impl FnOnce() -> PathBuf) -> Pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{DecodeError, test_decode};
 
     fn cwd() -> PathBuf {
         PathBuf::from("/work")
@@ -615,7 +660,7 @@ mod tests {
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_grok_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     /// The payload's MAIN event is the LAST decoded one — activity arms
@@ -624,7 +669,7 @@ mod tests {
         decode_all(v).pop().expect("at least one event")
     }
 
-    fn envelope(event: &str) -> Value {
+    fn payload(event: &str) -> Value {
         json!({
             "hookEventName": event,
             "sessionId": "0197fa30-sess",
@@ -637,7 +682,7 @@ mod tests {
     #[test]
     fn session_start_public_source_field_never_drives_attribution() {
         for reason in ["new", "load"] {
-            let mut v = envelope("session_start");
+            let mut v = payload("session_start");
             v["source"] = json!(reason);
             match decode(v) {
                 AgentEvent::SessionStart { source, .. } => assert_eq!(source, SOURCE_NAME),
@@ -669,7 +714,7 @@ mod tests {
     /// The transcript's `_meta.modelId` owns the model.
     #[test]
     fn session_start_decodes_no_model() {
-        let mut v = envelope("session_start");
+        let mut v = payload("session_start");
         v["modelId"] = json!("grok-4-code");
         assert!(matches!(
             &decode_all(v)[..],
@@ -722,7 +767,7 @@ mod tests {
 
     #[test]
     fn tool_target_uses_grok_arg_vocabulary() {
-        let mut v = envelope("pre_tool_use");
+        let mut v = payload("pre_tool_use");
         v["toolName"] = json!("read_file");
         v["toolInput"] = json!({"path": "src/lib.rs"});
         assert!(
@@ -734,7 +779,7 @@ mod tests {
     #[test]
     fn permission_and_elicitation_notifications_are_user_action_requests() {
         for kind in ["permission_prompt", "elicitation_dialog"] {
-            let mut v = envelope("notification");
+            let mut v = payload("notification");
             v["notificationType"] = json!(kind);
             v["message"] = json!("Tool permission requested");
             let evs = decode_all(v);
@@ -749,7 +794,7 @@ mod tests {
 
     #[test]
     fn user_action_request_reason_falls_back_to_the_notification_type() {
-        let mut v = envelope("notification");
+        let mut v = payload("notification");
         v["notificationType"] = json!("permission_prompt");
         assert!(
             matches!(decode(v), AgentEvent::UserActionRequest { reason, .. }
@@ -759,40 +804,45 @@ mod tests {
 
     /// Zero events is the SAME observable for a knowingly-ignored type and an
     /// unrecognized one, so the test above cannot tell them apart — this one
-    /// does, on the drift breadcrumb. `task_complete` is dispatched by upstream
-    /// on every background-task completion (`tools/notification_bridge.rs`),
-    /// and `drift::unknown_event` is undeduped on the hook plane, so leaving it
+    /// does, on the drift breadcrumb. `task_complete` fires on every
+    /// background-task completion (the notification arm's cite), and
+    /// `drift::unknown_event` is undeduped on the hook plane, so leaving it
     /// unmatched turns routine background work into a recurring "the wire
     /// changed" warning that `pixtuoid doctor` surfaces.
     #[test]
     fn known_notification_types_stay_silent_while_a_novel_one_breadcrumbs() {
         for known in ["idle_prompt", "agent_error", "task_complete"] {
-            let mut v = envelope("notification");
+            let mut v = payload("notification");
             v["notificationType"] = json!(known);
             let logs = crate::test_capture::capture_logs(|| {
                 assert!(decode_all(v).is_empty());
             });
             assert!(
-                !logs.contains("unknown_event"),
+                !logs.contains(crate::source::drift::TARGET),
                 "{known} is a KNOWN non-requires-action type — it must not breadcrumb, got:\n{logs}"
             );
         }
         // Control: the breadcrumb still fires for a genuinely new type, so the
         // assertions above are silence-by-recognition, not a dead detector.
-        let mut novel = envelope("notification");
+        let mut novel = payload("notification");
         novel["notificationType"] = json!("some_future_nudge");
         let logs = crate::test_capture::capture_logs(|| {
             assert!(decode_all(novel).is_empty());
         });
         assert!(
-            logs.contains("unknown_event") && logs.contains("notification:some_future_nudge"),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::UnknownEvent,
+                &[("name", "notification:some_future_nudge")]
+            ),
             "an unrecognized notificationType must still breadcrumb, got:\n{logs}"
         );
     }
 
     #[test]
     fn subagent_start_registers_the_child_under_the_parent() {
-        let mut v = envelope("subagent_start");
+        let mut v = payload("subagent_start");
         v["subagentId"] = json!("0197fa31-child");
         v["subagentType"] = json!("explore");
         v["description"] = json!("map the build");
@@ -815,7 +865,7 @@ mod tests {
                 assert_eq!(
                     *parent_id,
                     Some(AgentId::from_parts(SOURCE_NAME, "0197fa30-sess")),
-                    "parent link from the envelope's (parent) sessionId"
+                    "parent link from the payload's (parent) sessionId"
                 );
             }
             other => panic!("expected the child's SessionStart alone, got {other:?}"),
@@ -834,7 +884,7 @@ mod tests {
 
     #[test]
     fn subagent_stop_ends_the_child_as_child() {
-        let mut v = envelope("subagent_stop");
+        let mut v = payload("subagent_stop");
         v["subagentId"] = json!("0197fa31-child");
         v["subagentType"] = json!("explore");
         v["exitCode"] = json!(0);
@@ -851,30 +901,24 @@ mod tests {
     fn subagent_events_without_subagent_id_are_malformed() {
         for event in ["subagent_start", "subagent_stop"] {
             assert!(
-                decode_grok_hook_payload(test_obj(&envelope(event))).is_err(),
+                test_decode(SOURCE_NAME, &payload(event)).is_err(),
                 "{event} without subagentId must bail"
             );
         }
     }
 
-    #[test]
-    fn key_falls_back_to_cwd_when_session_id_absent() {
-        let ev = decode(json!({
-            "hookEventName": "session_end",
-            "cwd": "/Users/dev/proj"
-        }));
-        assert!(matches!(ev, AgentEvent::SessionEnd { agent_id, .. }
-            if agent_id == AgentId::from_parts(SOURCE_NAME, "/Users/dev/proj")));
-    }
-
     fn missing(field: &str, logs: &str) -> bool {
-        logs.contains(<&str>::from(crate::source::drift::DriftKind::MissingField))
-            && logs.contains(field)
+        crate::source::drift::breadcrumbed(
+            logs,
+            SOURCE_NAME,
+            crate::source::drift::DriftKind::MissingField,
+            &[("field", field)],
+        )
     }
 
     #[test]
     fn a_prompt_submit_hook_starts_its_turn() {
-        let mut v = envelope("user_prompt_submit");
+        let mut v = payload("user_prompt_submit");
         v["promptId"] = json!("prompt-1");
         let evs = decode_all(v);
         assert!(
@@ -885,7 +929,7 @@ mod tests {
             "{evs:?}"
         );
         let logs = crate::test_capture::capture_logs(|| {
-            let evs = decode_all(envelope("user_prompt_submit"));
+            let evs = decode_all(payload("user_prompt_submit"));
             assert!(
                 matches!(evs.as_slice(), [AgentEvent::SessionStart { .. }]),
                 "{evs:?}"
@@ -898,9 +942,10 @@ mod tests {
     fn nothing_to_key_on_is_malformed() {
         for payload in [
             json!({"hookEventName": SESSION_END}),
-            json!({"hookEventName": SESSION_END, "cwd": "", "workspaceRoot": ""}),
+            // A cwd keys no session.
+            json!({"hookEventName": SESSION_END, "cwd": "/r", "workspaceRoot": "/r"}),
         ] {
-            let err = decode_grok_hook_payload(test_obj(&payload)).err();
+            let err = test_decode(SOURCE_NAME, &payload).err();
             assert!(
                 matches!(
                     &err,
@@ -910,7 +955,7 @@ mod tests {
                 "{payload}: {err:?}"
             );
         }
-        assert!(decode_grok_hook_payload(test_obj(&json!({"sessionId": "s"}))).is_err());
+        assert!(test_decode(SOURCE_NAME, &json!({"sessionId": "s"})).is_err());
     }
 
     #[test]
@@ -926,7 +971,7 @@ mod tests {
             "bogus",
         ] {
             assert!(
-                decode_grok_hook_payload(test_obj(&envelope(ev))).is_err(),
+                test_decode(SOURCE_NAME, &payload(ev)).is_err(),
                 "{ev} must bail"
             );
         }

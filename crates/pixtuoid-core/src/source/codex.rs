@@ -13,13 +13,14 @@ use crate::source::decoder::DecodeResult as Result;
 use serde_json::{Map, Value};
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
-    HookSubject, accept_all_paths, generic_tool_display, hook_identity, hook_session_id,
-    hook_tool_id_key, hook_tool_name, make_tool_detail, non_empty, required, required_or_err,
+    accept_all_paths, generic_tool_display, hook_identity, hook_tool_id_key, hook_tool_name,
+    make_tool_detail, non_empty, required,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind, ToolIdKey, Transcript,
+    ChildEndInference, FocusChannel, HookDecoding, Hyphen, SourceCaps, SourceDescriptor,
+    SourceKind, ToolIdKey, Transcript,
 };
 use crate::source::{AgentEvent, RequestKeys, Resolution, ToolDetail};
 use crate::state::TurnKey;
@@ -112,79 +113,65 @@ const TURN_ID: &str = "turn_id";
 /// and `Stop`, and `SubagentStart`/`SubagentStop`, which change the event's
 /// SUBJECT to a child's AgentId; every other session event falls through to
 /// the shared arms, a child's under its own id.
-pub(crate) fn decode_codex_hook_custom(obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
-    let event = obj
-        .get(crate::source::decoder::HOOK_EVENT_NAME)
-        .and_then(|s| s.as_str())
-        .unwrap_or("");
-    // A malformed SubagentStart/Stop is an Err, not Ok(None): an empty
-    // `session_id`/`agent_id` would mint a phantom that never coalesces with
-    // the real rollout.
-    let guards = || -> Result<(String, String)> {
-        let session_id = hook_session_id(obj, SOURCE_NAME, event)?;
-        let child = required_or_err(
-            SOURCE_NAME,
-            Some(event),
-            crate::source::decoder::SUBAGENT_ID,
-            |k| non_empty(obj, k),
-        )?;
-        Ok((session_id, child.to_owned()))
-    };
-    match event {
+pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    use crate::source::decoder::{subagent_fired, subagent_id, subagent_start};
+    let call_hook = |kind| decode_call_hook(hook, kind).map(Some);
+    match hook.event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
-        // `agent_id`). Keying the child on `agent_id` coalesces with that
+        // `agent_id`, as `codex/fixtures/subagent-hermetic`
+        // records). Keying the child on `agent_id` coalesces with that
         // rollout and joins the parent's scope tree (cascade / liveness /
         // readiness).
-        "SubagentStart" => {
-            let (session_id, child) = guards()?;
-            let cwd = obj.get("cwd").and_then(|s| s.as_str()).unwrap_or("").into();
-            Ok(Some(vec![AgentEvent::SessionStart {
-                agent_id: AgentId::from_parts(SOURCE_NAME, &child),
-                source: SOURCE_NAME.to_string(),
-                session_id: child,
-                cwd,
-                parent_id: Some(AgentId::from_parts(SOURCE_NAME, &session_id)),
-            }]))
-        }
-        // End the CHILD promptly, else its rollout lingers to the 30-min
-        // stale-sweep. Losing the race against the child's slot creation
+        "SubagentStart" => subagent_start(hook, str::to_owned).map(Some),
+        // End the CHILD promptly, else its rollout lingers until the stale-sweep
+        // (`state::reducer::stale_threshold`). Losing the race against the child's slot creation
         // leaves a harmless no-op plus that same fallback.
-        "SubagentStop" => {
-            let (_session_id, child) = guards()?;
-            Ok(Some(vec![AgentEvent::SessionEnd {
-                agent_id: AgentId::from_parts(SOURCE_NAME, &child),
-                as_child: true,
-            }]))
-        }
-        "PreToolUse" | "PostToolUse" | "PermissionRequest" | "Stop" => {
-            decode_call_hook(obj, event).map(Some)
-        }
+        "SubagentStop" => Ok(Some(vec![AgentEvent::SessionEnd {
+            agent_id: AgentId::from_parts(SOURCE_NAME, subagent_id(hook)?),
+            as_child: true,
+        }])),
+        "PreToolUse" => call_hook(CallHook::PreToolUse),
+        "PostToolUse" => call_hook(CallHook::PostToolUse),
+        "PermissionRequest" => call_hook(CallHook::PermissionRequest),
+        "Stop" => call_hook(CallHook::Stop),
         // A child's other events name it in `agent_id` beside the root's
-        // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:282-285`,
-        // `core/src/hook_runtime.rs:1042-1061` at rust-v0.163.0).
-        _ => crate::source::decoder::subagent_fired(obj, SOURCE_NAME, str::to_owned),
+        // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:280-286`,
+        // `core/src/hook_runtime.rs:1089-1108` at rust-v0.172.0).
+        _ => subagent_fired(hook, str::to_owned),
     }
 }
 
-/// The hooks around a call and `Stop`, on their [`HookSubject`]. `PreToolUse`
+/// The hooks [`decode_call_hook`] decodes, so it has an arm for each and for
+/// no other.
+#[derive(Clone, Copy)]
+enum CallHook {
+    PreToolUse,
+    PostToolUse,
+    PermissionRequest,
+    Stop,
+}
+
+/// The hooks around a call and `Stop`, on the subagent that fired one, else
+/// the root session. `PreToolUse`
 /// fires only for a tool with a pre-use payload, and `PostToolUse` only on a
-/// success whose tool has a post-use payload (`codex-rs/core/src/tools/registry.rs:1173`,
-/// `:141-148`, `:1025-1032` at rust-v0.171.0), so the rollout's call is the
+/// success whose tool has a post-use payload (`codex-rs/core/src/tools/registry.rs:1178`,
+/// `:142-149`, `:1030-1037` at rust-v0.172.0), so the rollout's call is the
 /// item, and its output the one end of a call no `PostToolUse` reports.
-fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
-    let session_id = match HookSubject::of(obj).child {
-        Some(child) => child.to_owned(),
-        None => hook_session_id(obj, SOURCE_NAME, event)?,
+fn decode_call_hook(hook: &Hook<'_>, kind: CallHook) -> Result<Vec<AgentEvent>> {
+    let (obj, event) = (hook.obj, hook.event);
+    let session_id = match non_empty(obj, crate::source::decoder::SUBAGENT_ID) {
+        Some(child) => child,
+        None => hook.session()?,
     };
-    let agent_id = AgentId::from_parts(SOURCE_NAME, &session_id);
+    let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let turn = turn_of(obj, event);
-    let identity = || hook_identity(agent_id, SOURCE_NAME, &session_id, obj);
+    let identity = || hook_identity(agent_id, SOURCE_NAME, session_id, obj);
     let tool_id_key = hook_tool_id_key(crate::source::registry::descriptor_for(SOURCE_NAME));
     let call =
         || required(SOURCE_NAME, event, tool_id_key, |k| non_empty(obj, k)).map(str::to_owned);
     let tool_name = || hook_tool_name(obj, SOURCE_NAME, event);
-    Ok(match event {
-        "PreToolUse" => {
+    Ok(match kind {
+        CallHook::PreToolUse => {
             let tool_name = tool_name();
             let pending = call().map(|tool_use_id| AgentEvent::ToolUsePending {
                 agent_id,
@@ -194,18 +181,18 @@ fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
             });
             [identity()].into_iter().chain(pending).collect()
         }
-        "PostToolUse" => {
+        CallHook::PostToolUse => {
             let ran = call().map(|c| AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: Some(c),
             });
             [identity()].into_iter().chain(ran).collect()
         }
-        // The rollout never persists an approval (`codex-rs/rollout/src/policy.rs:195-200`
-        // at rust-v0.164.0), so this is its only signal. A `write_stdin`
-        // prompt names its own call (`core/src/tools/approvals.rs:156-187`),
+        // The rollout never persists an approval (`codex-rs/rollout/src/policy.rs:198-204`
+        // at rust-v0.172.0), so this is its only signal. A `write_stdin`
+        // prompt names its own call (`core/src/tools/approvals.rs:200-226`),
         // which no `PreToolUse` announces.
-        "PermissionRequest" => vec![
+        CallHook::PermissionRequest => vec![
             identity(),
             AgentEvent::user_action_request(
                 agent_id,
@@ -223,9 +210,9 @@ fn decode_call_hook(obj: &HookObject, event: &str) -> Result<Vec<AgentEvent>> {
             ),
         ],
         // Stop runs only with no follow-up pending, yet a blocking Stop hook
-        // continues the turn (`core/src/session/turn.rs:722-759` at
-        // rust-v0.164.0): it answers the turn's requests, and ends nothing.
-        _ => turn
+        // continues the turn (`core/src/session/turn.rs:852-894` at
+        // rust-v0.172.0): it answers the turn's requests, and ends nothing.
+        CallHook::Stop => turn
             .map(|turn| AgentEvent::UserActionResolved {
                 agent_id,
                 by: Resolution::Turn(turn),
@@ -493,7 +480,7 @@ fn resolve_codex_home(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{test_decode, test_hook};
 
     #[test]
     fn codex_home_uses_env_when_it_points_at_an_existing_dir() {
@@ -628,32 +615,77 @@ mod tests {
 
     #[test]
     fn subagent_hooks_with_empty_ids_are_err_not_fallthrough() {
+        // A child's end keys on the child alone, so only a start reads the root.
+        let event = "SubagentStart";
+        let no_session = json!({"hook_event_name": event, "agent_id": "child"});
+        let mut err = None;
+        let logs = crate::test_capture::capture_logs(|| {
+            err = test_decode(SOURCE_NAME, &no_session).err();
+        });
+        assert!(
+            matches!(
+                &err,
+                Some(crate::source::decoder::DecodeError::Missing {
+                    context: Some(context),
+                    field: "session_id",
+                    ..
+                }) if context == event
+            ),
+            "{event} without session_id must Err naming it in {event}, got {err:?}"
+        );
+        let fields = [("event", event), ("field", "session_id")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "{fields:?} in\n{logs}"
+        );
         for event in ["SubagentStart", "SubagentStop"] {
-            let no_session = json!({"hook_event_name": event, "agent_id": "child"});
-            let mut err = None;
-            let logs = crate::test_capture::capture_logs(|| {
-                err = decode_codex_hook_custom(test_obj(&no_session)).err();
-            });
+            let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
+            let decoded = test_decode(SOURCE_NAME, &empty_child);
             assert!(
                 matches!(
-                    &err,
-                    Some(crate::source::decoder::DecodeError::Missing {
-                        context: Some(context),
-                        field: "session_id",
+                    decoded,
+                    Err(crate::source::decoder::DecodeError::Missing {
+                        field: crate::source::decoder::SUBAGENT_ID,
                         ..
-                    }) if context == event
+                    })
                 ),
-                "{event} without session_id must Err naming it in {event} (claim-fully), got {err:?}"
-            );
-            for needle in [crate::source::drift::TARGET, "missing_field", "session_id"] {
-                assert!(logs.contains(needle), "{event}: no {needle:?} in {logs}");
-            }
-            let empty_child = json!({"hook_event_name": event, "session_id": "s", "agent_id": ""});
-            assert!(
-                decode_codex_hook_custom(test_obj(&empty_child)).is_err(),
-                "{event} with empty agent_id must Err — a phantom child never coalesces"
+                "{event} with empty agent_id must err naming it, got {decoded:?}"
             );
         }
+    }
+
+    /// A start a child fires itself names its root only to parent it, so one
+    /// without its root still registers the child, unparented and
+    /// breadcrumbed.
+    #[test]
+    fn a_child_fired_start_without_its_root_registers_and_breadcrumbs() {
+        let v = json!({"hook_event_name": "UserPromptSubmit", "agent_id": "c"});
+        let mut evs = None;
+        let logs = crate::test_capture::capture_logs(|| {
+            evs = Some(test_decode(SOURCE_NAME, &v).expect("decodes"));
+        });
+        let evs = evs.expect("ran");
+        assert!(
+            evs.iter().any(|e| matches!(e,
+                AgentEvent::SessionStart { agent_id, parent_id: None, .. }
+                    if *agent_id == AgentId::from_parts(SOURCE_NAME, "c"))),
+            "{evs:?}"
+        );
+        let fields = [("event", "UserPromptSubmit"), ("field", "session_id")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "{fields:?} in\n{logs}"
+        );
     }
 
     #[test]
@@ -661,7 +693,10 @@ mod tests {
         for event in ["SessionStart", "UserPromptSubmit", "SessionEnd"] {
             let v = json!({"hook_event_name": event, "session_id": "s"});
             assert!(
-                matches!(decode_codex_hook_custom(test_obj(&v)), Ok(None)),
+                matches!(
+                    decode_codex_hook_custom(&test_hook(SOURCE_NAME, &v)),
+                    Ok(None)
+                ),
                 "{event}"
             );
         }
@@ -833,10 +868,18 @@ mod tests {
                 [AgentEvent::Identity { .. }]
             ));
         });
-        assert!(
-            logs.contains(TURN_ID) && logs.contains("tool_use_id"),
-            "{logs}"
-        );
+        for (event, field) in [("Stop", TURN_ID), ("PreToolUse", "tool_use_id")] {
+            let fields = [("event", event), ("field", field)];
+            assert!(
+                crate::source::drift::breadcrumbed(
+                    &logs,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::MissingField,
+                    &fields
+                ),
+                "{fields:?}\n{logs}"
+            );
+        }
     }
 
     #[test]
@@ -849,7 +892,7 @@ mod tests {
             "_pixtuoid_source": SOURCE_NAME,
         });
         assert!(matches!(
-            decode_codex_hook_custom(test_obj(&payload)),
+            decode_codex_hook_custom(&test_hook(SOURCE_NAME, &payload)),
             Ok(None)
         ));
         let events = crate::source::decoder::decode_hook_payload(payload).unwrap();
@@ -933,7 +976,7 @@ mod tests {
             assert!(unpaired.is_empty(), "{unpaired:?}");
         });
         assert!(
-            !logs.contains("missing_field"),
+            !logs.contains(crate::source::drift::TARGET),
             "an output that answers no call is codex's own shape, got:\n{logs}"
         );
         for call in [json!(null), json!("")] {
@@ -945,7 +988,12 @@ mod tests {
                 assert!(ev(line).is_empty());
             });
             assert!(
-                logs.contains("missing_field") && logs.contains("call_id"),
+                crate::source::drift::breadcrumbed(
+                    &logs,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::MissingField,
+                    &[("field", CALL_ID)]
+                ),
                 "a custom output owes its call, {call}: {logs}"
             );
         }
@@ -957,7 +1005,7 @@ mod tests {
             ] if c == "call_x"));
         });
         assert!(
-            !logs.contains("missing_field"),
+            !logs.contains(crate::source::drift::TARGET),
             "a keyed custom output owes nothing: {logs}"
         );
     }
@@ -1062,7 +1110,15 @@ mod tests {
                 "an end naming no turn still ends the work: {out:?}"
             );
         });
-        assert!(logs.contains(TURN_ID), "{logs}");
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("event", "task_complete"), ("field", TURN_ID)]
+            ),
+            "{logs}"
+        );
     }
 
     #[test]

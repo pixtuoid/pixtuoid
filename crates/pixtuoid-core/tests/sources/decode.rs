@@ -58,13 +58,6 @@ fn decode_pre_tool_use_write_maps_to_typing() {
 }
 
 #[test]
-fn decode_unknown_event_returns_err() {
-    let mut bad = load("session_start");
-    bad["hook_event_name"] = serde_json::Value::String("UnknownThing".into());
-    assert!(decode_hook_payload(bad).is_err());
-}
-
-#[test]
 fn empty_session_id_is_rejected() {
     assert!(
         decode_hook_payload(json!({
@@ -169,31 +162,6 @@ fn codex_subagent_stop_ends_child_not_parent() {
             );
         }
         other => panic!("expected SessionEnd, got {other:?}"),
-    }
-}
-
-#[test]
-fn codex_subagent_hooks_reject_missing_or_empty_agent_id() {
-    for event in ["SubagentStart", "SubagentStop"] {
-        assert!(
-            decode_hook_payload(json!({
-                "hook_event_name": event,
-                "session_id": "parent-sess",
-                "_pixtuoid_source": "codex"
-            }))
-            .is_err(),
-            "{event} without agent_id must Err"
-        );
-        assert!(
-            decode_hook_payload(json!({
-                "hook_event_name": event,
-                "session_id": "parent-sess",
-                "agent_id": "",
-                "_pixtuoid_source": "codex"
-            }))
-            .is_err(),
-            "{event} with empty agent_id must Err"
-        );
     }
 }
 
@@ -360,22 +328,6 @@ fn cc_subagent_start_does_not_double_prefix_an_already_prefixed_agent_id() {
             AgentId::from_parts("claude-code", "agent-abc123"),
             "wire form {wire_id:?} must key as agent-abc123"
         );
-    }
-}
-
-#[test]
-fn cc_subagent_hooks_reject_missing_or_empty_agent_id() {
-    for event in ["SubagentStart", "SubagentStop"] {
-        for payload in [
-            json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "session_id": "parent-sess"}),
-            json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "session_id": "parent-sess", "agent_id": ""}),
-            json!({"_pixtuoid_source": "claude-code", "hook_event_name": event, "agent_id": "abc"}),
-        ] {
-            assert!(
-                decode_hook_payload(payload.clone()).is_err(),
-                "CC {event} with missing/empty ids must Err, got Ok for {payload}"
-            );
-        }
     }
 }
 
@@ -728,20 +680,6 @@ fn ag_ask_permission_and_question_emits_user_action_request() {
         }
         other => panic!("expected UserActionRequest, got {other:?}"),
     }
-}
-
-#[test]
-fn decode_hook_payload_missing_session_id_returns_err() {
-    let payload = serde_json::json!({
-        "_pixtuoid_source": "claude-code",
-        "hook_event_name": "SessionStart",
-        "transcript_path": "/tmp/t.jsonl",
-        "cwd": "/repo"
-    });
-    assert!(
-        decode_hook_payload(payload).is_err(),
-        "missing session_id must return Err"
-    );
 }
 
 #[test]

@@ -189,7 +189,7 @@ fn a_non_utf8_workspace_is_kept_lossily() {
 }
 
 #[test]
-fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
+fn codewhale_event_mode_builds_payload_from_env_and_ignores_stdin() {
     // Env-mode never reads stdin (invariant 5): the fixture holds the child's
     // stdin pipe OPEN (never write, never close) and bounds the wait, so a
     // re-added blocking read hangs and trips it, where an EOF-able pipe would pass.
@@ -371,7 +371,7 @@ fn non_utf8_argv_still_delivers_the_event() {
     use std::os::unix::ffi::OsStrExt;
     // Non-UTF-8 bytes are legal in Unix argv, and `std::env::args()` PANICS
     // while collecting such an argument; the panic hook exits 0, so only the
-    // delivered envelope shows `args_os` kept the event.
+    // delivered payload shows `args_os` kept the event.
     let path = sock_path("nonutf8");
     let listener = UnixListener::bind(&path).expect("bind listener");
     listener.set_nonblocking(true).unwrap();

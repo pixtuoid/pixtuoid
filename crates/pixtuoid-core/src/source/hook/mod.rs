@@ -316,7 +316,7 @@ fn bind_targets(source: &str, evs: &[AgentEvent]) -> std::collections::BTreeMap<
 }
 
 /// Stamp the connection's peeked `_pid` onto every `Identity` event of a decoded
-/// batch — the per-source decoders never see the envelope key, so this single
+/// batch — the per-source decoders never see the payload's `_pid` key, so this single
 /// patch point IS the whole focus-jump wiring.
 ///
 /// The gate is the registry's [`FocusChannel`](crate::source::registry::FocusChannel) capability. `TranscriptProbe`
@@ -412,7 +412,7 @@ async fn handle_conn(
                     // order on the same channel, so the reducer registers with
                     // real identity before the activity event applies.
                     Ok(evs) => {
-                        // Not beside the forward: an envelope that decodes to
+                        // Not beside the forward: a payload that decodes to
                         // nothing is no sign of its CLI.
                         let source = hook_source(obj);
                         if let (Some(relay), Some(source)) =
@@ -456,7 +456,7 @@ mod tests {
     use super::*;
     use crate::AgentId;
     use crate::source::AgentEvent;
-    use crate::source::decoder::{SOURCE_STAMP, test_obj};
+    use crate::source::decoder::{SOURCE_STAMP, test_decode};
     use tokio::io::AsyncWriteExt;
 
     #[test]
@@ -587,12 +587,12 @@ mod tests {
     /// now load-bearing — and a PluginStamp pid needs no corroboration.
     #[test]
     fn an_omp_session_batch_pairs_start_and_identity_and_binds_once_trusted() {
-        let evs = crate::source::omp::decode_omp_hook_payload(test_obj(&serde_json::json!({
+        let evs = test_decode(crate::source::omp::SOURCE_NAME, &serde_json::json!({
             "type": "session_start",
             "sessionFile": "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-000000000001.jsonl",
             "sessionId": "01a00000-0000-7000-8000-000000000001",
             "cwd": "/repo",
-        })))
+        }))
         .unwrap();
         assert!(
             matches!(
@@ -611,13 +611,13 @@ mod tests {
 
         // The switch batch: the current id's Start+Identity pair still collapses
         // to one trusted sighting, and the ended id binds a no-op beside it.
-        let evs = crate::source::omp::decode_omp_hook_payload(test_obj(&serde_json::json!({
+        let evs = test_decode(crate::source::omp::SOURCE_NAME, &serde_json::json!({
             "type": "session_switch",
             "sessionFile": "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-000000000002.jsonl",
             "previousSessionFile": "/h/.omp/agent/sessions/-repo/2026-08-30T01-00-00-000Z_01a00000-0000-7000-8000-000000000001.jsonl",
             "sessionId": "01a00000-0000-7000-8000-000000000002",
             "cwd": "/repo",
-        })))
+        }))
         .unwrap();
         assert_eq!(
             evs.len(),

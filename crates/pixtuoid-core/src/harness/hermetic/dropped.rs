@@ -13,7 +13,7 @@ use super::{Profile, Scenario, literals};
 use crate::harness::PROVENANCE;
 use crate::harness::captures::json_lines;
 use crate::harness::provenance::{Dropped, Provenance};
-use crate::harness::reads::{is_hook_envelope, string_leaves, strip_lines};
+use crate::harness::reads::{is_hook_payloads, string_leaves, strip_lines};
 
 /// One transcript's lines, raw and as the strip keeps them.
 pub(crate) type Pair = (Vec<Value>, Vec<Value>);
@@ -79,14 +79,14 @@ impl Dropped {
 }
 
 /// Each transcript of `files` the strip applies to, as a [`Pair`]: a hook
-/// envelope's unread name already breadcrumbs (`drift::unknown_event`).
+/// payload's unread name already breadcrumbs (`drift::unknown_event`).
 ///
 /// # Errors
 ///
 /// If a file cannot be read.
 pub(crate) fn pairs(source: &str, files: &[PathBuf]) -> std::io::Result<Vec<Pair>> {
     let mut out = Vec::new();
-    for file in files.iter().filter(|f| !is_hook_envelope(f)) {
+    for file in files.iter().filter(|f| !is_hook_payloads(f)) {
         let raw = json_lines(file)?;
         let mut kept = raw.clone();
         if strip_lines(source, file, &mut kept) {

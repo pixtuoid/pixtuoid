@@ -1,43 +1,44 @@
 //! CodeWhale source — HOOK-ONLY. There is no tailable per-session transcript
-//! to watch: `rollout_path` is never written in production, saved sessions are
-//! full-snapshot `{id}.json` rewrites, and headless `codewhale exec` fires no
-//! session lifecycle. Cites are `codewhale-hq/Codewhale` at `v0.10.2`.
+//! to watch: a saved session is its `{id}.json`, rewritten whole
+//! (`crates/engine/src/session_manager.rs:2583-2586`, `:4112-4114`), and headless
+//! `codewhale exec` fires no session lifecycle (`docs/HOOKS.md:42-48`). Cites are
+//! `codewhale-hq/Codewhale` at `v0.10.4`.
 //!
 //! CodeWhale's hooks DON'T hand the command a CC-shaped JSON payload on stdin —
-//! identity travels as ENV VARS (`docs/HOOKS.md:291-315`). So the shim runs in
+//! identity travels as ENV VARS (`docs/HOOKS.md:298-322`). So the shim runs in
 //! **env-mode** (`pixtuoid-hook --event <name>`): it reads the env vars and
-//! synthesizes this envelope, stamped `_pixtuoid_source: "codewhale"`:
+//! synthesizes this payload, stamped `_pixtuoid_source: "codewhale"`:
 //!
 //! ```json
 //! {"event":"tool_call_before","session_id":"sess_1a2b3c4d","cwd":"/repo","tool":"exec_shell","tool_args":"{\"command\":\"ls -la\"}","tool_call_id":"7f7a…"}
 //! ```
 //!
 //! - **Key on `session_id`.** Every event of one TUI session carries the same
-//!   `CODEWHALE_SESSION_ID` (`crates/tui/src/hooks/executor.rs:416-419`), so two
+//!   `CODEWHALE_SESSION_ID` (`crates/engine/src/hooks/executor.rs:416-419`), so two
 //!   sessions in one workspace are two sprites. A tool call's before and after
-//!   share `CODEWHALE_TOOL_CALL_ID` (`:371-374`).
+//!   share `CODEWHALE_TOOL_CALL_ID` (`:372-375`).
 //!
 //! - **[`AgentEvent::UserActionRequest`].** `waiting_for_user` fires as an approval prompt opens, a
-//!   question is asked or a goal continuation parks (`docs/HOOKS.md:248`); its
-//!   `reason` rides stdin (`:251-252`), which env-mode never reads, so every wait
+//!   question is asked or a goal continuation parks (`docs/HOOKS.md:255`); its
+//!   `reason` rides stdin (`:258-259`), which env-mode never reads, so every wait
 //!   reads alike. `session_idle` fires as a turn or a wait settles to idle
 //!   (`crates/tui/src/tui/ui/observer_hooks.rs:178-196`): the end of a wait no
 //!   tool end resolves.
 //!
-//! - **Exit profile.** `session_end` fires on a clean quit, so
-//!   `has_exit_signal: true`. An ABRUPT exit fires none — the shim resolves
-//!   CodeWhale's pid by walking past the runner's shell (on Windows too, #528)
-//!   and `hook::HookPidWatch` ends the sprite when that pid dies.
+//! - **Exit profile.** `session_end` fires on a graceful shutdown
+//!   (`docs/HOOKS.md:243`), so `has_exit_signal: true`. An ABRUPT exit fires
+//!   none — the shim resolves CodeWhale's pid by walking past the runner's shell
+//!   (`sh -c`, or `cmd /C` on Windows: `crates/engine/src/hooks/executor.rs:1651-1666`;
+//!   #528) and `hook::HookPidWatch` ends the sprite when that pid dies.
 
-use crate::source::decoder::{
-    DecodeError, DecodeResult as Result, non_empty, required, required_or_err,
-};
+use crate::source::decoder::{DecodeResult as Result, non_empty, required, required_or_err};
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::registry::{
-    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind,
+    ChildEndInference, Corroboration, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField,
+    SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
@@ -54,18 +55,22 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: None,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_cw_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_cw_hook_payload,
+        }),
         caps: SourceCaps {
-            // session_end fires on a clean TUI quit — best-effort counts.
+            // The module doc's exit profile — best-effort counts.
             has_exit_signal: true,
             // message_submit re-emits SessionStart, so a swept-but-live session
             // walks back in on the next prompt.
             resurrects_on_prompt: true,
-            // The recorded dispatch fires nothing of the child's own between
-            // `subagent_spawn` and `subagent_complete`.
+            // The recorded dispatch (`codewhale/fixtures/child-error-hermetic`)
+            // fires nothing of the child's own between `subagent_spawn` and
+            // `subagent_complete`.
             delegations_are_hook_silent: true,
             // `agent start` returns at dispatch, its child running on until its
-            // own `subagent_complete`.
+            // own `subagent_complete` (the same recording).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
             brackets_turns: false,
@@ -78,7 +83,7 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
 
 /// CodeWhale's one sub-agent tool; its `action` picks the verb
 /// (`parse_agent_tool_action`, `codewhale-hq/Codewhale`
-/// `crates/tui/src/tools/subagent/mod.rs`). The CHILD gets its own sprite from the
+/// `crates/engine/src/tools/subagent/mod.rs:14607`). The CHILD gets its own sprite from the
 /// `subagent_spawn`/`subagent_complete` observer hooks.
 pub(crate) const SUBAGENT_TOOL: &str = "agent";
 
@@ -105,9 +110,18 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
     })
 }
 
-/// Decode one CodeWhale hook envelope (already identified by
-/// `_pixtuoid_source == "codewhale"`), keyed on `session_id`. An unhandled event
-/// bails: registered-vs-decoded drift must be loud, not a silent drop.
+/// Where env-mode's synthesized payload names its event and session: field
+/// names the raw subagent hooks share too (`docs/HOOKS.md:658-665`).
+const ENVELOPE: Envelope = Envelope {
+    event_field: "event",
+    session_field: SessionField {
+        within: None,
+        field: "session_id",
+    },
+};
+
+/// Decode one CodeWhale hook payload (already identified by
+/// `_pixtuoid_source == "codewhale"`), keyed on `session_id`.
 ///
 /// The activity arms prepend an [`AgentEvent::Identity`]: CodeWhale is
 /// HOOK-ONLY, so the identity is the one claim that registers a session first
@@ -115,20 +129,19 @@ fn agent_call_delegates(args: Option<&Value>) -> bool {
 ///
 /// # Errors
 ///
-/// If the payload lacks `event`, names an unhandled event, or lacks a non-empty field its event carries.
-pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, "event", |k| obj.get(k)?.as_str())?;
+/// If the payload lacks a non-empty field its event carries.
+pub(crate) fn decode_cw_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
 
     // Subagent observer hooks are forwarded RAW from CodeWhale's stdin, so they
-    // carry CodeWhale's OWN field names and no `cwd` at all — they must be
-    // handled before the requirements below.
-    if let Some(events) = decode_cw_subagent(event, obj)? {
-        return Ok(events);
+    // carry CodeWhale's OWN field names and no `cwd` at all
+    // (`codewhale/fixtures/child-error-hermetic`) — they must be handled before
+    // the requirements below.
+    if let Some(events) = decode_cw_subagent(hook)? {
+        return Ok(Some(events));
     }
 
-    let session = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| {
-        non_empty(obj, k)
-    })?;
+    let session = hook.session()?;
     let cwd = required_or_err(SOURCE_NAME, Some(event), "cwd", |k| non_empty(obj, k))?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session);
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, session, Some(cwd.into()));
@@ -138,21 +151,21 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
             .map(str::to_owned)
     };
 
-    match event {
-        // message_submit (every prompt) is the RESURRECT path — a stale-swept
+    Ok(Some(match event {
+        // message_submit (every prompt: `docs/HOOKS.md:245`) is the RESURRECT path — a stale-swept
         // session walks back in on its next prompt, CodeWhale's only
         // re-creation signal. The reducer ignores it when the slot exists.
-        "session_start" | "message_submit" => Ok(vec![AgentEvent::SessionStart {
+        "session_start" | "message_submit" => vec![AgentEvent::SessionStart {
             agent_id,
             source: SOURCE_NAME.to_string(),
             session_id: session.to_string(),
             cwd: cwd.into(),
             parent_id: None,
-        }]),
+        }],
         "tool_call_before" => {
             let tool =
                 required(SOURCE_NAME, event, "tool", |k| obj.get(k)?.as_str()).unwrap_or("?");
-            Ok(vec![
+            vec![
                 identity(),
                 AgentEvent::ToolUseStart {
                     agent_id,
@@ -160,40 +173,38 @@ pub(crate) fn decode_cw_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                     detail: Some(cw_tool_detail(tool, obj.get("tool_args"))),
                     copy_id: None,
                 },
-            ])
+            ]
         }
-        "tool_call_after" => Ok(vec![
+        "tool_call_after" => vec![
             identity(),
             AgentEvent::ToolUseEnd {
                 agent_id,
                 tool_use_id: tool_use_id(),
             },
-        ]),
+        ],
         // Its exit hook is submitted at least one loop pass later, and both drain one FIFO across
-        // `OBSERVER_DISPATCH_WORKERS` threads (`event_loop.rs:2087`, `observer_hooks.rs:178-196`,
+        // `OBSERVER_DISPATCH_WORKERS` threads (`event_loop.rs:2384`, `observer_hooks.rs:178-196`,
         // `hooks/executor.rs:1189-1250`), so only a cancel pending as the dialog opens can land
         // this after its exit; the next tool start, `session_idle` or end clears that RequiresAction.
-        "waiting_for_user" => Ok(vec![
+        "waiting_for_user" => vec![
             identity(),
             AgentEvent::user_action_request(agent_id, None, RequestKeys::default()),
-        ]),
-        "session_idle" => Ok(vec![identity(), AgentEvent::turn_end(agent_id)]),
-        "session_end" => Ok(vec![AgentEvent::SessionEnd {
+        ],
+        "session_idle" => vec![identity(), AgentEvent::turn_end(agent_id)],
+        "session_end" => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
-        }]),
-        other => {
-            crate::source::drift::unknown_event(SOURCE_NAME, other);
-            Err(DecodeError::unsupported(SOURCE_NAME, other))
-        }
-    }
+        }],
+        _ => return Ok(None),
+    }))
 }
 
 /// CodeWhale's `subagent_spawn` / `subagent_complete` observer hooks, forwarded
 /// RAW from stdin so the payload is CodeWhale's own shape: `agent_id` = the
 /// CHILD, `session_id` = its parent's session, `workspace` = the parent's cwd
-/// (`docs/HOOKS.md:648-665`). `Ok(None)` for any other event.
-fn decode_cw_subagent(event: &str, obj: &HookObject) -> Result<Option<Vec<AgentEvent>>> {
+/// (`docs/HOOKS.md:658-675`). `Ok(None)` for any other event.
+fn decode_cw_subagent(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     let is_spawn = match event {
         "subagent_spawn" => true,
         "subagent_complete" => false,
@@ -211,9 +222,7 @@ fn decode_cw_subagent(event: &str, obj: &HookObject) -> Result<Option<Vec<AgentE
         }]));
     }
 
-    let parent = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| {
-        non_empty(obj, k)
-    })?;
+    let parent = hook.session()?;
     Ok(Some(vec![AgentEvent::SessionStart {
         agent_id: child_id,
         source: SOURCE_NAME.to_string(),
@@ -241,11 +250,11 @@ fn cw_tool_detail(tool: &str, raw_args: Option<&Value>) -> ToolDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_cw_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     /// The payload's MAIN event: the LAST decoded one, since activity arms
@@ -296,7 +305,7 @@ mod tests {
             json!({"event": "session_end", "session_id": "", "cwd": "/r"}),
             json!({"event": "session_end", "cwd": "/r"}),
         ] {
-            assert!(decode_cw_hook_payload(test_obj(&v)).is_err(), "{v}");
+            assert!(test_decode(SOURCE_NAME, &v).is_err(), "{v}");
         }
     }
 
@@ -304,9 +313,10 @@ mod tests {
     fn unknown_event_bails_loudly() {
         for ev in ["turn_end", "mode_change", "on_error", "shell_env", "Bogus"] {
             assert!(
-                decode_cw_hook_payload(test_obj(
+                test_decode(
+                    SOURCE_NAME,
                     &json!({"event": ev, "session_id": "s", "cwd": "/r"})
-                ))
+                )
                 .is_err(),
                 "{ev} must bail (not registered, must not decode silently)"
             );
@@ -370,13 +380,13 @@ mod tests {
             "event": "subagent_spawn", "agent_id": "agent-xy",
             "session_id": "sess_dead", "workspace": "/r"
         });
-        assert!(decode_cw_hook_payload(test_obj(&spawn)).is_ok());
+        assert!(test_decode(SOURCE_NAME, &spawn).is_ok());
         for key in ["agent_id", "session_id", "workspace"] {
             let mut v = spawn.clone();
             v[key] = json!("");
-            assert!(decode_cw_hook_payload(test_obj(&v)).is_err(), "{key}");
+            assert!(test_decode(SOURCE_NAME, &v).is_err(), "{key}");
         }
-        assert!(decode_cw_hook_payload(test_obj(&json!({"event": "subagent_complete"}))).is_err());
+        assert!(test_decode(SOURCE_NAME, &json!({"event": "subagent_complete"})).is_err());
     }
 
     #[test]

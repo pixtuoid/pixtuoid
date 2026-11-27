@@ -6,7 +6,7 @@
   "command": "just hermetic --record claude-code",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 503
+    "blanked": 504
   },
   "aimock": "1.48.0",
   "script": "tests/sources/claude_code/hermetic/subagent.json",

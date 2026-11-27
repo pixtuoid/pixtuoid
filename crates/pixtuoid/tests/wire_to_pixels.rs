@@ -391,7 +391,7 @@ fn lobster_px(r: &mut TuiRenderer<TestBackend>, scene: &SceneState, times: &[Sys
 
 /// Drives one openclaw capture through the presence seam and hands back the
 /// office it leaves. `attach_after` starts the stream just past the first
-/// envelope of a type, where a listener that attached late picks it up;
+/// payload of a type, where a listener that attached late picks it up;
 /// `stop_at` ends it before a type, as the lobster test does to stay inside the
 /// live window.
 fn openclaw_scene(scenario: &str, attach_after: Option<&str>, stop_at: &[&str]) -> SceneState {
@@ -439,7 +439,7 @@ fn openclaw_state(
 }
 
 /// pixtuoid usually starts AFTER the gateway, so `gateway_start` is the one
-/// envelope a real attach never sees: its hook exits into a socket nobody holds
+/// payload a real attach never sees: its hook exits into a socket nobody holds
 /// yet, and the stream pixtuoid gets is the rest.
 #[test]
 fn a_gateway_we_never_saw_start_still_materializes_from_its_session_wire() {
@@ -447,7 +447,7 @@ fn a_gateway_we_never_saw_start_still_materializes_from_its_session_wire() {
     assert_eq!(
         openclaw_state("tool-run-hermetic", Some("gateway_start"), &["agent_end"]),
         DaemonState::Running,
-        "a mid-attach stream carries no gateway_start, so the session envelopes must \
+        "a mid-attach stream carries no gateway_start, so the session payloads must \
          materialize the instance themselves and put the turn in flight on it"
     );
     assert_eq!(
@@ -475,7 +475,7 @@ fn a_failed_provider_degrades_the_gateway_rather_than_downing_it() {
 /// The daemon/presence class: `apply_presence` is the sibling-channel seam
 /// `runtime/driver.rs` uses — NEVER `Reducer::apply`, which is `AgentId`-pure.
 #[test]
-fn openclaw_presence_envelope_renders_a_lobster() {
+fn openclaw_presence_payload_renders_a_lobster() {
     let now = t0();
     let scene = openclaw_scene("tool-run-hermetic", None, &["session_end", "gateway_stop"]);
     assert_ne!(

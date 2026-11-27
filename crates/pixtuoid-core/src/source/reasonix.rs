@@ -1,10 +1,12 @@
 //! Reasonix source — HOOK-ONLY (no JSONL watcher).
 //!
-//! Reasonix (github.com/esengine/DeepSeek-Reasonix) ships a CC-style hook
-//! system; connecting it links a GLOBAL plugin whose hooks run the shim —
-//! project-scope hooks are trust-gated and would silently not fire. Payloads
+//! Reasonix (github.com/esengine/DeepSeek-Reasonix) ships a hook system on CC's
+//! event names (`internal/ext/hook/hook.go:41-66` @ v2.61.0); connecting it
+//! links a GLOBAL plugin whose hooks run the shim —
+//! project hooks run only once approved (`internal/ext/hook/hook.go:228-229`
+//! @ v2.61.0), so those would silently not fire. Payloads
 //! arrive on the shared hook socket stamped
-//! `_pixtuoid_source: "reasonix"` in Reasonix's own envelope, NOT the CC shape:
+//! `_pixtuoid_source: "reasonix"` in Reasonix's own payload shape, NOT CC's:
 //!
 //! ```json
 //! {"event":"PreToolUse","sessionId":"s1","cwd":"/repo","toolName":"bash","toolArgs":{"command":"ls"}}
@@ -12,27 +14,23 @@
 //!
 //! camelCase fields, `event` discriminator (not `hook_event_name`), no
 //! transcript path, and no tool-call id on any event we register
-//! (`internal/ext/hook/hook.go:828-834` Payload @ v2.60.0).
-//! It DOES carry `sessionId` — every recorded payload does — so that is the
-//! AgentId key. Keying on the workspace instead would merge two sessions in ONE
-//! project into a single sprite (the Cursor lesson; `hermes.rs` states it too).
-//!
-//! Why no JSONL transport: v2 session files are FULL-REWRITTEN (tmp+rename)
-//! once per turn — zero mid-turn writes, so a tail watcher shows nothing while
-//! the agent works; headless `reasonix run` writes no session file at all; and
-//! with no shared key between the file name and hook payloads, a JSONL agent
-//! could never coalesce with the hook agent (guaranteed two sprites).
+//! (`internal/ext/hook/hook.go:828-848` Payload @ v2.61.0).
+//! Every recorded payload carries `sessionId` (`reasonix/fixtures`), though
+//! `Payload` declares it `omitempty`, so that is the AgentId key. Keying on the
+//! workspace instead would merge two sessions in ONE project into a single
+//! sprite.
 
-use crate::source::decoder::{DecodeError, DecodeResult as Result};
+use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     MAX_DECODED_FIELD_CHARS, ellipsize, non_empty, required, required_or_err,
 };
 use crate::source::registry::{
-    ChildEndInference, Corroboration, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind,
+    ChildEndInference, Corroboration, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField,
+    SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys, ToolDetail};
 
@@ -49,22 +47,26 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: None,
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_rx_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_rx_hook_payload,
+        }),
         caps: SourceCaps {
-            // SessionEnd fires on clean exit — best-effort counts.
+            // SessionEnd fires on clean exit (`reasonix/fixtures/tool-run-hermetic`)
+            // — best-effort counts.
             has_exit_signal: true,
             // UserPromptSubmit re-emits SessionStart, so a swept-but-live
             // session walks back in on the next prompt.
             resurrects_on_prompt: true,
             // A subagent's hooks carry its own session id, the parent's
             // suffixed with its role (`internal/ext/hook/runner.go:57-66` at
-            // v2.39.0), so the parent's slot emits NOTHING until the dispatch
+            // v2.61.0), so the parent's slot emits NOTHING until the dispatch
             // tool's PostToolUse.
             delegations_are_hook_silent: true,
             // A child's session fires no end, and is keyed by a call id its
             // parent's tool hooks don't carry
             // (`internal/assembly/boot/delegation.go:96-108`,
-            // `internal/ext/hook/hook.go:828-834` @ v2.60.0).
+            // `internal/ext/hook/hook.go:828-834` @ v2.61.0).
             child_end_inference: ChildEndInference::AnyTaskEnd,
             child_hooks_unnamed: false,
             brackets_turns: false,
@@ -119,10 +121,17 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
     (own, own.split_once(SUBAGENT_ROLE).map(|(root, _)| root))
 }
 
+/// Where Reasonix's payload, the module doc's `Payload`, names its event and session.
+const ENVELOPE: Envelope = Envelope {
+    event_field: "event",
+    session_field: SessionField {
+        within: None,
+        field: "sessionId",
+    },
+};
+
 /// Decode one Reasonix hook payload (already identified by
-/// `_pixtuoid_source == "reasonix"`). Envelope verified against
-/// `internal/ext/hook/hook.go`. An unregistered event bails rather than
-/// dropping silently, so registered-vs-decoded drift is loud.
+/// `_pixtuoid_source == "reasonix"`); an unregistered event has no arm.
 ///
 /// The activity arms prepend a registration, an [`AgentEvent::Identity`] (#221)
 /// or a subagent's parented `SessionStart`, because Reasonix is HOOK-ONLY: it is
@@ -131,14 +140,12 @@ fn session_of(id: &str) -> (&str, Option<&str>) {
 ///
 /// # Errors
 ///
-/// If the payload lacks `event`, a non-empty `cwd` or `sessionId`, or names an unregistered event.
-pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, "event", |k| obj.get(k)?.as_str())?;
+/// If the payload lacks a non-empty `cwd` or `sessionId`.
+pub(crate) fn decode_rx_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
     // An empty cwd would mint a phantom agent that nothing else coalesces with.
     let cwd = required_or_err(SOURCE_NAME, Some(event), "cwd", |k| non_empty(obj, k))?;
-    let key = required_or_err(SOURCE_NAME, Some(event), "sessionId", |k| {
-        required(SOURCE_NAME, event, k, |k| non_empty(obj, k))
-    })?;
+    let key = hook.session()?;
     let (key, parent) = session_of(key);
     let agent_id = AgentId::from_parts(SOURCE_NAME, key);
     let parent_id = parent.map(|p| AgentId::from_parts(SOURCE_NAME, p));
@@ -149,22 +156,22 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
         cwd: cwd.into(),
         parent_id,
     };
-    // A subagent fires no start of its own, so each of its events carries the
-    // link to its parent.
+    // A subagent fires no start of its own (`reasonix/fixtures/subagent-hermetic`),
+    // so each of its events carries the link to its parent.
     let register = || match parent_id {
         Some(_) => start(),
         None => AgentEvent::identity(agent_id, SOURCE_NAME, key, Some(cwd.into())),
     };
 
-    match event {
+    Ok(Some(match event {
         // The `UserPromptSubmit` duplicate is the RESURRECT path — a
         // stale-swept session walks back in on its next prompt, and Reasonix
         // has no other re-creation signal.
-        "SessionStart" | "UserPromptSubmit" => Ok(vec![start()]),
+        "SessionStart" | "UserPromptSubmit" => vec![start()],
         "PreToolUse" => {
             let tool =
                 required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str()).unwrap_or("?");
-            Ok(vec![
+            vec![
                 register(),
                 AgentEvent::ToolUseStart {
                     agent_id,
@@ -172,12 +179,12 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                     detail: Some(rx_tool_detail(tool, obj.get("toolArgs"))),
                     copy_id: None,
                 },
-            ])
+            ]
         }
         "PostToolUse" => {
             let mut events = vec![register()];
             // It names its call's tool, on a failure too
-            // (`internal/ext/hook/runner.go:175-205` @ v2.60.0), and a
+            // (`internal/ext/hook/runner.go:175-205` @ v2.61.0), and a
             // dispatch's return is its child's end: re-stating the Task makes
             // this End close one, whatever the parent started since.
             let tool = required(SOURCE_NAME, event, "toolName", |k| obj.get(k)?.as_str());
@@ -193,27 +200,28 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 agent_id,
                 tool_use_id: None,
             });
-            Ok(events)
+            events
         }
         // Identity-less: an end alone registers nothing; the next
         // `UserPromptSubmit` does.
-        "Stop" => Ok(vec![AgentEvent::turn_end(agent_id)]),
+        "Stop" => vec![AgentEvent::turn_end(agent_id)],
         "Notification" => {
             // Every producer waits on the user: the approval gate, a question,
-            // Auto Guard (`internal/session/control/approval_orchestration.go:311`,
-            // `:621`, `recovery.go:341`).
+            // Auto Guard (`internal/session/control/approval_orchestration.go:328`,
+            // `:640`, `recovery.go:355` @ v2.61.0).
             let msg = obj.get("message").and_then(|s| s.as_str());
-            Ok(vec![
+            vec![
                 register(),
                 AgentEvent::user_action_request(
                     agent_id,
                     msg.map(|m| ellipsize(m, MAX_DECODED_FIELD_CHARS)),
                     RequestKeys::default(),
                 ),
-            ])
+            ]
         }
-        // The STRUCTURED approval gate: fires BEFORE the prompt with the tool +
-        // subject, and ALONGSIDE `Notification` for the same approval — both →
+        // The STRUCTURED approval gate: it names the tool + subject and precedes
+        // the `Notification` for the same approval
+        // (`reasonix/fixtures/permission-hermetic`) — both →
         // RequiresAction is idempotent (the gated tool's PostToolUse/Stop resolves it).
         "PermissionRequest" => {
             let tool = required(SOURCE_NAME, event, "toolName", |k| non_empty(obj, k));
@@ -230,24 +238,21 @@ pub(crate) fn decode_rx_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>
                 (Some(t), None) => format!("approval: {}", ellipsize(t, MAX_DECODED_FIELD_CHARS)),
                 (None, _) => "approval required".to_string(),
             };
-            Ok(vec![
+            vec![
                 register(),
                 AgentEvent::user_action_request(
                     agent_id,
                     Some(ellipsize(&reason, MAX_DECODED_FIELD_CHARS)),
                     RequestKeys::default(),
                 ),
-            ])
+            ]
         }
-        "SessionEnd" => Ok(vec![AgentEvent::SessionEnd {
+        "SessionEnd" => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: parent_id.is_some(),
-        }]),
-        other => {
-            crate::source::drift::unknown_event(SOURCE_NAME, other);
-            Err(DecodeError::unsupported(SOURCE_NAME, other))
-        }
-    }
+        }],
+        _ => return Ok(None),
+    }))
 }
 
 /// Reasonix-side tool detail: the dispatch family is name-keyed because Reasonix
@@ -266,11 +271,11 @@ fn rx_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::{DecodeError, test_decode};
     use serde_json::json;
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_rx_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     fn decode(v: Value) -> AgentEvent {
@@ -283,16 +288,21 @@ mod tests {
     fn a_missing_session_id_breadcrumbs_and_is_malformed() {
         let payload = json!({"event": "SessionStart", "cwd": "/repo"});
         let logs = crate::test_capture::capture_logs(|| {
-            assert!(decode_rx_hook_payload(test_obj(&payload)).is_err());
+            assert!(test_decode(SOURCE_NAME, &payload).is_err());
         });
         assert!(
-            logs.contains(crate::source::drift::TARGET),
+            crate::source::drift::breadcrumbed(
+                &logs,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("field", "sessionId")]
+            ),
             "an absent sessionId must breadcrumb; got {logs:?}"
         );
 
         let with_id = json!({"event": "SessionStart", "cwd": "/repo", "sessionId": "s1"});
         let quiet = crate::test_capture::capture_logs(|| {
-            decode_rx_hook_payload(test_obj(&with_id)).expect("decodes");
+            test_decode(SOURCE_NAME, &with_id).expect("decodes");
         });
         assert!(
             !quiet.contains(crate::source::drift::TARGET),
@@ -303,9 +313,12 @@ mod tests {
     #[test]
     fn two_sessions_in_one_workspace_stay_two_agents() {
         let ev = |sid: &str| {
-            decode_rx_hook_payload(test_obj(&json!({
-                "event": "SessionStart", "cwd": "/repo", "sessionId": sid
-            })))
+            test_decode(
+                SOURCE_NAME,
+                &json!({
+                    "event": "SessionStart", "cwd": "/repo", "sessionId": sid
+                }),
+            )
             .expect("decodes")
             .remove(0)
         };
@@ -392,7 +405,15 @@ mod tests {
     fn a_post_tool_use_without_its_tool_name_breadcrumbs() {
         let post = |v: Value| crate::test_capture::capture_logs(|| drop(decode_all(v)));
         let bare = post(json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/r"}));
-        assert!(bare.contains(crate::source::drift::TARGET), "{bare:?}");
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &bare,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("field", "toolName")]
+            ),
+            "{bare:?}"
+        );
         let named = post(
             json!({"event": "PostToolUse", "sessionId": "s", "cwd": "/r", "toolName": "bash"}),
         );
@@ -491,7 +512,7 @@ mod tests {
         ];
         let ids: std::collections::BTreeSet<_> = events
             .iter()
-            .flat_map(|v| decode_rx_hook_payload(test_obj(v)).unwrap())
+            .flat_map(|v| test_decode(SOURCE_NAME, v).unwrap())
             .map(|e| e.agent_id())
             .collect();
         assert_eq!(ids.len(), 1, "all events must coalesce to one AgentId");
@@ -504,7 +525,7 @@ mod tests {
             json!({"event": event, "sessionId": "s", "cwd": ""}),
             json!({"event": event}),
         ] {
-            let err = decode_rx_hook_payload(test_obj(&payload)).err();
+            let err = test_decode(SOURCE_NAME, &payload).err();
             assert!(
                 matches!(
                     &err,
@@ -519,9 +540,10 @@ mod tests {
     fn unknown_event_bails_loudly() {
         for ev in ["PostLLMCall", "PreCompact", "PostToolUseFailure", "Bogus"] {
             assert!(
-                decode_rx_hook_payload(test_obj(
+                test_decode(
+                    SOURCE_NAME,
                     &json!({"event": ev, "sessionId": "s", "cwd": "/r"})
-                ))
+                )
                 .is_err(),
                 "{ev} must bail (not registered, must not decode silently)"
             );

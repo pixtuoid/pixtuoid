@@ -22,14 +22,14 @@ use crate::source::{
     jcode, kimi, omp, openclaw, opencode, reasonix,
 };
 
-/// The wire NAME of the per-call tool id in this source's hook envelope, read by
+/// The wire NAME of the per-call tool id in this source's hook payload, read by
 /// the shared arms. It is a registry row and not a per-source copy of those arms
 /// because reading the wrong name is SILENT — the field is optional, so a
 /// mis-spelling is indistinguishable from an absent id, and every kimi tool call
 /// decoded to `None` for the whole source's life.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolIdKey {
-    /// `tool_use_id` — Claude Code's spelling, and every CC-shaped envelope's
+    /// `tool_use_id` — Claude Code's spelling, and every CC-shaped payload's
     /// but Kimi's.
     ToolUse,
     /// `tool_call_id` — Kimi's (capture-verified: `kimi/fixtures/tool-run-hermetic` never
@@ -50,26 +50,59 @@ impl ToolIdKey {
 /// The JSON object a hook or presence decoder reads, so none re-checks its shape.
 pub type HookObject = Map<String, Value>;
 
-/// How a source's hook payloads decode. The source's own decoder runs FIRST,
-/// before any shared field requirement, so an alien envelope (no `session_id` at
-/// all) can still decode; TYPED by whether it may decline, so a
-/// [`Self::ClaimsAll`] row has no `Option` to get wrong and no shared-arm setting
-/// it would never read.
+/// Where a source's hook payloads name their event and session, the two fields
+/// the hook plane keys on. `decoder::Hook::read` reads the event, and
+/// `decoder::Hook::session` the session, each breadcrumbing its absence, so no
+/// arm need spell either.
+#[derive(Debug, Clone, Copy)]
+pub struct Envelope {
+    /// The top-level field naming the event.
+    pub(crate) event_field: &'static str,
+    pub(crate) session_field: SessionField,
+}
+
+/// Where a payload's session id sits.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SessionField {
+    /// The top-level object holding it, `None` for the payload's top level.
+    pub(crate) within: Option<&'static str>,
+    /// Its name, as a missing-field breadcrumb names it.
+    pub(crate) field: &'static str,
+}
+
+/// A source's own hook arms: `Ok(None)` for an event they have no arm for.
+pub type HookArms = fn(&crate::source::decoder::Hook<'_>) -> Result<Option<Vec<AgentEvent>>>;
+
+/// How a source's hook payloads decode, TYPED by what its arms' `Ok(None)`
+/// means, so a [`Self::ClaimsAll`] row has no shared-arm setting it would never
+/// read.
 #[derive(Debug, Clone, Copy)]
 pub enum HookDecoding {
-    /// The shared CC-shaped arms, keyed on `session_id`, which `extend` EXTENDS:
-    /// `Ok(Some(events))` short-circuits, `Ok(None)` DECLINES and falls through
-    /// to the shared arms, `Err` propagates.
+    /// The shared CC-shaped arms, on `decoder::SHARED_ENVELOPE`, which `extend` EXTENDS:
+    /// its `Ok(None)` falls through to them.
     Shared {
         /// The per-call tool id's wire name.
         tool_id_key: ToolIdKey,
-        extend: fn(&HookObject) -> Result<Option<Vec<AgentEvent>>>,
+        extend: HookArms,
     },
-    /// CLAIMS every event: an alien-envelope source (no shared
-    /// `hook_event_name`/`session_id` for the shared arms to key on) whose
-    /// decoder handles EVERYTHING and constructs its own AgentIds. It can NOT
-    /// decline, so a payload never silently falls through to the shared arms.
-    ClaimsAll(fn(&HookObject) -> Result<Vec<AgentEvent>>),
+    /// CLAIMS every event: a source whose payload keys or event names the shared
+    /// arms can't read, whose arms handle EVERYTHING and construct their own
+    /// AgentIds; their
+    /// `Ok(None)` is an unknown event, never a fall-through to the shared arms.
+    ClaimsAll {
+        envelope: Envelope,
+        decode: HookArms,
+    },
+}
+
+impl HookDecoding {
+    /// Where its payloads name their event and session.
+    pub(crate) fn envelope(&self) -> Envelope {
+        match self {
+            Self::Shared { .. } => crate::source::decoder::SHARED_ENVELOPE,
+            Self::ClaimsAll { envelope, .. } => *envelope,
+        }
+    }
 }
 
 /// Reducer-facing capability flags — stable facts about the source's wire
@@ -278,7 +311,7 @@ pub enum Corroboration {
 }
 
 impl FocusChannel {
-    /// Whether a hook-envelope `_pid` stamp is this session's own focusable
+    /// Whether a hook-payload `_pid` stamp is this session's own focusable
     /// process.
     #[cfg(feature = "native")]
     pub(crate) fn stamps_focus_pid(self) -> bool {
@@ -612,13 +645,13 @@ pub(crate) fn head_filter_for(source: &str) -> Option<HeadFilter> {
     descriptor_for(source).and_then(|d| d.head_filter())
 }
 
-/// A daemon source's wire decoder: its envelope → the sending INSTANCE's
+/// A daemon source's wire decoder: its payload → the sending INSTANCE's
 /// identity plus its presence deltas. Handed to the `HookRouter` demux, which
 /// therefore never learns what makes two instances of a daemon different.
 pub(crate) type PresenceDecoder = fn(&HookObject) -> Result<crate::source::daemon::DecodedPresence>;
 
-/// The daemon source stamped on a hook envelope with its decoded presence, or
-/// `None` for any other envelope, which belongs to the agent arms.
+/// The daemon source stamped on a hook payload with its decoded presence, or
+/// `None` for any other payload, which belongs to the agent arms.
 #[cfg(any(feature = "native", feature = "harness"))]
 pub(crate) fn presence_of(
     obj: &HookObject,
@@ -1014,7 +1047,8 @@ mod tests {
 
     /// A depth-capped arbitrary `serde_json::Value` (leaf | array | object) plus
     /// a "JSON re-encoded as a string" arm, so a string can itself carry nested
-    /// JSON — the shape codex's `function_call.arguments` reparse consumes. The
+    /// JSON — the shape codewhale's `tool_args` parse consumes
+    /// (`codewhale/fixtures/tool-run-hermetic`). The
     /// bounds stay shallow because the decoders do flat `.get("a").get("b")`
     /// chains, never deep recursion.
     fn arb_json() -> impl Strategy<Value = serde_json::Value> {
@@ -1055,14 +1089,8 @@ mod tests {
         #[test]
         fn every_hook_and_presence_decoder_never_panics(v in arb_json()) {
             for d in REGISTRY {
-                match (d.hook(), v.as_object()) {
-                    (Some(HookDecoding::Shared { extend, .. }), Some(obj)) => {
-                        let _ = extend(obj);
-                    }
-                    (Some(HookDecoding::ClaimsAll(f)), Some(obj)) => {
-                        let _ = f(obj);
-                    }
-                    _ => {}
+                if d.hook().is_some() && v.is_object() {
+                    let _ = crate::source::decoder::test_decode(d.name, &v);
                 }
                 if let (Some(presence), Some(obj)) = (d.presence_decoder(), v.as_object()) {
                     let _ = presence(obj);

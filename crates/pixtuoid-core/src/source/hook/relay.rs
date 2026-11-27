@@ -484,7 +484,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_daemon_envelope_with_no_delta_is_no_sighting() {
+    async fn a_daemon_payload_with_no_delta_is_no_sighting() {
         let relay = Relay::new(ConnectedSources::default());
         let (presence_tx, _presence_rx) = tokio::sync::mpsc::unbounded_channel();
         let (tx, _rx) = tokio::sync::mpsc::channel(4);

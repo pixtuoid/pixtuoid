@@ -111,7 +111,7 @@ fn a_failed_child_leaves_and_its_parent_stops_delegating() {
 }
 
 /// A recording's lines, and the fresh tokens of its `session.usage_record`s by
-/// the child each names in its envelope `agentId`, `None` for the root.
+/// the child each names in its top-level `agentId`, `None` for the root.
 fn usage_records(scenario: &str) -> (PathBuf, Vec<String>, BTreeMap<Option<String>, u64>) {
     let t = super::captures::transcript_in(&super::captures::sources_root().join(scenario));
     let lines = super::captures::fixture_lines(&t);

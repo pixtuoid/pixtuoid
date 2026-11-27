@@ -20,7 +20,7 @@
 //! A decoder ending in a bare `_ => vec![]` is silent even when the line does
 //! arrive; grep the decoders for that shape rather than keeping a list here.
 //!
-//! Every value is untrusted wire content, `source` included (a hook envelope's
+//! Every value is untrusted wire content, `source` included (a hook payload's
 //! `_pixtuoid_source` need not be a registry name), made display-safe HERE at
 //! emission, whatever subscriber the host installs: the non-TUI `tracing`
 //! stream goes to stderr, and is on by default at `warn`.
@@ -34,6 +34,28 @@ pub const TARGET: &str = "pixtuoid::drift";
 pub const SOURCE_FIELD: &str = "source";
 /// The field a breadcrumb names its [`DriftKind`] in.
 pub const KIND_FIELD: &str = "kind";
+
+/// Whether `logs` hold one `kind` breadcrumb from `source` carrying every
+/// `(key, value)` of `fields`.
+#[cfg(test)]
+pub(crate) fn breadcrumbed(
+    logs: &str,
+    source: &str,
+    kind: DriftKind,
+    fields: &[(&str, &str)],
+) -> bool {
+    let head = format!(
+        "{SOURCE_FIELD}={source} {KIND_FIELD}=\"{}\"",
+        <&str>::from(kind)
+    );
+    logs.lines().any(|l| {
+        l.contains(TARGET)
+            && l.contains(&head)
+            && fields
+                .iter()
+                .all(|(k, v)| l.split_whitespace().any(|f| f == format!("{k}={v}")))
+    })
+}
 
 /// What a breadcrumb reports, as its [`KIND_FIELD`] names it: `&'static
 /// str::from` writes the name, `FromStr` reads it.
@@ -155,13 +177,7 @@ mod tests {
             );
         });
         for &kind in <DriftKind as strum::VariantArray>::VARIANTS {
-            assert!(
-                out.contains(&format!(
-                    "{SOURCE_FIELD}=codex {KIND_FIELD}=\"{}\"",
-                    <&str>::from(kind)
-                )),
-                "{kind:?}:\n{out}"
-            );
+            assert!(breadcrumbed(&out, "codex", kind, &[]), "{kind:?}:\n{out}");
             assert_eq!(<&str>::from(kind).parse(), Ok(kind));
         }
         assert_eq!(

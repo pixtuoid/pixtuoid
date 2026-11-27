@@ -59,7 +59,7 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
 
 /// The one transcript of `source`'s under a capture `dir`, found rather than
 /// named: a re-record gives it a new filename. The registry's admit rule and
-/// the recorder's own hook-envelope test decide what is a transcript.
+/// the recorder's own hook-payloads test decide what is a transcript.
 ///
 /// # Errors
 ///
@@ -69,7 +69,7 @@ pub fn transcripts_under(source: &str, root: &Path) -> Vec<PathBuf> {
 pub fn transcript_in(source: &str, dir: &Path) -> Result<PathBuf, Vec<PathBuf>> {
     let mut found: Vec<PathBuf> = transcripts_under(source, dir)
         .into_iter()
-        .filter(|p| !crate::harness::reads::is_hook_envelope(p))
+        .filter(|p| !crate::harness::reads::is_hook_payloads(p))
         .collect();
     if found.len() == 1 {
         Ok(found.remove(0))
@@ -1149,7 +1149,7 @@ mod tests {
     /// only its ids and clocks reads as unchanged.
     #[test]
     fn every_kept_clock_is_masked_whole() {
-        use crate::harness::reads::{WRITE_STAMPS, is_hook_envelope};
+        use crate::harness::reads::{WRITE_STAMPS, is_hook_payloads};
         use crate::source::decoder::FORWARDED_AT_STAMP;
         const HOOKS: &str = "the hook streams";
         let mut kept: BTreeSet<&str> = BTreeSet::new();
@@ -1157,7 +1157,7 @@ mod tests {
             let write_stamp = WRITE_STAMPS.iter().find(|(s, ..)| *s == capture.source);
             for file in jsonl_files_under(&capture.dir) {
                 let (keeper, key) = match write_stamp {
-                    _ if is_hook_envelope(&file) => (HOOKS, FORWARDED_AT_STAMP),
+                    _ if is_hook_payloads(&file) => (HOOKS, FORWARDED_AT_STAMP),
                     Some(&(source, key, _)) => (source, key),
                     None => continue,
                 };
@@ -1324,7 +1324,7 @@ mod tests {
 
     #[test]
     fn a_capture_has_one_transcript_or_says_what_it_found() {
-        // codex admits every path, so only the envelope rule keeps its hooks out.
+        // codex admits every path, so only the hook-payloads rule keeps its hooks out.
         let d = tempfile::tempdir().expect("tempdir");
         assert_eq!(transcript_in("codex", d.path()), Err(vec![]));
         let rollout = d.path().join("rollout.jsonl");

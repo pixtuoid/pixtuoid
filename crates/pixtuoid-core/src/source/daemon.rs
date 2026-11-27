@@ -121,16 +121,16 @@ pub struct PresenceMsg {
     pub delta: DaemonPresenceUpdate,
 }
 
-/// One decoded daemon envelope: WHICH instance sent it plus the presence deltas
+/// One decoded daemon payload: WHICH instance sent it plus the presence deltas
 /// it implies. The return type of every `presence_decoder`; the instance id is
 /// mandatory at the wire boundary.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedPresence {
     /// The sending instance, as the source's own decoder resolved it.
     pub instance: DaemonInstanceId,
-    /// The presence deltas the envelope implies (empty for a benign skip).
+    /// The presence deltas the payload implies (empty for a benign skip).
     pub updates: Vec<DaemonPresenceUpdate>,
-    /// The live gateway pid the envelope was stamped with, observed after its
+    /// The live gateway pid the payload was stamped with, observed after its
     /// updates as a [`DaemonPresenceUpdate::PidSeen`].
     pub(crate) pid: Option<i32>,
 }

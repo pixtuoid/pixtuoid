@@ -319,9 +319,6 @@ mod tests {
             assert_eq!(snap.pids("big"), [me as i32]);
         }
 
-        /// The drift breadcrumb must name the RIGHT cause: a truncation
-        /// reported as upstream drift sends the reader hunting a format change
-        /// that never happened.
         #[test]
         fn an_unparseable_registry_reports_drift_not_truncation() {
             let dir = tempfile::tempdir().unwrap();
@@ -329,9 +326,13 @@ mod tests {
             let logs = crate::test_capture::capture_logs(|| {
                 assert!(live_grok_session_ids(dir.path()).is_none());
             });
-            assert!(logs.contains("does not parse"), "got:\n{logs}");
             assert!(
-                logs.contains("truncated=false"),
+                crate::source::drift::breadcrumbed(
+                    &logs,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::ShapeDrift,
+                    &[("truncated", "false")]
+                ),
                 "a 12-byte file cannot have hit the cap, got:\n{logs}"
             );
         }

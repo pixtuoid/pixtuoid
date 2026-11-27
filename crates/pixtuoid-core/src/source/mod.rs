@@ -255,7 +255,7 @@ pub enum AgentEvent {
         /// then label-ordinal but still reap-exempt.
         cwd: Option<PathBuf>,
         /// The agent process's pid (+ recycle marker), stamped from the
-        /// envelope's `_pid` only where the source's focus channel is a shim or
+        /// payload's `_pid` only where the source's focus channel is a shim or
         /// plugin stamp (`patch_identity_pids`), omp's included; a source whose
         /// liveness probe resolves its pid carries `None` here. serde-skipped so
         /// the conformance/scene goldens don't churn on `None`.

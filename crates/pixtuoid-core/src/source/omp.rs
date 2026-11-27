@@ -22,12 +22,13 @@ use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
     HeadVerdict, MAX_DECODED_FIELD_CHARS, ellipsize, extract_top_level_cwd, first_non_blank_str,
     generic_tool_display, non_empty, required,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, Hyphen, SessionField, SourceCaps,
     SourceDescriptor, SourceKind, Transcript,
 };
 use crate::source::{AgentEvent, CopyId, RequestKeys, Resolution, ToolDetail};
@@ -61,12 +62,15 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             #[cfg(feature = "native")]
             native: native::TRANSCRIPT,
         }),
-        hook: Some(HookDecoding::ClaimsAll(decode_omp_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_omp_hook_payload,
+        }),
         caps: SourceCaps {
-            // The `session_exit` entry is appended + flushed on every clean
-            // teardown incl. SIGINT/SIGTERM (and the bridge fires
-            // `session_shutdown` even for empty sessions the entry skips).
-            // SIGKILL: with the bridge, `HookPidWatch` ends the stamped pid's
+            // The `session_exit` entry and the bridge's `session_shutdown` ride
+            // every clean teardown, a SIGINT/SIGTERM/SIGHUP's included
+            // (`packages/coding-agent/src/modes/session-teardown.ts:1-7`, `:55-60`
+            // at `v19.2.1`). SIGKILL: with the bridge, `HookPidWatch` ends the stamped pid's
             // sessions promptly; without it, the stale-sweep.
             has_exit_signal: true,
             // The header `SessionStart` decodes once per transcript life. A
@@ -77,14 +81,15 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // flag.
             resurrects_on_prompt: false,
             // The `task` dispatch emits a toolCall/toolResult pair on the parent
-            // AND the child persists its own parent-linked transcript.
+            // AND the child persists its own parent-linked transcript
+            // (`omp/fixtures/subagent-hermetic`).
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
             brackets_turns: false,
         },
-        // The bridge extension runs IN-PROCESS (upstream: extensions share
-        // the runtime), so its stamped `process.pid` IS omp's own —
+        // The bridge extension runs IN-PROCESS (`docs/extension-loading.md:356`
+        // at `v19.2.1`), so its stamped `process.pid` IS omp's own —
         // PluginStamp trust. The router stamps the kernel start marker; the
         // click-time compare refuses a recycled pid (#527). The flip also
         // puts omp on `HookPidWatch` (prompt exits) and makes a bridge-only,
@@ -660,7 +665,7 @@ const MESSAGE: &str = "message";
 /// can1357/oh-my-pi#18491).
 const MODEL_USAGE: &str = "model_usage";
 
-/// The `custom` entry envelope. Its `customType:"tool_execution_start"` duplicates
+/// The `custom` entry. Its `customType:"tool_execution_start"` duplicates
 /// each toolCall right before execution and is deliberately NOT decoded — the same
 /// `tool_use_id` would double-count `tool_call_count`.
 const CUSTOM: &str = "custom";
@@ -1057,26 +1062,43 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
     HOOK_SESSION_SHUTDOWN,
 ];
 
+/// Where the bridge extension's payload (`install/omp_extension.ts`) names its
+/// event and session. Its session is `sessionId`, which omp always has
+/// (`getSessionId(): string`,
+/// `packages/coding-agent/src/session/session-manager.ts:3353` at `v19.2.1`);
+/// a `sessionFile`, when there is one, keys it instead
+/// ([`decode_omp_hook_payload`]).
+const ENVELOPE: Envelope = Envelope {
+    event_field: "type",
+    session_field: SessionField {
+        within: None,
+        field: "sessionId",
+    },
+};
+
+/// The file a session persists to, `None` before omp allocates one
+/// (`getSessionFile(): string | undefined`, `session-manager.ts:3357`).
+const SESSION_FILE: &str = "sessionFile";
+
 /// Decode one bridge-extension payload (already routed here by
-/// `_pixtuoid_source == "omp"`). pixtuoid authors the envelope
-/// (`install/omp_extension.ts`), so an unknown `type` is foreign or a stale
-/// installed extension — a drift breadcrumb and a benign skip, never a bail:
-/// the hook plane log-and-continues (workspace convention) and a stale
-/// bridge is a supported state `verify_schema` reports.
+/// `_pixtuoid_source == "omp"`). An unknown `type` is a stale installed
+/// extension's, the drift `verify_schema` reports.
 ///
 /// Identity: `sessionFile` (the ALLOCATED path — omp exposes it before the
-/// lazy persist materializes the JSONL) through the watcher's own
-/// `normalize_path_key` fold then [`omp_id_from_path`], so both transports
-/// mint ONE AgentId per session, nested task children included. `sessionId`
-/// (the bare header UUID, a keyspace no stem can collide with — stems carry
-/// the date shape and `_`) covers `--no-session`, where no transcript will
-/// ever exist to coalesce with.
+/// lazy persist materializes the JSONL, `session-manager.ts:3365-3368`) through
+/// the watcher's own `normalize_path_key` fold then [`omp_id_from_path`], so
+/// both transports mint ONE AgentId per session, nested task children
+/// included. `sessionId` (the bare header UUID, a keyspace no stem can collide
+/// with — stems carry the date shape and `_`, `omp/fixtures/tool-run-hermetic`)
+/// covers `--no-session` ("Don't save the session": `docs/cli-reference.md:80`
+/// at `v19.2.1`), where no transcript will ever exist to coalesce with.
 ///
 /// A switch/branch means this omp process now drives the CURRENT file: the
 /// previous one gets its End without waiting for the stale sweep, and the
-/// upstream `reason` (`"new" | "resume" | "fork"`) is deliberately dropped —
-/// the End+Start pair keys on `previousSessionFile` alone, identically for
-/// all three.
+/// upstream `reason` (`"new" | "resume" | "fork"`,
+/// `packages/coding-agent/src/extensibility/shared-events.ts:38`, `:47` at
+/// `v19.2.1`) is deliberately dropped — the End+Start pair keys on
+/// `previousSessionFile` alone, identically for all three.
 ///
 /// The start/switch/branch arms trail an [`AgentEvent::Identity`]: the router
 /// stamps pids onto Identity events only, and the focus stamp must arm from
@@ -1085,16 +1107,10 @@ pub const DECODED_HOOK_EVENTS: &[&str] = &[
 ///
 /// # Errors
 ///
-/// Never: a malformed or unknown payload decodes to `vec![]`; the `Result` is the hook-decoder signature.
-pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let Some(ty) = required(SOURCE_NAME, "hook", "type", |k| obj.get(k)?.as_str()) else {
-        return Ok(vec![]);
-    };
-    let Some((key, parent_key)) = required(SOURCE_NAME, ty, "sessionFile", |k| {
-        omp_hook_session_key(obj, k)
-    }) else {
-        return Ok(vec![]);
-    };
+/// If the payload names neither `sessionFile` nor `sessionId`.
+pub(crate) fn decode_omp_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, ty) = (hook.obj, hook.event);
+    let (key, parent_key) = omp_hook_session_key(hook)?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, &key);
     let cwd = || {
         obj.get("cwd")
@@ -1112,12 +1128,13 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
     };
     let identity = || AgentEvent::identity(agent_id, SOURCE_NAME, key.clone(), cwd());
 
-    match ty {
+    Ok(Some(match ty {
         // The trailing `identity()` is the focus-pid carrier (the declaration
         // doc owns the story).
-        HOOK_SESSION_START => Ok(vec![session_start(), identity()]),
-        // previous == current is the in-place branch REWRITE — an End+Start
-        // pair there would walk the sprite out for its own rewrite.
+        HOOK_SESSION_START => vec![session_start(), identity()],
+        // previous == current is a branch within its own file (`branch(entryId)`
+        // moves only the leaf: `docs/session.md:594` at `v19.2.1`) — an End+Start
+        // pair there would walk the sprite out for its own branch.
         HOOK_SESSION_SWITCH | HOOK_SESSION_BRANCH => {
             let mut evs = Vec::new();
             if let Some(prev) = non_empty(obj, "previousSessionFile") {
@@ -1134,33 +1151,27 @@ pub(crate) fn decode_omp_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent
             }
             evs.push(session_start());
             evs.push(identity());
-            Ok(evs)
+            evs
         }
-        HOOK_SESSION_SHUTDOWN => Ok(vec![AgentEvent::SessionEnd {
+        HOOK_SESSION_SHUTDOWN => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: parent_key.is_some(),
-        }]),
-        _ => {
-            crate::source::drift::unknown_event(SOURCE_NAME, ty);
-            Ok(vec![])
-        }
-    }
+        }],
+        _ => return Ok(None),
+    }))
 }
 
 /// The session key (and parent key) for one hook payload: the folded
 /// `sessionFile` stem chain, else the bare `sessionId` UUID.
-fn omp_hook_session_key(
-    obj: &serde_json::Map<String, Value>,
-    file_key: &str,
-) -> Option<(String, Option<String>)> {
-    if let Some(file) = non_empty(obj, file_key) {
+fn omp_hook_session_key(hook: &Hook<'_>) -> Result<(String, Option<String>)> {
+    if let Some(file) = non_empty(hook.obj, SESSION_FILE) {
         let folded = crate::id::normalize_path_key(file);
-        return Some((
+        return Ok((
             omp_id_from_path(Path::new(&folded)),
             omp_parent_key_from_path(Path::new(&folded)),
         ));
     }
-    non_empty(obj, "sessionId").map(|s| (s.to_string(), None))
+    Ok((hook.session()?.to_string(), None))
 }
 
 #[cfg(test)]
@@ -1168,7 +1179,9 @@ mod tests {
     use super::*;
 
     /// A fork copies each entry whole, and an 8-hex entry id is unique only in
-    /// its own session, so a copy is named by the entry's id and stamp.
+    /// its own session (`docs/session-operations-export-share-fork-resume.md:396`,
+    /// `docs/session.md:118` at `v19.2.1`), so a copy is named by the entry's id
+    /// and stamp.
     #[test]
     fn an_entry_names_its_copies_by_id_and_stamp() {
         let line = json!({
@@ -1215,7 +1228,7 @@ mod tests {
             "no stamp, no copy id"
         );
     }
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
     use serde_json::json;
 
     const ROOT: &str = "/home/u/.omp/agent/sessions/-dev-proj/2026-07-09T08-00-00-000Z_0197f0aa-0000-7000-8000-000000000001.jsonl";
@@ -1894,12 +1907,16 @@ mod tests {
         let out = crate::test_capture::capture_logs(|| {
             assert!(decode(no_id).is_empty(), "un-keyable toolCall → no event");
         });
-        for needle in [crate::source::drift::TARGET, "missing_field", "toolCall"] {
-            assert!(
-                out.contains(needle),
-                "no id breadcrumb: missing {needle:?}\n{out}"
-            );
-        }
+        let fields = [("event", BLOCK_TOOL_CALL), ("field", "id")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "no id breadcrumb: {fields:?}\n{out}"
+        );
         let no_name = r#"{"type":"message","id":"m6","parentId":null,"timestamp":"t","message":{"role":"assistant","content":[{"type":"toolCall","id":"t6","arguments":{}}],"timestamp":1}}"#;
         let out = crate::test_capture::capture_logs(|| match &decode(no_name)[..] {
             [
@@ -1914,12 +1931,16 @@ mod tests {
             }
             other => panic!("expected one ToolUseStart, got {other:?}"),
         });
-        for needle in [crate::source::drift::TARGET, "missing_field", "toolCall"] {
-            assert!(
-                out.contains(needle),
-                "no name breadcrumb: missing {needle:?}\n{out}"
-            );
-        }
+        let fields = [("event", BLOCK_TOOL_CALL), ("field", "name")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "no name breadcrumb: {fields:?}\n{out}"
+        );
     }
 
     #[test]
@@ -1928,12 +1949,16 @@ mod tests {
         let out = crate::test_capture::capture_logs(|| {
             assert!(decode(no_id).is_empty(), "un-keyable toolResult → no event");
         });
-        for needle in [crate::source::drift::TARGET, "missing_field", "toolResult"] {
-            assert!(
-                out.contains(needle),
-                "no toolResult breadcrumb: missing {needle:?}\n{out}"
-            );
-        }
+        let fields = [("event", ROLE_TOOL_RESULT), ("field", "toolCallId")];
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &fields
+            ),
+            "no toolResult breadcrumb: {fields:?}\n{out}"
+        );
     }
 
     #[test]
@@ -2035,9 +2060,15 @@ mod tests {
             }
             other => panic!("expected one UserActionRequest, got {other:?}"),
         });
-        for needle in [crate::source::drift::TARGET, "missing_field", "toolName"] {
-            assert!(out.contains(needle), "missing {needle:?}\n{out}");
-        }
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("field", "toolName")]
+            ),
+            "{out}"
+        );
     }
 
     #[test]
@@ -2096,7 +2127,22 @@ mod tests {
             let out = crate::test_capture::capture_logs(|| {
                 evs = decode(&missing);
             });
-            assert_eq!(out.contains(field), drift, "{field}: {line}\n{out}");
+            if drift {
+                assert!(
+                    crate::source::drift::breadcrumbed(
+                        &out,
+                        SOURCE_NAME,
+                        crate::source::drift::DriftKind::MissingField,
+                        &[("field", field)]
+                    ),
+                    "{field}: {line}\n{out}"
+                );
+            } else {
+                assert!(
+                    !out.contains(crate::source::drift::TARGET),
+                    "{field}: {line}\n{out}"
+                );
+            }
             match (field, &evs[..]) {
                 ("approved", [AgentEvent::ToolUseEnd { .. }]) | ("toolName", [_]) => {}
                 other => panic!("{field}: {line}: {other:?}"),
@@ -2130,9 +2176,15 @@ mod tests {
             let out = crate::test_capture::capture_logs(|| {
                 assert!(decode(&callless).is_empty());
             });
-            for needle in [crate::source::drift::TARGET, "missing_field", "toolCallId"] {
-                assert!(out.contains(needle), "missing {needle:?}\n{out}");
-            }
+            assert!(
+                crate::source::drift::breadcrumbed(
+                    &out,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::MissingField,
+                    &[("field", "toolCallId")]
+                ),
+                "{out}"
+            );
         }
     }
 
@@ -2833,7 +2885,7 @@ mod tests {
     }
 
     fn hook(v: serde_json::Value) -> Vec<AgentEvent> {
-        decode_omp_hook_payload(test_obj(&v)).unwrap()
+        test_decode(SOURCE_NAME, &v).unwrap()
     }
 
     #[test]
@@ -2966,7 +3018,7 @@ mod tests {
 
     #[test]
     fn hook_branch_onto_the_same_path_emits_no_end() {
-        // An in-place branch REWRITES the file: previous == current.
+        // A branch within its own file moves only the leaf: previous == current.
         let evs = hook(serde_json::json!({
             "type": "session_branch", "sessionFile": HOOK_ROOT,
             "previousSessionFile": HOOK_ROOT,
@@ -2982,38 +3034,17 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_hook_type_decodes_to_nothing() {
+    fn an_unknown_hook_type_is_refused() {
         // An approval an older pixtuoid's extension still forwards from an omp
         // started before the upgrade: the transcript carries every approval
         // (`install/omp_extension.ts`'s header).
         for ty in ["credential_disabled", "tool_approval_requested"] {
-            assert!(
-                hook(serde_json::json!({
-                    "type": ty, "sessionFile": HOOK_ROOT,
-                    "sessionId": "x", "cwd": "/repo", "toolCallId": "call_1",
-                }))
-                .is_empty()
-            );
+            let v = serde_json::json!({
+                "type": ty, "sessionFile": HOOK_ROOT,
+                "sessionId": "x", "cwd": "/repo", "toolCallId": "call_1",
+            });
+            assert!(test_decode(SOURCE_NAME, &v).is_err(), "{ty}");
         }
-        assert!(hook(serde_json::json!({"no_type": true})).is_empty());
-    }
-
-    #[test]
-    fn a_stamped_omp_payload_routes_to_this_decoder_through_the_registry() {
-        // Red until the registry row carries `HookDecoding::ClaimsAll`: without
-        // it the payload falls through to the CC-shaped shared arms, which
-        // find no `hook_event_name` and decode nothing.
-        let evs = crate::source::decoder::decode_hook_payload(serde_json::json!({
-            "_pixtuoid_source": "omp",
-            "type": "session_start", "sessionFile": HOOK_ROOT,
-            "sessionId": "x", "cwd": "/repo",
-        }))
-        .unwrap();
-        assert!(
-            matches!(&evs[..], [AgentEvent::SessionStart { agent_id, .. }, AgentEvent::Identity { .. }]
-                if *agent_id == hook_id(HOOK_ROOT)),
-            "expected the ClaimsAll route: {evs:?}"
-        );
     }
 
     #[test]

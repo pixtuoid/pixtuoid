@@ -1,18 +1,21 @@
 //! Hermes Agent (Nous Research) source — HOOK-ONLY, via a bundled Python plugin.
 //!
-//! Hermes runs every turn in its gateway daemon, whose own cwd is its install
-//! dir, so no shell hook can name a session's workspace. The bundled plugin
-//! (`install/hermes_plugin.py`) runs in that gateway, reads the workspace from
-//! `ctx.session_cwd()`, and pipes an allowlisted copy of each event's kwargs into
+//! Hermes runs every local session's turns in one gateway process
+//! (`website/docs/user-guide/features/plugins.md:1098`, `:1158` at v0.23.3),
+//! whose cwd is its own, shared by every session (`:1160`), and a shell hook's
+//! payload names that cwd (`agent/shell_hooks.py:90`, `:103`), so no shell hook
+//! can name a session's workspace. The bundled plugin (`install/hermes_plugin.py`)
+//! runs in that gateway, reads the workspace from `ctx.session_cwd()`
+//! (`plugins.md:1160`), and pipes an allowlisted copy of each event's kwargs into
 //! the `pixtuoid-hook` shim:
 //!
 //! ```json
 //! {"hook_event_name":"pre_tool_call","cwd":"/repo","_pid":43677,"session_id":"local-…","tool_name":"read_file","tool_call_id":"call_…","args":{"path":"NOTE.txt"}}
 //! ```
 //!
-//! Keyed on `session_id`, not the workspace: a user may run several Hermes
-//! sessions in ONE project and cwd-keying would merge them (the Cursor lesson).
-//! The envelope reuses CC's `hook_event_name` field NAME with snake_case VALUES
+//! Keyed on `session_id`, not the workspace: cwd-keying would merge two
+//! sessions in one project. The payload (`hermes/fixtures/tool-run-hermetic`)
+//! reuses CC's `hook_event_name` field NAME with snake_case VALUES
 //! alien to the shared CC-shaped arms, so the decoder is
 //! `HookDecoding::ClaimsAll`: it claims EVERY event.
 
@@ -20,13 +23,14 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::AgentId;
+use crate::source::decoder::Hook;
 use crate::source::decoder::{
-    DecodeError, DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail,
-    non_empty, required, required_or_err,
+    DecodeResult as Result, MAX_DECODED_FIELD_CHARS, ellipsize, generic_keyed_detail, non_empty,
+    required,
 };
 use crate::source::registry::{
-    ChildEndInference, FocusChannel, HookDecoding, HookObject, Hyphen, SourceCaps,
-    SourceDescriptor, SourceKind,
+    ChildEndInference, Envelope, FocusChannel, HookDecoding, HookObject, Hyphen, SessionField,
+    SourceCaps, SourceDescriptor, SourceKind,
 };
 use crate::source::{AgentEvent, RequestKeys};
 
@@ -43,14 +47,20 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
     home_env: Some("HERMES_HOME"),
     kind: SourceKind::Agent {
         transcript: None,
-        hook: Some(HookDecoding::ClaimsAll(decode_hermes_hook_payload)),
+        hook: Some(HookDecoding::ClaimsAll {
+            envelope: ENVELOPE,
+            decode: decode_hermes_hook_payload,
+        }),
         caps: SourceCaps {
             // `on_session_finalize` when the gateway finalizes a session, else the
             // gateway's death. NOT `on_session_end`, which despite the name is a
-            // TURN boundary.
+            // TURN boundary (`website/docs/user-guide/features/hooks.md:476-477`
+            // at v0.23.3).
             has_exit_signal: true,
             resurrects_on_prompt: false,
-            // No subagent nesting on the wire — sessions render flat.
+            // The plugin forwards neither `subagent_start` nor `subagent_stop`,
+            // the hooks naming a child's parent (`hooks.md:484-485` at v0.23.3), so
+            // sessions render flat.
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::TaskDrain,
             child_hooks_unnamed: false,
@@ -275,14 +285,15 @@ pub const DECODED_EVENTS: &[&str] = &[
 #[doc(hidden)]
 pub const OUTSIDE_A_TURN: &[&str] = &[ON_SESSION_FINALIZE];
 
-/// Every envelope field [`field`] reads, pinned by `every_decoded_field_is_read`.
+/// Every payload field the decoder reads but the event's name, pinned by
+/// `every_decoded_field_is_read`.
 /// The plugin sends these and `args` cut to [`DETAIL_KEYS`], nothing more of
 /// hermes's kwargs, which its selftest holds it to through
 /// `the_plugin_contract_is_the_committed_file`.
 #[cfg(any(test, feature = "harness"))]
 #[doc(hidden)]
 pub const DECODED_FIELDS: &[&str] = &[
-    "session_id",
+    ENVELOPE.session_field.field,
     "cwd",
     "tool_name",
     "tool_call_id",
@@ -298,28 +309,34 @@ const KEYS: &[&str] = &["command", "file_path", "path", "pattern", "url"];
 #[doc(hidden)]
 pub const DETAIL_KEYS: &[&str] = KEYS;
 
-/// Decode one Hermes plugin envelope (already identified by
+/// Where the plugin's payload names its event and session.
+const ENVELOPE: Envelope = Envelope {
+    event_field: "hook_event_name",
+    session_field: SessionField {
+        within: None,
+        field: "session_id",
+    },
+};
+
+/// Decode one Hermes plugin payload (already identified by
 /// `_pixtuoid_source == "hermes"`); an event outside the plugin's forward set
-/// bails, so plugin-vs-decoder drift is loud.
+/// has no arm.
 ///
 /// The activity arms prepend an [`AgentEvent::Identity`] because Hermes is HOOK-ONLY:
 /// the identity is the one claim that registers a session first seen mid-turn.
 ///
 /// # Errors
 ///
-/// If the payload lacks `hook_event_name` or `session_id`, or names an event
-/// the plugin does not forward.
-pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEvent>> {
-    let event = required_or_err(SOURCE_NAME, None, "hook_event_name", |k| {
-        obj.get(k)?.as_str()
-    })?;
-    let session_id = required_or_err(SOURCE_NAME, Some(event), "session_id", |k| field(obj, k))?;
+/// If the payload lacks `session_id`.
+pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
+    let (obj, event) = (hook.obj, hook.event);
+    let session_id = hook.session()?;
     let agent_id = AgentId::from_parts(SOURCE_NAME, session_id);
     let cwd = field(obj, "cwd");
     let identity =
         || AgentEvent::identity(agent_id, SOURCE_NAME, session_id, cwd.map(PathBuf::from));
     // A call's start, its approval wait and its end each carry it
-    // (`_CallIds` at `model_tools.py:643`, `tools/approval_context.py:67` at v0.22.5),
+    // (`_CallIds` at `model_tools.py:668`, `tools/approval_context.py:67` at v0.23.3),
     // so a wait names the call whose end clears it.
     let tool_use_id = || field(obj, "tool_call_id").map(String::from);
 
@@ -350,7 +367,8 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
                 tool_use_id: tool_use_id(),
             },
         ],
-        // The gate's WHY rides `description` (`website/docs/user-guide/features/hooks.md:484`).
+        // The gate's WHY rides `description` (`website/docs/user-guide/features/hooks.md:490`
+        // at v0.23.3).
         PRE_APPROVAL_REQUEST => {
             let reason = field(obj, "description")
                 .map(|d| ellipsize(d, MAX_DECODED_FIELD_CHARS))
@@ -368,17 +386,17 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
             ]
         }
         // THE session end, as `on_session_end` is not: `finalize_session` closes the
-        // Relay conversation under the same `session_id` (`hermes_cli/lifecycle.py:81-93`).
-        // The gateway fires it when a session's last viewer closes it
+        // Relay conversation under the same `session_id` (`hermes_cli/lifecycle.py:99-111`
+        // at v0.23.3). The gateway fires it when a session's last viewer closes it
         // (`gateway/session_viewer_close.py:1-7`) or it stops mid-turn
-        // (`gateway/run_shutdown.py:1173-1180`); a one-shot session idle at the stop
-        // gets none, and ends with the gateway's pid.
+        // (`gateway/run_shutdown.py:1166-1173`, both at v0.23.3); a one-shot
+        // session idle at the stop gets none, and ends with the gateway's pid.
         ON_SESSION_FINALIZE => vec![AgentEvent::SessionEnd {
             agent_id,
             as_child: false,
         }],
         // A TURN boundary, not the session's end: it fires "at each turn
-        // finalization" (`website/docs/user-guide/features/hooks.md:471`). Mapping it
+        // finalization" (`website/docs/user-guide/features/hooks.md:476` at v0.23.3). Mapping it
         // to SessionEnd walked the agent out of the office at every turn.
         //
         // An ACTIVITY arm, so it takes that class's Identity with it: for a
@@ -386,15 +404,12 @@ pub(crate) fn decode_hermes_hook_payload(obj: &HookObject) -> Result<Vec<AgentEv
         // daemon attaching mid-session would otherwise not see the session
         // until the next tool call.
         ON_SESSION_END => vec![identity(), AgentEvent::turn_end(agent_id)],
-        other => {
-            crate::source::drift::unknown_event(SOURCE_NAME, other);
-            return Err(DecodeError::unsupported(SOURCE_NAME, other));
-        }
+        _ => return Ok(None),
     };
-    // Only the session events carry it (`website/docs/user-guide/features/hooks.md:470-471`),
-    // so an event without one must not clear it.
+    // Only the session events carry it (`website/docs/user-guide/features/hooks.md:474`,
+    // `:476` at v0.23.3), so an event without one must not clear it.
     evs.extend(AgentEvent::model_info(agent_id, field(obj, "model"), None));
-    Ok(evs)
+    Ok(Some(evs))
 }
 
 /// The non-empty string at top-level `name`.
@@ -412,11 +427,11 @@ fn field<'o>(obj: &'o HookObject, name: &'static str) -> Option<&'o str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::source::decoder::test_obj;
+    use crate::source::decoder::test_decode;
     use serde_json::{Value, json};
 
     fn decode_all(v: Value) -> Vec<AgentEvent> {
-        decode_hermes_hook_payload(test_obj(&v)).expect("decodes")
+        test_decode(SOURCE_NAME, &v).expect("decodes")
     }
 
     fn decode(v: Value) -> AgentEvent {
@@ -447,10 +462,7 @@ mod tests {
                 json!({"hook_event_name": ev, "cwd": "/Users/dev/proj"}),
                 json!({"hook_event_name": ev, "session_id": "", "cwd": "/Users/dev/proj"}),
             ] {
-                assert!(
-                    decode_hermes_hook_payload(test_obj(&payload)).is_err(),
-                    "{payload}"
-                );
+                assert!(test_decode(SOURCE_NAME, &payload).is_err(), "{payload}");
             }
         }
     }
@@ -532,7 +544,7 @@ mod tests {
     }
 
     /// The shape no capture shows: a recorded run ends its only turn and its
-    /// session together.
+    /// session together (`hermes/fixtures/permission-hermetic`).
     #[test]
     fn a_second_turn_in_one_session_does_not_end_the_session() {
         let sid = "sess-multi";
@@ -547,9 +559,10 @@ mod tests {
             "on_session_end",
         ] {
             evs.extend(
-                decode_hermes_hook_payload(test_obj(
+                test_decode(
+                    SOURCE_NAME,
                     &json!({"hook_event_name": name, "session_id": sid, "cwd": "/r"}),
-                ))
+                )
                 .expect("decodes"),
             );
         }
@@ -568,17 +581,18 @@ mod tests {
     fn an_event_the_plugin_never_forwards_bails() {
         for ev in ["subagent_stop", "pre_message", "on_session_reset", "Bogus"] {
             assert!(
-                decode_hermes_hook_payload(test_obj(
+                test_decode(
+                    SOURCE_NAME,
                     &json!({"hook_event_name": ev, "session_id": "s", "cwd": "/r"})
-                ))
+                )
                 .is_err(),
                 "{ev} must bail (not forwarded, must not decode silently)"
             );
         }
     }
 
-    /// [`field`]'s assertion holds every read to the list; this holds every
-    /// listed field to a read, by blanking it.
+    /// [`field`]'s assertion holds every read but the session's to the list;
+    /// this holds every listed field to a read, by blanking it.
     #[test]
     fn every_decoded_field_is_read() {
         let full = json!({"session_id": "s", "cwd": "/r", "tool_name": "terminal",
@@ -586,7 +600,7 @@ mod tests {
         let decoded = |ev: &str, payload: &Value| {
             let mut payload = payload.clone();
             payload["hook_event_name"] = json!(ev);
-            format!("{:?}", decode_hermes_hook_payload(test_obj(&payload)))
+            format!("{:?}", test_decode(SOURCE_NAME, &payload))
         };
         for name in DECODED_FIELDS {
             let mut blanked = full.clone();
@@ -619,9 +633,7 @@ mod tests {
 
     #[test]
     fn malformed_payloads_are_errors() {
-        assert!(
-            decode_hermes_hook_payload(test_obj(&json!({"session_id": "s", "cwd": "/r"}))).is_err()
-        );
+        assert!(test_decode(SOURCE_NAME, &json!({"session_id": "s", "cwd": "/r"})).is_err());
     }
 
     /// An UNSET `HERMES_HOME` must never be blamed for a relative default: the

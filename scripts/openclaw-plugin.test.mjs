@@ -215,7 +215,7 @@ test("agent_end forwards the errored verdict, never the error string", { skip: !
 });
 
 test("an out-of-range observed port is refused, keeping the resolved one", { skip: !POSIX }, async (t) => {
-  // pixtuoid's decoder REJECTS an envelope whose port is unusable, so stamping a
+  // pixtuoid's decoder REJECTS a payload whose port is unusable, so stamping a
   // bogus value here would silently drop the mascot.
   const { outFile, plugin } = await renderPlugin(t);
   const handlers = register(plugin, { config: { gateway: { port: 18999 } } });
