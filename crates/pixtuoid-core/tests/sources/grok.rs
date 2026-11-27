@@ -3,10 +3,10 @@
 //! transcript — two sprites, which the conformance harness's one-AgentId rule
 //! cannot hold (the same reason `cursor.rs` exists).
 //!
-//! Both halves of a run are here: the parent's transcript, whose
-//! `subagent_spawned` line registers the child, and the hook wire, where the
-//! parent's `subagent_start` names the child and the CHILD's own `session_end`
-//! ends it.
+//! Both halves are here: `subagent-hermetic`'s parent transcript, whose
+//! `subagent_spawned` line registers the child, and `subagent-stop-hook-hermetic`'s
+//! hook wire, where the parent's `subagent_start` names the child and the CHILD's
+//! own `session_end` ends it.
 
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};

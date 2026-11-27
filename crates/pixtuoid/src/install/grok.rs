@@ -45,7 +45,7 @@ pub(crate) const GROK_EVENTS: &[&str] = &[
     "PostToolUseFailure",
     "PermissionDenied",
     "Notification",
-    // No turn-end gate (`Stop`, or `SubagentStop` in a child), `StopFailure` or
+    // No stop gate (`Stop`, or `SubagentStop` in a child), `StopFailure` or
     // `StopCancelled`: the transcript's `turn_completed` ends every turn. The gate can
     // fire again in one turn, as its hook's block starts another round (`turn.rs:1384-1394`;
     // the two child rounds of `grok/fixtures/subagent-stop-hook-hermetic`), whatever
