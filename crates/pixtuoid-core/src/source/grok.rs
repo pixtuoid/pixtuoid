@@ -151,7 +151,7 @@ const ENVELOPE: Envelope = Envelope {
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
 ///
 /// `user_prompt_submit` maps to `SessionStart` too, beside its turn's start:
-/// it is the resurrect carrier [`DESCRIPTOR`]'s `resurrects_on_prompt` names.
+/// it is a resurrect carrier [`DESCRIPTOR`]'s `resurrects_on_prompt` names.
 ///
 /// # Errors
 ///

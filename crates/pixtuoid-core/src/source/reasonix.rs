@@ -166,9 +166,8 @@ pub(crate) fn decode_rx_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
     };
 
     Ok(Some(match event {
-        // The `UserPromptSubmit` duplicate is the RESURRECT path — a
-        // stale-swept session walks back in on its next prompt, and Reasonix
-        // has no other re-creation signal.
+        // The `UserPromptSubmit` duplicate re-registers a swept session on its
+        // next prompt.
         "SessionStart" | "UserPromptSubmit" => vec![start()],
         "PreToolUse" => {
             let tool =
