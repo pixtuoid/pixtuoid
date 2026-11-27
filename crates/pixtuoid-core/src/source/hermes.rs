@@ -646,6 +646,16 @@ mod tests {
         );
     }
 
+    /// Degraded to no parent, the child would register as a root.
+    #[test]
+    fn a_subagent_start_naming_no_parent_is_an_error() {
+        for parent in [json!(null), json!("")] {
+            let payload = json!({"hook_event_name": "subagent_start",
+                "parent_session_id": parent, "child_session_id": "c", "cwd": "/repo"});
+            assert!(test_decode(SOURCE_NAME, &payload).is_err(), "{payload}");
+        }
+    }
+
     #[test]
     fn a_subagent_stop_ends_the_child_alone() {
         let stop = decode_all(json!({"hook_event_name": "subagent_stop",
