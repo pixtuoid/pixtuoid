@@ -87,9 +87,10 @@ telemetry:
             ],
             turn: Turn::PROFILE,
         },
-        // A one-shot joins its children inside the dispatch, which a session
-        // that takes their results later returns from at once
-        // (`tools/delegate_tool_dispatch.py:295-311` at v0.23.3).
+        // A one-shot joins its children before the dispatch returns; an
+        // interactive session's dispatch returns at once and its children run
+        // on (`tools/delegate_tool_dispatch.py:295-311`, `run_agent.py:1399-1402`
+        // at v0.23.3).
         Scenario {
             name: "subagent",
             shape: Shape::Subagent,

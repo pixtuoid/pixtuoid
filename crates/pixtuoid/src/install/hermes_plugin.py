@@ -37,7 +37,7 @@ FORWARD = (
 )
 # `ctx.session_cwd()` names the cwd of the session whose turn runs
 # (plugins.md:1160 at v0.23.3), and these fire once the turn of the session
-# they name is over.
+# they key on is over.
 OUTSIDE_A_TURN = ("on_session_finalize", "subagent_stop")
 # Copied by name, so no prompt, tool output or other argument leaves hermes.
 FIELDS = (

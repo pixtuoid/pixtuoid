@@ -62,12 +62,14 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // at v0.23.3).
             has_exit_signal: true,
             resurrects_on_prompt: false,
-            // A child's own hooks keep firing under the session its start parents
-            // (`hermes/fixtures/subagent-hermetic`).
+            // A child is parented by its `subagent_start` before it runs, so its
+            // own hooks keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,
             // A model's top-level delegation returns its handle while its children
             // run on (`run_agent.py:1399-1402` at v0.23.3), and each child's
-            // `subagent_stop` ends it.
+            // `subagent_stop` ends it (`tools/delegate_tool_results.py:361-391`,
+            // on the path a joined and a background run share,
+            // `tools/delegate_tool_dispatch.py:222-226`, both at v0.23.3).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
             brackets_turns: false,
@@ -297,7 +299,7 @@ pub const DECODED_EVENTS: &[&str] = &[
 ];
 
 /// The events hermes fires once the turn of the session they key on is over,
-/// where `ctx.session_cwd()` names no cwd of its
+/// where `ctx.session_cwd()` names no cwd of that session's
 /// (`website/docs/user-guide/features/plugins.md:1160` at v0.23.3): the gateway
 /// finalizes a session at its viewer's close or its own stop, and a child's stop
 /// fires once its run returned (`tools/delegate_tool_dispatch.py:222-242` at
@@ -443,8 +445,11 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
         ON_SESSION_END => vec![identity(), AgentEvent::turn_end(agent_id)],
         // Fired as the child is built, before it runs, on the thread that
         // dispatched it (`tools/delegate_tool.py:394-402`, `:512` at v0.23.3), so
-        // the cwd is the parent's, which the child starts in
-        // (`tools/delegate_tool_child_run.py:886-899` at v0.23.3).
+        // the cwd is the parent's. A fresh child starts in it
+        // (`tools/delegate_tool_child_run.py:886-899`); a continued child resumes
+        // at its own last cwd (`:892-894`) and an isolated one runs in its
+        // worktree (`:461-476`, both at v0.23.3), so either shows the parent's at
+        // its start: accepted, as grok's is.
         SUBAGENT_START => vec![start(Some(AgentId::from_parts(
             SOURCE_NAME,
             named(PARENT_SESSION_ID)?,
