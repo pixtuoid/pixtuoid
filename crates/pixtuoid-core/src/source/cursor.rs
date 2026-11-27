@@ -37,7 +37,8 @@
 //!     (`5600.index.js`'s subagent `handleCheckpoint`), so every post of a
 //!     short child can precede it.
 //!   - A foreground `Task`'s post (`"isBackground":false`,
-//!     `cursor/fixtures/delegation`) fires once the child's run returns, and a
+//!     `cursor/fixtures/delegation`) fires once the child's run returns
+//!     (`5600.index.js`'s `runSession` awaits a foreground run), and a
 //!     successful one's `tool_output` names the child (`dispatched_child`), so
 //!     it links a child that lost that race too, then ends it.
 //! - `sessionEnd` FIRES on clean completion; `stop`, the turn end, did NOT fire
@@ -343,7 +344,7 @@ mod tests {
     }
 
     /// A foreground `Task`'s post names the child it ran, the link no race can
-    /// lose; a background one's child may still run, and no other tool's
+    /// lose (the module doc); a background one's child may still run, and no other tool's
     /// output is a lineage claim.
     #[test]
     fn a_foreground_task_post_links_the_child_its_output_names() {
