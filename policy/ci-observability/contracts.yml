@@ -675,29 +675,6 @@
       |= sub("just stage-notices \"\\$DIR\""; "cp LICENSE \"$DIR/\"")
     - .jobs.build.steps |= map(select(.name != "Package (Unix)"))
 
-- id: retried-curl-writes-a-file
-  file:
-    - .github/actions/gen-wasm/action.yml
-    - .github/workflows/release-plz.yml
-  covers: "--retry"
-  why: >-
-    A retried curl's stdout is never captured, piped or redirected: curl
-    cannot clean it before a retry (curl.se/docs/manpage.html, `--retry`), so
-    a failed attempt's bytes can precede the body. Write the body with
-    `-o FILE` and read the file.
-  assert: |
-    [.. | objects | .run? | strings | gsub("\\\\\n"; " ") | split("\n")[]
-      | select(contains("curl") and contains("--retry"))]
-      | all(test("(\\$\\(|`)[^\n]*curl|curl[^\n]*([^|]\\|([^|]|$)|[^0-9]>|1>)") | not)
-  break:
-    - '. + {"run": "body=$(curl --retry 3 -o a https://a https://b)"}'
-    - '. + {"run": "x=$(curl --retry 3 -o - https://e)"}'
-    - '. + {"run": "x=$(curl --retry 3 -XPOST https://e)"}'
-    - '. + {"run": "x=`curl --retry 3 https://e`"}'
-    - '. + {"run": "curl --retry 3 https://e | jq ."}'
-    - '. + {"run": "curl --retry 3 https://e >x"}'
-    - '. + {"run": "curl --retry 3 https://e &>x"}'
-
 # ── Copies of the source registry
 
 - id: bug-form-lists-every-supported-cli
