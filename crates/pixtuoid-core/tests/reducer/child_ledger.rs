@@ -684,7 +684,7 @@ fn linked_grok_child(
     (parent, child_sess, child, started)
 }
 
-/// A [`linked_grok_child`] that then ended and was GC'd; returns its stop in
+/// A [`linked_grok_child`] that then ended and was GC'd; returns its end in
 /// place of its start.
 fn ended_grok_child(
     r: &mut Reducer,
@@ -692,11 +692,11 @@ fn ended_grok_child(
 ) -> (AgentId, &'static str, AgentId, SystemTime) {
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
     let (parent, child_sess, child, started) = linked_grok_child(r, scene);
-    let stop = started + Duration::from_secs(1);
-    apply_hook_payload(r, scene, grok_hook("session_end", child_sess), stop);
-    r.tick(scene, stop + EXIT_GRACE_WINDOW + Duration::from_secs(1));
+    let end = started + Duration::from_secs(1);
+    apply_hook_payload(r, scene, grok_hook("session_end", child_sess), end);
+    r.tick(scene, end + EXIT_GRACE_WINDOW + Duration::from_secs(1));
     assert!(!scene.agents.contains_key(&child), "child GC'd");
-    (parent, child_sess, child, stop)
+    (parent, child_sess, child, end)
 }
 
 /// A grok child's next `user_prompt_submit` names no parent: inside the end
@@ -706,12 +706,12 @@ fn ended_grok_child(
 fn a_grok_childs_parentless_next_start_is_readmitted_under_its_remembered_parent() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let (parent, child_sess, child, stop) = ended_grok_child(&mut r, &mut scene);
+    let (parent, child_sess, child, end) = ended_grok_child(&mut r, &mut scene);
     apply_hook_payload(
         &mut r,
         &mut scene,
         grok_hook("user_prompt_submit", child_sess),
-        stop + Duration::from_secs(20),
+        end + Duration::from_secs(20),
     );
     assert_eq!(
         scene.agents.get(&child).map(|s| s.parent_id),
@@ -757,9 +757,9 @@ fn a_walking_out_grok_childs_parentless_next_start_revives_it_under_its_parent()
 fn an_ended_grok_childs_late_parentless_first_sight_is_refused() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let (_, child_sess, child, stop) = ended_grok_child(&mut r, &mut scene);
-    let first_sight = stop + STRAGGLER_TTL + Duration::from_secs(1);
-    assert!(first_sight < stop + CHILD_END_GATE_TTL);
+    let (_, child_sess, child, end) = ended_grok_child(&mut r, &mut scene);
+    let first_sight = end + STRAGGLER_TTL + Duration::from_secs(1);
+    assert!(first_sight < end + CHILD_END_GATE_TTL);
     r.apply(
         &mut scene,
         AgentEvent::SessionStart {
@@ -784,14 +784,14 @@ fn an_ended_grok_childs_late_parentless_first_sight_is_refused() {
 fn a_grok_childs_tool_hook_past_the_end_gate_registers_under_its_remembered_parent() {
     let mut scene = SceneState::uniform(4);
     let mut r = Reducer::new();
-    let (parent, child_sess, child, stop) = ended_grok_child(&mut r, &mut scene);
+    let (parent, child_sess, child, end) = ended_grok_child(&mut r, &mut scene);
     let mut tool = grok_hook("pre_tool_use", child_sess);
     tool["toolName"] = "read_file".into();
     apply_hook_payload(
         &mut r,
         &mut scene,
         tool,
-        stop + CHILD_END_GATE_TTL + Duration::from_secs(1),
+        end + CHILD_END_GATE_TTL + Duration::from_secs(1),
     );
     assert_eq!(
         scene.agents.get(&child).map(|s| s.parent_id),

@@ -2652,9 +2652,10 @@ mod run {
             );
             assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("not judged"));
             let judged = |n| vec![PathBuf::new(); n];
-            assert!(judges_leg(grok, &judged(6), true), "grok moves on Windows");
-            assert!(!judges_leg(grok, &judged(7), false));
-            assert!(judges_leg(grok, &judged(8), false));
+            let leg = |windows| judged(names(windows).len());
+            assert!(judges_leg(grok, &leg(true), true), "grok moves on Windows");
+            assert!(!judges_leg(grok, &judged(names(false).len() - 1), false));
+            assert!(judges_leg(grok, &leg(false), false));
         }
 
         #[test]

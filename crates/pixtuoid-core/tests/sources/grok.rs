@@ -161,7 +161,7 @@ fn a_child_outlives_its_first_stop_gate_and_leaves_on_its_own_session_end() {
         .expect("subagent_start registers the child");
     assert!(
         slot.exiting_at.is_none() && matches!(slot.state, ActivityState::Running { item: Some(_) }),
-        "the child walked out at its first stop gate, before its second round's read_file"
+        "the child must still be Running, not exiting, at its second round's read_file"
     );
 
     fold.feed(&hooks, &lines[second_round + 1..=end], t0);
