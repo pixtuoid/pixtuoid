@@ -681,20 +681,22 @@
     - .github/workflows/release-plz.yml
   covers: "--retry"
   why: >-
-    curl cannot remove a failed attempt's bytes from stdout before it retries
-    (curl.se/docs/manpage.html, `--retry`), so a body captured from stdout can
-    carry them and still look like a clean answer. A separate `-o FILE` (never `-o -`,
-    which is stdout) or `-O` makes curl truncate the file instead.
+    A retried curl's stdout is never captured, piped or redirected: curl
+    cannot clean it before a retry (curl.se/docs/manpage.html, `--retry`), so
+    a failed attempt's bytes can precede the body. Write the body with
+    `-o FILE` and read the file.
   assert: |
-    [.. | objects | .run? | strings | gsub("\\\\\n"; " ") | scan("curl[^|;&)\n]*")
-      | select(contains("--retry"))]
-      | all(test("\\s(-o|--output)\\s+[^-\\s]|\\s(-O|--remote-name)(\\s|$)"))
+    [.. | objects | .run? | strings | gsub("\\\\\n"; " ") | split("\n")[]
+      | select(contains("curl") and contains("--retry"))]
+      | all(test("(\\$\\(|`)[^\n]*curl|curl[^\n]*([^|]\\|([^|]|$)|[^0-9]>|1>)") | not)
   break:
-    - '. + {"run": "curl --retry 3 -XPOST https://e"}'
+    - '. + {"run": "body=$(curl --retry 3 -o a https://a https://b)"}'
     - '. + {"run": "x=$(curl --retry 3 -o - https://e)"}'
-    - '. + {"run": "x=$(curl -fsSL --retry 3 https://e)"}'
+    - '. + {"run": "x=$(curl --retry 3 -XPOST https://e)"}'
+    - '. + {"run": "x=`curl --retry 3 https://e`"}'
     - '. + {"run": "curl --retry 3 https://e | jq ."}'
-    - '. + {"run": "curl -o a https://a\ncurl --retry 3 https://b >b"}'
+    - '. + {"run": "curl --retry 3 https://e >x"}'
+    - '. + {"run": "curl --retry 3 https://e &>x"}'
 
 # ── Copies of the source registry
 
