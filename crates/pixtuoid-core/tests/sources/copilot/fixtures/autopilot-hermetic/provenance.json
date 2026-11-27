@@ -1,12 +1,12 @@
 {
   "origin": "recorded",
   "cli": "copilot",
-  "version": "GitHub Copilot CLI 1.0.116.",
-  "captured": "2026-11-25",
+  "version": "GitHub Copilot CLI 1.0.117.",
+  "captured": "2026-11-27",
   "command": "just hermetic --record copilot",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 97
+    "blanked": 98
   },
   "aimock": "1.48.0",
   "script": "tests/sources/copilot/hermetic/autopilot.json",
@@ -29,7 +29,7 @@
     }
   },
   "sentinel_reads": {
-    "d3b40b1b-8a4c-4a39-b452-3340b90cd8e3/events.jsonl": [
+    "4864bd8f-3d63-440c-a630-ff7234d885ab/events.jsonl": [
       "11:/data/usage/cacheReadTokens",
       "17:/data/usage/cacheReadTokens"
     ]

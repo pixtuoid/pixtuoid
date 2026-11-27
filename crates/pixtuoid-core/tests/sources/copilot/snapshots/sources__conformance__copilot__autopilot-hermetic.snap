@@ -3,47 +3,47 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 16572166260650206166
+    agent_id: 17206361445193986025
     source: copilot
-    session_id: d3b40b1b-8a4c-4a39-b452-3340b90cd8e3
+    session_id: 4864bd8f-3d63-440c-a630-ff7234d885ab
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 16572166260650206166
+    agent_id: 17206361445193986025
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 16572166260650206166
+    agent_id: 17206361445193986025
     fresh_tokens: 7270
-    reading_id: 871714ec-aab3-42e0-858a-73539827726a
+    reading_id: 290d4f22-1766-4802-acf3-3ff17702524e
 - ToolUseStart:
-    agent_id: 16572166260650206166
-    tool_use_id: call_2N8wd9daCYSAAaHU
+    agent_id: 17206361445193986025
+    tool_use_id: call_y75l1Yuo2m0P9T1K
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 16572166260650206166
-    tool_use_id: call_2N8wd9daCYSAAaHU
+    agent_id: 17206361445193986025
+    tool_use_id: call_y75l1Yuo2m0P9T1K
 - ModelInfo:
-    agent_id: 16572166260650206166
+    agent_id: 17206361445193986025
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 16572166260650206166
+    agent_id: 17206361445193986025
     fresh_tokens: 7264
-    reading_id: 3e73e8dd-f6cb-4ab1-8e09-4fea50865fa6
+    reading_id: 52209a66-9c2b-4e80-949f-f19856fe5299
 - ToolUseStart:
-    agent_id: 16572166260650206166
-    tool_use_id: call_gWdsfg-lmRljmJzw
+    agent_id: 17206361445193986025
+    tool_use_id: call_GFutrSXzQpbridXN
     detail:
       Generic:
         display: task_complete
 - ToolUseEnd:
-    agent_id: 16572166260650206166
-    tool_use_id: call_gWdsfg-lmRljmJzw
+    agent_id: 17206361445193986025
+    tool_use_id: call_GFutrSXzQpbridXN
 - TurnEnd:
-    agent_id: 16572166260650206166
+    agent_id: 17206361445193986025
 - SessionEnd:
-    agent_id: 16572166260650206166
+    agent_id: 17206361445193986025
     as_child: false
