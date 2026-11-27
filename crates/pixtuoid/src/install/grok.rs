@@ -45,13 +45,14 @@ pub(crate) const GROK_EVENTS: &[&str] = &[
     "PostToolUseFailure",
     "PermissionDenied",
     "Notification",
-    // No `Stop`, `StopFailure` or `StopCancelled`: the transcript's
-    // `turn_completed` ends every turn, and these miss a subagent's turns and
-    // add a session-end `stop` naming none (`stop_gate.rs:241-245`, `:95-111`
-    // under `crates/codegen/xai-grok-shell/src/session/acp_session_impl/` at
+    // No turn-end gate (`Stop`, or `SubagentStop` inside a child), `StopFailure`
+    // or `StopCancelled`: the transcript's `turn_completed` ends every turn, a
+    // child's included. The gate fires at each round a Stop hook keeps working
+    // (`grok/fixtures/subagent-stop-hook-hermetic`), and `Stop` again at session
+    // end naming no turn (`stop_gate.rs:236-245`, `:95-111` under
+    // `crates/codegen/xai-grok-shell/src/session/acp_session_impl/` at
     // `xai-org/grok-build` `2bdd1d6a63`).
     "SubagentStart",
-    "SubagentStop",
     "SessionEnd",
 ];
 
@@ -357,13 +358,16 @@ mod tests {
         );
 
         let mut doc: Value = serde_json::from_str(&installed).unwrap();
-        doc["hooks"].as_object_mut().unwrap().remove("SubagentStop");
+        doc["hooks"]
+            .as_object_mut()
+            .unwrap()
+            .remove("SubagentStart");
         let half_dead = verify_schema(&doc.to_string());
         assert!(
             half_dead
                 .issues
                 .iter()
-                .any(|i| i.contains("SubagentStop") && i.ends_with("reconnect Grok Build"))
+                .any(|i| i.contains("SubagentStart") && i.ends_with("reconnect Grok Build"))
         );
 
         let mut doc: Value = serde_json::from_str(&installed).unwrap();
@@ -423,7 +427,7 @@ mod tests {
                 "UserPromptSubmit" => {
                     payload["promptId"] = serde_json::json!("p1");
                 }
-                "SubagentStart" | "SubagentStop" => {
+                "SubagentStart" => {
                     payload["subagentId"] = serde_json::json!("0197fa31-child");
                     payload["subagentType"] = serde_json::json!("explore");
                 }
@@ -451,7 +455,6 @@ mod tests {
                 "PermissionDenied",
                 "Notification",
                 "SubagentStart",
-                "SubagentStop",
                 "SessionEnd",
             ],
         );

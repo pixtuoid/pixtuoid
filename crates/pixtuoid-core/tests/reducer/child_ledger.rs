@@ -693,15 +693,7 @@ fn ended_grok_child(
     use pixtuoid_core::state::reducer::EXIT_GRACE_WINDOW;
     let (parent, child_sess, child, started) = linked_grok_child(r, scene);
     let stop = started + Duration::from_secs(1);
-    let mut end = grok_hook("subagent_stop", child_sess);
-    end["subagentId"] = child_sess.into();
-    apply_hook_payload(r, scene, end, stop);
-    apply_hook_payload(
-        r,
-        scene,
-        grok_hook("session_end", child_sess),
-        stop + Duration::from_millis(1),
-    );
+    apply_hook_payload(r, scene, grok_hook("session_end", child_sess), stop);
     r.tick(scene, stop + EXIT_GRACE_WINDOW + Duration::from_secs(1));
     assert!(!scene.agents.contains_key(&child), "child GC'd");
     (parent, child_sess, child, stop)

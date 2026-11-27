@@ -27,7 +27,10 @@
 //! - **Subagents**: children persist as FLAT siblings in the sessions tree and
 //!   fire NO `session_start` hook of their own (`grok/fixtures/subagent-hermetic`)
 //!   — the `subagent_start` hook (or the parent transcript's
-//!   `subagent_spawned` line) is the child's registration carrier.
+//!   `subagent_spawned` line) is the child's registration carrier, and its own
+//!   `session_end` (or the parent's `subagent_finished` line) its end. Its
+//!   `subagent_stop` is no end: grok fires it at each round of the child's
+//!   Stop gate (`grok/fixtures/subagent-stop-hook-hermetic`).
 //! - **Exit profile**: a TUI `/exit` fires `session_end`
 //!   (`grok/fixtures/two-turn-hermetic`, `permission-hermetic`); a kill or a
 //!   crash fires none and leaves the session in grok's crash-recovery registry
@@ -155,13 +158,13 @@ const ENVELOPE: Envelope = Envelope {
 ///
 /// # Errors
 ///
-/// If an event keyed on or parented by its session lacks `sessionId`, or a
-/// subagent event lacks `subagentId`.
+/// If an event keyed on or parented by its session lacks `sessionId`, or
+/// `subagent_start` lacks `subagentId`.
 pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
     let cwd = non_empty(obj, "cwd").or_else(|| non_empty(obj, "workspaceRoot"));
-    // Read only by the arms that use it, as a key or a child's parent: a
-    // subagent's end keys on the child, an ignored notice on nothing.
+    // Read only by the arms that use it, as a key or a child's parent: an
+    // ignored notice keys on nothing.
     let session = || -> Result<(AgentId, &str)> {
         let key = hook.session()?;
         Ok((AgentId::from_parts(SOURCE_NAME, key), key))
@@ -303,10 +306,6 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
                 parent_id: Some(agent_id),
             }]
         }
-        "subagent_stop" => vec![AgentEvent::SessionEnd {
-            agent_id: AgentId::from_parts(SOURCE_NAME, &subagent_child_key(obj, event)?),
-            as_child: true,
-        }],
         SESSION_END => vec![AgentEvent::SessionEnd {
             agent_id: session()?.0,
             as_child: false,
@@ -884,28 +883,11 @@ mod tests {
     }
 
     #[test]
-    fn subagent_stop_ends_the_child_as_child() {
-        let mut v = payload("subagent_stop");
-        v["subagentId"] = json!("0197fa31-child");
-        v["subagentType"] = json!("explore");
-        v["exitCode"] = json!(0);
-        let evs = decode_all(v);
-        assert_eq!(evs.len(), 1);
+    fn a_subagent_start_without_subagent_id_is_malformed() {
         assert!(
-            matches!(&evs[0], AgentEvent::SessionEnd { agent_id, as_child: true }
-                if *agent_id == AgentId::from_parts(SOURCE_NAME, "0197fa31-child")),
-            "subagent_stop must end the CHILD with the as_child stamp"
+            test_decode(SOURCE_NAME, &payload("subagent_start")).is_err(),
+            "subagent_start without subagentId must bail"
         );
-    }
-
-    #[test]
-    fn subagent_events_without_subagent_id_are_malformed() {
-        for event in ["subagent_start", "subagent_stop"] {
-            assert!(
-                test_decode(SOURCE_NAME, &payload(event)).is_err(),
-                "{event} without subagentId must bail"
-            );
-        }
     }
 
     fn missing(field: &str, logs: &str) -> bool {

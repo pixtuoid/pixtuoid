@@ -1,19 +1,21 @@
-//! grok's DELEGATING run, recorded from a blocking `spawn_subagent`. Conformance
-//! skips it (`OUTSIDE_CONFORMANCE`): a child is its own grok session with its own
+//! grok's DELEGATING runs, recorded from a blocking `spawn_subagent`. Conformance
+//! skips them (`OUTSIDE_CONFORMANCE`): a child is its own grok session with its own
 //! transcript — two sprites, which the conformance harness's one-AgentId rule
 //! cannot hold (the same reason `cursor.rs` exists).
 //!
-//! Both halves of the one run are here: the parent's transcript, whose
+//! Both halves of a run are here: the parent's transcript, whose
 //! `subagent_spawned` line registers the child, and the hook wire, where the
-//! parent's `subagent_start` names the child and the CHILD's own `subagent_stop`
+//! parent's `subagent_start` names the child and the CHILD's own `session_end`
 //! ends it.
 
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
 
 use pixtuoid_core::AgentId;
 use pixtuoid_core::harness::HOOK_PAYLOADS;
-use pixtuoid_core::harness::{Drive, Driven};
+use pixtuoid_core::harness::{Drive, Driven, Fold};
 use pixtuoid_core::source::{AgentEvent, ToolDetail};
+use pixtuoid_core::state::ActivityState;
 
 use super::captures::{fixture_lines, sorted_dirs, sources_root};
 
@@ -40,12 +42,6 @@ fn sessions() -> (String, String) {
                 })
         })
         .expect("the parent's transcript spawns the child")
-}
-
-fn hooks() -> Driven {
-    let d = Drive::hooks().lines(fixture_lines(&capture().join(HOOK_PAYLOADS)));
-    d.assert_clean("grok delegation hooks");
-    d
 }
 
 /// SEEDED, and via the harness rather than a hand-built `SessionStart`: the
@@ -125,22 +121,58 @@ fn only_the_blocking_spawn_carries_the_task_detail() {
 }
 
 #[test]
-fn subagent_stop_ends_the_child_and_stamps_it_as_a_child() {
-    // grok puts the CHILD's own sessionId on `subagent_stop` — the parent's
-    // `session_end` is a separate event later in the same capture, so "the child
-    // ended" has to be read off the child's id, not off the scene being empty.
-    let ends: Vec<_> = hooks()
-        .events
+fn a_child_outlives_its_first_stop_gate_and_leaves_on_its_own_session_end() {
+    let lines = fixture_lines(
+        &sources_root()
+            .join("grok/fixtures/subagent-stop-hook-hermetic")
+            .join(HOOK_PAYLOADS),
+    );
+    let wire: Vec<serde_json::Value> = lines
         .iter()
-        .filter_map(|e| match e {
-            AgentEvent::SessionEnd { agent_id, as_child } => Some((*agent_id, *as_child)),
-            _ => None,
-        })
+        .map(|l| serde_json::from_str(l).expect("valid json"))
         .collect();
-    let child = AgentId::from_parts("grok", &sessions().1);
+    let child_key = wire
+        .iter()
+        .find(|v| v["hookEventName"] == "subagent_start")
+        .and_then(|v| v["subagentId"].as_str())
+        .expect("the parent spawns the child");
+    let child_sends = |event: &'static str| {
+        wire.iter()
+            .enumerate()
+            .filter(move |(_, v)| v["hookEventName"] == event && v["sessionId"] == child_key)
+            .map(|(at, _)| at)
+    };
+    let second_round = child_sends("pre_tool_use")
+        .nth(1)
+        .expect("the seed's blocked stop sends the child into a second round");
+    let end = child_sends("session_end")
+        .next()
+        .expect("the child's session ends");
+    let (hooks, mut fold) = (Drive::hooks(), Fold::default());
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+    fold.feed(&hooks, &lines[..=second_round], t0);
+    let working = fold.driven();
+    working.assert_clean("grok stop-hook hooks");
+    let child = AgentId::from_parts("grok", child_key);
+    let slot = working
+        .scene
+        .agents
+        .get(&child)
+        .expect("subagent_start registers the child");
     assert!(
-        ends.contains(&(child, true)),
-        "subagent_stop must end the CHILD with the as_child stamp the reducer's \
-         child ledger keys on, got {ends:?}"
+        slot.exiting_at.is_none() && matches!(slot.state, ActivityState::Running { item: Some(_) }),
+        "the child walked out at its first stop gate, before its second round's read_file"
+    );
+
+    fold.feed(&hooks, &lines[second_round + 1..=end], t0);
+    let d = fold.finish();
+    assert!(
+        d.scene.agents[&child].exiting_at.is_some(),
+        "the child's own session_end must end it"
+    );
+    let parent = d.root().expect("the parent registers");
+    assert!(
+        d.scene.agents[&parent].exiting_at.is_none(),
+        "the parent's turn goes on past its child's end"
     );
 }

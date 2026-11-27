@@ -166,7 +166,6 @@ pub(crate) const PROFILE: Profile = Profile {
                 "PreToolUse",
                 "SubagentStart",
                 "PostToolUse",
-                "SubagentStop",
                 "SessionEnd",
             ],
             turn: Turn::PROFILE,
@@ -185,7 +184,6 @@ pub(crate) const PROFILE: Profile = Profile {
                 "PreToolUse",
                 "SubagentStart",
                 "PostToolUse",
-                "SubagentStop",
                 "SessionEnd",
             ],
             turn: Turn {
