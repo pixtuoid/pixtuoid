@@ -105,21 +105,25 @@ impl HookDecoding {
     }
 }
 
-/// Reducer-facing capability flags — stable facts about the source's wire
-/// protocol, NOT policy names, so a future CLI picks values truthfully and the
-/// policy falls out.
+/// Reducer-facing capability flags — stable facts about how pixtuoid hears the
+/// source, its wire protocol and the liveness authorities run over it, NOT
+/// policy names, so a future CLI picks values truthfully and the policy falls
+/// out.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SourceCaps {
-    /// Does a CLEAN exit leave any end signal at all (a SessionEnd hook and/or
-    /// a JSONL end marker — best-effort counts; "none of any kind" is the bar
-    /// for `false`)? When false, the stale-sweep is the ONLY reaper a closed
-    /// session ever gets.
-    pub(crate) has_exit_signal: bool,
-    /// Does a live-but-swept session WALK BACK IN on the user's next prompt (a
-    /// `UserPromptSubmit`-class event re-emitting `SessionStart`)? The safety
-    /// precondition for the short idle reaper: its only false positive (a live
-    /// session idle past the window) must self-heal.
-    pub(crate) resurrects_on_prompt: bool,
+    /// Can a session end, on some surface or platform pixtuoid supports, with
+    /// nothing reporting it: no end signal on its wire, and no liveness
+    /// authority covering it once armed (a probe ladder, `hook::HookPidWatch`)?
+    /// An abrupt exit counts: a kill, a crash, a closed terminal. Then the stale
+    /// sweep is the only reaper that session gets.
+    pub(crate) exits_can_go_unseen: bool,
+    /// On every surface pixtuoid hears the source on, does each turn the user
+    /// prompts, a tool-less one included, re-register a live-but-swept session:
+    /// through a hook event the reducer registers on (`SessionStart`,
+    /// `Identity`), or a transcript line the watcher reads as life
+    /// (`first_sight::Life::Lives`)? A surface where only a tool call brings it
+    /// back makes it false.
+    pub(crate) re_registers_each_turn: bool,
     /// Are subagent delegations invisible on this source's event stream (a
     /// window in which the PARENT's own stream goes quiet)? When true, a Delegating slot's
     /// `last_event_at` freezes for the whole delegation, so the reducer gives it
@@ -172,19 +176,21 @@ impl ChildEndInference {
 impl SourceCaps {
     /// All-false caps for a `Daemon` source: it creates no `AgentSlot`s to reap.
     pub(crate) const INERT_DAEMON: SourceCaps = SourceCaps {
-        has_exit_signal: false,
-        resurrects_on_prompt: false,
+        exits_can_go_unseen: false,
+        re_registers_each_turn: false,
         delegations_are_hook_silent: false,
         child_end_inference: ChildEndInference::None,
         child_hooks_unnamed: false,
         brackets_turns: false,
     };
 
-    /// The short-idle-reaper policy, derived: only safe when the sweep is the
-    /// sole reaper (`!has_exit_signal`) AND the false positive self-heals
-    /// (`resurrects_on_prompt`).
+    /// The short-idle-reaper policy, derived: it pays off only where the sweep
+    /// alone ends some session (`exits_can_go_unseen`), and its false positive,
+    /// a live idle slot no probe vouches for
+    /// ([`PROOF_OF_LIFE_TTL`](crate::state::correlation::PROOF_OF_LIFE_TTL)),
+    /// must self-heal (`re_registers_each_turn`).
     pub(crate) fn short_idle_reap(&self) -> bool {
-        !self.has_exit_signal && self.resurrects_on_prompt
+        self.exits_can_go_unseen && self.re_registers_each_turn
     }
 }
 
@@ -956,11 +962,17 @@ mod tests {
     }
 
     #[test]
-    fn short_idle_reap_fires_for_codex_grok_and_opencode_only() {
+    fn short_idle_reap_fires_for_codex_dsh_grok_and_opencode_only() {
         for d in REGISTRY {
             assert_eq!(
                 d.caps().short_idle_reap(),
-                [codex::SOURCE_NAME, grok::SOURCE_NAME, opencode::SOURCE_NAME].contains(&d.name),
+                [
+                    codex::SOURCE_NAME,
+                    dsh::SOURCE_NAME,
+                    grok::SOURCE_NAME,
+                    opencode::SOURCE_NAME
+                ]
+                .contains(&d.name),
                 "short_idle_reap mismatch for {:?}",
                 d.name
             );

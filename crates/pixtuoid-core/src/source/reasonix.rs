@@ -52,12 +52,14 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_rx_hook_payload,
         }),
         caps: SourceCaps {
-            // SessionEnd fires on clean exit (`reasonix/fixtures/tool-run-hermetic`)
-            // — best-effort counts.
-            has_exit_signal: true,
-            // UserPromptSubmit re-emits SessionStart, so a swept-but-live
-            // session walks back in on the next prompt.
-            resurrects_on_prompt: true,
+            // `SessionEnd` fires as a session closes (`internal/ext/hook/hook.go:56-57`
+            // at v2.61.0; every `reasonix/fixtures` recording), and `hook::HookPidWatch`
+            // ends one killed on the shim-stamped pid.
+            exits_can_go_unseen: false,
+            // UserPromptSubmit fires before every turn (`internal/ext/hook/hook.go:1-3`
+            // at v2.61.0), the desktop's included (`:84-86`), and re-emits
+            // SessionStart.
+            re_registers_each_turn: true,
             // A subagent's hooks carry its own session id, the parent's
             // suffixed with its role (`internal/ext/hook/runner.go:57-66` at
             // v2.61.0), so the parent's slot emits NOTHING until the dispatch
@@ -164,9 +166,8 @@ pub(crate) fn decode_rx_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
     };
 
     Ok(Some(match event {
-        // The `UserPromptSubmit` duplicate is the RESURRECT path — a
-        // stale-swept session walks back in on its next prompt, and Reasonix
-        // has no other re-creation signal.
+        // The `UserPromptSubmit` duplicate re-registers a swept session on its
+        // next prompt.
         "SessionStart" | "UserPromptSubmit" => vec![start()],
         "PreToolUse" => {
             let tool =

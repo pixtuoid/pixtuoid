@@ -88,13 +88,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_grok_hook_payload,
         }),
         caps: SourceCaps {
-            // `false` though a TUI `/exit` fires `session_end` (the module doc's
-            // exit profile): a crashed session no probe tracks has only the stale
-            // sweep, which `false` shortens (`short_idle_reap`). A headless run
-            // registers in `active_sessions.json` only under `GROK_TRACK_HEADLESS`
+            // A kill or a crash fires no hook (the module doc's exit profile), and
+            // the probe over `active_sessions.json` reads nothing off Unix
+            // (`native.rs:76-81`) and never sees a headless run, registered there
+            // only under `GROK_TRACK_HEADLESS`
             // (`crates/codegen/xai-grok-pager/src/headless.rs:1078-1086` at
-            // `2bdd1d6a63`), and off Unix no probe reads it (`native.rs:76-81`).
-            has_exit_signal: false,
+            // `2bdd1d6a63`).
+            exits_can_go_unseen: true,
             // Every prompt fires `user_prompt_submit` (→ SessionStart) but a
             // message relayed to a running subagent from its parent: upstream
             // skips the hook for `InputAuthority::ModelAuthoredUntrusted` input
@@ -103,9 +103,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // (`session/mod.rs:179-195`), both under
             // `crates/codegen/xai-grok-shell/src/` at `xai-org/grok-build`
             // `2bdd1d6a63`. So a swept LIVE session walks back in on the next
-            // prompt that fires it — which is what makes the short idle reap
-            // safe for grok's untracked headless one-shots.
-            resurrects_on_prompt: true,
+            // prompt that fires it, and one no hook reaches on the
+            // `turn_completed` line that ends each turn, a tool-less one's
+            // included (`grok/fixtures/model-error-hermetic`).
+            re_registers_each_turn: true,
             // A BLOCKING spawn's Task detail gets its post_tool_use at
             // completion (`grok/fixtures/subagent-hermetic`), and a background
             // spawn never mints a Task at all.
@@ -150,7 +151,7 @@ const ENVELOPE: Envelope = Envelope {
 /// `_pixtuoid_source == "grok"`), keyed on `sessionId`.
 ///
 /// `user_prompt_submit` maps to `SessionStart` too, beside its turn's start:
-/// it is the resurrect carrier [`DESCRIPTOR`]'s `resurrects_on_prompt` names.
+/// it is a re-registration carrier [`DESCRIPTOR`]'s `re_registers_each_turn` names.
 ///
 /// # Errors
 ///

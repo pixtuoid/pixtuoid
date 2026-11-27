@@ -69,10 +69,14 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_cursor_hook_payload,
         }),
         caps: SourceCaps {
-            // The module doc's exit bullet — best-effort counts.
-            has_exit_signal: true,
-            // No prompt hook is registered (`CURSOR_EVENTS`).
-            resurrects_on_prompt: false,
+            // An interactive session's hooks can resolve to different ancestors
+            // (#897's measurement), and a pid other than the armed one demotes the
+            // watch (`hook::pid_watch`'s `Bindings::sight`), so a kill after that
+            // goes unreported.
+            exits_can_go_unseen: true,
+            // `stop` carries an `Identity`, but no `-p` turn fires it (the module
+            // doc's exit bullet), so a tool-less one re-registers nothing.
+            re_registers_each_turn: false,
             // A child's events ride its own session (`cursor/fixtures/delegation`),
             // so the parent's goes quiet until its `Task` post.
             delegations_are_hook_silent: true,

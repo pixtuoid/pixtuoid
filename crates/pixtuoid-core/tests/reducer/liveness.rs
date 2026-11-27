@@ -247,6 +247,34 @@ fn a_quit_opencode_idle_slot_is_swept_short_and_walks_back_in_on_its_next_turn()
     );
 }
 
+/// A dsh web session outlives the tab that leaves it, so an idle dsh slot, which
+/// no probe ever vouches for, takes the short idle reap; each turn's end decodes
+/// to an `Identity` beside its `TurnEnd` (`decode_dsh_payload`'s `turn_end` arm),
+/// which registers it again once its walkout is over.
+#[test]
+fn an_idle_dsh_slot_is_swept_short_and_its_next_turn_end_re_registers_it() {
+    use pixtuoid_core::state::reducer::{EXIT_GRACE_WINDOW, STALE_SHORT_IDLE_TIMEOUT};
+    let mut scene = SceneState::uniform(4);
+    let mut r = Reducer::new();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let id = AgentId::from_parts("dsh", "s");
+    let exiting = |scene: &SceneState| scene.agents.get(&id).map(|s| s.exiting_at.is_some());
+    identity(&mut r, &mut scene, id, "dsh", t0);
+
+    r.tick(&mut scene, t0 + STALE_SHORT_IDLE_TIMEOUT);
+    assert_eq!(exiting(&scene), Some(false), "idle to the window");
+    let swept = t0 + STALE_SHORT_IDLE_TIMEOUT + Duration::from_secs(1);
+    r.tick(&mut scene, swept);
+    assert_eq!(exiting(&scene), Some(true), "idle past it");
+
+    let gone = swept + EXIT_GRACE_WINDOW + Duration::from_millis(1);
+    r.tick(&mut scene, gone);
+    assert_eq!(exiting(&scene), None, "walked out");
+    identity(&mut r, &mut scene, id, "dsh", gone);
+    turn_end(&mut r, &mut scene, id, gone, Transport::Hook);
+    assert_eq!(exiting(&scene), Some(false), "back on its turn's end");
+}
+
 /// An `Identity` on an existing slot only backfills it (`apply_identity`), so it
 /// never revives a walking-out slot, and a sweep
 /// stamps no hook end, so a swept session's next claiming hook after its walkout

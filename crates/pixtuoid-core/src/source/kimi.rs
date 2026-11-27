@@ -55,12 +55,14 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             extend: decode_kimi_hook_custom,
         }),
         caps: SourceCaps {
-            // `SessionEnd` fires on exit — best-effort counts; abrupt exits fall
-            // to the stale-sweep.
-            has_exit_signal: true,
-            // kimi installs no `UserPromptSubmit` (`KIMI_EVENTS`), so no prompt
-            // re-registers: a swept session returns on its next tool call or turn end.
-            resurrects_on_prompt: false,
+            // `SessionEnd` fires as the TUI exits (`kimi/fixtures/cancel-hermetic`)
+            // but never under `-p` (`tool-run-hermetic`); either exit, and a kill,
+            // ends through `hook::HookPidWatch` on the pid it arms on sight.
+            exits_can_go_unseen: false,
+            // A TUI turn's end carries an `Identity` (`decode_kimi_hook_custom`), but
+            // `-p` can dispose its agent before `Stop` (`kimi/fixtures/tool-run-hermetic`
+            // has none), so a tool-less `-p` turn can re-register nothing.
+            re_registers_each_turn: false,
             // Consumed via the `Agent` tool: 0.36.1's `AgentToolInputSchema` injects
             // `subagent_type: "coder"` when the model omits it, so `make_tool_detail`
             // mints Task. `AgentSwarm` has NO such injection, so an omitting swarm

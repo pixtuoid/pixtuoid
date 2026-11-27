@@ -58,11 +58,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         }),
         hook: None,
         caps: SourceCaps {
-            // `session.shutdown` is a real persisted exit marker.
-            has_exit_signal: true,
-            // A swept session returns on its transcript's next read showing
-            // life (the watcher's re-registration), not through this flag.
-            resurrects_on_prompt: false,
+            // `session.shutdown` marks a clean exit (every `copilot/fixtures`
+            // recording), but no hook or probe sees a kill or a crash.
+            exits_can_go_unseen: true,
+            // A prompt's line and a text reply's decode to no life
+            // (`copilot/fixtures/resume-hermetic`'s resumed turn), so only a tool
+            // call's line re-registers a swept session.
+            re_registers_each_turn: false,
             // The `task` dispatch emits `tool.execution_start`/`complete` AND
             // explicit `subagent.started`/`completed` events.
             delegations_are_hook_silent: false,
