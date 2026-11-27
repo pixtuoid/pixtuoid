@@ -688,7 +688,7 @@
   assert: |
     [.. | objects | .run? | strings | gsub("\\\\\n"; " ") | scan("curl[^|;&)\n]*")
       | select(contains("--retry"))]
-      | all(test("\\s(-o|--output)\\s+[^-\\s]|\\s(-O|--remote-name)\\s"))
+      | all(test("\\s(-o|--output)\\s+[^-\\s]|\\s(-O|--remote-name)(\\s|$)"))
   break:
     - '. + {"run": "curl --retry 3 -XPOST https://e"}'
     - '. + {"run": "x=$(curl --retry 3 -o - https://e)"}'
