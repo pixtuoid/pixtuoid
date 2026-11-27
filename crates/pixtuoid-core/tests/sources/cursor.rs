@@ -4,8 +4,8 @@
 //! one-AgentId rule cannot hold.
 //!
 //! It pins that the child is a session of its own, linked to its parent by its
-//! nested transcript path or else by the parent's `Task` post, and that the
-//! dispatch ends on that post.
+//! nested transcript path or else by the parent's foreground `Task` post, and
+//! that the dispatch ends on that post.
 
 use std::collections::BTreeSet;
 

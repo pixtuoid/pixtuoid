@@ -369,6 +369,7 @@ mod tests {
             ("Task", ""),
             ("Task", "not json"),
             ("Task", r#"{"status":"success"}"#),
+            ("Task", r#"{"status":"success","agentId":"child"}"#),
             (
                 "Task",
                 r#"{"status":"success","agentId":"child","durationMs":1,"isBackground":true}"#,

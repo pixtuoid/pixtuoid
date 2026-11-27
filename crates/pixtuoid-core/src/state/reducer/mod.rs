@@ -188,8 +188,9 @@ fn backfill_cwd<'a>(slot: &mut AgentSlot, cwd: &'a std::path::Path) -> Option<&'
     None
 }
 
-/// Link an existing `slot` under `parent`, recording the link: the one write
-/// every arm that links a slot late applies, each behind its own gate.
+/// Link an existing `slot` under the `parent` [`Reducer::resolve_parent_link`]
+/// returned, recording the link: the one write every arm that links a slot
+/// late applies.
 fn link_existing(corr: &mut Correlation, slot: &mut AgentSlot, parent: AgentId) {
     slot.parent_id = Some(parent);
     corr.link_applied_parent(slot.agent_id, parent);
@@ -993,14 +994,13 @@ impl Reducer {
         }
     }
 
-    /// The `ParentLink` arm: only a live, unlinked slot takes the parent, since
-    /// linking an exiting one would revive its record
-    /// ([`Correlation::link_applied_parent`]).
+    /// The `ParentLink` arm: only a live slot takes the parent, since linking an
+    /// exiting one would revive its record ([`Correlation::link_applied_parent`]).
     fn apply_parent_link(&mut self, scene: &mut SceneState, agent_id: AgentId, parent: AgentId) {
         let Some(slot) = scene
             .agents
             .get(&agent_id)
-            .filter(|s| s.exiting_at.is_none() && s.parent_id.is_none())
+            .filter(|s| s.exiting_at.is_none())
         else {
             return;
         };
@@ -1215,9 +1215,10 @@ impl Reducer {
         refusal.map_or(Verdict::Create, Verdict::Refuse)
     }
 
-    /// The #240 cycle refusal on an attempt's parent: a poisoned memory
-    /// degrades to parentless. This is the ONE seam where `parent_id` is set or
-    /// enriched, so a cycle can never EXIST.
+    /// The parent an attempt's link applies, `None` for a slot already linked:
+    /// the ONE seam where `parent_id` is set or enriched, so no arm re-parents a
+    /// slot and a cycle can never EXIST. A link that would close one (#240) is
+    /// refused, a poisoned memory degrading to parentless.
     fn resolve_parent_link(
         &self,
         scene: &SceneState,
@@ -1225,15 +1226,15 @@ impl Reducer {
         ctx: IdentityCtx,
         parent_id: Option<AgentId>,
     ) -> Option<AgentId> {
-        // Gated on the link APPLYING, so a duplicate's bad parent stays quiet.
-        let link_would_apply = scene
+        // Before the cycle check, so a duplicate's bad parent stays quiet.
+        if scene
             .agents
             .get(&agent_id)
-            .is_none_or(|slot| slot.parent_id.is_none());
+            .is_some_and(|slot| slot.parent_id.is_some())
+        {
+            return None;
+        }
         parent_id.filter(|&p| {
-            if !link_would_apply {
-                return true;
-            }
             let cycle = scope::would_create_cycle(&scene.agents, agent_id, p);
             if cycle {
                 tracing::warn!(
@@ -1266,8 +1267,7 @@ impl Reducer {
             .agents
             .get_mut(&agent_id)
             .expect("Verdict::Enrich is returned only for an existing slot");
-        let was_linked = slot.parent_id.is_some();
-        if !was_linked && let Some(p) = parent_id {
+        if let Some(p) = parent_id {
             link_existing(&mut self.corr, slot, p);
         }
         // A slot can exist with a MISSING cwd: an `Identity` may name none, and a
