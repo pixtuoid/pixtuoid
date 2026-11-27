@@ -1,18 +1,21 @@
 //! Hermes Agent (Nous Research) source — HOOK-ONLY, via a bundled Python plugin.
 //!
-//! Hermes runs every turn in its gateway daemon, whose own cwd is its install
-//! dir, so no shell hook can name a session's workspace. The bundled plugin
-//! (`install/hermes_plugin.py`) runs in that gateway, reads the workspace from
-//! `ctx.session_cwd()`, and pipes an allowlisted copy of each event's kwargs into
+//! Hermes runs every local session's turns in one gateway process
+//! (`website/docs/user-guide/features/plugins.md:1098`, `:1158` at v0.23.3),
+//! whose cwd is its own, shared by every session (`:1160`), and a shell hook's
+//! payload names that cwd (`agent/shell_hooks.py:90`, `:103`), so no shell hook
+//! can name a session's workspace. The bundled plugin (`install/hermes_plugin.py`)
+//! runs in that gateway, reads the workspace from `ctx.session_cwd()`
+//! (`plugins.md:1160`), and pipes an allowlisted copy of each event's kwargs into
 //! the `pixtuoid-hook` shim:
 //!
 //! ```json
 //! {"hook_event_name":"pre_tool_call","cwd":"/repo","_pid":43677,"session_id":"local-…","tool_name":"read_file","tool_call_id":"call_…","args":{"path":"NOTE.txt"}}
 //! ```
 //!
-//! Keyed on `session_id`, not the workspace: a user may run several Hermes
-//! sessions in ONE project and cwd-keying would merge them.
-//! The envelope reuses CC's `hook_event_name` field NAME with snake_case VALUES
+//! Keyed on `session_id`, not the workspace: cwd-keying would merge two
+//! sessions in one project. The envelope (`hermes/fixtures/tool-run-hermetic`)
+//! reuses CC's `hook_event_name` field NAME with snake_case VALUES
 //! alien to the shared CC-shaped arms, so the decoder is
 //! `HookDecoding::ClaimsAll`: it claims EVERY event.
 

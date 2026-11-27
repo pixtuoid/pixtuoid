@@ -319,9 +319,6 @@ mod tests {
             assert_eq!(snap.pids("big"), [me as i32]);
         }
 
-        /// The drift breadcrumb must name the RIGHT cause: a truncation
-        /// reported as upstream drift sends the reader hunting a format change
-        /// that never happened.
         #[test]
         fn an_unparseable_registry_reports_drift_not_truncation() {
             let dir = tempfile::tempdir().unwrap();
