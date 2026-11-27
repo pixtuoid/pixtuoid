@@ -188,7 +188,11 @@ mkdir -p "$brew_dir/bin"
 cat >"$brew_dir/bin/curl" <<'STUB'
 #!/usr/bin/env bash
 [[ -n "${FAKE_FORMULA:-}" ]] || exit 22
-cat "$FAKE_FORMULA"
+while (($#)); do
+    [[ $1 == -o ]] && out=$2
+    shift
+done
+cp "$FAKE_FORMULA" "$out"
 STUB
 chmod +x "$brew_dir/bin/curl"
 assert_brew() {
@@ -196,7 +200,7 @@ assert_brew() {
     : >"$summary"
     printf '%s\n' "$live" >"$brew_dir/live.rb"
     out="$(PATH="$brew_dir/bin:$PATH" GITHUB_STEP_SUMMARY="$summary" COMMITTED="$brew_committed" \
-        FAKE_FORMULA="${live:+$brew_dir/live.rb}" bash -c "$brew_script" 2>&1)" ||
+        RUNNER_TEMP="$brew_dir" FAKE_FORMULA="${live:+$brew_dir/live.rb}" bash -c "$brew_script" 2>&1)" ||
         fail "the homebrew step held the release on $label: $out"
     if [[ -n "$out" ]]; then
         lines="$(wc -l <<<"$out" | tr -d ' ')"
