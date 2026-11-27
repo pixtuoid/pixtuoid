@@ -46,12 +46,13 @@ pub(crate) const GROK_EVENTS: &[&str] = &[
     "PermissionDenied",
     "Notification",
     // No turn-end gate (`Stop`, or `SubagentStop` in a child), `StopFailure` or
-    // `StopCancelled`: `turn_completed` ends every turn. The gate can fire again in one
-    // turn, as its hook's block starts another round (`turn.rs:1384-1394`; the two
-    // child rounds of `grok/fixtures/subagent-stop-hook-hermetic`), whatever
-    // `xai-grok-pager/docs/user-guide/10-hooks.md:467-469`'s "fires once" says. `Stop`
-    // fires at session end too (`stop_gate.rs:95-111`); the `.rs` files are under
-    // `xai-grok-shell/src/session/acp_session_impl/` at `xai-org/grok-build` `2bdd1d6a63`.
+    // `StopCancelled`: the transcript's `turn_completed` ends every turn. The gate can
+    // fire again in one turn, as its hook's block starts another round (`turn.rs:1384-1394`;
+    // the two child rounds of `grok/fixtures/subagent-stop-hook-hermetic`), whatever
+    // `crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:467-469`'s "fires once"
+    // says. `Stop` fires at session end too (`stop_gate.rs:95-111`); the `.rs` files are
+    // under `crates/codegen/xai-grok-shell/src/session/acp_session_impl/` at
+    // `xai-org/grok-build` `2bdd1d6a63`.
     "SubagentStart",
     "SessionEnd",
 ];

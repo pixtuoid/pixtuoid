@@ -951,20 +951,12 @@ mod tests {
             "PreToolUse",
             "bogus",
         ] {
-            let logs = crate::test_capture::capture_logs(|| {
-                assert!(
-                    test_decode(SOURCE_NAME, &payload(ev)).is_err(),
-                    "{ev} must bail"
-                );
-            });
             assert!(
-                crate::source::drift::breadcrumbed(
-                    &logs,
-                    SOURCE_NAME,
-                    crate::source::drift::DriftKind::UnknownEvent,
-                    &[("name", ev)]
+                matches!(
+                    test_decode(SOURCE_NAME, &payload(ev)),
+                    Err(DecodeError::Unsupported { event, .. }) if event == ev
                 ),
-                "{ev} must breadcrumb as an unknown event, got:\n{logs}"
+                "{ev} must reach refuse_unknown_event"
             );
         }
     }
