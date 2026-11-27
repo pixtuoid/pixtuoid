@@ -592,8 +592,7 @@ pub(crate) fn refuse_unknown_event(hook: &Hook<'_>) -> DecodeError {
 
 /// The shared CC-shaped arms, for every source whose row has no claiming decoder.
 /// `UserPromptSubmit` ALSO emits `SessionStart` (idempotent in the reducer) because
-/// Codex's tool hooks fire only for a tool with a pre-use payload
-/// (`codex-rs/core/src/tools/registry.rs:1178` at rust-v0.172.0).
+/// some Codex tools fire no tool hook (codex's `decode_call_hook`).
 pub(crate) fn shared_hook_arms(
     hook: &Hook<'_>,
     desc: Option<&'static crate::source::registry::SourceDescriptor>,
@@ -707,8 +706,10 @@ pub(crate) fn shared_hook_arms(
             ),
         ],
         // Stop ends a turn, not the session: it fires per turn
-        // (<https://code.claude.com/docs/en/hooks>'s lifecycle;
-        // `codex/fixtures/two-turn-hermetic` fires two).
+        // (<https://code.claude.com/docs/en/hooks>'s lifecycle), kimi's on each
+        // completed turn's end
+        // (`packages/agent-core-v2/src/features/externalHooks/agent/agentExternalHooksService.ts:419-432`
+        // at `@moonshot-ai/kimi-code@2.8.0`).
         "Stop" => vec![AgentEvent::turn_end(agent_id)],
         "SessionEnd" => vec![AgentEvent::SessionEnd {
             agent_id,

@@ -241,7 +241,12 @@ pub(crate) fn decode_grok_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Age
             })
             .unwrap_or("?");
             match kind {
-                // Fires BEFORE the prompt shows. No event reports an approval
+                // Queued as the prompt is requested
+                // (`crates/codegen/xai-grok-workspace/src/permission/manager/mod.rs:1363-1369`)
+                // and fired from a listener task
+                // (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/updates.rs:969-983`),
+                // so it precedes the answer (`grok/fixtures/permission-hermetic`). No
+                // event reports an approval
                 // (`HookEventName`, `crates/codegen/xai-grok-hooks/src/event.rs:78-180`):
                 // the tool proceeds, and its post_tool_use End clears the gate; a
                 // denial fires permission_denied (same End, above).

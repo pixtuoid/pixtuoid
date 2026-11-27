@@ -1,4 +1,9 @@
-//! Reasonix source — HOOK-ONLY (no JSONL watcher).
+//! Reasonix source — HOOK-ONLY (no JSONL watcher), pending the Roadmap item
+//! "reasonix: re-evaluate a transcript source over v2.61.0's append-only event
+//! log" (`internal/state/sessionstore/save.go:151-153` @ v2.61.0). At that tag
+//! the hook `sessionId` is already the session file's stem
+//! (`internal/session/control/session_lifecycle.go:447-449`,
+//! `internal/state/sessionstore/branch.go:154-163`).
 //!
 //! Reasonix (github.com/esengine/DeepSeek-Reasonix) ships a CC-style hook
 //! system; connecting it links a GLOBAL plugin whose hooks run the shim —

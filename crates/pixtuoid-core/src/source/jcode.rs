@@ -39,8 +39,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
-            // Its hooks name no turn (`jcode/fixtures/tool-run-hermetic`), and each
-            // observer is a detached process
+            // Its hooks name no turn (`crates/jcode-app-core/src/agent/turn_execution.rs:391-394`,
+            // `:413-417`), and each observer is a detached process
             // (`crates/jcode-base/src/hooks.rs:520-554`), so no ordered stream.
             brackets_turns: false,
         },

@@ -91,11 +91,11 @@ pub fn cc_id_from_path(path: &Path) -> String {
 /// CC's source-specific hook arms, which change the event's SUBJECT to a
 /// subagent's AgentId where the shared session-keyed arms cannot:
 /// `SubagentStart`/`SubagentStop`, and any other event a subagent fires, which
-/// names it in `agent_id` beside the ROOT's `session_id` (hooks.md: the
-/// `agent_id` and `agent_type` "that identify the subagent"). A main-thread event
-/// falls through (`Ok(None)`). `SubagentStop` fires "when a subagent
-/// finishes" (hooks.md's events table), so a child ends without waiting for
-/// the stale sweep.
+/// names it in `agent_id` beside the ROOT's `session_id`
+/// (<https://code.claude.com/docs/en/hooks>: the `agent_id` and `agent_type`
+/// "that identify the subagent"). A main-thread event falls through
+/// (`Ok(None)`). `SubagentStop` fires "when a subagent finishes" (the same
+/// page's events table), so a child ends without waiting for the stale sweep.
 pub(crate) fn decode_cc_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     use crate::source::decoder::{subagent_fired, subagent_id, subagent_start};
     match hook.event {

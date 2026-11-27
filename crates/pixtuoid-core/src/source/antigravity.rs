@@ -217,9 +217,9 @@ const ENVELOPE: Envelope = Envelope {
 /// If the payload lacks `conversationId`.
 pub(crate) fn decode_ag_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
-    // The App and IDE read the CLI's global `~/.gemini/config/` too (hooks.md,
-    // "Hook configuration locations"), under app data dirs of their own
-    // (hooks.md, `transcriptPath`).
+    // The App runs installed plugins' hooks too (hooks.md, "Managing hooks in
+    // the Antigravity App"), and its hooks name transcripts under an app data
+    // dir of its own (hooks.md, `transcriptPath`).
     if non_empty(obj, "transcriptPath").is_some_and(|p| {
         !Path::new(p)
             .components()
