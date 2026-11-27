@@ -1215,7 +1215,7 @@ impl Reducer {
         refusal.map_or(Verdict::Create, Verdict::Refuse)
     }
 
-    /// The parent an attempt's link applies, `None` for a slot already linked:
+    /// The parent a link applies, `None` for a slot already linked:
     /// the ONE seam where `parent_id` is set or enriched, so no arm re-parents a
     /// slot and a cycle can never EXIST. A link that would close one (#240) is
     /// refused, a poisoned memory degrading to parentless.
