@@ -115,7 +115,7 @@ const TURN_ID: &str = "turn_id";
 /// the shared arms, a child's under its own id.
 pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     use crate::source::decoder::{subagent_fired, subagent_id, subagent_start};
-    let call = |kind| decode_call_hook(hook, kind).map(Some);
+    let call_hook = |kind| decode_call_hook(hook, kind).map(Some);
     match hook.event {
         // The subagent owns a SEPARATE rollout (filename UUID == this payload's
         // `agent_id`, as `codex/fixtures/subagent-hermetic`
@@ -130,10 +130,10 @@ pub(crate) fn decode_codex_hook_custom(hook: &Hook<'_>) -> Result<Option<Vec<Age
             agent_id: AgentId::from_parts(SOURCE_NAME, subagent_id(hook)?),
             as_child: true,
         }])),
-        "PreToolUse" => call(CallHook::PreToolUse),
-        "PostToolUse" => call(CallHook::PostToolUse),
-        "PermissionRequest" => call(CallHook::PermissionRequest),
-        "Stop" => call(CallHook::Stop),
+        "PreToolUse" => call_hook(CallHook::PreToolUse),
+        "PostToolUse" => call_hook(CallHook::PostToolUse),
+        "PermissionRequest" => call_hook(CallHook::PermissionRequest),
+        "Stop" => call_hook(CallHook::Stop),
         // A child's other events name it in `agent_id` beside the root's
         // `session_id`; a root's name none (`codex-rs/hooks/src/schema.rs:280-286`,
         // `core/src/hook_runtime.rs:1089-1108` at rust-v0.172.0).
