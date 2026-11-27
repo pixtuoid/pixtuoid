@@ -962,11 +962,17 @@ mod tests {
     }
 
     #[test]
-    fn short_idle_reap_fires_for_codex_grok_and_opencode_only() {
+    fn short_idle_reap_fires_for_codex_dsh_grok_and_opencode_only() {
         for d in REGISTRY {
             assert_eq!(
                 d.caps().short_idle_reap(),
-                [codex::SOURCE_NAME, grok::SOURCE_NAME, opencode::SOURCE_NAME].contains(&d.name),
+                [
+                    codex::SOURCE_NAME,
+                    dsh::SOURCE_NAME,
+                    grok::SOURCE_NAME,
+                    opencode::SOURCE_NAME
+                ]
+                .contains(&d.name),
                 "short_idle_reap mismatch for {:?}",
                 d.name
             );
