@@ -18,11 +18,13 @@
 //!   `parentID` (`packages/core/src/tool/plugin/subagent.ts:175-176`), so the
 //!   record its first start carries links it.
 //! - A session registers at its first turn's start, `session.execution.started`,
-//!   which every run publishes (`packages/core/src/session/execution.ts:139-146`),
+//!   which each execution's start publishes (`packages/core/src/session/execution.ts:139-146`,
+//!   `run-coordinator.ts:61-62`, `:98`),
 //!   so a session the plugin joined late registers on its next turn (#1934).
 //! - An event published in a location carries it on its envelope, beside
-//!   `data` (`packages/schema/src/event.ts:114`, `:138`): the recording's tool
-//!   and permission events do, its `session.execution.*` events do not.
+//!   `data` (`packages/schema/src/event.ts:114`, `:138`):
+//!   `opencode/fixtures/permission-hermetic`'s tool and permission events do,
+//!   its `session.execution.*` events do not.
 
 use std::path::PathBuf;
 

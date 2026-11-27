@@ -352,7 +352,7 @@ pub(crate) fn test_decode(source: &str, v: &Value) -> DecodeResult<Vec<AgentEven
 /// sibling presence channel and carry no `hook_event_name` at all. grok scans
 /// `~/.claude/settings.json` AND `~/.cursor/hooks.json` BY DEFAULT
 /// (`crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:67-77` at
-/// `xai-org/grok-build` `2bdd1d6a63`, grok's cite base: `source/grok.rs`'s module doc)
+/// `xai-org/grok-build` `2bdd1d6a63`, grok's cite base: [`crate::source::grok`]'s module doc)
 /// and fires the shim installed there with its OWN camelCase envelope, so a
 /// duplicate arrives tagged `claude-code`/`cursor` beside the grok-tagged one.
 fn decodes_to_nothing(
