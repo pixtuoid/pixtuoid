@@ -70,16 +70,15 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // The `session_exit` entry and the bridge's `session_shutdown` ride
             // every clean teardown, a SIGINT/SIGTERM/SIGHUP's included
             // (`packages/coding-agent/src/modes/session-teardown.ts:1-7`, `:55-60`
-            // at `v19.2.1`). SIGKILL: with the bridge, `HookPidWatch` ends the stamped pid's
-            // sessions promptly; without it, the stale-sweep.
-            has_exit_signal: true,
-            // The header `SessionStart` decodes once per transcript life. A
-            // `--resume` fires the bridge's `session_start` on the SAME id
-            // (`omp/fixtures/resume-hermetic`), so an ended
-            // session CAN walk back in — through the SessionStart arm's
-            // ordinary parentless re-registration, not this prompt-resurrect
-            // flag.
-            resurrects_on_prompt: false,
+            // at `v19.2.1`). SIGKILL: `HookPidWatch` ends a bridge-stamped session; one
+            // the bridge never stamped rides the open-fd probe, which enumerates
+            // nothing off macOS/Linux (`fd_probe`).
+            exits_can_go_unseen: true,
+            // A user message and a text reply decode to no life (the `MESSAGE`
+            // arm), and the bridge's `session_start` fires only at a start or a
+            // `--resume` (`omp/fixtures/resume-hermetic`), so only a tool call's
+            // line re-registers a swept session.
+            re_registers_each_turn: false,
             // The `task` dispatch emits a toolCall/toolResult pair on the parent
             // AND the child persists its own parent-linked transcript
             // (`omp/fixtures/subagent-hermetic`).

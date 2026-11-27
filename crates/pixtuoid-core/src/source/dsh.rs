@@ -43,27 +43,24 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_dsh_payload,
         }),
         caps: SourceCaps {
-            // `agent/disposed` + the plugin's own effect-disposer sweep fire
-            // on a clean quit (`dsh/fixtures/tool-run-hermetic`). SIGKILL fires
-            // nothing, and an uncaught crash exits through `installFailLoud`,
-            // whose only teardown is the terminal owner's `release`
-            // (`packages/boot/app-boot/src/index.ts:860-899` at `dsh-v0.2.2-rc.5`):
-            // both fall to `HookPidWatch` via the stamped pid.
-            has_exit_signal: true,
-            // Sessions are persistent; a `dsh tui --resume <session>`
-            // (`docs/cli-help.md:55` at `dsh-v0.2.2-rc.5`) boots a NEW dsh whose
-            // plugin emits a fresh `session_start` for the session's header id
-            // on its `agent/created` (`install/dsh_plugin.mjs`) — the
-            // SessionStart arm's ordinary re-registration, not this flag.
-            resurrects_on_prompt: false,
+            // A `web` session's host agent outlives the tab that leaves it: a
+            // client's references neither stop nor retain one
+            // (`.agents/notes/implemented/architecture/2026-09-15-client-session-references.md:41`
+            // at `dsh-v0.2.2-rc.5`), and the pid the exit watch holds is the server's.
+            exits_can_go_unseen: true,
+            // Every turn's exit appends `turn/end`, a cancelled or failed one's
+            // included (`packages/core/agent-loop/src/agent.ts:408-428`, same tag),
+            // which the plugin forwards to an `Identity`; a turn cut by shutdown
+            // ends its session instead (`install/dsh_plugin.mjs`'s disposer sweep).
+            re_registers_each_turn: true,
             delegations_are_hook_silent: false,
             // The dispatch returns at launch (`packages/subagent/tool-subagent/src/index.ts:210`
             // at `dsh-v0.2.2-rc.5`), and the child's own `session_end` ends it
             // (`dsh/fixtures/subagent-hermetic`).
             child_end_inference: ChildEndInference::None,
             child_hooks_unnamed: false,
-            // A Ctrl-C'd turn's `turn/end` is written only as the `agents`
-            // service unloads (`packages/core/agent-loop/src/index.ts:494-538`
+            // The `turn/end` of a turn cut by shutdown (SIGINT) is written only as
+            // the `agents` service unloads (`packages/core/agent-loop/src/index.ts:494-538`
             // at `dsh-v0.2.2-rc.5`). Our plugin consumes that service, and a
             // consumer unloads before its provider
             // (`packages/session/session-persistence-jsonl/src/index.ts:1817-1819`,

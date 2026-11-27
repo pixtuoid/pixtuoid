@@ -55,10 +55,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             extend: decode_cc_hook_custom,
         }),
         caps: SourceCaps {
-            has_exit_signal: true,
-            // A swept slot returns on its transcript's next read showing life
-            // (the watcher's re-registration), not through this flag.
-            resurrects_on_prompt: false,
+            // A Windows kill or crash: `cc_probe` reads no registry off unix, and
+            // a `TranscriptProbe` source's hook pid is never watched.
+            exits_can_go_unseen: true,
+            // A prompt fires no hook pixtuoid registers (`install::claude::EVENTS`),
+            // and its line, like a text reply's, decodes to no life
+            // (`decode_cc_line`): only a tool call's line re-registers a swept slot.
+            re_registers_each_turn: false,
             delegations_are_hook_silent: false,
             // A subagent turn fires SubagentStart, and SubagentStop once it has
             // finished responding; an Agent call that backgrounds its subagent

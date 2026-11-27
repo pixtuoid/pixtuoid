@@ -1,7 +1,7 @@
 {
   "origin": "recorded",
   "cli": "copilot",
-  "version": "GitHub Copilot CLI 1.0.115.",
+  "version": "GitHub Copilot CLI 1.0.116.",
   "captured": "2026-11-25",
   "command": "just hermetic --record copilot",
   "deidentified": {
@@ -27,7 +27,7 @@
     }
   },
   "sentinel_reads": {
-    "67a07ed8-2cf9-4122-8576-c467a7205764/events.jsonl": [
+    "1d89a163-7303-4c1f-882c-5b539cc2a649/events.jsonl": [
       "8:/data/usage/cacheReadTokens"
     ]
   }

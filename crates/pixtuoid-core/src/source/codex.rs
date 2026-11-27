@@ -59,10 +59,14 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             extend: decode_codex_hook_custom,
         }),
         caps: SourceCaps {
-            // Still false after #710 registered Codex's SessionEnd hook: it is
-            // teardown-only, so flipping this regresses abrupt exits to a 30-min reap.
-            has_exit_signal: false,
-            resurrects_on_prompt: true,
+            // A kill or crash fires no `SessionEnd`, which is teardown-only (#710),
+            // and the open-fd probe enumerates nothing off macOS/Linux (`fd_probe`).
+            exits_can_go_unseen: true,
+            // Core runs `UserPromptSubmit` on every user input, whichever frontend
+            // drives it (`codex-rs/core/src/hook_runtime.rs:709-741` at rust-v0.172.0),
+            // and the rollout opens each turn with `task_started`
+            // (`codex/fixtures/two-turn-hermetic`) for a session no hook reaches.
+            re_registers_each_turn: true,
             delegations_are_hook_silent: false,
             // `spawn_agent` returns at launch, and a child's SubagentStop ends
             // it (`codex-rs/core/src/hook_runtime.rs:401-437` at rust-v0.163.0).
