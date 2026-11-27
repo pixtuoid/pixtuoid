@@ -45,15 +45,13 @@ pub(crate) const GROK_EVENTS: &[&str] = &[
     "PostToolUseFailure",
     "PermissionDenied",
     "Notification",
-    // No turn-end gate (`Stop`, or `SubagentStop` inside a child,
-    // `stop_gate.rs:236-245`), `StopFailure` or `StopCancelled`: the
-    // transcript's `turn_completed` ends every turn, a child's included. The
-    // gate fires at the end of every round and a Stop hook's block starts
-    // another (`turn.rs:1384-1394`; `grok/fixtures/subagent-stop-hook-hermetic`
-    // holds two rounds of one child turn), and `Stop` fires again at session
-    // end naming no turn (`stop_gate.rs:95-111`), all under
-    // `crates/codegen/xai-grok-shell/src/session/acp_session_impl/` at
-    // `xai-org/grok-build` `2bdd1d6a63`.
+    // No turn-end gate (`Stop`, or `SubagentStop` in a child), `StopFailure` or
+    // `StopCancelled`: `turn_completed` ends every turn. The gate can fire again in one
+    // turn, as its hook's block starts another round (`turn.rs:1384-1394`; the two
+    // child rounds of `grok/fixtures/subagent-stop-hook-hermetic`), whatever
+    // `xai-grok-pager/docs/user-guide/10-hooks.md:467-469`'s "fires once" says. `Stop`
+    // fires at session end too (`stop_gate.rs:95-111`); the `.rs` files are under
+    // `xai-grok-shell/src/session/acp_session_impl/` at `xai-org/grok-build` `2bdd1d6a63`.
     "SubagentStart",
     "SessionEnd",
 ];

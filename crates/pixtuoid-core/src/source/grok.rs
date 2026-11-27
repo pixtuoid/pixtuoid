@@ -24,17 +24,10 @@
 //!   mirrors it), and a subagent's `subagentId` is the `sessionId` its own tool
 //!   hooks carry (`grok/fixtures/subagent-hermetic`). Hook and watcher keys
 //!   therefore coalesce.
-//! - **Subagents**: children persist as FLAT siblings in the sessions tree and
-//!   fire NO `session_start` hook of their own (`grok/fixtures/subagent-hermetic`)
-//!   — the `subagent_start` hook (or the parent transcript's
-//!   `subagent_spawned` line) is the child's registration carrier, and its own
-//!   `session_end` (or the parent's `subagent_finished` line) its end. Its
-//!   `subagent_stop` is no end: the child's Stop gate fires it at the end of
-//!   every round, and a Stop hook's block starts another
-//!   (`crates/codegen/xai-grok-shell/src/session/acp_session_impl/turn.rs:1384-1394`),
-//!   whatever the hooks guide's "fires once per subagent" says (`10-hooks.md:102`,
-//!   `:469`). `grok/fixtures/subagent-stop-hook-hermetic` holds two such rounds
-//!   in one child turn.
+//! - **Subagents**: children persist as FLAT siblings in the sessions tree and fire
+//!   NO `session_start` hook of their own (`grok/fixtures/subagent-hermetic`): the
+//!   parent's `subagent_start` hook or `subagent_spawned` line registers a child, and
+//!   its own `session_end` (or the parent's `subagent_finished` line) ends it.
 //! - **Exit profile**: a TUI `/exit` fires `session_end`
 //!   (`grok/fixtures/two-turn-hermetic`, `permission-hermetic`); a kill or a
 //!   crash fires none and leaves the session in grok's crash-recovery registry
@@ -958,12 +951,11 @@ mod tests {
             "PreToolUse",
             "bogus",
         ] {
-            let mut v = payload(ev);
-            // An older install's `subagent_stop` names its child, so an arm
-            // that read it would decode rather than bail on a missing id.
-            v["subagentId"] = json!("0197fa31-child");
             let logs = crate::test_capture::capture_logs(|| {
-                assert!(test_decode(SOURCE_NAME, &v).is_err(), "{ev} must bail");
+                assert!(
+                    test_decode(SOURCE_NAME, &payload(ev)).is_err(),
+                    "{ev} must bail"
+                );
             });
             assert!(
                 crate::source::drift::breadcrumbed(
