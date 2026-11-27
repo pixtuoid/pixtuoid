@@ -65,8 +65,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A child is parented by its `subagent_start` before it runs, so its
             // own hooks keep the parent fresh (`scope::refresh_lineage`).
             delegations_are_hook_silent: false,
-            // A model's top-level delegation returns its handle while its children
-            // run on (`run_agent.py:1399-1402` at v0.23.3), and each child's
+            // An interactive session's top-level delegation can return its handle
+            // while its children run on (`run_agent.py:1399-1402` at v0.23.3); a
+            // one-shot joins them. Either way each child's
             // `subagent_stop` ends it (`tools/delegate_tool_results.py:361-391`,
             // on the path a joined and a background run share,
             // `tools/delegate_tool_dispatch.py:222-226`, both at v0.23.3).
