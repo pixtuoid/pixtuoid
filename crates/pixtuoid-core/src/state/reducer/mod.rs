@@ -188,6 +188,13 @@ fn backfill_cwd<'a>(slot: &mut AgentSlot, cwd: &'a std::path::Path) -> Option<&'
     None
 }
 
+/// Link an existing `slot` under `parent`, recording the link: the one write
+/// every arm that links a slot late applies, each behind its own gate.
+fn link_existing(corr: &mut Correlation, slot: &mut AgentSlot, parent: AgentId) {
+    slot.parent_id = Some(parent);
+    corr.link_applied_parent(slot.agent_id, parent);
+}
+
 /// What a creating or reviving event asks of an id, for [`Reducer::authorizes`].
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Attempt {
@@ -1006,9 +1013,8 @@ impl Reducer {
             return;
         };
         if let Some(slot) = scene.agents.get_mut(&agent_id) {
-            slot.parent_id = Some(parent);
+            link_existing(&mut self.corr, slot, parent);
         }
-        self.corr.link_applied_parent(agent_id, parent);
     }
 
     /// The `Identity` arm — #221: the identity context a hook decoder attaches
@@ -1262,8 +1268,7 @@ impl Reducer {
             .expect("Verdict::Enrich is returned only for an existing slot");
         let was_linked = slot.parent_id.is_some();
         if !was_linked && let Some(p) = parent_id {
-            slot.parent_id = Some(p);
-            self.corr.link_applied_parent(agent_id, p);
+            link_existing(&mut self.corr, slot, p);
         }
         // A slot can exist with a MISSING cwd: an `Identity` may name none, and a
         // Codex revive ghost has an empty one.

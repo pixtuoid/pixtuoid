@@ -82,8 +82,9 @@ fn a_task_dispatch_ends_on_the_post_that_carries_its_id() {
 }
 
 /// Every post of a short child can precede its transcript (`source::cursor`'s
-/// module doc), so none names its parent: cut to that, and to the end its
-/// parent's `Task` post is, that post alone links the child and ends it.
+/// module doc), so none names its parent. With the child's posts and the
+/// parent's `sessionEnd` cut, the parent's `Task` post alone links the child
+/// and ends it.
 #[test]
 fn a_child_naming_no_parent_is_linked_and_ended_by_its_parents_task_post() {
     let rows: Vec<(String, serde_json::Value)> = lines()

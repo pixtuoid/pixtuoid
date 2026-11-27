@@ -36,9 +36,10 @@
 //!     (`nested_parent`). That file lands on an unawaited checkpoint write
 //!     (`5600.index.js`'s subagent `handleCheckpoint`), so every post of a
 //!     short child can precede it.
-//!   - The parent's `Task` post fires once the child's run returns, and its
-//!     `tool_output` names the child (`dispatched_child`), so it links a child
-//!     that lost that race too, then ends it.
+//!   - A foreground `Task`'s post (`"isBackground":false`,
+//!     `cursor/fixtures/delegation`) fires once the child's run returns, and a
+//!     successful one's `tool_output` names the child (`dispatched_child`), so
+//!     it links a child that lost that race too, then ends it.
 //! - `sessionEnd` FIRES on clean completion; `stop`, the turn end, did NOT fire
 //!   under `-p` (`cursor/fixtures/tool-run`, `tool-failure`). An abrupt exit rides
 //!   the shim's `_pid` BEST-EFFORT (#896): the walk skips the shell Cursor runs
@@ -212,8 +213,8 @@ pub(crate) fn decode_cursor_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
 fn cursor_tool_detail(tool: &str, args: Option<&Value>) -> ToolDetail {
     // Cursor's `Task` tool carries a `subagent_type` (capture-verified) — the
     // SAME stable semantic signal CC's `make_tool_detail` keys on. A child links
-    // to its parent late (module doc), so the parent's `Task` is what renders
-    // the delegation.
+    // to its parent late if at all (module doc), so the parent's `Task` is what
+    // renders the delegation.
     let has_subagent_type = args.and_then(|a| a.get("subagent_type")).is_some();
     if tool == "Task" || has_subagent_type {
         return ToolDetail::Task;
@@ -232,7 +233,7 @@ fn nested_parent(obj: &HookObject) -> Option<&str> {
     dir.parent()?.file_name()?.to_str()
 }
 
-/// The child a `Task` post names, its `tool_output`'s `agentId`
+/// The child a foreground `Task` post names, its `tool_output`'s `agentId`
 /// (`cursor/fixtures/delegation`).
 fn dispatched_child(obj: &HookObject) -> Option<String> {
     let tool = obj.get("tool_name").and_then(Value::as_str).unwrap_or("");
@@ -241,8 +242,14 @@ fn dispatched_child(obj: &HookObject) -> Option<String> {
         return None;
     }
     let output: Value = serde_json::from_str(obj.get("tool_output")?.as_str()?).ok()?;
-    let child = output.get("agentId")?.as_str()?;
-    (!child.is_empty()).then(|| child.to_owned())
+    let output = output.as_object()?;
+    // A background run returns while its child still runs (`5600.index.js`'s
+    // `runSession` hands `executeSubagent` to `registerBackgroundRun` unawaited),
+    // so linking that child here would let the dispatch's drain end it live.
+    if output.get("isBackground").and_then(Value::as_bool) != Some(false) {
+        return None;
+    }
+    non_empty(output, "agentId").map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -335,10 +342,11 @@ mod tests {
         }
     }
 
-    /// The parent's `Task` post names the child it ran, the link no race can
-    /// lose; no other tool's output is a lineage claim.
+    /// A foreground `Task`'s post names the child it ran, the link no race can
+    /// lose; a background one's child may still run, and no other tool's
+    /// output is a lineage claim.
     #[test]
-    fn a_task_post_links_the_child_its_output_names() {
+    fn a_foreground_task_post_links_the_child_its_output_names() {
         let post = |tool: &str, output: &str| {
             decode_all(json!({
                 "hook_event_name": "postToolUse", "session_id": "parent",
@@ -361,6 +369,10 @@ mod tests {
             ("Task", ""),
             ("Task", "not json"),
             ("Task", r#"{"status":"success"}"#),
+            (
+                "Task",
+                r#"{"status":"success","agentId":"child","durationMs":1,"isBackground":true}"#,
+            ),
         ] {
             assert!(
                 !post(tool, output)
