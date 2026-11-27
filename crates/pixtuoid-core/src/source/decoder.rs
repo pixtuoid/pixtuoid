@@ -1800,14 +1800,15 @@ mod tests {
                 }),
             ),
             (
-                // Kimi's Extend decoder declines PreToolUse, so route the whole
-                // payload through the dispatcher to reach `make_tool_detail`.
+                // kimi's `extend` arms decline PreToolUse, so the shared arm's cap applies.
                 kimi::SOURCE_NAME,
                 Box::new(|| {
-                    decode_hook_payload(json!({
+                    test_decode(
+                        kimi::SOURCE_NAME,
+                        &json!({
                         "hook_event_name":"PreToolUse","session_id":"s","cwd":"/r",
-                        "tool_name":name,"tool_input":{"command":tgt},"tool_use_id":"c1",
-                        "_pixtuoid_source":"kimi"}))
+                        "tool_name":name,"tool_input":{"command":tgt},"tool_use_id":"c1"}),
+                    )
                     .expect("kimi decodes")
                 }),
             ),
@@ -1884,9 +1885,12 @@ mod tests {
                 claude_code::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    decode_hook_payload(json!({
+                    test_decode(
+                        claude_code::SOURCE_NAME,
+                        &json!({
                         "hook_event_name":"Notification","session_id":"s","cwd":"/r",
-                        "message":raw,"_pixtuoid_source":"claude-code"}))
+                        "message":raw}),
+                    )
                     .expect("cc decodes")
                 }),
             ),
@@ -1894,9 +1898,12 @@ mod tests {
                 codex::SOURCE_NAME,
                 ReasonKind::Fixed,
                 Box::new(|| {
-                    decode_hook_payload(json!({
+                    test_decode(
+                        codex::SOURCE_NAME,
+                        &json!({
                         "hook_event_name":"PermissionRequest","session_id":"s","cwd":"/r",
-                        "message":raw,"_pixtuoid_source":"codex"}))
+                        "message":raw}),
+                    )
                     .expect("codex decodes")
                 }),
             ),
@@ -2041,14 +2048,16 @@ mod tests {
                 }),
             ),
             (
-                // Kimi's Extend decoder declines Notification, so it lands on the
-                // SHARED capped arm — the same chokepoint CC rides.
+                // kimi's `extend` arms decline Notification, so the shared arm's cap applies.
                 kimi::SOURCE_NAME,
                 ReasonKind::Wire,
                 Box::new(|| {
-                    decode_hook_payload(json!({
+                    test_decode(
+                        kimi::SOURCE_NAME,
+                        &json!({
                         "hook_event_name":"Notification","session_id":"s","cwd":"/r",
-                        "message":raw,"_pixtuoid_source":"kimi"}))
+                        "message":raw}),
+                    )
                     .expect("kimi decodes")
                 }),
             ),
