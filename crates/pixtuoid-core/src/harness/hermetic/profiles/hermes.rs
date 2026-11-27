@@ -87,6 +87,24 @@ telemetry:
             ],
             turn: Turn::PROFILE,
         },
+        // A one-shot joins its children before the dispatch returns; an
+        // interactive session's dispatch returns at once and its children run
+        // on (`tools/delegate_tool_dispatch.py:295-311`, `run_agent.py:1399-1402`
+        // at v0.23.3).
+        Scenario {
+            name: "subagent",
+            shape: Shape::Subagent,
+            surface: Surface::Headless,
+            expects: &[
+                "on_session_start",
+                "pre_tool_call",
+                "subagent_start",
+                "post_tool_call",
+                "on_session_end",
+                "subagent_stop",
+            ],
+            turn: Turn::PROFILE,
+        },
         Scenario {
             name: "permission",
             shape: Shape::Permission,

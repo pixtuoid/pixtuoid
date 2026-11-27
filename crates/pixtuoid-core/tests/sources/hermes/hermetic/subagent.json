@@ -1,0 +1,24 @@
+{
+  "fixtures": [
+    {
+      "match": {"userMessage": "CHILD-TASK", "toolResultContains": "{note}"},
+      "response": {"content": "{note}"},
+      "latency": 300
+    },
+    {
+      "match": {"userMessage": "CHILD-TASK", "hasToolResult": false, "sequenceIndex": 0},
+      "response": {"toolCalls": [{"name": "read_file", "arguments": {"path": "NOTE.txt"}}]},
+      "latency": 300
+    },
+    {
+      "match": {"toolResultContains": "{note}"},
+      "response": {"content": "pong"},
+      "latency": 300
+    },
+    {
+      "match": {"hasToolResult": false, "sequenceIndex": 0},
+      "response": {"toolCalls": [{"name": "delegate_task", "arguments": {"tasks": [{"goal": "CHILD-TASK: read NOTE.txt and report its text."}]}}]},
+      "latency": 300
+    }
+  ]
+}
