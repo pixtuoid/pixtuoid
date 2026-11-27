@@ -100,8 +100,8 @@ fn a_delegated_child_works_nested_under_its_parent_until_its_stop_ends_it_alone(
 
 /// The same lines in an interactive session's order: its dispatch returns a
 /// handle (`run_agent.py:1399-1402` at v0.23.3) while the child it started runs
-/// on (`tools/delegate_tool_dispatch.py:509` at v0.23.3). The drive folds each
-/// line a cascade tick after the last, past b1's grace.
+/// on (`tools/delegate_tool_dispatch.py:509` at v0.23.3): the child still stands
+/// past the b1 grace, which the fold's tick after each event crosses.
 #[test]
 fn a_dispatch_that_returns_before_its_child_leaves_the_child_working_until_its_stop() {
     let Recording {

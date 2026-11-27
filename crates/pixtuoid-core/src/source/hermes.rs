@@ -448,8 +448,10 @@ pub(crate) fn decode_hermes_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
         // the cwd is the parent's. A fresh child starts in it
         // (`tools/delegate_tool_child_run.py:886-899`); a continued child resumes
         // at its own last cwd (`:892-894`) and an isolated one runs in its
-        // worktree (`:461-476`, both at v0.23.3), so either shows the parent's at
-        // its start: accepted, as grok's is.
+        // worktree (`:461-476`), yet either keeps the parent's for its life: its
+        // own hooks name the session cwd its run's context copies from the
+        // parent's turn (`:1021`, `hermes_cli/plugin_session.py:44-51`, all at
+        // v0.23.3), and `backfill_cwd` is first-wins. Accepted, as grok's is.
         SUBAGENT_START => vec![start(Some(AgentId::from_parts(
             SOURCE_NAME,
             named(PARENT_SESSION_ID)?,
