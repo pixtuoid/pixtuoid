@@ -675,6 +675,23 @@
       |= sub("just stage-notices \"\\$DIR\""; "cp LICENSE \"$DIR/\"")
     - .jobs.build.steps |= map(select(.name != "Package (Unix)"))
 
+- id: retried-curl-writes-a-file
+  file:
+    - .github/actions/gen-wasm/action.yml
+    - .github/workflows/release-plz.yml
+  covers: "--retry"
+  why: >-
+    curl cannot remove a failed attempt's bytes from stdout before it retries
+    (curl.se/docs/manpage.html, `--retry`), so a body captured from stdout can
+    carry them and still look like a clean answer. `-o` makes curl truncate the
+    file instead.
+  assert: |
+    [.. | objects | .run? | strings | scan("curl[^|;&)]*") | select(contains("--retry"))]
+      | all(test("\\s(-o|--output)\\s"))
+  break:
+    - '. + {"run": "x=$(curl -fsSL --retry 3 https://e)"}'
+    - '. + {"run": "curl --retry 3 https://e | jq ."}'
+
 # ── Copies of the source registry
 
 - id: bug-form-lists-every-supported-cli
