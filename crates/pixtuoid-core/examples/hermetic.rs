@@ -2583,6 +2583,7 @@ mod run {
                     "tool-run",
                     "tool-error",
                     "subagent",
+                    "subagent-stop-hook",
                     "model-error",
                     "ask-user"
                 ]
@@ -2593,6 +2594,7 @@ mod run {
                     "tool-run",
                     "tool-error",
                     "subagent",
+                    "subagent-stop-hook",
                     "permission",
                     "model-error",
                     "ask-user",

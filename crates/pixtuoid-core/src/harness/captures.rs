@@ -375,6 +375,7 @@ pub const OUTSIDE_CONFORMANCE: &[(&str, &str)] = &[
     ("cursor", "delegation"),
     ("dsh", "subagent-hermetic"),
     ("grok", "subagent-hermetic"),
+    ("grok", "subagent-stop-hook-hermetic"),
     ("hermes", "subagent-hermetic"),
     ("omp", "approve-hermetic"),
     ("omp", "ask-hermetic"),

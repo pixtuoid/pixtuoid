@@ -1,0 +1,28 @@
+{
+  "fixtures": [
+    {
+      "match": { "model": "grok-4.6", "systemMessage": "generating the session title" },
+      "response": { "content": "Hermetic" }
+    },
+    {
+      "match": { "model": "grok-4.6", "userMessage": "HERMETIC-STOP", "hasToolResult": false, "sequenceIndex": 0 },
+      "response": { "toolCalls": [ { "name": "read_file", "arguments": { "target_file": "NOTE.txt" } } ] }
+    },
+    {
+      "match": { "model": "grok-4.6", "userMessage": "HERMETIC-STOP", "toolResultContains": "{note}" },
+      "response": { "content": "{note}" }
+    },
+    {
+      "match": { "model": "grok-4.6", "userMessage": "CHILD-TASK", "hasToolResult": false, "sequenceIndex": 0 },
+      "response": { "toolCalls": [ { "name": "read_file", "arguments": { "target_file": "NOTE.txt" } } ] }
+    },
+    {
+      "match": { "model": "grok-4.6", "hasToolResult": false, "sequenceIndex": 0 },
+      "response": { "toolCalls": [ { "name": "spawn_subagent", "arguments": { "description": "Read the note", "prompt": "CHILD-TASK: read NOTE.txt and report its text.", "background": false } } ] }
+    },
+    {
+      "match": { "model": "grok-4.6", "toolResultContains": "{note}" },
+      "response": { "content": "pong" }
+    }
+  ]
+}
