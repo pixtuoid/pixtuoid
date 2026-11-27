@@ -78,8 +78,8 @@ fn first_cli_ancestor(start: u32, row_of: impl Fn(u32) -> Option<ProcRow>) -> Op
 
 /// The walk's own slice of the send bound. `arm_watchdog` is already running and
 /// hard-exits at the FULL bound, so an unbudgeted walk costs the PAYLOAD, not
-/// just `_pid` — and a process table can stall on either OS (an AV/EDR filter
-/// over Toolhelp32; a throttled or contended procfs).
+/// just `_pid` — and a process table can stall on either OS (opinion, unmeasured:
+/// an AV/EDR filter over Toolhelp32; a throttled or contended procfs).
 const WALK_BUDGET: std::time::Duration =
     std::time::Duration::from_millis(crate::transport::WRITE_TIMEOUT_MS / 4);
 
