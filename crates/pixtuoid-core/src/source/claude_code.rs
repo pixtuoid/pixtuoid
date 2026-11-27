@@ -55,7 +55,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             extend: decode_cc_hook_custom,
         }),
         caps: SourceCaps {
-            has_exit_signal: true,
+            // A Windows kill or crash: `cc_probe` reads no registry off unix, and
+            // a `TranscriptProbe` source's hook pid is never watched.
+            exits_can_go_unseen: true,
             // A swept slot returns on its transcript's next read showing life
             // (the watcher's re-registration), not through this flag.
             resurrects_on_prompt: false,

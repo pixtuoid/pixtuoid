@@ -61,8 +61,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         }),
         caps: SourceCaps {
             // A TUI quit ends nothing (`opencode/fixtures/cancel-hermetic`): the
-            // session lives on in the server.
-            has_exit_signal: false,
+            // session lives on in the server, whose pid the exit watch holds.
+            exits_can_go_unseen: true,
             // The next prompt's `session.execution.started` decodes to
             // `SessionStart`.
             resurrects_on_prompt: true,

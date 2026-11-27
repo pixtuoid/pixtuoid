@@ -67,7 +67,7 @@ fn delegating_slot_with_hook_silent_caps_gets_the_blocked_window() {
     use crate::{AgentId, Reducer, SceneState};
     use std::time::SystemTime;
     let caps = SourceCaps {
-        has_exit_signal: true,
+        exits_can_go_unseen: false,
         resurrects_on_prompt: true,
         delegations_are_hook_silent: true,
         child_end_inference: crate::source::registry::ChildEndInference::TaskDrain,
@@ -141,7 +141,7 @@ fn generic_tool_displaying_delegating_keeps_the_running_window() {
     use crate::{AgentId, Reducer, SceneState};
     use std::time::SystemTime;
     let caps = SourceCaps {
-        has_exit_signal: true,
+        exits_can_go_unseen: false,
         resurrects_on_prompt: true,
         delegations_are_hook_silent: true,
         child_end_inference: crate::source::registry::ChildEndInference::TaskDrain,
@@ -1376,7 +1376,7 @@ fn an_open_turn_showing_no_item_keeps_the_longer_of_the_tool_and_idle_windows() 
     use crate::{AgentId, Reducer, SceneState};
     use std::time::SystemTime;
     let caps = |short_idle: bool| SourceCaps {
-        has_exit_signal: !short_idle,
+        exits_can_go_unseen: short_idle,
         resurrects_on_prompt: true,
         delegations_are_hook_silent: false,
         child_end_inference: ChildEndInference::None,

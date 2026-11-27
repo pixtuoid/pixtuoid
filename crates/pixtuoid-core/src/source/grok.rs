@@ -88,13 +88,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_grok_hook_payload,
         }),
         caps: SourceCaps {
-            // `false` though a TUI `/exit` fires `session_end` (the module doc's
-            // exit profile): a crashed session no probe tracks has only the stale
-            // sweep, which `false` shortens (`short_idle_reap`). A headless run
-            // registers in `active_sessions.json` only under `GROK_TRACK_HEADLESS`
+            // A kill or a crash fires no hook (the module doc's exit profile), and
+            // the probe over `active_sessions.json` reads nothing off Unix
+            // (`native.rs:76-81`) and never sees a headless run, registered there
+            // only under `GROK_TRACK_HEADLESS`
             // (`crates/codegen/xai-grok-pager/src/headless.rs:1078-1086` at
-            // `2bdd1d6a63`), and off Unix no probe reads it (`native.rs:76-81`).
-            has_exit_signal: false,
+            // `2bdd1d6a63`).
+            exits_can_go_unseen: true,
             // Every prompt fires `user_prompt_submit` (→ SessionStart) but a
             // message relayed to a running subagent from its parent: upstream
             // skips the hook for `InputAuthority::ModelAuthoredUntrusted` input

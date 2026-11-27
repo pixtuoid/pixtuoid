@@ -52,11 +52,13 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_rx_hook_payload,
         }),
         caps: SourceCaps {
-            // SessionEnd fires on clean exit (`reasonix/fixtures/tool-run-hermetic`)
-            // — best-effort counts.
-            has_exit_signal: true,
-            // UserPromptSubmit re-emits SessionStart, so a swept-but-live
-            // session walks back in on the next prompt.
+            // `SessionEnd` fires as a session closes (`internal/ext/hook/hook.go:56-57`
+            // at v2.61.0; every `reasonix/fixtures` recording), and `hook::HookPidWatch`
+            // ends one killed on the shim-stamped pid.
+            exits_can_go_unseen: false,
+            // UserPromptSubmit fires before every turn (`internal/ext/hook/hook.go:1-3`
+            // at v2.61.0), the desktop's included (`:84-86`), and re-emits
+            // SessionStart.
             resurrects_on_prompt: true,
             // A subagent's hooks carry its own session id, the parent's
             // suffixed with its role (`internal/ext/hook/runner.go:57-66` at

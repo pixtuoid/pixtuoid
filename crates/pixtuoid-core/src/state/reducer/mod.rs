@@ -45,10 +45,8 @@ pub const STALE_BLOCKED_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 #[doc(hidden)]
 pub const STALE_UNKNOWN_CWD_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
-/// For `SourceCaps::short_idle_reap()`. Codex motivates it: its `SessionEnd`
-/// hook covers only graceful teardown, its payloads carry no PID, and
-/// `ShutdownComplete` never reaches the rollout, and its open-fd probe (`source::fd_probe`) returns nothing
-/// off macOS/Linux. CC has a clean-exit hook, so it keeps [`STALE_IDLE_TIMEOUT`].
+/// [`STALE_IDLE_TIMEOUT`] for a source whose [`SourceCaps::short_idle_reap`]
+/// holds: a human on a break walks back in on their next prompt.
 #[doc(hidden)]
 pub const STALE_SHORT_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 

@@ -26,10 +26,13 @@
 //!   tool end resolves.
 //!
 //! - **Exit profile.** `session_end` fires on a graceful shutdown
-//!   (`docs/HOOKS.md:243`), so `has_exit_signal: true`. An ABRUPT exit fires
-//!   none — the shim resolves CodeWhale's pid by walking past the runner's shell
-//!   (`sh -c`, or `cmd /C` on Windows: `crates/engine/src/hooks/executor.rs:1651-1666`;
-//!   #528) and `hook::HookPidWatch` ends the sprite when that pid dies.
+//!   (`docs/HOOKS.md:243`). An ABRUPT exit fires none — the shim resolves
+//!   CodeWhale's pid by walking past the runner's shell (`sh -c`, or `cmd /C` on
+//!   Windows: `crates/engine/src/hooks/executor.rs:1651-1666`; #528) and
+//!   `hook::HookPidWatch` ends the sprite when that pid dies. A desktop or web
+//!   thread fires only engine events, none at its end (`docs/HOOKS.md:22-30`), and
+//!   runs in the `codewhale app-server` (`docs/RUNTIME_API.md:5-9`), which
+//!   outlives it.
 
 use crate::source::decoder::{DecodeResult as Result, non_empty, required, required_or_err};
 use serde_json::Value;
@@ -60,11 +63,12 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_cw_hook_payload,
         }),
         caps: SourceCaps {
-            // The module doc's exit profile — best-effort counts.
-            has_exit_signal: true,
-            // message_submit re-emits SessionStart, so a swept-but-live session
-            // walks back in on the next prompt.
-            resurrects_on_prompt: true,
+            // The module doc's exit profile.
+            exits_can_go_unseen: true,
+            // A TUI's `message_submit` re-emits SessionStart, but a desktop or web
+            // thread fires only engine events (`docs/HOOKS.md:22-30`), so a swept
+            // one returns on its next tool call alone.
+            resurrects_on_prompt: false,
             // The recorded dispatch (`codewhale/fixtures/child-error-hermetic`)
             // fires nothing of the child's own between `subagent_spawn` and
             // `subagent_complete`.
@@ -152,9 +156,9 @@ pub(crate) fn decode_cw_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<Agent
     };
 
     Ok(Some(match event {
-        // message_submit (every prompt: `docs/HOOKS.md:245`) is the RESURRECT path — a stale-swept
-        // session walks back in on its next prompt, CodeWhale's only
-        // re-creation signal. The reducer ignores it when the slot exists.
+        // message_submit (every TUI prompt: `docs/HOOKS.md:245`) is the RESURRECT path — a
+        // stale-swept session walks back in on its next prompt. The reducer ignores it when the
+        // slot exists.
         "session_start" | "message_submit" => vec![AgentEvent::SessionStart {
             agent_id,
             source: SOURCE_NAME.to_string(),

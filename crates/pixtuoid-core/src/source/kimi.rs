@@ -55,9 +55,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             extend: decode_kimi_hook_custom,
         }),
         caps: SourceCaps {
-            // `SessionEnd` fires on exit — best-effort counts; abrupt exits fall
-            // to the stale-sweep.
-            has_exit_signal: true,
+            // `SessionEnd` fires as the TUI exits (`kimi/fixtures/cancel-hermetic`)
+            // but never under `-p` (`tool-run-hermetic`); either exit, and a kill,
+            // ends through `hook::HookPidWatch` on the pid it arms on sight.
+            exits_can_go_unseen: false,
             // kimi installs no `UserPromptSubmit` (`KIMI_EVENTS`), so no prompt
             // re-registers: a swept session returns on its next tool call or turn end.
             resurrects_on_prompt: false,

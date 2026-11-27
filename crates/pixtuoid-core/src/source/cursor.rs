@@ -69,8 +69,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_cursor_hook_payload,
         }),
         caps: SourceCaps {
-            // The module doc's exit bullet — best-effort counts.
-            has_exit_signal: true,
+            // The module doc's exit bullet.
+            exits_can_go_unseen: false,
             // No prompt hook is registered (`CURSOR_EVENTS`).
             resurrects_on_prompt: false,
             // A child's events ride its own session (`cursor/fixtures/delegation`),

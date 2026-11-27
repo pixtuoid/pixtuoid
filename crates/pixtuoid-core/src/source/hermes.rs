@@ -52,11 +52,12 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_hermes_hook_payload,
         }),
         caps: SourceCaps {
-            // `on_session_finalize` when the gateway finalizes a session, else the
-            // gateway's death. NOT `on_session_end`, which despite the name is a
-            // TURN boundary (`website/docs/user-guide/features/hooks.md:476-477`
-            // at v0.23.3).
-            has_exit_signal: true,
+            // `on_session_finalize` when the gateway finalizes a session, a killed
+            // viewer's once its orphan grace passes (`gateway/session_viewer_close.py:211-215`
+            // at v0.23.3), else the gateway's death. NOT `on_session_end`, which
+            // despite the name is a TURN boundary
+            // (`website/docs/user-guide/features/hooks.md:476-477` at v0.23.3).
+            exits_can_go_unseen: false,
             resurrects_on_prompt: false,
             // The plugin forwards neither `subagent_start` nor `subagent_stop`,
             // the hooks naming a child's parent (`hooks.md:484-485` at v0.23.3), so

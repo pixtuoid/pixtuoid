@@ -58,8 +58,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         }),
         hook: None,
         caps: SourceCaps {
-            // `session.shutdown` is a real persisted exit marker.
-            has_exit_signal: true,
+            // `session.shutdown` marks a clean exit (every `copilot/fixtures`
+            // recording), but no hook or probe sees a kill or a crash.
+            exits_can_go_unseen: true,
             // A swept session returns on its transcript's next read showing
             // life (the watcher's re-registration), not through this flag.
             resurrects_on_prompt: false,

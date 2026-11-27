@@ -105,20 +105,24 @@ impl HookDecoding {
     }
 }
 
-/// Reducer-facing capability flags — stable facts about the source's wire
-/// protocol, NOT policy names, so a future CLI picks values truthfully and the
-/// policy falls out.
+/// Reducer-facing capability flags — stable facts about how pixtuoid hears the
+/// source, its wire protocol and the liveness authorities run over it, NOT
+/// policy names, so a future CLI picks values truthfully and the policy falls
+/// out.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct SourceCaps {
-    /// Does a CLEAN exit leave any end signal at all (a SessionEnd hook and/or
-    /// a JSONL end marker — best-effort counts; "none of any kind" is the bar
-    /// for `false`)? When false, the stale-sweep is the ONLY reaper a closed
-    /// session ever gets.
-    pub(crate) has_exit_signal: bool,
-    /// Does a live-but-swept session WALK BACK IN on the user's next prompt (a
-    /// `UserPromptSubmit`-class event re-emitting `SessionStart`)? The safety
-    /// precondition for the short idle reaper: its only false positive (a live
-    /// session idle past the window) must self-heal.
+    /// Can a session end, on some surface or platform pixtuoid supports, with
+    /// nothing reporting it: no end signal on its wire, and no liveness
+    /// authority covering it (a probe ladder, `hook::HookPidWatch`)? An abrupt
+    /// exit counts: a kill, a crash, a closed terminal. Then the stale sweep is
+    /// the only reaper that session gets.
+    pub(crate) exits_can_go_unseen: bool,
+    /// Does a live-but-swept session WALK BACK IN on the user's next prompt, on
+    /// every surface its hooks run on (a `UserPromptSubmit`-class event
+    /// re-emitting `SessionStart`)? A surface whose prompt fires none, so that a
+    /// session there returns only on a later tool call, makes it false. The
+    /// safety precondition for the short idle reaper: its only false positive (a
+    /// live session idle past the window) must self-heal.
     pub(crate) resurrects_on_prompt: bool,
     /// Are subagent delegations invisible on this source's event stream (a
     /// window in which the PARENT's own stream goes quiet)? When true, a Delegating slot's
@@ -172,7 +176,7 @@ impl ChildEndInference {
 impl SourceCaps {
     /// All-false caps for a `Daemon` source: it creates no `AgentSlot`s to reap.
     pub(crate) const INERT_DAEMON: SourceCaps = SourceCaps {
-        has_exit_signal: false,
+        exits_can_go_unseen: false,
         resurrects_on_prompt: false,
         delegations_are_hook_silent: false,
         child_end_inference: ChildEndInference::None,
@@ -180,11 +184,13 @@ impl SourceCaps {
         brackets_turns: false,
     };
 
-    /// The short-idle-reaper policy, derived: only safe when the sweep is the
-    /// sole reaper (`!has_exit_signal`) AND the false positive self-heals
-    /// (`resurrects_on_prompt`).
+    /// The short-idle-reaper policy, derived: it pays off only where the sweep
+    /// alone ends some session (`exits_can_go_unseen`), and its false positive,
+    /// a live idle slot no probe vouches for
+    /// ([`PROOF_OF_LIFE_TTL`](crate::state::correlation::PROOF_OF_LIFE_TTL)),
+    /// must self-heal (`resurrects_on_prompt`).
     pub(crate) fn short_idle_reap(&self) -> bool {
-        !self.has_exit_signal && self.resurrects_on_prompt
+        self.exits_can_go_unseen && self.resurrects_on_prompt
     }
 }
 

@@ -33,8 +33,16 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_jcode_hook_payload,
         }),
         caps: SourceCaps {
-            has_exit_signal: true,
-            resurrects_on_prompt: true,
+            // `session_end` fires on a normal close alone (`docs/HOOKS.md:102-103`):
+            // a crash marks the session crashed and fires none
+            // (`crates/jcode-app-core/src/agent.rs:1238-1255`, `:1274-1287`), and no
+            // pid channel watches the shared server.
+            exits_can_go_unseen: true,
+            // `turn_start` re-emits SessionStart, but a `jcode run --json` turn
+            // fires none: `run_once_capture` skips the hook `run_once` fires
+            // (`crates/jcode-app-core/src/agent/turn_execution.rs:69-71`, `:84-113`;
+            // `src/cli/commands.rs:2655-2656`).
+            resurrects_on_prompt: false,
             // It mints no `Task`, so no slot ever delegates.
             delegations_are_hook_silent: false,
             child_end_inference: ChildEndInference::None,
