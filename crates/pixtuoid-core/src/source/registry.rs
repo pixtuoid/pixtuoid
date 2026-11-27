@@ -117,10 +117,11 @@ pub(crate) struct SourceCaps {
     /// exit counts: a kill, a crash, a closed terminal. Then the stale sweep is
     /// the only reaper that session gets.
     pub(crate) exits_can_go_unseen: bool,
-    /// Does a live-but-swept session WALK BACK IN on the user's next prompt, on
-    /// every surface its hooks run on (a `UserPromptSubmit`-class event
-    /// re-emitting `SessionStart`)? A surface whose prompt fires none, so that a
-    /// session there returns only on a later tool call, makes it false. The
+    /// On every surface pixtuoid hears the source on, does the user's next
+    /// prompt re-register a live-but-swept session through either transport: a
+    /// hook event re-emitting `SessionStart`, or a transcript line the watcher
+    /// reads as life (`first_sight::Life::Lives`), its reply's included? A
+    /// surface where only a later tool call brings it back makes it false. The
     /// safety precondition for the short idle reaper: its only false positive (a
     /// live session idle past the window) must self-heal.
     pub(crate) resurrects_on_prompt: bool,

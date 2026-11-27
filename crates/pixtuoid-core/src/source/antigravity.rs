@@ -51,8 +51,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
         // agy has no session-end hook (hooks.md lists none) and the recordings'
         // transcripts no end line (`antigravity/fixtures/tool-run-hermetic`), so an
         // exit rides the shim-stamped pid, which a session no hook stamped lacks.
-        // No `AG_EVENTS` hook fires at a prompt: flipping `resurrects_on_prompt`
-        // arms `short_idle_reap`, which strands a live idle session.
+        // No `AG_EVENTS` hook fires at a prompt, and a `USER_INPUT` step or a
+        // tool-less `PLANNER_RESPONSE` decodes to nothing: only a tool call brings
+        // a swept session back.
         caps: SourceCaps {
             exits_can_go_unseen: true,
             resurrects_on_prompt: false,

@@ -58,8 +58,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // A Windows kill or crash: `cc_probe` reads no registry off unix, and
             // a `TranscriptProbe` source's hook pid is never watched.
             exits_can_go_unseen: true,
-            // A swept slot returns on its transcript's next read showing life
-            // (the watcher's re-registration), not through this flag.
+            // A prompt fires no hook pixtuoid registers (`install::claude::EVENTS`),
+            // and its line, like a text reply's, decodes to no life
+            // (`decode_cc_line`): only a tool call's line re-registers a swept slot.
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
             // A subagent turn fires SubagentStart, and SubagentStop once it has

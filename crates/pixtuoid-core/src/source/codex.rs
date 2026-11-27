@@ -63,7 +63,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // and the open-fd probe enumerates nothing off macOS/Linux (`fd_probe`).
             exits_can_go_unseen: true,
             // Core runs `UserPromptSubmit` on every user input, whichever frontend
-            // drives it (`codex-rs/core/src/hook_runtime.rs:709-741` at rust-v0.172.0).
+            // drives it (`codex-rs/core/src/hook_runtime.rs:709-741` at rust-v0.172.0),
+            // and the rollout opens each turn with `task_started`
+            // (`codex/fixtures/two-turn-hermetic`) for a session no hook reaches.
             resurrects_on_prompt: true,
             delegations_are_hook_silent: false,
             // `spawn_agent` returns at launch, and a child's SubagentStop ends

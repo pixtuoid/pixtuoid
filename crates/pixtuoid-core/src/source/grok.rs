@@ -103,8 +103,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // (`session/mod.rs:179-195`), both under
             // `crates/codegen/xai-grok-shell/src/` at `xai-org/grok-build`
             // `2bdd1d6a63`. So a swept LIVE session walks back in on the next
-            // prompt that fires it — which is what makes the short idle reap
-            // safe for grok's untracked headless one-shots.
+            // prompt that fires it, and one no hook reaches on the
+            // `turn_completed` line that ends each turn, a tool-less one's
+            // included (`grok/fixtures/model-error-hermetic`).
             resurrects_on_prompt: true,
             // A BLOCKING spawn's Task detail gets its post_tool_use at
             // completion (`grok/fixtures/subagent-hermetic`), and a background
