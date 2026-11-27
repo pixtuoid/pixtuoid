@@ -329,9 +329,13 @@ mod tests {
             let logs = crate::test_capture::capture_logs(|| {
                 assert!(live_grok_session_ids(dir.path()).is_none());
             });
-            assert!(logs.contains("does not parse"), "got:\n{logs}");
             assert!(
-                logs.contains("truncated=false"),
+                crate::source::drift::breadcrumbed(
+                    &logs,
+                    SOURCE_NAME,
+                    crate::source::drift::DriftKind::ShapeDrift,
+                    &[("truncated", "false")]
+                ),
                 "a 12-byte file cannot have hit the cap, got:\n{logs}"
             );
         }

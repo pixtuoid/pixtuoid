@@ -464,18 +464,15 @@ mod tests {
                 "an unkeyable tool start yields no event"
             );
         });
-        for needle in [
-            crate::source::drift::TARGET,
-            "missing_field",
-            "tool.execution_start",
-            "toolCallId",
-            SOURCE_NAME,
-        ] {
-            assert!(
-                out.contains(needle),
-                "missing {needle:?} in captured log:\n{out}"
-            );
-        }
+        assert!(
+            crate::source::drift::breadcrumbed(
+                &out,
+                SOURCE_NAME,
+                crate::source::drift::DriftKind::MissingField,
+                &[("event", "tool.execution_start"), ("field", "toolCallId")]
+            ),
+            "{out}"
+        );
     }
 
     #[test]
