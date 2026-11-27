@@ -70,8 +70,11 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // same tag), so the plugin never sees that end.
             brackets_turns: false,
         },
-        // The plugin is a cordis plugin dsh applies to its own context
-        // (`install/dsh_plugin.mjs`), so its stamped `process.pid` is dsh's own.
+        // dsh's `boot` mounts every patch-layer entry, our plugin's row
+        // included, into one root `Context` in its own process
+        // (`packages/boot/app-boot/src/index.ts:1220-1247` at `dsh-v0.2.2-rc.5`),
+        // so the plugin's stamped `process.pid` (`install/dsh_plugin.mjs`) is
+        // dsh's own.
         focus: FocusChannel::PluginStamp,
     },
     #[cfg(feature = "native")]

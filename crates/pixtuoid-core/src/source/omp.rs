@@ -3017,7 +3017,7 @@ mod tests {
 
     #[test]
     fn hook_branch_onto_the_same_path_emits_no_end() {
-        // An in-place branch REWRITES the file: previous == current.
+        // A branch within its own file moves only the leaf: previous == current.
         let evs = hook(serde_json::json!({
             "type": "session_branch", "sessionFile": HOOK_ROOT,
             "previousSessionFile": HOOK_ROOT,

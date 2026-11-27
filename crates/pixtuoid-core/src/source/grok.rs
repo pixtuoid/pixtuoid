@@ -88,9 +88,12 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_grok_hook_payload,
         }),
         caps: SourceCaps {
-            // A TUI `/exit` fires `session_end`, a kill or a crash none: the
-            // liveness probe over `active_sessions.json` is the exit authority
-            // (the module doc's exit profile).
+            // `false` though a TUI `/exit` fires `session_end` (the module doc's
+            // exit profile): a crashed session no probe tracks has only the stale
+            // sweep, which `false` shortens (`short_idle_reap`). A headless run
+            // registers in `active_sessions.json` only under `GROK_TRACK_HEADLESS`
+            // (`crates/codegen/xai-grok-pager/src/headless.rs:1078-1086` at
+            // `2bdd1d6a63`), and off Unix no probe reads it (`native.rs:76-81`).
             has_exit_signal: false,
             // Every prompt fires `user_prompt_submit` (→ SessionStart) but a
             // message relayed to a running subagent from its parent: upstream
