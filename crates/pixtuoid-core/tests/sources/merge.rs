@@ -569,6 +569,8 @@ fn unkeyed(event: &AgentEvent) -> Vec<Unkeyed> {
         | AgentEvent::SessionStart { .. }
         | AgentEvent::SessionEnd { .. }
         | AgentEvent::Identity { .. }
+        // Links only an unlinked slot, so a second producer's is a no-op.
+        | AgentEvent::ParentLink { .. }
         // The watcher's own: no decoder emits them.
         | AgentEvent::LabelHint { .. }
         | AgentEvent::ProofOfLife { .. }

@@ -26,14 +26,21 @@
 //! - **A child is its own session, linked late.** pixtuoid registers no
 //!   subagent hook (`CURSOR_EVENTS`) and a child fires no `sessionStart`
 //!   (`cursor/fixtures/delegation`), so it registers on its first tool event.
-//!   A hook's `transcript_path` is the first of the child's transcripts that
-//!   exists when the hook runs, else null (`9622.index.js`'s
-//!   `getTranscriptPathIfExists`); once cursor-agent records the child's parent
-//!   (`7896.index.js`'s `setTranscriptParentConversationId` call), the first is
-//!   `<parent>/subagents/<child>.jsonl` (`7923.index.js`'s
-//!   `agent-transcript/dist/paths.js`). That path links the child
-//!   (`nested_parent`), and its parent's `Task` post then ends it. In
-//!   `cursor/fixtures/delegation` the child's post carries that nested path.
+//!   Two fields link it to its parent:
+//!   - A hook's `transcript_path` is the first of the child's transcripts that
+//!     exists when the hook runs, else null (`9622.index.js`'s
+//!     `getTranscriptPathIfExists`); once cursor-agent records the child's
+//!     parent (`7896.index.js`'s `setTranscriptParentConversationId` call), the
+//!     first is `<parent>/subagents/<child>.jsonl` (`7923.index.js`'s
+//!     `agent-transcript/dist/paths.js`), which links the child while it runs
+//!     (`nested_parent`). That file lands on an unawaited checkpoint write
+//!     (`5600.index.js`'s subagent `handleCheckpoint`), so every post of a
+//!     short child can precede it.
+//!   - A foreground `Task`'s post (`"isBackground":false`,
+//!     `cursor/fixtures/delegation`) fires once the child's run returns
+//!     (`5600.index.js`'s `runSession` awaits a foreground run), and a
+//!     successful one's `tool_output` names the child (`dispatched_child`), so
+//!     it links a child that lost that race too, then ends it.
 //! - `sessionEnd` FIRES on clean completion; `stop`, the turn end, did NOT fire
 //!   under `-p` (`cursor/fixtures/tool-run`, `tool-failure`). An abrupt exit rides
 //!   the shim's `_pid` BEST-EFFORT (#896): the walk skips the shell Cursor runs
@@ -170,6 +177,10 @@ pub(crate) fn decode_cursor_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<A
                 parent_id: Some(AgentId::from_parts(SOURCE_NAME, parent)),
             })
             .into_iter()
+            .chain(dispatched_child(obj).map(|child| AgentEvent::ParentLink {
+                agent_id: AgentId::from_parts(SOURCE_NAME, &child),
+                parent_id: agent_id,
+            }))
             .chain([
                 identity(),
                 AgentEvent::ToolUseEnd {
@@ -221,6 +232,25 @@ fn nested_parent(obj: &HookObject) -> Option<&str> {
         return None;
     }
     dir.parent()?.file_name()?.to_str()
+}
+
+/// The child a foreground `Task` post names, its `tool_output`'s `agentId`
+/// (`cursor/fixtures/delegation`).
+fn dispatched_child(obj: &HookObject) -> Option<String> {
+    let tool = obj.get("tool_name").and_then(Value::as_str).unwrap_or("");
+    // Any other tool's output is its own payload, never a lineage claim.
+    if !cursor_tool_detail(tool, obj.get("tool_input")).is_task() {
+        return None;
+    }
+    let output: Value = serde_json::from_str(obj.get("tool_output")?.as_str()?).ok()?;
+    let output = output.as_object()?;
+    // A background run returns while its child still runs (`5600.index.js`'s
+    // `runSession` hands `executeSubagent` to `registerBackgroundRun` unawaited),
+    // so linking that child here would let the dispatch's drain end it live.
+    if output.get("isBackground").and_then(Value::as_bool) != Some(false) {
+        return None;
+    }
+    non_empty(output, "agentId").map(str::to_owned)
 }
 
 #[cfg(test)]
@@ -309,6 +339,48 @@ mod tests {
                     .iter()
                     .any(|e| matches!(e, AgentEvent::SessionStart { .. })),
                 "{unnested}"
+            );
+        }
+    }
+
+    /// A foreground `Task`'s post names the child it ran, the link no race can
+    /// lose (the module doc); a background one's child may still run, and no other tool's
+    /// output is a lineage claim.
+    #[test]
+    fn a_foreground_task_post_links_the_child_its_output_names() {
+        let post = |tool: &str, output: &str| {
+            decode_all(json!({
+                "hook_event_name": "postToolUse", "session_id": "parent",
+                "workspace_roots": ["/repo"], "tool_use_id": "t", "tool_name": tool,
+                "tool_output": output,
+            }))
+        };
+        let names = r#"{"status":"success","agentId":"child","durationMs":1,"isBackground":false}"#;
+        let evs = post("Task", names);
+        assert!(
+            evs.iter().any(
+                |e| matches!(e, AgentEvent::ParentLink { agent_id, parent_id }
+                if *agent_id == AgentId::from_parts(SOURCE_NAME, "child")
+                    && *parent_id == AgentId::from_parts(SOURCE_NAME, "parent"))
+            ),
+            "{evs:?}"
+        );
+        for (tool, output) in [
+            ("Read", names),
+            ("Task", ""),
+            ("Task", "not json"),
+            ("Task", r#"{"status":"success"}"#),
+            ("Task", r#"{"status":"success","agentId":"child"}"#),
+            (
+                "Task",
+                r#"{"status":"success","agentId":"child","durationMs":1,"isBackground":true}"#,
+            ),
+        ] {
+            assert!(
+                !post(tool, output)
+                    .iter()
+                    .any(|e| matches!(e, AgentEvent::ParentLink { .. })),
+                "{tool}: {output}"
             );
         }
     }

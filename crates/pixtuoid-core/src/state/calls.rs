@@ -117,6 +117,7 @@ impl<'a> Fact<'a> {
             | AgentEvent::Rename { .. }
             | AgentEvent::LabelHint { .. }
             | AgentEvent::ModelHint { .. }
+            | AgentEvent::ParentLink { .. }
             | AgentEvent::SessionEnd { .. }
             | AgentEvent::ProofOfLife { .. }
             | AgentEvent::Identity { .. }
