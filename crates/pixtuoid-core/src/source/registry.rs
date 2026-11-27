@@ -113,17 +113,16 @@ impl HookDecoding {
 pub(crate) struct SourceCaps {
     /// Can a session end, on some surface or platform pixtuoid supports, with
     /// nothing reporting it: no end signal on its wire, and no liveness
-    /// authority covering it (a probe ladder, `hook::HookPidWatch`)? An abrupt
-    /// exit counts: a kill, a crash, a closed terminal. Then the stale sweep is
-    /// the only reaper that session gets.
+    /// authority covering it once armed (a probe ladder, `hook::HookPidWatch`)?
+    /// An abrupt exit counts: a kill, a crash, a closed terminal. Then the stale
+    /// sweep is the only reaper that session gets.
     pub(crate) exits_can_go_unseen: bool,
-    /// On every surface pixtuoid hears the source on, does the user's next
-    /// prompt re-register a live-but-swept session through either transport: a
-    /// hook event re-emitting `SessionStart`, or a transcript line the watcher
-    /// reads as life (`first_sight::Life::Lives`), its reply's included? A
-    /// surface where only a later tool call brings it back makes it false. The
-    /// safety precondition for the short idle reaper: its only false positive (a
-    /// live session idle past the window) must self-heal.
+    /// On every surface pixtuoid hears the source on, does each turn the user
+    /// prompts, a tool-less one included, re-register a live-but-swept session:
+    /// through a hook event the reducer registers on (`SessionStart`,
+    /// `Identity`), or a transcript line the watcher reads as life
+    /// (`first_sight::Life::Lives`)? A surface where only a tool call brings it
+    /// back makes it false.
     pub(crate) resurrects_on_prompt: bool,
     /// Are subagent delegations invisible on this source's event stream (a
     /// window in which the PARENT's own stream goes quiet)? When true, a Delegating slot's

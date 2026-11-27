@@ -58,7 +58,10 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // despite the name is a TURN boundary
             // (`website/docs/user-guide/features/hooks.md:476-477` at v0.23.3).
             exits_can_go_unseen: false,
-            resurrects_on_prompt: false,
+            // `on_session_end` carries an `Identity` and fires at each turn's
+            // finalization (`website/docs/user-guide/features/hooks.md:476` at
+            // v0.23.3), in the gateway every turn runs in (the module doc).
+            resurrects_on_prompt: true,
             // The plugin forwards neither `subagent_start` nor `subagent_stop`,
             // the hooks naming a child's parent (`hooks.md:484-485` at v0.23.3), so
             // sessions render flat.

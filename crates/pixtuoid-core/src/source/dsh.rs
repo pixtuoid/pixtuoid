@@ -50,11 +50,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // (`packages/boot/app-boot/src/index.ts:860-899` at `dsh-v0.2.2-rc.5`):
             // both fall to `HookPidWatch` via the stamped pid.
             exits_can_go_unseen: false,
-            // Sessions are persistent; a `dsh tui --resume <session>`
-            // (`docs/cli-help.md:55` at `dsh-v0.2.2-rc.5`) boots a NEW dsh whose
-            // plugin emits a fresh `session_start` for the session's header id
-            // on its `agent/created` (`install/dsh_plugin.mjs`) — the
-            // SessionStart arm's ordinary re-registration, not this flag.
+            // A completed turn's `turn_end` carries an `Identity`, but the plugin
+            // never sees a Ctrl-C'd turn's end (`brackets_turns` below), so a
+            // tool-less turn cancelled re-registers nothing.
             resurrects_on_prompt: false,
             delegations_are_hook_silent: false,
             // The dispatch returns at launch (`packages/subagent/tool-subagent/src/index.ts:210`

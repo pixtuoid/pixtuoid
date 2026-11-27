@@ -60,8 +60,8 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             decode: decode_oc_hook_payload,
         }),
         caps: SourceCaps {
-            // A TUI quit ends nothing (`opencode/fixtures/cancel-hermetic`): the
-            // session lives on in the server, whose pid the exit watch holds.
+            // A TUI quit fires nothing (`opencode/fixtures/cancel-hermetic`), and the
+            // server it attached to, the one pid the exit watch holds, outlives it.
             exits_can_go_unseen: true,
             // The next prompt's `session.execution.started` decodes to
             // `SessionStart`.

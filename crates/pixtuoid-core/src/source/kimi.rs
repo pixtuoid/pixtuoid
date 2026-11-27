@@ -59,8 +59,9 @@ pub(crate) const DESCRIPTOR: SourceDescriptor = SourceDescriptor {
             // but never under `-p` (`tool-run-hermetic`); either exit, and a kill,
             // ends through `hook::HookPidWatch` on the pid it arms on sight.
             exits_can_go_unseen: false,
-            // kimi installs no `UserPromptSubmit` (`KIMI_EVENTS`), so no prompt
-            // re-registers: a swept session returns on its next tool call or turn end.
+            // A TUI turn's end carries an `Identity` (`decode_kimi_hook_custom`), but
+            // `-p` can dispose its agent before `Stop` (`kimi/fixtures/tool-run-hermetic`
+            // has none), so a tool-less `-p` turn can re-register nothing.
             resurrects_on_prompt: false,
             // Consumed via the `Agent` tool: 0.36.1's `AgentToolInputSchema` injects
             // `subagent_type: "coder"` when the model omits it, so `make_tool_detail`
