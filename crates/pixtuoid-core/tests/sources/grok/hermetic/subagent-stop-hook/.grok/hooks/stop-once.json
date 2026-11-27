@@ -1,0 +1,5 @@
+{
+  "hooks": {
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "node .grok/stop-once.js" }] }]
+  }
+}

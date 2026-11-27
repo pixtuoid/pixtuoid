@@ -1,0 +1,13 @@
+{}
+{}
+{"timestamp":0,"timestamp_us":1795794266036699,"method":"","params":{"sessionId":"","update":{"sessionUpdate":"","content":{},"_meta":{"modelId":"grok-4.6","promptIndex":0}},"_meta":{}}}
+{"timestamp":0,"timestamp_us":1795794266091718,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call","toolCallId":"call_gPHA7zHSg8GRRpLi","title":"spawn_subagent","rawInput":{"description":"","prompt":"","background":false},"_meta":{}},"_meta":{}}}
+{}
+{}
+{"timestamp":0,"timestamp_us":1795794266146036,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"subagent_spawned","subagent_id":"","attempt_id":"","parent_session_id":"","parent_prompt_id":"","child_session_id":"01a21dad-e7fb-7573-8e15-222c1eb8e2fb","subagent_type":"","description":"Read the note","effective_context_source":"","model":""},"_meta":{}}}
+{"timestamp":0,"timestamp_us":1795794266739752,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"subagent_finished","subagent_id":"","attempt_id":"","child_session_id":"01a21dad-e7fb-7573-8e15-222c1eb8e2fb","status":"","tool_calls":0,"turns":0,"duration_ms":0,"tokens_used":0,"output":"","will_wake":false},"_meta":{}}}
+{}
+{"timestamp":0,"timestamp_us":1795794266797810,"method":"session/update","params":{"sessionId":"","update":{"sessionUpdate":"tool_call_update","toolCallId":"call_gPHA7zHSg8GRRpLi","status":"completed","content":[],"rawOutput":{}},"_meta":{}}}
+{}
+{"timestamp":0,"timestamp_us":1795794267005360,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"turn_completed","prompt_id":"04741f4d-57bf-447e-8980-25cc56d16b15","stop_reason":"","usage":{},"elapsed_ms":0},"_meta":{}}}
+{"timestamp":0,"timestamp_us":1795794267075951,"method":"_x.ai/session/update","params":{"sessionId":"","update":{"sessionUpdate":"hook_execution","event_name":"session_end","runs":[]},"_meta":{}}}

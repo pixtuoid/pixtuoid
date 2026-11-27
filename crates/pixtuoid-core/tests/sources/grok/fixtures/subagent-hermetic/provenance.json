@@ -2,11 +2,11 @@
   "origin": "recorded",
   "cli": "grok",
   "version": "grok 1.0.92 (b06756fd6256)",
-  "captured": "2026-11-23",
+  "captured": "2026-11-27",
   "command": "just hermetic --record grok",
   "deidentified": {
     "method": "decoder-allowlist",
-    "blanked": 213
+    "blanked": 197
   },
   "aimock": "1.48.0",
   "script": "tests/sources/grok/hermetic/subagent.json",
@@ -21,7 +21,6 @@
         "post_tool_use",
         "pre_tool_use",
         "session_start",
-        "subagent_stop",
         "user_prompt_submit"
       ],
       "/params/update/sessionUpdate": [
@@ -36,11 +35,10 @@
     }
   },
   "sentinel_reads": {
-    "01a2082a-e56b-7620-a161-0621e6885c29/updates.jsonl": [
+    "01a21dad-e70c-7142-946d-f143da39b367/updates.jsonl": [
       "4:/params/update/rawInput/background"
     ],
     "hook-payloads.jsonl": [
-      "10:/cwd",
       "1:/cwd",
       "2:/cwd",
       "3:/cwd",
@@ -48,7 +46,8 @@
       "4:/cwd",
       "5:/cwd",
       "6:/cwd",
-      "7:/cwd"
+      "7:/cwd",
+      "9:/cwd"
     ]
   }
 }

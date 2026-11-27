@@ -2583,6 +2583,7 @@ mod run {
                     "tool-run",
                     "tool-error",
                     "subagent",
+                    "subagent-stop-hook",
                     "model-error",
                     "ask-user"
                 ]
@@ -2593,6 +2594,7 @@ mod run {
                     "tool-run",
                     "tool-error",
                     "subagent",
+                    "subagent-stop-hook",
                     "permission",
                     "model-error",
                     "ask-user",
@@ -2650,9 +2652,10 @@ mod run {
             );
             assert!(!report(&Versions::Pinned, None, &[], &[], &[]).contains("not judged"));
             let judged = |n| vec![PathBuf::new(); n];
-            assert!(judges_leg(grok, &judged(5), true), "grok moves on Windows");
-            assert!(!judges_leg(grok, &judged(6), false));
-            assert!(judges_leg(grok, &judged(7), false));
+            let leg = |windows| judged(names(windows).len());
+            assert!(judges_leg(grok, &leg(true), true), "grok moves on Windows");
+            assert!(!judges_leg(grok, &judged(names(false).len() - 1), false));
+            assert!(judges_leg(grok, &leg(false), false));
         }
 
         #[test]

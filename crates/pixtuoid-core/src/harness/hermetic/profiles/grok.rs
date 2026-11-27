@@ -166,10 +166,30 @@ pub(crate) const PROFILE: Profile = Profile {
                 "PreToolUse",
                 "SubagentStart",
                 "PostToolUse",
-                "SubagentStop",
                 "SessionEnd",
             ],
             turn: Turn::PROFILE,
+        },
+        // The seed's SubagentStop hook blocks the child's first stop, so the
+        // child runs another round in the same turn (at main 2bdd1d6a:
+        // `crates/codegen/xai-grok-pager/docs/user-guide/10-hooks.md:360-363`);
+        // grok runs a trusted project's `.grok/hooks/*.json` (`:69`).
+        Scenario {
+            name: "subagent-stop-hook",
+            shape: Shape::Subagent,
+            surface: Surface::Headless,
+            expects: &[
+                "SessionStart",
+                "UserPromptSubmit",
+                "PreToolUse",
+                "SubagentStart",
+                "PostToolUse",
+                "SessionEnd",
+            ],
+            turn: Turn {
+                seed: Some("subagent-stop-hook"),
+                ..Turn::PROFILE
+            },
         },
         Scenario {
             name: "permission",
