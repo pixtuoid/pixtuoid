@@ -131,7 +131,7 @@ if [ "$FAILED" != 0 ]; then
     done
 else
     echo "[2] kill the FIRST gateway (${PORTS[0]}) — only its own mascot walks out"
-    # `$!` holds the port and stamps `_pid` into every envelope, so this exercises the
+    # `$!` holds the port and stamps `_pid` into every payload, so this exercises the
     # INSTANT abrupt-down rung (ExitWatch on the gateway pid): SIGKILL, since a SIGTERM'd
     # gateway announces its own `gateway_stop`. `expect_line` gives up far sooner than
     # the silence path, so a lost pid rung cannot pass on the timeout.

@@ -24,7 +24,7 @@ use crate::install::{io, merge};
 
 /// Events we register == events we decode (`source/codewhale.rs`). The `bool` is
 /// `env_mode`: `true` events carry identity via env vars, so their
-/// command bakes `--event <name>` and the shim builds the envelope from env;
+/// command bakes `--event <name>` and the shim builds the payload from env;
 /// `false` events (the subagent observer hooks) are forwarded RAW on stdin.
 ///
 /// `session_idle` ends a turn or a wait, so turn_end and session_busy are

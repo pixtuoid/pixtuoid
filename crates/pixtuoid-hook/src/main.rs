@@ -74,7 +74,7 @@ fn main() {
             Value::Object(payload)
         }
         // CodeWhale env-mode: identity arrives as env vars with `--event <name>`
-        // baked into the registered command, so the envelope needs no stdin, and
+        // baked into the registered command, so the payload needs no stdin, and
         // a read it doesn't need is a wait the watchdog (armed below) never
         // bounds: invariant 5.
         Some(event) => Value::Object(env_payload_from(&event, |k| std::env::var_os(k))),
@@ -123,7 +123,7 @@ fn cap_env_field(mut val: String) -> String {
     val
 }
 
-/// CodeWhale env-mode: synthesize the hook envelope from CodeWhale's hook env
+/// CodeWhale env-mode: synthesize the hook payload from CodeWhale's hook env
 /// vars `get` reads, so a test need not mutate process-global env.
 fn env_payload_from(
     event: &str,
@@ -145,9 +145,9 @@ fn env_payload_from(
     map
 }
 
-/// Jcode's envelope, or `None` without the two fields that name an event of a
-/// session. Observers have null stdin; pre_tool stdin is arguments, not an
-/// envelope. The full JCODE_HOOK_PAYLOAD also contains replies and tool input.
+/// Jcode's payload, or `None` without the two fields that name an event of a
+/// session. Observers have null stdin; pre_tool stdin is arguments, not a
+/// payload. The full JCODE_HOOK_PAYLOAD also contains replies and tool input.
 fn jcode_payload_from(
     get: impl Fn(&str) -> Option<OsString>,
 ) -> Option<serde_json::Map<String, Value>> {

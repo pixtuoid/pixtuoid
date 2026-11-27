@@ -111,7 +111,7 @@ async fn argv_source_flag_stamps_source_over_pipe_without_env() {
 }
 
 #[tokio::test]
-async fn codewhale_event_mode_builds_envelope_from_env_and_ignores_stdin() {
+async fn codewhale_event_mode_builds_payload_from_env_and_ignores_stdin() {
     // The child's stdin is HELD open (never written, never closed → no EOF) so a
     // re-added blind stdin read would BLOCK and trip the connect timeout below —
     // an EOF-able pipe would instead be drained instantly and prove nothing.

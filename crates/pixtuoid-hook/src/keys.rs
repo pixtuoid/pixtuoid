@@ -1,4 +1,4 @@
-//! The keys the shim stamps on an envelope, and the one source name it branches
+//! The keys the shim stamps on a payload, and the one source name it branches
 //! on, in their own file so `pixtuoid-core/tests/shim_stamp_parity.rs` can
 //! `#[path]`-include them and pin each to core's: the shim stays free of
 //! pixtuoid-core.
