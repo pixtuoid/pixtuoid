@@ -444,6 +444,66 @@ fn session_start_on_exiting_subagent_does_not_resurrect() {
     );
 }
 
+/// A parent's word links its child's live slot and never registers one: it is
+/// no proof the child lives.
+#[test]
+fn a_parent_link_links_a_live_unlinked_slot_and_never_creates_one() {
+    let mut scene = SceneState::uniform(8);
+    let mut r = Reducer::new();
+    let t0 = UNIX_EPOCH + Duration::from_secs(1_000_000);
+    let [parent, child, other, unseen, ended] =
+        ["parent", "child", "other", "unseen", "ended"].map(|s| AgentId::from_parts("cursor", s));
+    for id in [parent, child, other, ended] {
+        r.apply(
+            &mut scene,
+            AgentEvent::SessionStart {
+                agent_id: id,
+                source: "cursor".into(),
+                session_id: "s".into(),
+                cwd: PathBuf::from("/repo"),
+                parent_id: None,
+            },
+            t0,
+            Transport::Hook,
+        );
+    }
+    sess_end(&mut r, &mut scene, ended, false, t0, Transport::Hook);
+    for (agent_id, parent_id) in [
+        (child, parent),
+        (unseen, parent),
+        (ended, parent),
+        (child, other),
+        (parent, child),
+    ] {
+        r.apply(
+            &mut scene,
+            AgentEvent::ParentLink {
+                agent_id,
+                parent_id,
+            },
+            t0,
+            Transport::Hook,
+        );
+    }
+    let parent_of = |id| scene.agents.get(&id).map(|s| s.parent_id);
+    assert_eq!(
+        parent_of(child),
+        Some(Some(parent)),
+        "a live root is linked, and its link then stands"
+    );
+    assert_eq!(parent_of(unseen), None, "an absent child stays absent");
+    assert_eq!(
+        parent_of(ended),
+        Some(None),
+        "an exiting slot's life is over"
+    );
+    assert_eq!(
+        parent_of(parent),
+        Some(None),
+        "a link that would close a cycle is refused"
+    );
+}
+
 #[test]
 fn duplicate_root_session_start_does_not_resurrect_a_live_session() {
     let mut scene = SceneState::uniform(8);

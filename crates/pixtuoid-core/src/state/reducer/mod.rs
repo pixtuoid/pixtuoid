@@ -463,6 +463,10 @@ impl Reducer {
             AgentEvent::LabelHint { agent_id, label } => {
                 Self::apply_label_hint(scene, agent_id, &label);
             }
+            AgentEvent::ParentLink {
+                agent_id,
+                parent_id,
+            } => self.apply_parent_link(scene, agent_id, parent_id),
             AgentEvent::SessionEnd { agent_id, as_child } => {
                 self.apply_session_end(scene, agent_id, as_child, from, now);
             }
@@ -980,6 +984,31 @@ impl Reducer {
         {
             self.corr.recent_proof_of_life.insert(agent_id, now);
         }
+    }
+
+    /// The `ParentLink` arm: only a live, unlinked slot takes the parent, since
+    /// linking an exiting one would revive its record
+    /// ([`Correlation::link_applied_parent`]).
+    fn apply_parent_link(&mut self, scene: &mut SceneState, agent_id: AgentId, parent: AgentId) {
+        let Some(slot) = scene
+            .agents
+            .get(&agent_id)
+            .filter(|s| s.exiting_at.is_none() && s.parent_id.is_none())
+        else {
+            return;
+        };
+        let ctx = IdentityCtx {
+            source: &slot.source,
+            session_id: &slot.session_id,
+            cwd: &slot.cwd,
+        };
+        let Some(parent) = self.resolve_parent_link(scene, agent_id, ctx, Some(parent)) else {
+            return;
+        };
+        if let Some(slot) = scene.agents.get_mut(&agent_id) {
+            slot.parent_id = Some(parent);
+        }
+        self.corr.link_applied_parent(agent_id, parent);
     }
 
     /// The `Identity` arm — #221: the identity context a hook decoder attaches

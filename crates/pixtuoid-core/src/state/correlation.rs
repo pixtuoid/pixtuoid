@@ -379,8 +379,8 @@ impl Correlation {
     /// Record an APPLIED child→parent link, REVIVING the record: clearing
     /// `child_end` marks this life alive so [`Correlation::gc`] can't
     /// prune the memory while the child still lives. The ONE home of that
-    /// coupled write — both `SessionStart` link arms call it, so a future third
-    /// link site can't set `parent_id` and forget the clear.
+    /// coupled write — every arm that links calls it, so a new link site can't
+    /// set `parent_id` and forget the clear.
     pub(super) fn link_applied_parent(&mut self, child: AgentId, parent: AgentId) {
         let l = self.lifecycles.entry(child).or_default();
         l.parent_id = Some(parent);
