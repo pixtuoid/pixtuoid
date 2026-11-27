@@ -1,7 +1,8 @@
 //! Reasonix source — HOOK-ONLY (no JSONL watcher).
 //!
-//! Reasonix (github.com/esengine/DeepSeek-Reasonix) ships a CC-style hook
-//! system; connecting it links a GLOBAL plugin whose hooks run the shim —
+//! Reasonix (github.com/esengine/DeepSeek-Reasonix) ships a hook system on CC's
+//! event names (`internal/ext/hook/hook.go:41-66` @ v2.61.0); connecting it
+//! links a GLOBAL plugin whose hooks run the shim —
 //! project hooks run only once approved (`internal/ext/hook/hook.go:228-229`
 //! @ v2.61.0), so those would silently not fire. Payloads
 //! arrive on the shared hook socket stamped
@@ -17,7 +18,7 @@
 //! Every recorded payload carries `sessionId` (`reasonix/fixtures`), though
 //! `Payload` declares it `omitempty`, so that is the AgentId key. Keying on the
 //! workspace instead would merge two sessions in ONE project into a single
-//! sprite (the Cursor lesson; `hermes.rs` states it too).
+//! sprite.
 
 use crate::source::decoder::DecodeResult as Result;
 use serde_json::Value;

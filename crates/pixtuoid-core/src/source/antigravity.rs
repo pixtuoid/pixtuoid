@@ -218,9 +218,9 @@ const ENVELOPE: Envelope = Envelope {
 pub(crate) fn decode_ag_hook_payload(hook: &Hook<'_>) -> Result<Option<Vec<AgentEvent>>> {
     let (obj, event) = (hook.obj, hook.event);
     // The App and the IDE load installed plugins too (hooks.md, "Managing hooks
-    // in the Antigravity App"; plugins.md, "Standalone IDE plugin installation"),
-    // each naming transcripts under an app data dir of its own (hooks.md,
-    // `transcriptPath`).
+    // in the Antigravity App"; antigravity.google/docs/plugins.md, "Standalone IDE
+    // plugin installation"), each naming transcripts under an app data dir of its
+    // own (hooks.md, `transcriptPath`).
     if non_empty(obj, "transcriptPath").is_some_and(|p| {
         !Path::new(p)
             .components()
