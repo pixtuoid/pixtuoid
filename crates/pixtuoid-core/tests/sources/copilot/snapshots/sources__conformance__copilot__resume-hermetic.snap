@@ -3,53 +3,53 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     source: copilot
-    session_id: 2c6f3e7f-7c9b-47a2-ac38-7161b11ce87e
+    session_id: 2019e02d-d71e-4a70-9cdb-1715cd2366fd
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     fresh_tokens: 5657
-    reading_id: 3984e678-9453-4eda-9360-42dba66a4dd9
+    reading_id: c46501d6-bc80-497f-b1ba-a25a5937ac75
 - ToolUseStart:
-    agent_id: 8930300302351710567
-    tool_use_id: call_xeaB447aTM3mcuU4
+    agent_id: 9087935820457708812
+    tool_use_id: call_9eJ9thYbZjoi5_SF
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 8930300302351710567
-    tool_use_id: call_xeaB447aTM3mcuU4
+    agent_id: 9087935820457708812
+    tool_use_id: call_9eJ9thYbZjoi5_SF
 - ModelInfo:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     fresh_tokens: 5645
-    reading_id: 6fc2cccf-fa89-4089-885b-25f8403109a7
+    reading_id: 7e5250e1-c30a-4137-b9ec-5b5993383e77
 - SessionEnd:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     as_child: false
 - SessionStart:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     source: copilot
-    session_id: 2c6f3e7f-7c9b-47a2-ac38-7161b11ce87e
+    session_id: 2019e02d-d71e-4a70-9cdb-1715cd2366fd
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     fresh_tokens: 5665
-    reading_id: c8a8be0c-6eee-45f5-a11d-f0004a5a0cbd
+    reading_id: cf250376-f641-4bc0-83ed-51b4192eca69
 - SessionEnd:
-    agent_id: 8930300302351710567
+    agent_id: 9087935820457708812
     as_child: false
