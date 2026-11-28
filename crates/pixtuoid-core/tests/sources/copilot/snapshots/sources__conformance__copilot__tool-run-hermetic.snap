@@ -3,36 +3,36 @@ source: crates/pixtuoid-core/tests/sources/conformance.rs
 expression: events
 ---
 - SessionStart:
-    agent_id: 8955701830271668671
+    agent_id: 5622519643854303218
     source: copilot
-    session_id: 1d89a163-7303-4c1f-882c-5b539cc2a649
+    session_id: f3302365-fc75-4e27-9026-5bd15e012102
     cwd: /private/tmp/pixtuoid-capture/proj
     parent_id: ~
 - ModelInfo:
-    agent_id: 8955701830271668671
+    agent_id: 5622519643854303218
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 8955701830271668671
+    agent_id: 5622519643854303218
     fresh_tokens: 5657
-    reading_id: 31736c25-772a-4ea2-9cd9-785287956ce5
+    reading_id: 35f536a3-d666-4237-9cce-589087c3c035
 - ToolUseStart:
-    agent_id: 8955701830271668671
-    tool_use_id: call_akyn_OPaGCO5CyGJ
+    agent_id: 5622519643854303218
+    tool_use_id: call_98RPskN4XB8mSKG5
     detail:
       Generic:
         display: "view: /private/tmp/pixtuoid-capture/proj/NOTE.…"
 - ToolUseEnd:
-    agent_id: 8955701830271668671
-    tool_use_id: call_akyn_OPaGCO5CyGJ
+    agent_id: 5622519643854303218
+    tool_use_id: call_98RPskN4XB8mSKG5
 - ModelInfo:
-    agent_id: 8955701830271668671
+    agent_id: 5622519643854303218
     model: gpt-4.1
     effort: ~
 - Usage:
-    agent_id: 8955701830271668671
+    agent_id: 5622519643854303218
     fresh_tokens: 777
-    reading_id: 69524244-03b4-41ee-a43c-cba5b5baa1a0
+    reading_id: 7d82f758-0f54-4af2-aca2-7c8bb36038be
 - SessionEnd:
-    agent_id: 8955701830271668671
+    agent_id: 5622519643854303218
     as_child: false
