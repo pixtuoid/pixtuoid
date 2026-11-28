@@ -1,0 +1,4 @@
+{}
+{"step_index":1,"source":"","type":"PLANNER_RESPONSE","status":"","created_at":"2026-11-28T16:52:38Z","model":"","tool_calls":[{"name":"ask_question","args":{}}]}
+{"step_index":2,"source":"","type":"","status":"","created_at":"2026-11-28T16:52:39Z","content":""}
+{}
